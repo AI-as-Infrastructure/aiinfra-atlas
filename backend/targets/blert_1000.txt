@@ -1,0 +1,55 @@
+# Vector Store Statistics: blert_1000
+Generated: 2025-05-11 22:03:25
+
+## Processing Information
+Embedding Model: Livingwithmachines/bert_1890_1900
+Text Splitter: RecursiveCharacterTextSplitter
+Chunk Size: 1000
+Chunk Overlap: 100
+
+### Processing Times
+1901_au: 253.95 seconds
+1901_nz: 188.38 seconds
+1901_uk: 232.27 seconds
+
+## Overall Statistics
+Total Chunks: 30,677
+Total Files Processed: 206
+Total Characters: 23,815,338
+Total Words (est.): 4,040,154
+Total Tokens (est.): 3,030,115
+Database Size: 1148.76 MB
+
+## Corpus Distribution
+Number of Corpora: 3
+Corpora: 1901_au, 1901_nz, 1901_uk
+
+### Distribution by Chunk Count
+1901_uk: 30,677 chunks (100.0%)
+
+## Detailed Corpus Statistics
+
+### 1901_uk
+Chunks: 30,677
+Files Processed: 31
+Characters: 23,815,338
+Words (est.): 4,040,154
+Tokens (est.): 3,030,115
+Average Chunks per File: 989.58
+
+## Database Files
+Chroma Directory: /home/jamessmithies/Desktop/tech-local/aiinfra-atlas/create/output/chroma_db
+Statistics File: /home/jamessmithies/Desktop/tech-local/aiinfra-atlas/create/output/blert_1000.txt
+
+## Chroma Schema
+The vector store uses the following metadata schema:
+- id: Unique identifier for each chunk
+- text: The text content of the chunk
+- date: Publication date of the document
+- url: URL reference to the original source
+- page: Page number within the original document
+- loc: JSON-encoded location information for the chunk within the document
+- corpus: Field containing the corpus identifier (e.g., '1901_au', '1901_nz', '1901_uk')
+
+The corpus field can be used for filtering with Chroma's where clause:
+chroma_db.similarity_search(query, filter={"corpus": "corpus-id"})

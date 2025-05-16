@@ -1,0 +1,55 @@
+# Web Framework
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+python-multipart==0.0.20
+websockets==15.0.1
+
+# Vector Search Support
+chromadb==0.4.24
+
+# LLM & LangChain Dependencies
+langchain==0.3.25
+langchain-community==0.3.23
+langchain-core==0.3.59
+langchain-huggingface==0.2.0
+langchain-openai==0.3.16
+langchain-ollama==0.3.2
+langchain-anthropic==0.3.13
+langchainhub==0.1.21
+tiktoken==0.9.0
+anthropic[vertex]==0.51.0
+openai==1.78.0
+sounddevice==0.5.1
+google-auth==2.40.1
+
+# AI/ML Model Dependencies
+transformers==4.51.3
+torch==2.7.0
+unstructured==0.17.2
+
+# Utilities
+python-dotenv==1.1.0
+numpy==1.26.4
+asgiref==3.8.1
+requests==2.32.3
+
+# GraphQL and Pydantic
+strawberry-graphql==0.208.2
+pydantic==2.11.4
+pydantic-compat==0.1.2
+lark==1.2.2
+
+# Observability
+arize-phoenix==3.25.0
+arize-phoenix-otel==0.9.2
+openinference-instrumentation-langchain==0.1.42
+opentelemetry-exporter-otlp==1.33.0
+opentelemetry-sdk==1.33.0
+httpx>=0.25.0,<0.28.0
+
+# ---
+# Additional requirements for create/create_hansard_store.py
+# These are needed for standalone execution of the Hansard vector store creation script.
+nltk==3.9.1
+langchain-text-splitters==0.3.8
+tqdm==4.67.1

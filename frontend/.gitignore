@@ -1,0 +1,97 @@
+# ATLAS
+config/.env.development
+config/.env.staging
+config/.env.production
+config/dev_certs
+deploy/staging/vars/vault.yml
+letsencrypt/
+var/lib/letsencrypt/
+.span_cache
+frontend/.env
+frontend/package-lock.json
+frontend/public/logout.html
+frontend/node_modules
+appendonly.aof
+dump.rdb
+deploy/certs/
+*.key
+*.crt
+*.pem
+deploy/docker/
+create/output/*
+
+# Chroma database directories (except reference database)
+backend/chroma_db/
+*/chroma_db/
+!backend/targets/chroma_db/
+
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+*.whl
+
+# Node dependencies
+vue/node_modules
+vue/package-lock.json
+
+
+# misc
+.DS_Store
+.envTrim Trailing Whitespace
+
+
+npm-debug.log*
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+test-reports/
+
+# pyenv
+.python-version
+
+# Local virtual environment directories
+.venv/
+venv/
+venv.bak/
+venv.bk/
+
+# VS Code
+.vscode/
+
+

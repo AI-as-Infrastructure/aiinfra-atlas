@@ -1,0 +1,172 @@
+/* Paper & Type: Global Styles */
+html, body {
+  background: #fff;
+  color: #000;
+  font-family: "Times New Roman", Times, serif;
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+}
+
+#app, .app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+header, .app-header, nav.navbar {
+  background: #fff !important;
+  color: #000;
+  border-bottom: 1px solid #eee;
+  font-family: "Times New Roman", Times, serif;
+  font-size: 2rem;
+  font-weight: bold;
+  letter-spacing: 0.01em;
+  text-align: center;
+  padding: 1.5rem 0 1rem 0;
+}
+
+main, .main-content {
+  flex: 1;
+  margin: 0 auto;
+  padding: 2rem 0 1rem 0;
+  min-height: 0;
+  width: 100%;
+}
+
+
+
+footer, .app-footer {
+  width: 100%;
+  border-top: 1px solid #eee;
+  background: #fff;
+  color: #000;
+  font-size: 1rem;
+  text-align: center;
+  padding: 1rem 0;
+  margin-top: auto;
+}
+
+a, .open-prompt-link {
+  color: #000;
+  text-decoration: underline;
+  cursor: pointer;
+  background: none;
+  border: none;
+  font: inherit;
+  padding: 0;
+}
+a:hover, .open-prompt-link:hover {
+  color: #daddd8;
+  text-decoration: underline;
+}
+
+.send-button {
+  background: #000 !important;
+  color: #fff !important;
+  border-radius: 2px !important;
+  border: none !important;
+  font-weight: 500 !important;
+  font-size: 1rem !important;
+  padding: 0.25rem 1.1rem !important;
+  box-shadow: none !important;
+  transition: background 0.2s !important;
+}
+.send-button:hover:not(:disabled),
+.send-button:focus:not(:disabled),
+.send-button:active:not(:disabled) {
+  background: #888 !important;
+  color: #fff !important;
+}
+
+/* Custom .is-link button color overrides for Bulma */
+button.is-link, .button.is-link,
+button.is-primary, .button.is-primary,
+button.button, .button.button,
+button, .button {
+  background-color: #000 !important;
+  color: #fff !important;
+  border-color: #000 !important;
+  border: none !important;
+}
+button.is-link:hover, .button.is-link:hover,
+button.is-link:focus, .button.is-link:focus,
+button.is-link:active, .button.is-link:active,
+button.is-primary:hover, .button.is-primary:hover,
+button.is-primary:focus, .button.is-primary:focus,
+button.is-primary:active, .button.is-primary:active,
+button.button:hover, .button.button:hover,
+button.button:focus, .button.button:focus,
+button.button:active, .button.button:active,
+button:hover, .button:hover,
+button:focus, .button:focus,
+button:active, .button:active,
+.nav-btn:hover, .nav-btn:focus, .navbar-item.button:hover, .navbar-item.button:focus {
+  background-color: #888 !important;
+  color: #fff !important;
+}
+
+
+/* Test Target Box: black text, smaller font, thin black outline, proper wrapping */
+/* Ensure main content container matches navbar width and alignment */
+.main-content .container, main .container {
+  margin: 0 auto;
+  padding: 0 1rem;
+  width: 100%;
+}
+
+/* Modal white theme overrides */
+.modal.is-active {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.modal,
+.modal-content,
+.modal-background {
+  background: #fff !important;
+  color: #000 !important;
+  font-family: "Times New Roman", Times, serif;
+}
+.modal-content {
+  background: #fff !important;
+  color: #000 !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  padding: 2rem !important;
+  opacity: 1 !important;
+  filter: none !important;
+}
+/* Force modal overlay to pure white, no transparency or dark effect */
+.modal-background,
+body .modal-background {
+  background: #fff !important;
+}
+.modal-close {
+  background: transparent !important;
+  color: #000 !important;
+  border: none;
+  font-size: 2rem;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+.modal-close:hover {
+  opacity: 1;
+}
+
+/* Responsive tweaks */
+@media (max-width: 600px) {
+  main, .main-content {
+    padding: 1rem 0.5rem;
+    font-size: 1rem;
+  }
+  header, .app-header, nav.navbar {
+    font-size: 1.2rem;
+    padding: 1rem 0 0.5rem 0;
+  }
+  footer, .app-footer {
+    font-size: 0.9rem;
+    padding: 0.5rem 0;
+  }
+}
+

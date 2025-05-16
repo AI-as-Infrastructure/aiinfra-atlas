@@ -1,0 +1,15 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /admin/
+
+# Allow search engines to index the main application
+Allow: /index.html
+Allow: /assets/
+
+# Prevent indexing of development and testing routes
+Disallow: /dev/
+Disallow: /test/
+
+# Sitemap location (update with your actual domain)
+Sitemap: https://atlas.aiinfra.edu.au/sitemap.xml 
