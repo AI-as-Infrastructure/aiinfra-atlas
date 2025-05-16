@@ -3,13 +3,11 @@ import { ref, computed } from 'vue';
 import {
   isCognitoEnabled,
   isAuthenticated,
-  getUserInfo,
+  getCurrentUser,
+  getIdToken,
   login as cognitoLogin,
-  logout as cognitoLogout,
-  parseTokensFromUrl,
-  storeTokens,
-  clearTokens
-} from '../auth/cognito';
+  logout as cognitoLogout
+} from '../auth/amplify-auth';
 
 export const useAuthStore = defineStore('auth', () => {
   // State
@@ -43,16 +41,19 @@ export const useAuthStore = defineStore('auth', () => {
     
     // If authenticated but no user, try to get user info
     if (authenticated && !hasUser) {
-      console.log('isLoggedIn: Authenticated but no user, trying to get user info');
-      const userInfo = getUserInfo();
-      if (userInfo) {
-        user.value = userInfo;
-        return true;
-      }
+      console.log('isLoggedIn: Authenticated but no user, refreshing user data');
+      // Refresh user data asynchronously - we'll return based on authentication for now
+      getCurrentUser().then(userInfo => {
+        if (userInfo) {
+          user.value = userInfo;
+        }
+      }).catch(err => {
+        console.error('Error getting current user:', err);
+      });
     }
     
-    // Check both user value and actual authentication state
-    return hasUser && authenticated;
+    // We rely primarily on authentication state from Amplify
+    return authenticated;
   });
 
   const showAuthUI = computed(() => {
@@ -64,7 +65,7 @@ export const useAuthStore = defineStore('auth', () => {
   });
 
   // Actions
-  function initialize() {
+  async function initialize() {
     if (!isCognitoEnabled()) {
       // If Cognito is disabled, reset state and exit
       user.value = null;
@@ -77,55 +78,26 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       console.log('Initializing auth store...');
       
-      // Check for tokens in URL (after redirect from Cognito)
-      const tokens = parseTokensFromUrl();
-      if (tokens) {
-        // Store tokens and clear URL
-        storeTokens(tokens);
-        console.log('Tokens from URL stored');
-        // Replace current URL to remove token data from browser history
-        window.history.replaceState({}, document.title, window.location.pathname);
-      }
-
-      // Directly check localStorage for tokens
-      const storedTokensStr = localStorage.getItem('atlas_cognito_tokens');
-      console.log('Checking localStorage directly:', {
-        tokensExist: !!storedTokensStr,
-        length: storedTokensStr?.length || 0
-      });
-      
-      // Check if user is authenticated
-      const authenticated = isAuthenticated();
+      // Check if user is authenticated using Amplify's APIs
+      const authenticated = await isAuthenticated();
       console.log('Authentication state from isAuthenticated():', authenticated);
       
       if (authenticated) {
-        // Get user info from token
-        const userInfo = getUserInfo();
-        console.log('User info retrieved:', userInfo ? 'success' : 'failed');
-        user.value = userInfo;
-      } else {
-        // Try one more time with direct localStorage access
-        if (storedTokensStr) {
-          try {
-            const directTokens = JSON.parse(storedTokensStr);
-            if (directTokens && directTokens.idToken) {
-              console.log('Found valid tokens in localStorage but isAuthenticated() returned false');
-              // Try to extract user info directly
-              const base64Url = directTokens.idToken.split('.')[1];
-              const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-              const payload = JSON.parse(atob(base64));
-              
-              if (payload) {
-                console.log('Successfully extracted user info from token payload');
-                user.value = payload;
-                return; // Exit early with successful authentication
-              }
-            }
-          } catch (parseErr) {
-            console.error('Error parsing stored tokens:', parseErr);
+        // Get user info using Amplify's API
+        try {
+          const userInfo = await getCurrentUser();
+          console.log('User info retrieved:', userInfo ? 'success' : 'failed');
+          if (userInfo) {
+            user.value = userInfo;
+          } else {
+            console.warn('Authenticated but no user info available');
+            user.value = null;
           }
+        } catch (userErr) {
+          console.error('Error getting user info:', userErr);
+          user.value = null;
         }
-        
+      } else {
         console.log('User not authenticated, clearing user state');
         user.value = null;
       }
@@ -143,10 +115,10 @@ export const useAuthStore = defineStore('auth', () => {
     cognitoLogin();
   }
 
-  function logout() {
+  async function logout() {
     if (!isCognitoEnabled()) return;
     user.value = null;
-    cognitoLogout();
+    await cognitoLogout();
   }
 
   // Initialize auth state when store is first created

@@ -2,40 +2,20 @@ import { createRouter, createWebHistory } from 'vue-router'
 import ChatContainer from '@/components/ChatContainer.vue'
 import AboutPage from '@/pages/AboutPage.vue'
 import FAQPage from '@/pages/FAQPage.vue'
-import Callback from '@/pages/Callback.vue'
 import AmplifyCallback from '@/pages/AmplifyCallback.vue'
-import LogoutComplete from '../pages/LogoutComplete.vue'
-import LogoutRedirect from '../pages/LogoutRedirect.vue'
-import LogoutPage from '@/pages/LogoutPage.vue'
 import LoginPage from '@/pages/LoginPage.vue'
-import AmplifyLogin from '@/pages/AmplifyLogin.vue'
-import AuthDebug from '@/pages/AuthDebug.vue'
-import TokenDebug from '@/pages/TokenDebug.vue'
-import StorageTest from '@/pages/StorageTest.vue'
-import { isCognitoEnabled, isAuthenticated } from '@/auth/cognito'
+import { isCognitoEnabled, isAuthenticated } from '@/auth/amplify-auth'
 
 const routes = [
   { path: '/', component: ChatContainer, meta: { requiresAuth: true } },
   { path: '/about', component: AboutPage },
   { path: '/faq', component: FAQPage },
   
-  // Original auth routes
+  // Authentication routes
   { path: '/login', component: LoginPage, name: 'login' },
-  { path: '/callback', component: Callback, name: 'callback' },
+  { path: '/callback', component: AmplifyCallback, name: 'callback' },
   
-  // Amplify-based auth routes
-  { path: '/amplify-login', component: AmplifyLogin, name: 'amplify-login' },
-  { path: '/amplify-callback', component: AmplifyCallback, name: 'amplify-callback' },
-  
-  // Logout routes
-  { path: '/logout', component: LogoutPage, name: 'logout' },
-  { path: '/logout-complete', component: LogoutComplete, name: 'logout-complete' },
-  { path: '/logout.html', component: LogoutRedirect, name: 'logout-html' }, // Match Cognito's sign-out URL
-  
-  // Debug pages
-  { path: '/auth-debug', component: AuthDebug, name: 'auth-debug' }, // Debug page for authentication
-  { path: '/token-debug', component: TokenDebug, name: 'token-debug' }, // Token debugging page
-  { path: '/storage-test', component: StorageTest, name: 'storage-test' }, // Storage testing page
+  // No debug pages needed
 ]
 
 const router = createRouter({
@@ -44,51 +24,82 @@ const router = createRouter({
 })
 
 // Navigation guard for authentication
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   // Skip auth check if Cognito is disabled
   if (!isCognitoEnabled()) {
     next()
     return
   }
 
-  // Debug current path and authentication state
-  console.log('Route navigation:', to.path, 'Auth state:', isAuthenticated())
-
-  // Debug pages should always be accessible
-  if (to.path === '/auth-debug' || to.path === '/token-debug' || to.path === '/storage-test') {
+  // Debug current path
+  console.log('Route navigation:', to.path)
+  
+  // Special case for coming from logout page to login page - always allow
+  // if (to.path === '/login' && from.path === '/logout') {
+  //   console.log('Coming from logout, allowing access to login page')
+  //   next()
+  //   return
+  // }
+  
+  // Callback and logout routes - always accessible
+  if (to.path === '/callback') {
+    console.log('Allowing access to auth callback page:', to.path)
     next()
     return
   }
   
-  // Callback and logout routes - always accessible
-  if (to.path === '/callback' || to.path === '/amplify-callback' || 
-      to.path === '/logout.html' || to.path === '/logout-complete') {
-    console.log('Allowing access to auth callback/logout page:', to.path)
+  // Check for logout query parameter as a force-logout signal
+  if (to.query.logout === 'true') {
+    console.log('Logout query parameter detected, treating as unauthenticated')
     next()
     return
   }
 
-  // Public routes that should always be accessible
+  // For public routes (login, about, faq) - check authentication to handle redirects
   if (to.path === '/login' || to.path === '/about' || to.path === '/faq') {
-    // If already authenticated and trying to access login, redirect to home
-    if (to.path === '/login' && isAuthenticated()) {
-      console.log('Already authenticated, redirecting from login to home')
-      next('/')
+    // Special case: force check of storage for explicit logout
+    if (to.path === '/login' && localStorage.getItem('force_logout') === 'true') {
+      console.log('Force logout detected, allowing login page access')
+      localStorage.removeItem('force_logout')
+      next()
       return
     }
     
-    console.log('Allowing access to public page')
-    next()
+    // Regular authentication check for other cases
+    try {
+      const authenticated = await isAuthenticated()
+      
+      // If already authenticated and trying to access login, redirect to home
+      if (to.path === '/login' && authenticated) {
+        console.log('Already authenticated, redirecting from login to home')
+        next('/')
+        return
+      }
+      
+      console.log('Allowing access to public page')
+      next()
+    } catch (error) {
+      console.error('Auth check error for public page:', error)
+      next() // Still allow access to public pages on error
+    }
     return
   }
 
   // For routes requiring authentication, check if user is logged in
-  if (to.matched.some(record => record.meta.requiresAuth)) {
-    if (!isAuthenticated()) {
+  try {
+    const authenticated = await isAuthenticated()
+    
+    if (to.matched.some(record => record.meta.requiresAuth) && !authenticated) {
       console.log('Authentication required but not authenticated, redirecting to login')
-      next({ name: 'login' })
+      next({ path: '/login' })
       return
     }
+    
+    // User is authenticated or route doesn't require auth
+    next()
+  } catch (error) {
+    console.error('Auth check error:', error)
+    next({ path: '/login' })
   }
 
   // All checks passed, proceed

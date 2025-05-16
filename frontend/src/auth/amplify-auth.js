@@ -3,7 +3,7 @@
  * Following AWS recommended approach for SPA authentication
  */
 
-import { Auth } from 'aws-amplify';
+import { Auth, Hub } from 'aws-amplify';
 import { Amplify } from 'aws-amplify';
 
 // Initialize Amplify with Cognito configuration
@@ -29,8 +29,44 @@ export const configureAmplify = () => {
         redirectSignOut,
         responseType: 'code',
       },
+      // Add cookie storage configuration to help with session management
+      cookieStorage: {
+        domain: window.location.hostname,
+        path: '/',
+        expires: 365,
+        secure: window.location.protocol === 'https:'
+      },
+      // Synchronize session across tabs
+      mandatorySignIn: false
     },
   });
+  
+  // Set up Hub to listen for auth events
+  try {
+    Hub.listen('auth', (data) => {
+      const { payload } = data;
+      console.log('Auth event:', payload.event);
+      
+      switch (payload.event) {
+        case 'signIn':
+          console.log('User signed in');
+          break;
+        case 'signOut':
+          console.log('User signed out');
+          break;
+        case 'tokenRefresh':
+          console.log('Token refreshed');
+          break;
+        case 'tokenRefresh_failure':
+          console.error('Token refresh failed');
+          // Redirect to login on token refresh failure
+          window.location.href = '/login';
+          break;
+      }
+    });
+  } catch (err) {
+    console.error('Error setting up Auth Hub listener:', err);
+  }
   
   console.log('Amplify configured with Cognito');
 };
@@ -40,6 +76,37 @@ export const configureAmplify = () => {
  */
 export const isCognitoEnabled = () => {
   return import.meta.env.VITE_USE_COGNITO_AUTH === 'true';
+};
+
+/**
+ * Get Cognito configuration from environment variables
+ * @returns {Object} Cognito configuration object
+ */
+export const getCognitoConfig = () => {
+  // Get base URL for the application (works across environments)
+  const baseUrl = window.location.origin;
+  
+  // Define environment variables with validation and fallbacks
+  const config = {
+    region: import.meta.env.VITE_COGNITO_REGION,
+    userPoolId: import.meta.env.VITE_COGNITO_USERPOOL_ID,
+    clientId: import.meta.env.VITE_COGNITO_CLIENT_ID,
+    domain: import.meta.env.VITE_COGNITO_DOMAIN,
+    oauthScope: import.meta.env.VITE_COGNITO_OAUTH_SCOPE || 'openid email profile',
+  };
+  
+  // Get redirect URIs from environment with fallbacks
+  const loginRedirectUri = import.meta.env.VITE_COGNITO_LOGIN_REDIRECT_URI || `${baseUrl}/callback`;
+  const logoutRedirectUri = import.meta.env.VITE_COGNITO_LOGOUT_REDIRECT_URI || `${baseUrl}/logout.html`;
+  const logoutEndpoint = import.meta.env.VITE_COGNITO_LOGOUT_ENDPOINT || `https://${config.domain}/logout`;
+  
+  // Return complete configuration
+  return {
+    ...config,
+    loginRedirectUri,
+    logoutRedirectUri,
+    logoutEndpoint,
+  };
 };
 
 /**
@@ -82,10 +149,23 @@ export const login = async () => {
     // Reconfigure Amplify to ensure fresh state
     configureAmplify();
     
+    // Generate and store PKCE code verifier and challenge before login
+    const codeVerifier = Math.random().toString(36).substring(2, 15) + 
+                        Math.random().toString(36).substring(2, 15) +
+                        Math.random().toString(36).substring(2, 15) +
+                        Math.random().toString(36).substring(2, 15);
+    sessionStorage.setItem('pkce_code_verifier', codeVerifier);
+    console.log('Code verifier generated and stored:', codeVerifier.substring(0, 10) + '...');
+    
     // Use Amplify's federatedSignIn for a fresh login attempt
     // This will handle the PKCE flow properly
     console.log('Starting fresh login attempt with Amplify');
-    await Auth.federatedSignIn();
+    try {
+      await Auth.federatedSignIn();
+    } catch (amplifyError) {
+      console.error('Amplify federatedSignIn error:', amplifyError);
+      throw amplifyError; // Re-throw to trigger fallback
+    }
   } catch (error) {
     console.error('Login error:', error);
     
@@ -95,7 +175,7 @@ export const login = async () => {
       const config = {
         domain: import.meta.env.VITE_COGNITO_DOMAIN,
         clientId: import.meta.env.VITE_COGNITO_CLIENT_ID,
-        redirectUri: import.meta.env.VITE_COGNITO_LOGIN_REDIRECT_URI,
+        redirectUri: import.meta.env.VITE_COGNITO_LOGIN_REDIRECT_URI || `${window.location.origin}/callback`,
         scope: import.meta.env.VITE_COGNITO_OAUTH_SCOPE || 'openid email profile'
       };
       
@@ -111,6 +191,26 @@ export const login = async () => {
       loginUrl.searchParams.append('scope', config.scope);
       loginUrl.searchParams.append('redirect_uri', config.redirectUri);
       loginUrl.searchParams.append('state', state);
+      
+      // PKCE: Add code_challenge and code_challenge_method for better security
+      const codeVerifier = sessionStorage.getItem('pkce_code_verifier');
+      if (codeVerifier) {
+        // Simple encoder function for code challenge
+        const createChallenge = async (verifier) => {
+          const encoder = new TextEncoder();
+          const data = encoder.encode(verifier);
+          const digest = await window.crypto.subtle.digest('SHA-256', data);
+          
+          return btoa(String.fromCharCode(...new Uint8Array(digest)))
+            .replace(/\+/g, '-')
+            .replace(/\//g, '_')
+            .replace(/=+$/, '');
+        };
+        
+        const codeChallenge = await createChallenge(codeVerifier);
+        loginUrl.searchParams.append('code_challenge', codeChallenge);
+        loginUrl.searchParams.append('code_challenge_method', 'S256');
+      }
       
       console.log('Fallback: Redirecting to manual login URL');
       window.location.href = loginUrl.toString();
@@ -198,29 +298,52 @@ export const logout = async () => {
   try {
     console.log('Logging out...');
     
-    // First try to use Amplify's signOut method to clear local tokens
-    await Auth.signOut();
+    // First try to use Amplify's signOut method with global option to clear all sessions
+    // This is critical for proper logout behavior
+    await Auth.signOut({ global: true });
+    
+    // Clear all Cognito-related items from local storage
+    Object.keys(localStorage)
+      .filter(key => key.startsWith('CognitoIdentityServiceProvider') || 
+                     key.startsWith('amplify') || 
+                     key.startsWith('aws'))
+      .forEach(key => localStorage.removeItem(key));
+    
+    // Clear session storage items
+    Object.keys(sessionStorage)
+      .filter(key => key.startsWith('CognitoIdentityServiceProvider') || 
+                     key.startsWith('amplify') || 
+                     key.startsWith('aws') ||
+                     key === 'pkce_code_verifier')
+      .forEach(key => sessionStorage.removeItem(key));
     
     // Then do a manual redirect to Cognito's logout endpoint for server-side session invalidation
+    // Get the exact configured values from environment variables
     const config = {
       domain: import.meta.env.VITE_COGNITO_DOMAIN,
       clientId: import.meta.env.VITE_COGNITO_CLIENT_ID,
       logoutEndpoint: import.meta.env.VITE_COGNITO_LOGOUT_ENDPOINT,
-      // Use the environment variable for the logout redirect URI
       logoutRedirectUri: import.meta.env.VITE_COGNITO_LOGOUT_REDIRECT_URI
     };
     
-    // Construct the Cognito logout URL
-    const logoutUrl = new URL(config.logoutEndpoint);
+    // Force a direct approach for logout using Cognito's well-defined structure
+    const logoutEndpoint = `https://${config.domain}/logout`;
+    const logoutRedirectUri = `${window.location.origin}/login`;
     
-    // Add query parameters
+    // Construct the Cognito logout URL manually to ensure it's correct
+    const logoutUrl = new URL(logoutEndpoint);
+    
+    // Add query parameters required by AWS Cognito
     logoutUrl.searchParams.append('client_id', config.clientId);
-    // Use logout_uri as per AWS documentation
-    logoutUrl.searchParams.append('logout_uri', config.logoutRedirectUri);
+    logoutUrl.searchParams.append('logout_uri', logoutRedirectUri);
+    
+    // Debug output
+    console.log('Cognito domain:', config.domain);
+    console.log('Client ID:', config.clientId);
     
     // Log the full URL for debugging
     console.log('Logout URL:', logoutUrl.toString());
-    console.log('Logout redirect URI:', config.logoutRedirectUri);
+    console.log('Logout redirect URI:', logoutRedirectUri);
     
     console.log('Redirecting to Cognito logout endpoint:', logoutUrl.toString());
     
@@ -231,6 +354,7 @@ export const logout = async () => {
     
     // Fallback to manual logout if Amplify method fails
     localStorage.clear(); // Clear all local storage as a fallback
+    sessionStorage.clear(); // Also clear session storage
     window.location.href = '/login';
   }
 };

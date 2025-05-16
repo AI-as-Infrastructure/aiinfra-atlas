@@ -53,15 +53,70 @@ async function exchangeCodeForTokens(code, state) {
   try {
     logDebug('Exchanging code for tokens');
     
-    // Force Amplify to handle the current URL with the authorization code
+    // Retrieve the PKCE code verifier from session storage
+    const codeVerifier = sessionStorage.getItem('pkce_code_verifier');
+    logDebug('Code verifier retrieved', codeVerifier ? `${codeVerifier.substring(0, 10)}...` : 'none');
+    
+    if (!codeVerifier) {
+      logDebug('No code verifier found in session storage');
+      console.warn('PKCE code verifier missing during callback');
+    }
+    
+    // Force Amplify to reconfigure before handling the auth response
+    try {
+      // Import the configuration function from amplify-auth
+      const { configureAmplify } = await import('../auth/amplify-auth');
+      // Ensure Amplify is properly configured
+      configureAmplify();
+      logDebug('Amplify reconfigured');
+    } catch (configError) {
+      logDebug('Error reconfiguring Amplify:', configError);
+    }
+    
+    // Log the current URL and code for debugging
     const currentUrl = window.location.href;
     logDebug('Current URL', currentUrl);
+    logDebug('Auth code', code ? `${code.substring(0, 10)}...` : 'none');
     
-    // This will exchange the code for tokens
-    const user = await Auth.currentAuthenticatedUser();
-    logDebug('User authenticated', user.username);
+    // Multi-step approach to handle the authentication code
+    // Step 1: Try Auth.handleAuthResponse
+    let user = null;
+    try {
+      await Auth.handleAuthResponse(window.location.href);
+      logDebug('Auth response handled with handleAuthResponse');
+    } catch (handleError) {
+      logDebug('Error handling auth response directly:', handleError);
+    }
     
-    return user;
+    // Step 2: Try Auth.currentAuthenticatedUser
+    try {
+      user = await Auth.currentAuthenticatedUser();
+      logDebug('User authenticated via currentAuthenticatedUser', user.username);
+      return user;
+    } catch (userError) {
+      logDebug('Error getting current user:', userError);
+      
+      // Step 3: If all else fails, try Auth.federatedSignIn.hostedUI.currentUser
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has('code') && urlParams.has('state')) {
+          logDebug('Trying to parse tokens manually');
+          // We'll try Auth.currentSession as a last resort
+          const session = await Auth.currentSession();
+          if (session) {
+            logDebug('Session retrieved manually');
+            // Success! Now get the user
+            user = await Auth.currentAuthenticatedUser();
+            return user;
+          }
+        }
+      } catch (finalError) {
+        logDebug('Final attempt failed:', finalError);
+      }
+      
+      // If we get here, all attempts failed
+      throw new Error('Failed to authenticate user after multiple attempts');
+    }
   } catch (error) {
     logDebug('Token exchange error', error);
     throw error;
@@ -72,18 +127,26 @@ onMounted(async () => {
   try {
     logDebug('Callback page mounted');
     
-    // Clear any previous authentication data to ensure a fresh state
-    localStorage.removeItem('amplify-signin-with-hostedUI');
-    
     // Check URL for authorization code
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get('code');
     const state = urlParams.get('state');
+    const errorParam = urlParams.get('error');
+    const errorDescription = urlParams.get('error_description');
     
     logDebug('URL parameters', { 
       code: code ? `${code.substring(0, 10)}...` : 'none',
-      state: state || 'none'
+      state: state || 'none',
+      error: errorParam || 'none',
+      errorDescription: errorDescription || 'none'
     });
+    
+    // Check for error in the URL parameters
+    if (errorParam) {
+      error.value = `Authentication error: ${errorParam}${errorDescription ? ` - ${errorDescription}` : ''}`;
+      loading.value = false;
+      return;
+    }
     
     if (!code) {
       error.value = 'No authorization code found in URL.';
@@ -93,7 +156,15 @@ onMounted(async () => {
     
     // Exchange the code for tokens
     try {
+      // Clear any previous authentication data to ensure a fresh state
+      // We do this AFTER checking for the code to avoid clearing data on errors
+      localStorage.removeItem('amplify-signin-with-hostedUI');
+      
       const user = await exchangeCodeForTokens(code, state);
+      
+      // After successful authentication, clear the code verifier
+      // as it should only be used once
+      sessionStorage.removeItem('pkce_code_verifier');
       
       // Initialize auth store
       await authStore.initialize();
@@ -107,7 +178,17 @@ onMounted(async () => {
       }, 1000);
     } catch (exchangeError) {
       logDebug('Error during token exchange', exchangeError);
-      throw new Error(`Failed to exchange code: ${exchangeError.message || '400'}`);
+      
+      // Check if it's an expired or already used code
+      if (exchangeError.code === 'NotAuthorizedException' || 
+          (exchangeError.message && exchangeError.message.includes('expired'))) {
+        error.value = 'The authorization code has expired or has already been used. Please try logging in again.';
+      } else {
+        error.value = `Failed to exchange code: ${exchangeError.message || 'Unknown error'}`;
+      }
+      
+      loading.value = false;
+      return;
     }
   } catch (err) {
     console.error('Authentication error:', err);

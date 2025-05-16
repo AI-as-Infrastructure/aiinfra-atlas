@@ -20,17 +20,13 @@
           <button class="login-button" @click="handleLogin">
             Sign In
           </button>
-          <button class="debug-button" @click="goToStorageTest">
-            Storage Test
-          </button>
-          <button class="debug-button" @click="goToAmplifyLogin">
-            Amplify Login
-          </button>
-        </div>
-        
-        <div class="debug-info" v-if="debugInfo">
-          <h3>Debug Information</h3>
-          <pre>{{ debugInfo }}</pre>
+          <div v-if="authStatus === 'failed'" class="login-error">
+            Authentication failed. Please try again.
+          </div>
+          <div v-if="isLoading" class="login-loading">
+            <div class="spinner"></div>
+            <span>Initiating login...</span>
+          </div>
         </div>
         
         <div class="login-footer">
@@ -49,19 +45,66 @@
 </template>
 
 <script setup>
-import { useAuthStore } from '../stores/auth';
-import { generateRandomString, generateCodeChallenge } from '../auth/cognito-utils';
+import { ref, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
+import { login, isAuthenticated } from '../auth/amplify-auth';
 
-const authStore = useAuthStore();
+const router = useRouter();
+const isLoading = ref(false);
+const authStatus = ref(null);
 
+// Clear all auth data and check if already authenticated
+onMounted(async () => {
+  try {
+    // Always clear authentication data on the login page
+    console.log('LoginPage: Clearing all authentication data');
+    
+    // Check for logout query parameter as a signal to do more aggressive cleanup
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('logout')) {
+      console.log('Logout parameter detected, performing full cleanup');
+      
+      // Try to sign out of Amplify directly
+      try {
+        const { Auth } = await import('aws-amplify');
+        await Auth.signOut({ global: true });
+        console.log('Amplify signOut completed');
+      } catch (e) {
+        console.error('Error during Amplify signOut:', e);
+      }
+    }
+    
+    // Clear all storage in any case
+    localStorage.clear();
+    sessionStorage.clear();
+    document.cookie.split(';').forEach(c => {
+      document.cookie = c.trim().split('=')[0] + '=;expires=' + new Date(0).toUTCString() + ';path=/';
+    });
+    console.log('All auth data cleared');
+    
+    // After clearing, check if still authenticated (shouldn't be)
+    const authenticated = await isAuthenticated();
+    if (authenticated) {
+      console.log('Still authenticated after cleanup, redirecting to home');
+      router.push('/');
+    }
+  } catch (error) {
+    console.error('Error checking authentication status:', error);
+  }
+});
+
+// Handle login button click
 async function handleLogin() {
-  // Generate and store PKCE code verifier before login
-  const codeVerifier = generateRandomString(64);
-  sessionStorage.setItem('pkce_code_verifier', codeVerifier);
-  console.log('Code verifier generated and stored:', codeVerifier.substring(0, 10) + '...');
-  
-  // Proceed with login
-  await authStore.login();
+  try {
+    isLoading.value = true;
+    authStatus.value = 'pending';
+    await login();
+  } catch (error) {
+    console.error('Login error:', error);
+    authStatus.value = 'failed';
+  } finally {
+    isLoading.value = false;
+  }
 }
 </script>
 
@@ -115,7 +158,8 @@ async function handleLogin() {
 .login-actions {
   margin: 2rem 0;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
 }
 
 .login-button {
@@ -127,10 +171,40 @@ async function handleLogin() {
   font-size: 1rem;
   cursor: pointer;
   transition: background-color 0.2s;
+  min-width: 150px;
 }
 
 .login-button:hover {
   background-color: #1a252f;
+}
+
+.login-error {
+  margin-top: 1rem;
+  color: #e74c3c;
+  font-size: 0.9rem;
+}
+
+.login-loading {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 0.9rem;
+  color: #7f8c8d;
+}
+
+.spinner {
+  width: 24px;
+  height: 24px;
+  margin-bottom: 0.5rem;
+  border: 3px solid rgba(0, 0, 0, 0.1);
+  border-radius: 50%;
+  border-top-color: #2c3e50;
+  animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .login-footer {
