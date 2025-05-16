@@ -3,13 +3,11 @@ config/.env.development
 config/.env.staging
 config/.env.production
 config/dev_certs
-deploy/staging/vars/vault.yml
 letsencrypt/
 var/lib/letsencrypt/
 .span_cache
 frontend/.env
 frontend/package-lock.json
-frontend/public/logout.html
 frontend/node_modules
 appendonly.aof
 dump.rdb
@@ -93,5 +91,8 @@ venv.bk/
 
 # VS Code
 .vscode/
+
+# Generated files
+frontend/public/logout.html
 
 

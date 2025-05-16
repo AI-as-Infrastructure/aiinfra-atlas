@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logging Out</title>
+    <script>
+        // Handle token cleanup and redirection
+        window.onload = function() {
+            // Clear OIDC and Cognito tokens from localStorage
+            Object.keys(localStorage).forEach(function(key) {
+                if (key.indexOf("oidc.user:") === 0 || 
+                    key.indexOf("CognitoIdentityServiceProvider") === 0 ||
+                    key.indexOf("amplify-signin-with-hostedUI") === 0) {
+                    localStorage.removeItem(key);
+                }
+            });
+            
+            // Clear sessionStorage
+            sessionStorage.clear();
+            
+            // Clear any authentication cookies
+            document.cookie.split(";").forEach(function(c) {
+                document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+            });
+            
+            // Add a small delay to ensure cleanup completes
+            setTimeout(function() {
+                // API URL injected by build script
+                const redirectUrl = "__VITE_API_URL__" || '/';
+                window.location.href = redirectUrl;
+            }, 500);
+        }
+    </script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f5f5f5;
+        }
+        .logout-container {
+            text-align: center;
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="logout-container">
+        <h1>Logging Out...</h1>
+        <p>Clearing session data and redirecting you to the application.</p>
+    </div>
+</body>
+</html> 

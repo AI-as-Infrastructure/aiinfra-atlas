@@ -40,6 +40,8 @@ dd:
 	@echo "Removing node_modules and package-lock.json from project root and frontend/ ..."
 	@rm -rf node_modules package-lock.json
 	@rm -rf frontend/node_modules frontend/package-lock.json
+	@rm -rf frontend/dist
+	@echo "Removed frontend/dist directory"
 	@echo "FastAPI dev environment destroyed."
 
 #------------------------------------------------------------------------------
