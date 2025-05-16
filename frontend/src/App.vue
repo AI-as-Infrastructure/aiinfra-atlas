@@ -3,20 +3,32 @@
     <header>
       <nav class="navbar is-light" role="navigation" aria-label="main navigation">
         <div class="container">
-          <div class="navbar-brand" style="display: flex; align-items: center;"> 
-  <router-link to="/" class="navbar-item has-text-weight-bold site-title-link">{{ siteTitle }}</router-link>
-</div>
+          <div class="navbar-brand"> 
+            <router-link to="/" class="navbar-item has-text-weight-bold site-title-link">{{ siteTitle }}</router-link>
+          </div>
           <div class="navbar-menu">
             <div class="navbar-link-group">
-  <div class="navbar-item">
-    <NewSessionButton />
-  </div>
-  <router-link class="navbar-item nav-link" to="/about">About</router-link>
-  <router-link class="navbar-item nav-link" to="/faq">FAQ</router-link>
-  <router-link v-if="!isHomePage" class="navbar-item nav-link" to="/">Home</router-link>
-  <!-- Auth Controls - only shows if Cognito is enabled -->
-  <AuthControls class="auth-controls" />
-</div>
+              <!-- Empty left section for spacing -->
+              <div class="nav-section left-section"></div>
+              
+              <!-- Center section with all navigation items grouped together -->
+              <div class="nav-section center-section">
+                <div class="nav-item">
+                  <NewSessionButton />
+                </div>
+                <div class="nav-item">
+                  <router-link class="nav-link" to="/about">About</router-link>
+                </div>
+                <div class="nav-item">
+                  <router-link class="nav-link" to="/faq">FAQ</router-link>
+                </div>
+              </div>
+              
+              <!-- Right section for auth controls -->
+              <div class="nav-section right-section">
+                <AuthControls class="auth-controls" />
+              </div>
+            </div>
           </div>
         </div>
       </nav>
@@ -104,12 +116,64 @@ onMounted(() => {
   box-shadow: 0 2px 3px rgba(10, 10, 10, 0.1);
 }
 
+.navbar-brand {
+  display: flex;
+  align-items: center;
+}
+
 .navbar-link-group {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 0.5rem;
+  justify-content: space-between;
+  width: 100%;
   flex: 1;
+}
+
+.nav-section {
+  display: flex;
+  align-items: center;
+}
+
+.left-section {
+  justify-content: flex-start;
+  flex: 1;
+  min-width: 50px; /* Ensure minimum spacing from the site title */
+}
+
+.center-section {
+  justify-content: center;
+  flex: 2;
+  display: flex;
+  gap: 0; /* Remove gap as we'll control spacing with margins */
+  margin: 0 auto; /* Center the navigation group */
+  max-width: 500px; /* Limit width to keep items closer together */
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.center-section .nav-item {
+  margin: 0 1.25rem; /* Add consistent horizontal margins to each item */
+  padding: 0;
+}
+
+.center-section .nav-link {
+  padding: 0.5rem 0.75rem;
+  display: block;
+}
+
+.right-section {
+  justify-content: flex-end;
+  flex: 1;
+  min-width: 50px; /* Ensure minimum spacing to the right edge */
+}
+
+/* Ensure the auth controls have consistent spacing */
+.auth-controls {
+  margin-left: 1rem;
 }
 
 

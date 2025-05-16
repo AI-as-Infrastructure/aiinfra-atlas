@@ -1,7 +1,7 @@
 <template>
   <div class="session-button-container">
     <span v-if="showRefreshedMessage" class="session-refreshed-message">Session refreshed!</span>
-    <a class="new-session-link" @click.prevent="newSession">New Session</a>
+    <a class="new-session-link nav-link" @click.prevent="newSession">New Session</a>
   </div>
 </template>
 
