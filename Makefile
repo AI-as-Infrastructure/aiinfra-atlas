@@ -69,7 +69,6 @@ build-production:
 # and staging Docker deployment. Other developers may need to generate their own lock file.
 lock:
 	@echo "CAUTION: This will generate a machine-specific requirements.lock file"
-	@echo "This is intended for YOUR development and staging environments only"
 	@echo "Generating requirements.lock file with Python $${PYTHON_VERSION}..."
 	./config/generate-lockfile.sh
 	@echo "Lock file generated successfully for your specific environment."
@@ -117,7 +116,7 @@ store:
 	@echo "   cp -r create/output/chroma_db/* backend/targets/chroma_db/"
 	@echo "   cp create/output/blert_1000.txt backend/targets/"
 	@echo "2. Commit and push with Git LFS"
-	@echo "\nNote: The database will be used from the location specified by CHROMA_PERSIST_DIRECTORY in config/.env"
+	@echo "\nNote: The database will be used from the location specified by CHROMA_PERSIST_DIRECTORY in config/.env.development"
 
 # Generate the retriever: ensure venv, install deps, run script
 retriever:
