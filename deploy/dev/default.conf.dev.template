@@ -1,0 +1,50 @@
+# HTTP server block for redirecting all traffic to HTTPS
+server {
+    listen 80;
+    server_name ${SERVER_NAME};  # Set in env
+    return 301 https://$host$request_uri;
+}
+
+# HTTPS server block configured with SSL using self‑signed certs
+server {
+    listen 443 ssl;
+    server_name ${SERVER_NAME};  # e.g., localhost
+
+    ssl_certificate /etc/letsencrypt/live/${SERVER_NAME}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${SERVER_NAME}/privkey.pem;
+
+    # Proxy API requests to your Backend dev server on port 5001
+    location /api/ {
+        proxy_pass http://host.docker.internal:5001/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Proxy WebSocket connections for Socket.IO to your Backend dev server on port 5001
+    location /socket.io/ {
+        proxy_pass http://host.docker.internal:5001/socket.io/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 600;
+        proxy_send_timeout 600;
+    }
+
+    # Proxy all other requests to the Frontend dev server (with hot reload) on port 3001
+    location / {
+        proxy_pass http://host.docker.internal:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}

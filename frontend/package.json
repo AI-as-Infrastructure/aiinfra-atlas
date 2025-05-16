@@ -1,0 +1,49 @@
+{
+  "name": "ATLAS",
+  "version": "1.0.0",
+  "description": "Analysis and Testing of Language Models for Archival Systems",
+  "main": "index.js",
+  "scripts": {
+    "start": "PORT=3001 craco start",
+    "build": "craco build",
+    "test": "craco test",
+    "eject": "react-scripts eject"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@craco/craco": "^7.1.0",
+    "axios": ">=0.28.0",
+    "oidc-client-ts": "^3.1.0",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "react-oidc-context": "^3.2.0",
+    "react-router-dom": "^7.1.5",
+    "react-scripts": "^5.0.0",
+    "sass": "^1.32.0",
+    "socket.io-client": "^4.6.1",
+    "web-vitals": "^2.1.0"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "proxy": "http://localhost:5001",
+  "devDependencies": {
+    "browserify-zlib": "^0.2.0",
+    "buffer": "^6.0.3",
+    "crypto-browserify": "^3.12.1",
+    "dotenv": "^16.4.7",
+    "process": "^0.11.10",
+    "stream-browserify": "^3.0.0",
+    "util": "^0.12.5"
+  }
+}

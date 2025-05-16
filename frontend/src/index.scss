@@ -1,0 +1,790 @@
+/* index.scss */
+@use "./components/chat/Feedback.scss" as feedback;
+
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.main-content {
+  display: flex;
+  flex-grow: 1;
+  padding: 20px;
+  gap: 20px;
+  overflow: hidden;
+
+  .chatContainer {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .right-sidebar {
+    width: 300px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    min-width: 300px;
+  }
+}
+
+.configBox {
+  background: white;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 15px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+
+  .configTitle {
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eee;
+  }
+
+  .configItem {
+    margin-bottom: 10px;
+    word-break: break-word;
+
+    strong {
+      color: #555;
+      margin-right: 5px;
+    }
+  }
+
+  .exportButton {
+    width: 100%;
+    padding: 8px;
+    margin-top: 15px;
+    border: none;
+    border-radius: 4px;
+    background-color: #ccc;
+    color: #000;
+    cursor: pointer;
+    font-size: 0.9rem;
+
+    &:hover {
+      background-color: #888;
+      color: #000;
+    }
+  }
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px;
+  background-color: #f5f5f5;
+  height: 1.5cm;
+  position: fixed;
+  width: 100%;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+  box-sizing: border-box; /* Ensure padding is included in the height */
+  border-bottom: 1px solid #ccc; /* Add a bottom border to the header */
+}
+
+.header-left {
+  font-size: 14px;
+}
+
+.header-right .logout {
+  cursor: pointer;
+  color: #007bff;
+  text-decoration: underline;
+  font-size: 10px;
+}
+
+.header-right .logout:hover {
+  color: #0056b3;
+}
+
+.container {
+  margin-top: 1.5cm; /* Adjust to ensure content is not hidden behind the header */
+  display: flex;
+  flex-direction: row; /* Change to row to place configBox on the right */
+  align-items: flex-start;
+  justify-content: space-between;
+  height: calc(100vh - 1.5cm); /* Adjust height to fit within the screen */
+  background-color: #f5f5f5;
+  padding: 10px;
+  box-sizing: border-box; /* Ensure padding is included in the height */
+  overflow: hidden; /* Prevent overflow */
+
+  .right-panel {
+    display: flex;
+    flex-direction: column;
+    width: 300px; /* Same as config box */
+    margin-left: 10px;
+
+    .feedback-form-container {
+      margin-bottom: 10px;
+      transition: all 0.3s ease;
+    }
+
+    .configBox {
+      margin-left: 0;
+      transition: all 0.3s ease;
+    }
+  }
+}
+
+.configBox {
+  width: 300px; /* Adjust width as needed */
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  background-color: #fff;
+  font-size: x-small;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-sizing: border-box; /* Ensure padding is included in the width */
+  transition: margin-top 0.3s ease;
+}
+
+.configTitle {
+  margin: 0;
+  margin-bottom: 5px;
+}
+
+.configItem {
+  display: block;
+  margin-bottom: 5px;
+}
+
+.systemPrompt {
+  margin-top: 10px;
+  word-wrap: break-word; /* Ensure the text wraps within the div */
+}
+
+.chatContainer {
+  display: flex;
+  flex-direction: column;
+  flex: 1; /* Take up remaining space */
+  height: 100%; 
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  padding: 10px;
+  background-color: #fff;
+  margin-right: 10px; /* Add margin to separate from configBox */
+  font-size: small; 
+  box-sizing: border-box; /* Ensure padding is included in the height */
+  overflow: hidden; /* Prevent container overflow but allow child elements to scroll */
+}
+
+.chatBox {
+  flex: 1; /* Allow chatBox to grow and take up available space */
+  overflow-y: auto; /* Ensure vertical scrolling */
+  padding-bottom: 20px; /* Add padding at the bottom to ensure content isn't cut off */
+  max-height: calc(100vh - 200px); /* Set a maximum height with room for input box */
+}
+
+.userMessage {
+  text-align: right;
+  margin: 10px 0;
+  padding: 10px;
+  background-color: #e4e7e6;
+  border-radius: 10px;
+}
+
+.aiMessage {
+  text-align: left;
+  margin: 10px 0;
+  padding: 10px;
+  background-color: #f9f9f9;
+  border-radius: 10px;
+  white-space: pre-wrap; /* Preserve whitespace and line breaks */
+}
+
+.messageContent {
+  margin-bottom: 10px;
+}
+
+.inputContainer {
+  display: flex;
+  width: 100%;
+  margin-top: 10px;
+}
+
+.input {
+  flex: 1;
+  padding: 10px;
+  border-radius: 5px;
+  border: 1px solid #ccc;
+}
+
+.chatButton {
+  padding: 10px 20px;
+  margin-left: 10px;
+  border-radius: 5px;
+  border: none;
+  background-color: #ccc;
+  color: #000;
+  cursor: pointer;
+}
+
+.chatButton:hover {
+  background-color: #888;
+  color: #000;
+}
+
+.exportButton {
+  margin-top: 20px;
+  padding: 5px 10px;
+  margin-left: 5px;
+  border-radius: 5px;
+  border: none;
+  background-color: #ccc;
+  color: #000;
+  cursor: pointer;
+}
+
+.exportButton:hover {
+  background-color: #888;
+  color: #000;
+}
+
+.configBox .button {
+  margin-top: 10px;
+  width: 90%;
+  background-color: #ccc;
+  color: #000;
+
+  &:hover {
+    background-color: #888;
+    color: #000;
+  }
+}
+
+.configTitle {
+  margin-bottom: 15px; /* Adjust the value as needed */
+}
+
+/* Enhanced Citation Styling */
+.citations-container {
+  width: 100%;
+  margin-top: 15px;
+  border-top: 1px solid #e0e0e0;
+  padding-top: 10px;
+}
+
+.citations-container h4 {
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+  color: #444;
+  font-weight: 600;
+}
+
+.citation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.citation-item {
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+  background-color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.citation-header {
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  cursor: pointer;
+  background-color: #f5f5f5;
+  transition: background-color 0.2s ease;
+  
+  &:hover {
+    background-color: #f0f0f0;
+  }
+}
+
+.citation-number {
+  font-weight: bold;
+  color: #555;
+  margin-right: 10px;
+  flex-shrink: 0;
+}
+
+.citation-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85rem;
+}
+
+.citation-expand-icon {
+  color: #888;
+  font-size: 0.7rem;
+  margin-left: 8px;
+}
+
+.citation-details {
+  padding: 12px;
+  border-top: 1px solid #e0e0e0;
+  background-color: #fafafa;
+  font-size: 0.8rem;
+}
+
+.citation-quote {
+  font-style: italic;
+  margin-bottom: NULL;
+  color: #555;
+  line-height: 1.4;
+  padding-left: 8px;
+  border-left: 3px solid #e0e0e0;
+  margin-bottom: 10px;
+}
+
+.citation-page {
+  font-size: 0.75rem;
+  color: #777;
+  margin-bottom: 12px;
+}
+
+.citation-open-button {
+  padding: 6px 12px;
+  background-color: #f0f0f0;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: #333;
+  transition: all 0.2s ease;
+  
+  &:hover {
+    background-color: #e6e6e6;
+    border-color: #ccc;
+  }
+}
+
+/* Keep existing citation styles for backward compatibility */
+.citations {
+  font-size: smaller;
+  line-height: 1.8;
+  display: flex;
+  flex-wrap: wrap;
+  max-height: none;
+  overflow: visible;
+  width: 100%;
+}
+
+.citations .sourceItem {
+  display: inline-block;
+  margin-right: 5px;
+  margin-bottom: 5px;
+  position: relative;
+}
+
+.citations .tooltip {
+  position: relative;
+  display: inline-block;
+  cursor: pointer;
+  color: black;
+  text-decoration: underline;
+}
+
+/* REVISED TOOLTIP CSS - UNIVERSAL SOLUTION */
+
+.citations .tooltip .tooltiptext {
+  visibility: hidden;
+  width: 300px;
+  background-color: #f9f9f9;
+  color: #000;
+  text-align: left;
+  border-radius: 6px;
+  padding: 10px;
+  border: 1px solid #ccc;
+  position: absolute;
+  z-index: 1000;
+  bottom: 125%; /* Position above the citation */
+  
+  /* Default position - start from left edge */
+  left: 0;
+  
+  /* Prevent overflow on small screens */
+  max-width: min(300px, calc(100vw - 20px));
+  
+  opacity: 0;
+  transition: opacity 0.3s;
+  word-wrap: break-word;
+  white-space: normal;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+/* Arrow styling */
+.citations .tooltip .tooltiptext::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 15px;
+  border-width: 8px;
+  border-style: solid;
+  border-color: #f9f9f9 transparent transparent transparent;
+}
+
+/* Show tooltip on hover */
+.citations .tooltip:hover .tooltiptext {
+  visibility: visible;
+  opacity: 1;
+}
+
+/* Format tooltip content */
+.citations .tooltip .tooltiptext p {
+  margin: 5px 0;
+  line-height: 1.4;
+  max-width: 100%;
+}
+
+/* Feedback Styles */
+.citations .tooltip .tooltiptext a {
+  color: #007bff;
+  text-decoration: underline;
+  word-break: break-all;
+  max-width: 100%;
+  display: inline-block;
+}
+
+.citations .tooltip .tooltiptext a:hover {
+  color: #0056b3;
+}
+
+/* Universal right edge detection */
+.tooltip-right {
+  left: auto !important;
+  right: 0 !important;
+}
+
+.tooltip-right::after {
+  left: auto !important;
+  right: 15px !important;
+}
+
+/* Ensure tooltips are readable on very small screens */
+@media screen and (max-width: 400px) {
+  .citations .tooltip .tooltiptext {
+    width: calc(100vw - 40px);
+    max-width: none;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  
+  .citations .tooltip .tooltiptext::after {
+    left: 50%;
+    margin-left: -8px;
+  }
+  
+  .tooltip-right {
+    left: 50% !important;
+    right: auto !important;
+    transform: translateX(-50%) !important;
+  }
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+}
+
+.session-message-inline {
+  color: #000;
+  font-size: 0.9em;
+  margin-right: 15px;
+  margin-top: 0; /* Reset margin-top */
+  padding: 5px 0;
+  animation: fadeOut 3s forwards;
+  display: flex;
+  align-items: center;
+}
+
+@keyframes fadeOut {
+  0% { opacity: 1; }
+  70% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+}
+
+.link-button, a.link-button {
+  margin-top: 5px;
+  padding: 5px 10px;
+  margin-left: 5px;
+  border-radius: 5px;
+  border: none;
+  background-color: #ccc;
+  color: #000;
+  cursor: pointer;
+  text-decoration: none;
+  font-size: 12px; /* Set explicit font size */
+  font-family: inherit;
+  display: inline-block;
+  line-height: normal;
+  font-weight: normal; /* Ensure consistent font weight */
+  
+  &:hover {
+    background-color: #888;
+    color: #000;
+  }
+}
+
+/* Reset any browser default styles for links */
+a.link-button {
+  box-sizing: border-box;
+}
+
+.full-prompt-link {
+  display: inline;
+  margin-left: 5px;
+  font-size: smaller;
+  line-height: 1.8;
+  text-decoration: underline;
+  color: #000;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.full-prompt-link:hover {
+  color: #666;
+}
+
+.separator {
+  margin: 0 10px;
+  color: #fff;
+}
+
+/* Home login page */
+/* Container takes full viewport height and arranges components vertically */
+.login-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.login-footer {
+  display: flex;
+  align-items: center; /* Centers content vertically */
+  justify-content: flex-end; /* Aligns content to the right horizontally */
+  height: var(--footer-height, 20px);
+  font-size: var(--footer-font-size, 0.75rem);
+  background-color: #f5f5f5;
+  padding-right: 1rem; /* Adjust right padding as needed */
+  border-top: 1px solid #ddd;
+}
+
+/* Center the login content */
+.login-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Style the login button */
+.login-btn {
+  margin-top: 1rem;
+  padding: 0.75rem 1.5rem;
+  font-size: 14px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  cursor: pointer;
+  border-radius: 5px;
+  border: none;
+  background-color: #ccc;
+  color: #000;
+}
+
+.login-btn:hover {
+  background-color: #888;
+  color: #000;
+}
+
+/* This rule only applies within .login-container, so the main app header remains unaffected */
+.login-container .header-actions {
+  display: none;
+}
+
+/* Style for the footer */
+.login-footer {
+  background-color: #f5f5f5;
+  padding: 1rem;
+  text-align: center;
+  border-top: 1px solid #ddd;
+
+  a {
+    color: #000;
+    text-decoration: underline;
+  }
+
+  a:hover {
+    color: #888;
+  }
+}
+
+/* Hide session and logout buttons from the header on the login page.
+ Assumes these buttons are wrapped in an element with the class "header-actions". */
+.header-actions {
+  display: none;
+}
+
+/* Add this to your index.scss file */
+.open-all-citations {
+  display: inline-block;
+  margin-right: 5px;
+  margin-bottom: 5px;
+  position: relative;
+  font-size: smaller;
+  line-height: 1.8;
+}
+
+.open-all-citations .tooltip {
+  cursor: pointer;
+  color: black;
+  text-decoration: underline;
+  font-size: smaller;
+  line-height: 1.8;
+}
+
+// Main About page layout container
+.about-page-layout {
+  display: flex;
+  flex-direction: row;
+  gap: 20px;
+  padding: 20px;
+  height: calc(100vh - 1.5cm - 40px); /* Account for header height and padding */
+  overflow: hidden;
+  align-items: flex-start; /* Ensure top alignment */
+}
+
+// About container (left side)
+.about-container {
+  flex: 1;
+  font-size: 12px;
+  background-color: #F5F5F5;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  overflow-y: auto; /* Allow scrolling within this container */
+  height: 100%; /* Fill the parent container height */
+  padding: 1rem;
+  margin: 0; /* Remove any automatic margins */
+  
+  h1 {
+    text-align: center;
+    margin: 1rem 0 1.5rem;
+    color: #000;
+    font-size: 1.8rem;
+  }
+  
+  .about-section {
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #E4E7E6;
+    
+    &:last-child {
+      border-bottom: none;
+      margin-bottom: 0; /* Remove margin from last section */
+    }
+    
+    h2 {
+      color: #000;
+      margin-bottom: 1rem;
+      font-size: 1.4rem;
+    }
+    
+    p {
+      line-height: 1.6;
+      font-size: 12px;
+      margin-bottom: 1rem;
+      color: #000;
+    }
+    
+    ul {
+      padding-left: 2rem;
+      
+      li {
+        margin-bottom: 0.5rem;
+        line-height: 1.4;
+      }
+    }
+    
+    a {
+      color: #000;
+      text-decoration: underline;
+      
+      &:hover {
+        text-decoration: underline;
+      }
+    }
+  }
+}
+
+// About sidebar (right side)
+.about-sidebar {
+  width: 300px;
+  min-width: 300px;
+  display: flex;
+  flex-direction: column;
+  height: auto; /* Let height be determined by content */
+  
+  .info-box {
+    background-color: #F5F5F5;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    padding: 15px;
+    
+    h3 {
+      font-size: 12px;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #eee;
+    }
+    
+    p {
+      font-size: 12px;
+      margin-bottom: 8px;
+      color: #000;
+      
+      &:last-child {
+        margin-bottom: 0; /* Remove margin from last paragraph */
+      }
+    }
+  }
+}
+/* Add these styles if they're not already present */
+.processing-doc-context {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #666;
+}
+
+.spinner-inline {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(0, 0, 0, 0.1);
+  border-top-color: #767676;
+  border-radius: 50%;
+  animation: spinner-rotation 0.8s infinite linear;
+}
+
+@keyframes spinner-rotation {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(359deg);
+  }
+}
+
+

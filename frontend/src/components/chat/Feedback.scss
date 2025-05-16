@@ -1,0 +1,129 @@
+.feedback-container {
+  width: 100%;
+}
+
+.feedback-button {
+  width: 100%;
+  padding: 8px;
+  border: none;
+  border-radius: 4px;
+  background-color: #4CAF50; /* Green color */
+  color: white;
+  cursor: pointer;
+  font-size: 0.9rem;
+  margin-bottom: 10px;
+  &:hover {
+    background-color: #45a049; /* Darker green on hover */
+    color: white;
+  }
+}
+
+.feedback-form {
+  background: white;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 15px;
+  margin-bottom: 10px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+
+  h3 {
+    margin: 0 0 10px 0;
+    font-size: x-small;
+    color: #333;
+    font-weight: normal;
+  }
+
+  .likert-scale {
+    margin-bottom: 1.5rem;
+
+    .likert-label {
+      font-size: x-small;
+      margin-bottom: 5px;
+      color: #555;
+    }
+
+    .likert-options {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 0.25rem;
+
+      .likert-option {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        cursor: pointer;
+
+        input[type="radio"] {
+          margin: 0;
+          cursor: pointer;
+        }
+
+        span {
+          font-size: x-small;
+          margin-top: 3px;
+          color: #666;
+        }
+      }
+    }
+
+    .likert-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.8rem;
+      color: #666;
+    }
+  }
+
+  textarea {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    margin: 0.5rem 0;
+    font-size: 0.9rem;
+    resize: vertical;
+  }
+
+  .feedback-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+    margin-top: 1rem;
+
+    button {
+      padding: 0.4rem 1rem;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background: white;
+      cursor: pointer;
+      font-size: 0.9rem;
+
+      &[type="submit"] {
+        background: #4CAF50; /* Green color */
+        color: white;
+        border-color: #45a049;
+
+        &:hover:not(:disabled) {
+          background: #45a049; /* Darker green on hover */
+          color: white;
+        }
+
+        &:disabled {
+          background: #8bc34a; /* Lighter green when disabled */
+          border-color: #7cb342;
+          cursor: not-allowed;
+        }
+      }
+
+      &[type="button"] {
+        background-color: #ccc;
+        color: #000;
+        border: none;
+        &:hover {
+          background-color: #888;
+          color: #000;
+        }
+      }
+    }
+  }
+}

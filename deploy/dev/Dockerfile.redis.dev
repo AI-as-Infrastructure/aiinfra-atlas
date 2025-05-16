@@ -1,0 +1,22 @@
+# deploy/dev/Dockerfile.redis.dev
+FROM redis/redis-stack:latest
+
+# Declare the build argument for Redis password
+ARG REDIS_PASSWORD
+# Set the internal Redis password directly from the build argument
+ENV REDIS_PASSWORD=${REDIS_PASSWORD}
+
+# Set the working directory.
+WORKDIR /data
+
+# Copy the persistence file.
+COPY redis/dump.rdb ./dump.rdb
+
+# Ensure Redis can read the dump file.
+RUN chmod 644 dump.rdb
+
+# Document that Redis listens on port 6379.
+EXPOSE 6379
+
+# Start Redis with authentication, persistence, and additional modules.
+ENTRYPOINT ["sh", "-c", "echo \"Starting Redis with password: $REDIS_PASSWORD\" && exec redis-server --requirepass \"$REDIS_PASSWORD\" --dir /data --dbfilename dump.rdb --loadmodule /opt/redis-stack/lib/redisearch.so --loadmodule /opt/redis-stack/lib/rejson.so"]

@@ -1,0 +1,10 @@
+FROM nginx:latest
+
+# Declare a volume for Let's Encrypt certificates so they can be mounted in at runtime.
+VOLUME ["/etc/letsencrypt/live"]
+
+# Copy the dev Nginx config template into the container
+COPY ./default.conf.dev.template /etc/nginx/conf.d/default.conf.template
+
+# The CMD uses envsubst to replace ${SERVER_NAME} in the config and then launches Nginx.
+CMD ["sh", "-c", "envsubst '${SERVER_NAME}' < /etc/nginx/conf.d/default.conf.template > /etc/nginx/conf.d/default.conf && exec nginx -g 'daemon off;'"]

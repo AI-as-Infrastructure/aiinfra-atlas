@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Logged Out</title>
+    <script>
+      window.onload = function () {
+        // Clear OIDC tokens from localStorage.
+        Object.keys(localStorage).forEach(function(key) {
+          if (key.indexOf("oidc.user:") === 0) {
+            localStorage.removeItem(key);
+          }
+        });
+        sessionStorage.clear();
+        // Redirect to the URL injected by the Node.js script.
+        window.location.href = "%%REACT_APP_FRONTEND_URL%%";
+      };
+    </script>
+  </head>
+  <body>
+    <p>You have been logged out. Redirecting...</p>
+  </body>
+</html>

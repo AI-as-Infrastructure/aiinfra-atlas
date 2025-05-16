@@ -1,0 +1,49 @@
+# Core Web Framework
+flask==3.0.3
+flask-cors==5.0.0
+flask-socketio==5.3.6
+
+# Web Server & WebSocket Handling 
+gunicorn==22.0.0
+gevent>=23.9.0
+gevent-websocket==0.10.1
+
+# Redis & Vector Search Support
+redis==5.2.0
+redisvl==0.3.6
+
+# LLM & LangChain Dependencies
+tiktoken==0.8.0
+langchain==0.3.6
+langchain-community==0.3.4
+langchain-huggingface==0.1.2
+langchain-openai==0.2.5
+langchain-ollama==0.2.0
+langchain-anthropic==0.2.4
+langchainhub==0.1.21
+anthropic[vertex]>=0.30.0
+openai>=1.52.0,<2.0.0
+sounddevice==0.5.1
+google-auth>=2.0.0
+
+# AI/ML Model Dependencies
+transformers==4.48.0
+torch==2.5.1
+unstructured==0.16.4
+
+# Utilities
+python-dotenv==1.0.1
+numpy==1.26.4
+asgiref==3.8.1
+requests==2.31.0
+strawberry-graphql>=0.222.0
+pydantic>=2.0.0
+pydantic-compat
+
+
+# Observability
+arize-phoenix==8.20.0
+arize-phoenix-otel==0.9.0
+openinference-instrumentation-langchain==0.1.33
+opentelemetry-exporter-otlp==1.30.0
+opentelemetry-sdk==1.30.0

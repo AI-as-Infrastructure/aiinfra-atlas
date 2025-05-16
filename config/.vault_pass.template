@@ -1,0 +1,30 @@
+# Ansible Vault Password File
+#
+# IMPORTANT: This is a template file. To use it:
+# 1. Copy this file to .vault_pass in the same directory
+# 2. Replace the placeholder text with your actual Ansible Vault password
+# 3. Set proper file permissions: chmod 600 .vault_pass
+#
+# Purpose:
+# This file contains the password used by Ansible Vault to encrypt and decrypt
+# sensitive data in your Ansible playbooks and roles. It is used during deployment
+# to both staging and production environments.
+#
+# Security Considerations:
+# - NEVER commit the actual .vault_pass file to version control
+# - Keep this password secure and limit access to authorized personnel only
+# - Consider using different vault passwords for staging and production if needed
+# - For production environments, consider using a more secure method like a key management service
+#
+# Usage:
+# The .vault_pass file is referenced in ansible.cfg or via the --vault-password-file
+# flag when running Ansible commands:
+#
+# Example:
+#   ansible-playbook deploy.yml --vault-password-file=config/.vault_pass
+#
+# For more information on Ansible Vault, see:
+# https://docs.ansible.com/ansible/latest/user_guide/vault.html
+
+# Replace this line with your actual vault password
+YOUR_ANSIBLE_VAULT_PASSWORD_HERE
