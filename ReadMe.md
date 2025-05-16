@@ -27,8 +27,8 @@ Other dependencies include: Python virtual environments (`venv`), NVM, Sentence 
 
 ## Quick Start
 
-1. Clone the repository
-2. Rename .env.template to .env.development and update the settings (note LLM API Keys, or Ollama endpoint).
+1. Clone the repository.
+2. Rename .env.template to .env.development and update the settings.
 3. Start the development server (dependencies will be installed automatically):
 
    ```bash
