@@ -1,9 +1,11 @@
 import 'bulma/css/bulma.css'
 import './global.css'
+import './polyfills' // Must be imported before Amplify
 import { createApp } from 'vue'
 import App from './App.vue'
 import router from './router'
 import { createPinia } from 'pinia'
+import { configureAmplify } from './auth/amplify-auth'
 
 // Debug mode setup based on environment variables
 const isDebugMode = import.meta.env.VITE_DEBUG_MODE === 'true'
@@ -24,6 +26,9 @@ if (isDebugMode) {
     originalConsoleLog(...args)
   }
 }
+
+// Initialize Amplify with Cognito configuration
+configureAmplify()
 
 // Create and configure the Vue app
 const app = createApp(App)
