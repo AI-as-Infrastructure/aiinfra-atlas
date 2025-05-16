@@ -3,7 +3,7 @@
  * Automatically adds the ID token to API requests when Cognito auth is enabled.
  */
 
-import { isCognitoEnabled, getStoredTokens } from '../auth/cognito';
+import { isCognitoEnabled, getIdToken } from '../auth/amplify-auth';
 
 // Base API URL
 const API_BASE_URL = '/api';
@@ -26,9 +26,14 @@ export async function apiRequest(url, options = {}) {
   
   // Add auth token if Cognito is enabled
   if (isCognitoEnabled()) {
-    const tokens = getStoredTokens();
-    if (tokens && tokens.idToken) {
-      headers['Authorization'] = `Bearer ${tokens.idToken}`;
+    try {
+      const idToken = await getIdToken();
+      if (idToken) {
+        headers['Authorization'] = `Bearer ${idToken}`;
+      }
+    } catch (error) {
+      console.error('Error getting ID token for API request:', error);
+      // Continue without token - the API will handle unauthenticated requests
     }
   }
   

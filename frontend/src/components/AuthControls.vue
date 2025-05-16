@@ -1,7 +1,6 @@
 <template>
   <div v-if="showAuthUI" class="auth-controls">
-    <div v-if="isLoggedIn" class="user-info">
-      <span class="username">{{ username }}</span>
+    <div v-if="isLoggedIn">
       <button @click="logout" class="auth-button logout-button">Logout</button>
     </div>
     <div v-else>
@@ -26,8 +25,8 @@ function login() {
   authStore.login();
 }
 
-function logout() {
-  authStore.logout();
+async function logout() {
+  await authStore.logout();
 }
 </script>
 
