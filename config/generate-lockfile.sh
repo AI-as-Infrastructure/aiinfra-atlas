@@ -9,12 +9,12 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_ROOT"
 
 # Load Environment Variables from the config directory
-if [ -f "$PROJECT_ROOT/config/.env" ]; then
+if [ -f "$PROJECT_ROOT/config/.env.development" ]; then
     set -a
-    source "$PROJECT_ROOT/config/.env"
+    source "$PROJECT_ROOT/config/.env.development"
     set +a
 else
-    echo "Error: config/.env file not found!"
+    echo "Error: config/.env.development file not found!"
     exit 1
 fi
 
@@ -37,4 +37,3 @@ echo "Cleaning up temporary environment..."
 rm -rf .venv_temp
 
 echo "Requirements lock file generated successfully!"
-echo "Your development and staging environments will now use identical dependencies."
