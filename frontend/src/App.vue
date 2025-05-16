@@ -14,6 +14,8 @@
   <router-link class="navbar-item nav-link" to="/about">About</router-link>
   <router-link class="navbar-item nav-link" to="/faq">FAQ</router-link>
   <router-link v-if="!isHomePage" class="navbar-item nav-link" to="/">Home</router-link>
+  <!-- Auth Controls - only shows if Cognito is enabled -->
+  <AuthControls class="auth-controls" />
 </div>
           </div>
         </div>
@@ -32,8 +34,10 @@
 
 <script setup>
 import NewSessionButton from './components/NewSessionButton.vue'
-import { ref, computed } from 'vue'
+import AuthControls from './components/AuthControls.vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { useAuthStore } from './stores/auth'
 
 const route = useRoute()
 const siteTitle = ref(import.meta.env.VITE_SITE_TITLE || 'ATLAS')
@@ -43,6 +47,17 @@ const lastModified = ref(import.meta.env.VITE_LAST_MODIFIED || 'May 2025')
 // Determine if we're on the home page
 const isHomePage = computed(() => {
   return route.path === '/' || route.path === '/index.html'
+})
+
+// Retrieve auth store for use in auth-related functionality
+const authStore = useAuthStore()
+
+// Initialize auth state when app is mounted
+onMounted(() => {
+  // Only run this if we're not on the callback page to avoid doubled initialization
+  if (route.path !== '/callback') {
+    authStore.initialize()
+  }
 })
 </script>
 
