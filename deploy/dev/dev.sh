@@ -6,16 +6,44 @@ echo "[INFO] This script requires Node.js and npm to be managed via nvm (Node Ve
 echo "[INFO] Do NOT install node or npm via your system package manager (e.g., apt-get)."
 echo "[INFO] If you do not have nvm installed, see: https://github.com/nvm-sh/nvm#installing-and-updating"
 
-# Load nvm if available (for non-interactive shells)
+# Attempt to load nvm from common locations for both interactive and non-interactive shells
 export NVM_DIR="$HOME/.nvm"
 if [ -s "$NVM_DIR/nvm.sh" ]; then
-    . "$NVM_DIR/nvm.sh"
+    . "$NVM_DIR/nvm.sh" || true
+elif [ -s "/usr/local/opt/nvm/nvm.sh" ]; then
+    . "/usr/local/opt/nvm/nvm.sh" || true
+elif [ -s "/usr/share/nvm/init-nvm.sh" ]; then
+    . "/usr/share/nvm/init-nvm.sh" || true
 fi
 
-# Check if nvm is installed
+# Fallback: Try sourcing common user profile files if nvm is still not available
 if ! command -v nvm &> /dev/null; then
-    echo "[ERROR] nvm is not installed. Please install nvm before running this script."
-    exit 1
+    for profile in "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.zshrc" "$HOME/.profile"; do
+        if [ -f "$profile" ]; then
+            . "$profile" || true
+            if command -v nvm &> /dev/null; then
+                break
+            fi
+        fi
+    done
+fi
+
+# Diagnostics and actionable error if nvm is still not found
+if ! command -v nvm &> /dev/null; then
+    echo "\n[ERROR] nvm (Node Version Manager) is not installed or not available in this shell."
+    echo "NVM_DIR is: $NVM_DIR"
+    echo "Checked for nvm in:"
+    echo "  $HOME/.nvm/nvm.sh"
+    echo "  /usr/local/opt/nvm/nvm.sh"
+    echo "  /usr/share/nvm/init-nvm.sh"
+    echo "  and user profiles (.bashrc, .bash_profile, .zshrc, .profile)"
+    echo "\nTo fix this, try running these commands in your terminal, then restart your terminal and try again:"
+    echo "  export NVM_DIR=\"$HOME/.nvm\""
+    echo "  [ -s \"$NVM_DIR/nvm.sh\" ] && \\. \"$NVM_DIR/nvm.sh\""
+    echo "If nvm is not installed, install it with:"
+    echo "  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash"
+    echo "See https://github.com/nvm-sh/nvm#installing-and-updating for more info."
+    exit 2
 fi
 
 # Set project root and cd there
@@ -83,20 +111,25 @@ fi
 pip install --upgrade pip
 pip install -r config/requirements.lock
 
-# Check Node.js version
+# Ensure correct Node.js version is loaded via nvm before using npm
 cd frontend
 if [ -f .nvmrc ]; then
-    # Enforce Node.js version using nvm for frontend development
-    NODE_VERSION=$(node --version 2>&1 | sed 's/v//')
     REQUIRED_NODE_VERSION=$(cat .nvmrc)
-    if ! check_version "$REQUIRED_NODE_VERSION" "$NODE_VERSION" "Node.js"; then
-        echo "[ERROR] Node.js version $REQUIRED_NODE_VERSION is required for this project."
-        echo "[INFO] Please use nvm to install and activate the required version:"
-        echo "    nvm install $REQUIRED_NODE_VERSION"
-        echo "    nvm use $REQUIRED_NODE_VERSION"
-        echo "[INFO] If you do not have nvm, see: https://github.com/nvm-sh/nvm#installing-and-updating"
-        exit 1
-    fi
+    nvm use "$REQUIRED_NODE_VERSION" || nvm install "$REQUIRED_NODE_VERSION" || {
+        echo "[ERROR] Failed to use or install Node.js version $REQUIRED_NODE_VERSION via nvm.";
+        exit 3;
+    }
+else
+    nvm use --lts || nvm install --lts || {
+        echo "[ERROR] Failed to use or install latest LTS Node.js via nvm.";
+        exit 3;
+    }
+fi
+
+# Check for npm availability
+if ! command -v npm &> /dev/null; then
+    echo "[ERROR] npm not found after running nvm use. Please check your nvm and Node.js installation."
+    exit 4
 fi
 
 # Install Node.js dependencies
