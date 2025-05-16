@@ -1,0 +1,14 @@
+# K15 Claude 3.7 Test Target Configuration
+
+# LLM Configuration
+LLM_PROVIDER=ANTHROPIC
+LLM_MODEL=claude-3-7-sonnet-20250219
+
+# Search-K (fetch-k) controls the number of document chunks sent to the LLM for analysis
+SEARCH_K=15
+# Citation limit only controls the number of citations displayed in the UI
+CITATION_LIMIT=15
+SEARCH_SCORE_THRESHOLD=0.0
+
+# Target Information
+TARGET_VERSION=1.0

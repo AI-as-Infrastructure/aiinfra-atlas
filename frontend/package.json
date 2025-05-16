@@ -1,0 +1,31 @@
+{
+  "name": "atlas-vue",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": "22.14.0",
+    "npm": ">=10.2.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:development": "vite build --mode development",
+    "build:staging": "vite build --mode staging",
+    "build:production": "vite build --mode production",
+    "serve": "vite preview",
+    "preinstall": "node -v | grep -q 'v22.14.0' || (echo 'Error: Node.js version 22.14.0 is required' && exit 1)"
+  },
+  "dependencies": {
+    "@aws-amplify/ui-vue": "^3.0.0",
+    "aws-amplify": "^5.0.0",
+    "bulma": "^1.0.4",
+    "pinia": "^3.0.2",
+    "vue": "^3.4.0",
+    "vue-router": "^4.5.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^4.5.14",
+    "path": "^0.12.7",
+    "vite": "^4.5.14"
+  }
+}

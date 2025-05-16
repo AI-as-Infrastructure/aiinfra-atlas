@@ -1,0 +1,52 @@
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Python virtual environments and cache
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Node.js
+node_modules/
+frontend/node_modules/
+react/node_modules/
+frontend/build/
+react/build/
+npm-debug.log*
+
+# Development and local files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Local configuration that shouldn't be in the image
+config/.secrets
+config/.vault_pass
+
+# Test and documentation
+tests/
+docs/
+*.md
+
+# Deployment scripts (handled separately)
+deploy/
+
+# Temporary files
+*.log
+*.tmp
+.span_cache/
+
+# Let's Encrypt
+letsencrypt/
+
+# Redis data files
+*.rdb
+appendonly.aof
