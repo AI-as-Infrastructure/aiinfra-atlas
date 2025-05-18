@@ -1,19 +1,11 @@
 <template>
   <div class="login-container">
     <div class="login-card">
-      <div class="login-header">
-        <h1>Welcome to ATLAS</h1>
-        <h2>Analysis and Testing of Language Models for Archival Systems</h2>
-      </div>
       
       <div class="login-content">
         <p>
-          ATLAS is a specialized platform for exploring historical parliamentary debates using AI.
-          This system is part of the AI as Infrastructure (AIINFRA) research project.
-        </p>
-        
-        <p>
-          To proceed, you need to authenticate with your credentials.
+          ATLAS: Analysis and Testing of Language Models for Archival Systems is a specialized platform for exploring historical documents using AI.
+          This system is an output of the AI as Infrastructure (AIINFRA) research project.
         </p>
         
         <div class="login-actions">
@@ -31,12 +23,7 @@
         
         <div class="login-footer">
           <p>
-            <small>© 2024-2026 AIINFRA Project. All rights reserved.</small>
-          </p>
-          <p>
-            <small>
-              <a href="https://aiinfra.anu.edu.au" target="_blank" rel="noreferrer">Learn more about AIINFRA</a>
-            </small>
+            <small><a href="https://aiinfra.anu.edu.au" target="_blank" rel="noreferrer">AI as Infrastructure (AIINFRA), 2024-2026.</a></small>
           </p>
         </div>
       </div>
@@ -115,7 +102,7 @@ async function handleLogin() {
   align-items: center;
   min-height: 80vh;
   padding: 2rem;
-  background-color: #f8f9fa;
+  background-color: white;
 }
 
 .login-card {
@@ -128,8 +115,8 @@ async function handleLogin() {
 }
 
 .login-header {
-  background-color: #2c3e50;
-  color: white;
+  background-color: white;
+  color: #2c3e50;
   padding: 2rem;
   text-align: center;
 }
@@ -137,13 +124,6 @@ async function handleLogin() {
 .login-header h1 {
   margin: 0;
   font-size: 2rem;
-}
-
-.login-header h2 {
-  margin: 0.5rem 0 0;
-  font-weight: normal;
-  font-size: 1rem;
-  opacity: 0.9;
 }
 
 .login-content {

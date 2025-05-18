@@ -6,7 +6,7 @@
           <div class="navbar-brand"> 
             <router-link to="/" class="navbar-item has-text-weight-bold site-title-link">{{ siteTitle }}</router-link>
           </div>
-          <div class="navbar-menu">
+          <div class="navbar-menu" v-if="!isLoginPage">
             <div class="navbar-link-group">
               <!-- Empty left section for spacing -->
               <div class="nav-section left-section"></div>
@@ -59,6 +59,11 @@ const lastModified = ref(import.meta.env.VITE_LAST_MODIFIED || 'May 2025')
 // Determine if we're on the home page
 const isHomePage = computed(() => {
   return route.path === '/' || route.path === '/index.html'
+})
+
+// Determine if we're on the login page
+const isLoginPage = computed(() => {
+  return route.path === '/login'
 })
 
 // Retrieve auth store for use in auth-related functionality
