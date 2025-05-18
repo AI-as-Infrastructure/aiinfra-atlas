@@ -107,10 +107,14 @@ async def stream_response_chunks(
     qa_id: str,
     session_id: Optional[str] = None,
     span: Optional[Any] = None,
-    chunk_processor: Optional[Callable[[str], str]] = None
+    chunk_processor: Optional[Callable[[str], str]] = None,
+    create_streaming_span: bool = True
 ) -> AsyncGenerator[str, None]:
     """
-    Stream response chunks as SSE messages with telemetry.
+    Stream response chunks as server-sent events (SSE).
+    
+    This function formats text chunks from an LLM into SSE messages
+    and tracks various metrics during streaming.
     
     Args:
         chunks_generator: Generator that yields response chunks
@@ -118,16 +122,50 @@ async def stream_response_chunks(
         session_id: Optional session ID for telemetry
         span: Optional parent span
         chunk_processor: Optional function to process each chunk before sending
+        create_streaming_span: Whether to create a streaming span (set to False to prevent redundant spans)
         
     Yields:
         Formatted SSE messages
     """
+    # Skip creating a redundant streaming span if requested
+    if not create_streaming_span:
+        # Just stream chunks without telemetry
+        chunk_count = 0
+        try:
+            for chunk in chunks_generator:
+                # Process chunk if processor provided
+                if chunk_processor:
+                    chunk = chunk_processor(chunk)
+                
+                # Create chunk message
+                message = create_chunk_message(chunk, qa_id)
+                
+                # Yield formatted SSE message
+                yield format_sse_message(message)
+                
+        except Exception as e:
+            # Log the error
+            logger.error(f"Error streaming response: {e}", exc_info=True)
+            
+            # Yield error message
+            error_message = create_error_message("streaming_error", str(e))
+            yield format_sse_message(error_message, event="error")
+            
+            # Re-raise to allow higher-level error handling
+            raise
+        
+        return
+        
+    # Otherwise, create a streaming span as normal
     with create_span(
         SpanNames.STREAMING_RESPONSE,
         attributes={
             SpanAttributes.SESSION_ID: session_id,
             SpanAttributes.QA_ID: qa_id,
-            "openinference.span.kind": OpenInferenceSpanKind.PROCESSOR
+            "openinference.span.kind": OpenInferenceSpanKind.PROCESSOR,
+            "processor.type": "stream_formatter",
+            "component.type": "sse",
+            "processor.description": "Formats and streams text chunks as server-sent events"
         },
         link_to_current=True
     ) as streaming_span:
@@ -185,6 +223,9 @@ def stream_documents_as_references(
     """
     Format retrieved documents as references in a single SSE message.
     
+    This function transforms document objects into citation/reference data
+    suitable for display in the frontend and formats them as an SSE message.
+    
     Args:
         documents: List of retrieved documents
         qa_id: QA ID for the response
@@ -198,11 +239,18 @@ def stream_documents_as_references(
     with create_span(
         SpanNames.DOCUMENT_REFERENCES,
         attributes={
+            # Session identifiers
             SpanAttributes.SESSION_ID: session_id,
             SpanAttributes.QA_ID: qa_id,
+            
+            # Document information
             SpanAttributes.DOCUMENT_COUNT: len(documents),
             "citation_limit": citation_limit,
-            "openinference.span.kind": "COMPONENT"
+            
+            # Span classification
+            "openinference.span.kind": OpenInferenceSpanKind.PROCESSOR,
+            "processor.type": "citation_formatter",
+            "processor.description": "Transforms document objects into structured citations and references"
         },
         link_to_current=True
     ) as ref_span:

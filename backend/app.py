@@ -452,7 +452,8 @@ async def ask_stream(data: dict = Body(...)):
                 async for sse_message in stream_response_chunks(
                     chunks_generator=response_generator,
                     qa_id=qa_id,
-                    session_id=session_id
+                    session_id=session_id,
+                    create_streaming_span=False  # Prevent redundant streaming spans
                 ):
                     # Ensure each SSE message ends with \n\n
                     if not sse_message.endswith('\n\n'):
