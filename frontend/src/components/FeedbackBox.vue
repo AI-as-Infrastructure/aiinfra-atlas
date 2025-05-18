@@ -138,74 +138,41 @@ async function submitFeedback() {
     if (isSubmitting.value) {
       console.error('Feedback submission timed out')
       isSubmitting.value = false
-      // Don't emit feedback-submitted event on timeout
     }
   }, 10000) // 10 second timeout
   
   try {
-    // Check WebSocket connection status and try to reconnect if needed
-    if (!socketStore.connected) {
-      console.log('WebSocket not connected, attempting to reconnect...')
-      socketStore.initializeSocket()
-      
-      // Wait for connection with timeout
-      let attempts = 0;
-      const maxAttempts = 3;
-      const attemptDelay = 1000;
-      
-      while (!socketStore.connected && attempts < maxAttempts) {
-        console.log(`Connection attempt ${attempts + 1}/${maxAttempts}...`);
-        await new Promise(resolve => setTimeout(resolve, attemptDelay));
-        attempts++;
-      }
-      
-      if (!socketStore.connected) {
-        throw new Error(`Could not establish WebSocket connection after ${maxAttempts} attempts. Last error: ${socketStore.lastError}`);
-      }
-    }
-    
+    // Prepare feedback data first so it's consistent between WebSocket and fallback HTTP
     const feedbackData = {
-      type: 'feedback',
-      data: {
-        session_id: associatedSessionId.value, // Use the stored session ID associated with this QA interaction
-        qa_id: qaId.value,
-        feedback: {
-          answer_rating: answerRating.value,
-          citations_rating: citationsRating.value,
-          feedback_text: feedbackText.value,
-          question: chatHistory.value[chatHistory.value.length - 2]?.content,
-          answer: chatHistory.value[chatHistory.value.length - 1]?.content,
-          citations: chatHistory.value[chatHistory.value.length - 1]?.citations || [],
-          timestamp: new Date().toISOString(),
-          feedback_type: "user_rating",
-          question_text: chatHistory.value[chatHistory.value.length - 2]?.content.substring(0, 500),
-          answer_length: chatHistory.value[chatHistory.value.length - 1]?.content.length || 0,
-          feedback_time_ms: Date.now(),
-          feedback_tags: extractFeedbackTags()
-        }
+      session_id: associatedSessionId.value, // Use the stored session ID associated with this QA interaction
+      qa_id: qaId.value,
+      feedback: {
+        answer_rating: answerRating.value,
+        citations_rating: citationsRating.value,
+        feedback_text: feedbackText.value,
+        question: chatHistory.value[chatHistory.value.length - 2]?.content,
+        answer: chatHistory.value[chatHistory.value.length - 1]?.content,
+        citations: chatHistory.value[chatHistory.value.length - 1]?.citations || [],
+        timestamp: new Date().toISOString(),
+        feedback_type: "user_rating",
+        question_text: chatHistory.value[chatHistory.value.length - 2]?.content.substring(0, 500),
+        answer_length: chatHistory.value[chatHistory.value.length - 1]?.content.length || 0,
+        feedback_time_ms: Date.now(),
+        feedback_tags: extractFeedbackTags()
       }
     }
-    
-    console.log('Sending feedback data:', feedbackData)
 
-    // Send feedback through WebSocket with retries
-    let sent = false;
-    let retries = 0;
-    const maxRetries = 2;
+    // First try WebSocket submission
+    let submitted = await tryWebSocketSubmission(feedbackData);
     
-    while (!sent && retries <= maxRetries) {
-      sent = socketStore.sendMessage(feedbackData);
-      if (!sent) {
-        retries++;
-        if (retries <= maxRetries) {
-          console.log(`Retrying feedback submission (attempt ${retries}/${maxRetries})...`);
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-      }
+    // If WebSocket fails, try HTTP fallback
+    if (!submitted) {
+      console.log('WebSocket submission failed, trying HTTP fallback');
+      submitted = await tryHttpSubmission(feedbackData);
     }
     
-    if (!sent) {
-      throw new Error('Failed to send feedback message after retries');
+    if (!submitted) {
+      throw new Error('Failed to submit feedback via both WebSocket and HTTP');
     }
     
     // Clear the timeout since we got a response
@@ -226,8 +193,9 @@ async function submitFeedback() {
       if (!sessionStore.hasFeedbackBeenSubmitted(qaId.value)) {
         console.warn('No feedback confirmation received from server after 5 seconds')
         isSubmitting.value = false
-        showForm.value = true // Show the form again
-        alert('The server did not confirm your feedback submission. Please try again.')
+        
+        // Don't show the form again, instead just notify the user
+        alert('Your feedback has been submitted, but the server has not confirmed receipt. Your feedback may still have been recorded.')
       }
     }, 5000)
 
@@ -240,8 +208,126 @@ async function submitFeedback() {
     isSubmitting.value = false
     clearTimeout(submissionTimeout)
     
-    // Provide visual feedback about the error (could be enhanced with a UI notification)
-    feedbackText.value += '\n\nNote: There was an issue submitting your feedback. Please try again.'
+    // Provide a clearer error message but don't modify the feedback text
+    alert(`There was an issue submitting your feedback: ${error.message || 'Unknown error'}. This may be due to a session timeout. Please try refreshing the page.`);
+  }
+}
+
+// Helper function to try WebSocket submission
+async function tryWebSocketSubmission(feedbackData) {
+  try {
+    // Check if socket connection is valid
+    if (!socketStore.connected) {
+      console.log('WebSocket not connected, attempting to reconnect...')
+      // Wait for connection with explicit timeout
+      const connectionResult = await socketStore.initializeSocket();
+      
+      if (!connectionResult) {
+        console.warn('Could not establish WebSocket connection. Last error:', socketStore.lastError);
+        return false;
+      }
+    }
+    
+    console.log('Sending feedback data via WebSocket:', feedbackData);
+    // Format the message for WebSocket
+    const wsMessage = {
+      type: 'feedback',
+      data: feedbackData
+    };
+
+    // Send feedback through WebSocket with retries
+    let sent = false;
+    let retries = 0;
+    const maxRetries = 2;
+    
+    while (!sent && retries <= maxRetries) {
+      sent = socketStore.sendMessage(wsMessage);
+      if (!sent) {
+        retries++;
+        if (retries <= maxRetries) {
+          console.log(`Retrying WebSocket feedback submission (attempt ${retries}/${maxRetries})...`);
+          
+          // Try to reinitialize socket before retry
+          if (retries > 1) {
+            socketStore.disconnect();
+            await new Promise(resolve => setTimeout(resolve, 500));
+            const reconnected = await socketStore.initializeSocket();
+            if (!reconnected) {
+              console.warn('Failed to reconnect WebSocket before retry');
+              return false;
+            }
+            await new Promise(resolve => setTimeout(resolve, 500));
+          } else {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+        }
+      }
+    }
+    
+    return sent;
+  } catch (error) {
+    console.error('Error in WebSocket submission:', error);
+    return false;
+  }
+}
+
+// Helper function to try HTTP fallback submission
+async function tryHttpSubmission(feedbackData) {
+  try {
+    console.log('Attempting HTTP fallback for feedback submission');
+    
+    // Create a UserFeedback object format expected by the API endpoint
+    const httpFeedback = {
+      session_id: feedbackData.session_id,
+      qa_id: feedbackData.qa_id,
+      answer_rating: feedbackData.feedback.answer_rating,
+      citations_rating: feedbackData.feedback.citations_rating,
+      feedback_text: feedbackData.feedback.feedback_text
+    };
+    
+    // Prepare headers with content type
+    const headers = { 'Content-Type': 'application/json' };
+    
+    // Only include authentication headers in HTTPS environments to avoid sending tokens in clear text
+    if (window.location.protocol === 'https:') {
+      try {
+        // Import needed auth utilities
+        const { getIdToken } = await import('@/auth/amplify-auth');
+        
+        // Get the current token if available
+        const token = await getIdToken();
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+      } catch (authError) {
+        console.warn('Could not get authentication token for feedback submission:', authError);
+        // Continue without auth token
+      }
+    } else {
+      console.log('Using HTTP without authentication headers in development environment');
+    }
+    
+    // Submit via HTTP POST
+    const response = await fetch('/api/feedback', {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify(httpFeedback)
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP submission failed: ${response.status} ${response.statusText}`);
+    }
+    
+    const result = await response.json();
+    console.log('HTTP feedback submission result:', result);
+    
+    // Mark feedback as submitted in session store
+    sessionStore.markFeedbackSubmitted(feedbackData.qa_id);
+    
+    return true;
+  } catch (error) {
+    console.error('HTTP fallback submission failed:', error);
+    return false;
   }
 }
 
