@@ -78,7 +78,9 @@ def retrieve_documents(
     k: Optional[int] = None,
     corpus_filter: Optional[str] = None,
     search_type: str = "similarity",
-    span: Optional[Any] = None
+    session_id: Optional[str] = None,
+    qa_id: Optional[str] = None,
+    create_parent_span: bool = True
 ) -> List[Document]:
     """
     Retrieve documents using the provided retriever.
@@ -89,19 +91,104 @@ def retrieve_documents(
         k: Number of documents to retrieve
         corpus_filter: Optional corpus filter
         search_type: Type of search to perform
-        span: Optional parent span
+        session_id: Session ID for telemetry linkage
+        qa_id: Question/answer ID for telemetry linkage
+        create_parent_span: Whether to create the parent context retrieval span
+                           (set to False to prevent redundant spans)
         
     Returns:
         List of retrieved documents
     """
+    # Determine retriever type and implementation details
+    retriever_type = getattr(retriever, "type", search_type)
+    retriever_name = type(retriever).__name__
+    chroma_search = "Chroma" in retriever_name or hasattr(retriever, "vectorstore") and "Chroma" in type(retriever.vectorstore).__name__
+    is_hnsw = True  # Chroma uses HNSW by default
+    
+    # Skip creating a redundant span if requested
+    if not create_parent_span:
+        # Default K value if not provided
+        if k is None:
+            k = get_search_k()
+        
+        # Use large retrieval size for corpus filtering
+        large_k = get_large_retrieval_size()
+        
+        # Determine if we should perform a larger search for corpus filtering
+        needs_large_retrieval = (
+            corpus_filter and
+            corpus_filter.lower() != "all" and
+            hasattr(retriever, "supports_corpus_filtering") and
+            retriever.supports_corpus_filtering
+        )
+        
+        try:
+            # Perform retrieval
+            if needs_large_retrieval:
+                logger.debug(f"Performing large retrieval (k={large_k}) for corpus filtering")
+                documents = retriever.get_relevant_documents(query, k=large_k)
+            else:
+                logger.debug(f"Performing standard retrieval (k={k})")
+                documents = retriever.get_relevant_documents(query, k=k)
+            
+            # Apply corpus filter if needed
+            if corpus_filter and corpus_filter.lower() != "all":
+                logger.debug(f"Applying corpus filter: {corpus_filter}")
+                documents = apply_corpus_filter(documents, corpus_filter)
+                
+                # Limit to requested k after filtering
+                if len(documents) > k:
+                    logger.debug(f"Limiting filtered documents to {k}")
+                    documents = documents[:k]
+            
+            return documents
+            
+        except Exception as e:
+            # Log the error
+            logger.error(f"Error retrieving documents: {e}", exc_info=True)
+            
+            # Re-raise to allow higher-level error handling
+            raise
+    
     with create_span(
         SpanNames.CONTEXT_RETRIEVAL,
         attributes={
+            # Description field for Info display
+            "description": "Retrieving relevant documents from vector store",
+            
+            # Session identifiers
+            SpanAttributes.SESSION_ID: session_id,
+            SpanAttributes.QA_ID: qa_id,
+            
+            # Direct input fields for better visibility
             "query": query,
-            "k": k,
+            "search_k": k,
             "corpus_filter": corpus_filter or "all",
             "search_type": search_type,
-            "openinference.span.kind": OpenInferenceSpanKind.RETRIEVER
+            
+            # Nested query information
+            "input": {
+                "value": query,
+                "corpus_filter": corpus_filter or "all"
+            },
+            
+            # Retriever details in a grouped namespace 
+            "retriever": {
+                "type": retriever_type,
+                "name": retriever_name,
+                "is_chroma": chroma_search,
+                "is_hnsw": is_hnsw,
+                "search_algorithm": "hnsw" if is_hnsw else "unknown",
+                "description": "Retrieves relevant documents based on query similarity"
+            },
+            
+            # OpenInference metadata
+            "openinference.span.kind": OpenInferenceSpanKind.RETRIEVER,
+            "openinference.retriever.type": retriever_type,
+            "openinference.retriever.query": query,
+            
+            # Operation metadata
+            "operation": "document_retrieval"
         },
         link_to_current=True
     ) as retrieval_span:
@@ -130,13 +217,25 @@ def retrieve_documents(
             if needs_large_retrieval:
                 logger.debug(f"Performing large retrieval (k={large_k}) for corpus filtering")
                 retrieval_span.set_attribute("actual_k", large_k)
+                retrieval_span.set_attribute("retrieval_mode", "large_corpus_search")
+                retrieval_span.set_attribute("retrieval_purpose", "corpus_filtering")
                 documents = retriever.get_relevant_documents(query, k=large_k)
             else:
                 logger.debug(f"Performing standard retrieval (k={k})")
                 retrieval_span.set_attribute("actual_k", k)
+                retrieval_span.set_attribute("retrieval_mode", "standard_search")
+                retrieval_span.set_attribute("retrieval_purpose", "direct_context")
                 documents = retriever.get_relevant_documents(query, k=k)
             
-            # Record document count
+            # Add output document count
+            retrieval_span.set_attribute("output_document_count", len(documents))
+            
+            # Set output in nested structure
+            retrieval_span.set_attribute("output", {
+                "documents_count": len(documents)
+            })
+            
+            # Record document count in standard attribute
             retrieval_span.set_attribute(SpanAttributes.DOCUMENT_COUNT, len(documents))
             
             # Get document distribution for telemetry
@@ -180,6 +279,9 @@ def retrieve_documents(
                 
                 # Record final document count
                 retrieval_span.set_attribute("filtered_document_count", len(documents))
+                # Update output document count
+                retrieval_span.set_attribute("output_document_count", len(documents))
+                retrieval_span.set_attribute("output.documents_count", len(documents))
             
             return documents
             
@@ -203,10 +305,10 @@ def retrieve_documents_with_telemetry(
     k: Optional[int] = None
 ) -> Tuple[List[Document], str]:
     """
-    Retrieve documents with full telemetry instrumentation.
+    Retrieve documents with telemetry instrumentation.
     
-    This function creates its own telemetry span and is suitable for use
-    in high-level code that doesn't create spans itself.
+    This function directly calls retrieve_documents with the necessary parameters
+    and links the retrieval span to the parent RAG pipeline span.
     
     Args:
         query: Query string
@@ -223,50 +325,44 @@ def retrieve_documents_with_telemetry(
     if not qa_id:
         qa_id = str(uuid.uuid4())
     
-    with create_span(
-        SpanNames.CONTEXT_RETRIEVAL,
-        attributes={
-            SpanAttributes.SESSION_ID: session_id,
-            SpanAttributes.QA_ID: qa_id,
-            "query": query,
-            "k": k or get_search_k(),
-            "corpus_filter": corpus_filter or "all",
-            "openinference": {
-                "span": {
-                    "kind": OpenInferenceSpanKind.RETRIEVER
-                }
-            }
-        }
-    ) as qa_span:
-        try:
-            # Retrieve documents
-            documents = retrieve_documents(
-                query=query,
-                retriever=retriever,
-                k=k,
-                corpus_filter=corpus_filter
-            )
+    try:
+        # Get information about the retriever implementation
+        retriever_name = type(retriever).__name__
+        vectorstore_type = "unknown"
+        index_type = "unknown"
+        
+        # Try to extract vectorstore type
+        if hasattr(retriever, "vectorstore"):
+            vectorstore_type = type(retriever.vectorstore).__name__
             
-            # Record success
-            qa_span.set_attribute("retrieval_success", True)
-            qa_span.set_attribute(SpanAttributes.DOCUMENT_COUNT, len(documents))
+        # Check if it's Chroma (most common case)
+        if "Chroma" in retriever_name or "Chroma" in vectorstore_type:
+            index_type = "chroma_hnsw"
             
-            # Get distribution of document metadata for telemetry
-            document_distribution = get_document_distribution(documents)
-            qa_span.set_attribute("distribution", document_distribution)
-            
-            # Add timestamps for timing analysis
-            qa_span.set_attribute("retrieval_timestamp", datetime.now().isoformat())
-            
-            return documents, qa_id
-            
-        except Exception as e:
-            # Record error in telemetry
-            qa_span.record_exception(e)
-            qa_span.set_attribute("retrieval_success", False)
-            
-            # Log the error
-            logger.error(f"Error in document retrieval with telemetry: {e}", exc_info=True)
-            
-            # Re-raise to allow higher-level error handling
-            raise 
+        # Log retriever info
+        logger.info(f"Using retriever: {retriever_name} with vectorstore: {vectorstore_type} and index type: {index_type}")
+        
+        # Call retrieve_documents with create_parent_span=True to ensure only one span is created
+        # This creates a proper context retrieval span that's linked to the current span context
+        documents = retrieve_documents(
+            query=query,
+            retriever=retriever,
+            k=k,
+            corpus_filter=corpus_filter,
+            search_type="similarity",
+            session_id=session_id,
+            qa_id=qa_id,
+            create_parent_span=True  # Create a single span, not redundant ones
+        )
+        
+        # Log number of retrieved documents
+        logger.info(f"Retrieved {len(documents)} documents for query: {query[:50]}...")
+        
+        return documents, qa_id
+        
+    except Exception as e:
+        # Log the error
+        logger.error(f"Error in document retrieval with telemetry: {e}", exc_info=True)
+        
+        # Re-raise to allow higher-level error handling
+        raise 

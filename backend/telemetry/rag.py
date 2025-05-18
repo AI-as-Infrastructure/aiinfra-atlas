@@ -17,8 +17,23 @@ from .constants import SpanAttributes, OpenInferenceSpanKind, SpanNames
 logger = logging.getLogger(__name__)
 
 @contextmanager
-def trace_document_retrieval(session_id: str, qa_id: str):
-    """Create a span for document retrieval operations."""
+def trace_document_retrieval(session_id: str, qa_id: str, create_parent_span: bool = False):
+    """
+    Create a span for document retrieval operations.
+    
+    Args:
+        session_id: Session ID for telemetry linkage
+        qa_id: Question/answer ID for telemetry linkage
+        create_parent_span: If False, skips creating redundant parent span
+                           when already being called from a context retrieval span
+    """
+    # Skip creating redundant parent spans
+    if not create_parent_span:
+        # Just yield None to indicate no span was created
+        yield None
+        return
+        
+    # Otherwise create the span as normal
     with create_span(
         SpanNames.CONTEXT_RETRIEVAL,
         attributes={
@@ -58,8 +73,6 @@ def trace_citation_formatting(session_id: str, qa_id: str):
     ) as span:
         yield span
 
-from contextlib import contextmanager
-
 @contextmanager
 def trace_llm_generation(
     query: str,
@@ -68,12 +81,31 @@ def trace_llm_generation(
     qa_id: str,
     prompt: str,
     context_document_count: int,
-    output: str = None
+    output: str = None,
+    create_parent_span: bool = False
 ):
     """
     Create a span for LLM generation operations.
     Optionally set the LLM output as an attribute after response generation.
+    
+    Args:
+        query: User query
+        model_name: Name of the LLM
+        session_id: Session ID for telemetry linkage
+        qa_id: Question/answer ID for telemetry linkage
+        prompt: Prompt template
+        context_document_count: Number of context documents
+        output: Optional LLM output to record
+        create_parent_span: If False, skips creating redundant parent span
+                           when already being called from an LLM generation span
     """
+    # Skip creating redundant parent spans
+    if not create_parent_span:
+        # Just yield None to indicate no span was created
+        yield None
+        return
+        
+    # Otherwise create the span as normal
     with create_span(
         SpanNames.LLM_GENERATION,
         attributes={
