@@ -236,28 +236,40 @@ def create_span(
     link_to_current: bool = True
 ):
     """
-    Create a telemetry span with the given name, attributes, and context.
+    Create a span with the given operation name and attributes.
     
     Args:
-        operation_name: Name of the operation
-        attributes: Dictionary of attributes to add to the span
-        context: Optional trace context to use
+        operation_name: Name of the operation being traced
+        attributes: Dictionary of span attributes
+        context: Optional parent context
         kind: Kind of span (default: CLIENT)
-        session_id: Session ID for this span
-        deduplicate: Whether to deduplicate spans with the same operation name
-        link_to_current: Whether to link this span to the current span as a child
+        session_id: Optional session ID for tracking
+        deduplicate: Whether to deduplicate identical spans
+        link_to_current: Whether to link to the current span
         
     Yields:
         The created span
     """
     global _current_spans
     
-    if tracer is None:
-        # Yield a dummy context manager if tracer is not initialized
-        yield None
+    # If telemetry is not initialized, just yield a dummy span
+    if not tracer:
+        class DummySpan:
+            def set_attribute(self, *args, **kwargs): pass
+            def set_attributes(self, *args, **kwargs): pass
+            def record_exception(self, *args, **kwargs): pass
+            def set_status(self, *args, **kwargs): pass
+            def add_event(self, *args, **kwargs): pass
+            def set_output(self, *args, **kwargs): pass
+            def get_span_context(self): 
+                class DummyContext:
+                    def __init__(self):
+                        self.span_id = 0
+                return DummyContext()
+        yield DummySpan()
         return
     
-    # Initialize attributes if not provided
+    # If no attributes provided, create empty dict
     if attributes is None:
         attributes = {}
     
@@ -275,54 +287,86 @@ def create_span(
     
     # Ensure we capture the current span as parent if available
     if link_to_current and context is None:
-        current_context = trace.get_current_span().get_span_context()
-        if current_context.is_valid:
-            # Use current context to ensure proper parent-child relationship
-            context = trace.set_span_in_context(trace.get_current_span())
+        current_span = trace.get_current_span()
+        if current_span and hasattr(current_span, 'get_span_context'):
+            current_context = current_span.get_span_context()
+            if hasattr(current_context, 'is_valid') and current_context.is_valid:
+                # Use current context to ensure proper parent-child relationship
+                context = trace.set_span_in_context(current_span)
     
-    try:
-        # Start a new span
-        with tracer.start_as_current_span(
-            operation_name,
-            context=context,
-            kind=kind,
-            attributes=attributes
-        ) as span:
-            # Store span for deduplication if needed
-            if deduplicate and session_id:
-                span_key = f"{operation_name}:{session_id}"
-                _current_spans[span_key] = span
-            
-            # Get QA ID if present in attributes
-            qa_id = attributes.get(SpanAttributes.QA_ID)
-            
-            # Add OpenInference attribute for span relationship if not present
-            if "openinference.span.kind" not in attributes and qa_id:
-                # Mark as generic component by default
-                span.set_attribute("openinference.span.kind", "COMPONENT")
-            
-            # Register span for feedback association if session_id and qa_id are present
-            if session_id and qa_id and 'feedback' not in operation_name.lower():
-                # Get span ID for registration
-                span_id = format(span.get_span_context().span_id, "016x")
-                
-                # Import here to avoid circular imports
-                from .spans import register_span
-                register_span(session_id, qa_id, span_id)
-            
-            try:
-                yield span
-            except Exception as e:
-                # Record exception on span
-                span.record_exception(e)
-                span.set_status(Status(StatusCode.ERROR, str(e)))
-                raise
-    finally:
-        # Clean up span reference if deduplication was used
+    # Start the span with the tracer
+    with tracer.start_as_current_span(
+        operation_name,
+        context=context,
+        kind=kind,
+        attributes=attributes
+    ) as span:
+        # Register the span in our registry
+        from opentelemetry.trace import format_span_id
+        span_id = format_span_id(span.get_span_context().span_id)
+        _current_spans[span_id] = span
+        
+        # Store span for deduplication if needed
         if deduplicate and session_id:
             span_key = f"{operation_name}:{session_id}"
-            if span_key in _current_spans:
-                del _current_spans[span_key]
+            _current_spans[span_key] = span
+            
+        # Get QA ID if present in attributes
+        qa_id = attributes.get(SpanAttributes.QA_ID)
+        
+        # Register span for feedback association if session_id and qa_id are present
+        if session_id and qa_id and 'feedback' not in operation_name.lower():
+            # Get span ID for registration
+            # Import here to avoid circular imports
+            from .spans import register_span
+            register_span(session_id, qa_id, span_id)
+        
+        # Add specialized output setter method (for Phoenix UI)
+        if not hasattr(span, "set_output"):
+            def set_output(output):
+                try:
+                    # Try to use OpenInference's native set_output if available
+                    from openinference.instrumentation import get_current_span
+                    openinference_span = get_current_span()
+                    if openinference_span and hasattr(openinference_span, "set_output"):
+                        openinference_span.set_output(output)
+                    # Always set our own attributes as a fallback
+                    if isinstance(output, str):
+                        span.set_attribute("output.value", output)
+                        # Add the OpenInference compatible attribute 
+                        span.set_attribute("openinference.llm.output", output)
+                    elif isinstance(output, dict):
+                        span.set_attribute("output", json.dumps(output))
+                        # Add individual attributes for dict elements
+                        for key, value in output.items():
+                            if isinstance(value, (str, int, float, bool)):
+                                span.set_attribute(f"output.{key}", value)
+                except Exception as e:
+                    # If anything fails, at least set the output value attribute
+                    logger.warning(f"Error in set_output: {e}")
+                    if isinstance(output, str):
+                        span.set_attribute("output.value", output)
+                    elif isinstance(output, dict):
+                        span.set_attribute("output", json.dumps(output))
+            span.set_output = set_output
+            
+        try:
+            yield span
+        except Exception as e:
+            # Record exception on span
+            span.record_exception(e)
+            span.set_status(Status(StatusCode.ERROR, str(e)))
+            raise
+        finally:
+            # Remove span from registry when it's completed to prevent memory leaks
+            if span_id in _current_spans:
+                del _current_spans[span_id]
+            
+            # Clean up span reference if deduplication was used
+            if deduplicate and session_id:
+                span_key = f"{operation_name}:{session_id}"
+                if span_key in _current_spans:
+                    del _current_spans[span_key]
 
 def create_trace_span(carrier=None, default_session_id=None, operation_name="api_request", kind=SpanKind.SERVER):
     """
@@ -424,6 +468,49 @@ def validate_config(config: Dict[str, Any], schema: Dict[str, Any], path: str = 
             validated[field] = value
     
     return validated, errors
+
+def get_span_by_id(span_id: str) -> Optional[Span]:
+    """
+    Attempt to retrieve an active span by its ID.
+    
+    This is a best-effort function that may not work for all spans, especially
+    if the span has been completed/ended.
+    
+    Args:
+        span_id: The span ID to look for
+        
+    Returns:
+        Optional[Span]: The span if found, None otherwise
+    """
+    # Check if OpenTelemetry is initialized
+    if not tracer:
+        logger.warning("Cannot get span by ID: telemetry not initialized")
+        return None
+    
+    try:
+        # Get current active span if available
+        current_span = trace.get_current_span()
+        if current_span:
+            # Format the current span's ID
+            from opentelemetry.trace import format_span_id
+            current_span_id = format_span_id(current_span.get_span_context().span_id)
+            
+            # If this is the span we're looking for, return it
+            if current_span_id == span_id:
+                return current_span
+        
+        # Check if the span is in our registry
+        # This is basically a fallback and may not work in all cases
+        # as OTEL doesn't provide native support for looking up spans by ID
+        global _current_spans
+        if span_id in _current_spans:
+            return _current_spans.get(span_id)
+            
+        logger.warning(f"Span with ID {span_id} not found")
+        return None
+    except Exception as e:
+        logger.error(f"Error retrieving span by ID: {e}")
+        return None
 
 # Initialize telemetry at import time
 telemetry_initialized = initialize_telemetry(service_name="ATLAS")

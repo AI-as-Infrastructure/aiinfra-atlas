@@ -7,7 +7,9 @@ with built-in telemetry instrumentation.
 
 import logging
 import uuid
+import json
 from typing import List, Dict, Any, Optional, Union, Tuple
+from datetime import datetime
 
 from langchain_core.documents.base import Document
 from langchain_core.embeddings import Embeddings
@@ -141,8 +143,27 @@ def retrieve_documents(
             distribution = get_document_distribution(documents)
             for field, values in distribution.items():
                 if len(values) <= 20:  # Avoid setting extremely large attributes
-                    retrieval_span.set_attribute(f"distribution.{field}", values)
+                    retrieval_span.set_attribute(f"distribution.{field}", ",".join(values))
                 retrieval_span.set_attribute(f"distribution.{field}.count", len(values))
+            
+            # Add document distribution as JSON
+            retrieval_span.set_attribute("distribution_json", json.dumps(distribution))
+            
+            # Include preview of first few documents for debugging
+            doc_previews = []
+            for i, doc in enumerate(documents[:3]):  # First 3 docs only
+                if hasattr(doc, 'page_content') and hasattr(doc, 'metadata'):
+                    content_preview = doc.page_content[:100] + "..." if len(doc.page_content) > 100 else doc.page_content
+                    doc_previews.append({
+                        "index": i,
+                        "content_preview": content_preview,
+                        "metadata": {k: v for k, v in doc.metadata.items() 
+                                 if k in ["date", "title", "source", "corpus", "page"]}
+                    })
+            
+            # Store document previews as JSON
+            if doc_previews:
+                retrieval_span.set_attribute("document_previews_json", json.dumps(doc_previews))
             
             # Apply corpus filter if needed
             if corpus_filter and corpus_filter.lower() != "all":
@@ -210,7 +231,11 @@ def retrieve_documents_with_telemetry(
             "query": query,
             "k": k or get_search_k(),
             "corpus_filter": corpus_filter or "all",
-            "openinference.span.kind": OpenInferenceSpanKind.RETRIEVER
+            "openinference": {
+                "span": {
+                    "kind": OpenInferenceSpanKind.RETRIEVER
+                }
+            }
         }
     ) as qa_span:
         try:
@@ -225,6 +250,13 @@ def retrieve_documents_with_telemetry(
             # Record success
             qa_span.set_attribute("retrieval_success", True)
             qa_span.set_attribute(SpanAttributes.DOCUMENT_COUNT, len(documents))
+            
+            # Get distribution of document metadata for telemetry
+            document_distribution = get_document_distribution(documents)
+            qa_span.set_attribute("distribution", document_distribution)
+            
+            # Add timestamps for timing analysis
+            qa_span.set_attribute("retrieval_timestamp", datetime.now().isoformat())
             
             return documents, qa_id
             

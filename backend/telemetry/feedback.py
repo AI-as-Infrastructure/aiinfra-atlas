@@ -312,12 +312,46 @@ def log_user_feedback(session_id: str, qa_id: str, feedback_data: Dict[str, Any]
             logger.info(f"Found target span ID: {target_span_id} for qa_id={qa_id}")
             success = submit_span_annotation(target_span_id, validated_feedback, qa_id)
             
-            if success:
-                logger.info(f"Successfully submitted feedback annotation for session {session_id}, qa_id {qa_id}")
-                return True
-            else:
-                logger.error(f"Failed to submit feedback annotation for session {session_id}, qa_id {qa_id}")
-                return False
+            # Try to update the RAG pipeline span with the feedback
+            try:
+                # Get the parent span (RAG pipeline) using the target span association
+                from backend.telemetry.core import get_span_by_id
+                parent_span = get_span_by_id(target_span_id)
+                
+                if parent_span:
+                    # Create a properly structured feedback object
+                    answer_rating = validated_feedback.get("answer_rating")
+                    citations_rating = validated_feedback.get("citations_rating")
+                    feedback_text = validated_feedback.get("feedback_text", "")
+                    
+                    # Get rating names for better readability
+                    answer_rating_name = get_rating_name(answer_rating)
+                    citations_rating_name = get_rating_name(citations_rating)
+                    
+                    # Add feedback data to the parent span
+                    parent_span.set_attribute("feedback.answer_rating", answer_rating)
+                    parent_span.set_attribute("feedback.citations_rating", citations_rating)
+                    parent_span.set_attribute("feedback.feedback_text", feedback_text)
+                    parent_span.set_attribute("feedback.answer_rating_name", answer_rating_name)
+                    parent_span.set_attribute("feedback.citations_rating_name", citations_rating_name)
+                    parent_span.set_attribute("feedback.timestamp", datetime.now().isoformat())
+                    
+                    # Also store feedback in a properly nested structure for OpenInference
+                    parent_span.set_attribute("openinference.feedback.answer_rating", answer_rating)
+                    parent_span.set_attribute("openinference.feedback.citations_rating", citations_rating)
+                    parent_span.set_attribute("openinference.feedback.feedback_text", feedback_text)
+                    parent_span.set_attribute("openinference.feedback.answer_rating_name", answer_rating_name)
+                    parent_span.set_attribute("openinference.feedback.citations_rating_name", citations_rating_name)
+                    parent_span.set_attribute("openinference.feedback.timestamp", datetime.now().isoformat())
+                    
+                    logger.info(f"Successfully added feedback to parent span for qa_id {qa_id}")
+                    return True
+                else:
+                    logger.warning(f"Could not find parent span with ID {target_span_id}")
+                    return success
+            except Exception as e:
+                logger.warning(f"Could not update parent span with feedback: {e}")
+                return success
     except Exception as e:
         logger.error(f"Failed to log user feedback: {e}", exc_info=True)
         return False
@@ -348,12 +382,29 @@ def associate_feedback_with_spans(qa_id, session_id, feedback_data):
         # Calculate normalized score (average of both ratings)
         normalized_score = (answer_rating + citations_rating) / 10.0 if answer_rating is not None and citations_rating is not None else 0.5
         
+        # Create a properly structured feedback data object for the span
+        feedback_object = {
+            "answer_rating": answer_rating,
+            "answer_rating_name": answer_rating_name,
+            "citations_rating": citations_rating,
+            "citations_rating_name": citations_rating_name,
+            "normalized_score": normalized_score,
+            "text": feedback_text,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        # Find the target span ID for this QA interaction
+        target_span_id = find_qa_span_id(session_id, qa_id)
+        if target_span_id:
+            feedback_object["target_span_id"] = target_span_id
+        
         # Create a span for the feedback processing
         with trace_operation(
             SpanNames.FEEDBACK_ANNOTATION,
             attributes={
                 SpanAttributes.SESSION_ID: session_id,
                 SpanAttributes.QA_ID: qa_id,
+                "openinference.span.kind": "FEEDBACK",
                 "openinference.feedback.answer_rating": answer_rating,
                 "openinference.feedback.answer_rating_name": answer_rating_name,
                 "openinference.feedback.citations_rating": citations_rating,
@@ -361,7 +412,14 @@ def associate_feedback_with_spans(qa_id, session_id, feedback_data):
                 "openinference.feedback.normalized_score": normalized_score,
                 "openinference.feedback.text": feedback_text,
                 "target_span_id": feedback_data.get("target_span_id", ""),
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
+                # Add individual feedback attributes
+                "feedback.answer_rating": answer_rating,
+                "feedback.answer_rating_name": answer_rating_name,
+                "feedback.citations_rating": citations_rating,
+                "feedback.citations_rating_name": citations_rating_name,
+                "feedback.normalized_score": normalized_score,
+                "feedback.text": feedback_text
             },
             session_id=session_id,
             qa_id=qa_id,
