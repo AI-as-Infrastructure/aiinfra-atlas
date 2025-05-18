@@ -94,5 +94,6 @@ venv.bk/
 
 # Generated files
 frontend/public/logout.html
+frontend/dist/
 
 

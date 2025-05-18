@@ -1,8 +1,0 @@
-{
-  "scripts": {
-    "prebuild": "config/generate_vue_files.sh",
-    "build": "vite build",
-    "predev": "config/generate_vue_files.sh",
-    "dev": "vite"
-  }
-} 

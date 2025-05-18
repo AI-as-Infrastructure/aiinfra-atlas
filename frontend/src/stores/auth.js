@@ -8,6 +8,7 @@ import {
   login as cognitoLogin,
   logout as cognitoLogout
 } from '../auth/amplify-auth';
+import { logout as authLogout } from '../auth/authService';
 
 export const useAuthStore = defineStore('auth', () => {
   // State
@@ -116,9 +117,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function logout() {
-    if (!isCognitoEnabled()) return;
-    user.value = null;
-    await cognitoLogout();
+    authLogout();
   }
 
   // Initialize auth state when store is first created
