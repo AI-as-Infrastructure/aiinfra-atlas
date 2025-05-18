@@ -43,14 +43,14 @@
                   :class="{ 'is-loading': isSubmitting }"
                   :disabled="isSubmitting"
                 >
-                  Submit Feedback
+                  Submit
                 </button>
               </div>
               <div class="control">
                 <button 
                   class="button" 
                   @click="closeForm" 
-                  :disabled="isSubmitting"
+                  :disabled="false"
                 >
                   Cancel
                 </button>
@@ -64,10 +64,11 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onBeforeUnmount } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useSessionStore } from '@/stores/session'
 import { useSocketStore } from '@/stores/socket'
+import { onMounted } from 'vue'
 
 // No props needed since visibility is controlled by parent component
 const props = defineProps({})
@@ -87,15 +88,19 @@ const isSubmitting = ref(false)
 const answerRating = ref(1)
 const citationsRating = ref(1)
 const feedbackText = ref('')
-const feedbackSubmitted = ref(false)
+const configData = ref(null)
 
-// Add transition delay for smoother animations
-const TRANSITION_DELAY = 300; // milliseconds
-
-// Reset form on mount and whenever qaId changes
-import { onMounted } from 'vue'
-
-onMounted(() => {
+// Fetch config data on component mount
+onMounted(async () => {
+  try {
+    const response = await fetch('/api/config');
+    if (response.ok) {
+      configData.value = await response.json();
+    }
+  } catch (error) {
+    console.error('Error fetching config data:', error);
+  }
+  
   resetForm();
   // Store the current session ID on mount
   if (qaId.value) {
@@ -121,10 +126,7 @@ function resetForm() {
 }
 
 function closeForm() {
-  if (!isSubmitting.value) {
-    showForm.value = false;
-    // Form is closed but feedback is not submitted
-  }
+  showForm.value = false;
 }
 
 async function submitFeedback() {
@@ -133,237 +135,52 @@ async function submitFeedback() {
   isSubmitting.value = true
   console.log('Submitting feedback for qa_id:', qaId.value)
   
-  // Set a timeout to ensure we don't hang forever if there's an issue
-  const submissionTimeout = setTimeout(() => {
-    if (isSubmitting.value) {
-      console.error('Feedback submission timed out')
-      isSubmitting.value = false
-    }
-  }, 10000) // 10 second timeout
-  
   try {
-    // Prepare feedback data first so it's consistent between WebSocket and fallback HTTP
+    // Get the current question and answer from the chat history
+    const currentQuestion = chatHistory.value[chatHistory.value.length - 2]?.content || '';
+    const currentAnswer = chatHistory.value[chatHistory.value.length - 1]?.content || '';
+    
+    // Get the full citations - this is the same data used in the "view all citations" modal
+    // The citations are stored directly on the chat message object
+    const fullCitations = chatHistory.value[chatHistory.value.length - 1]?.citations || [];
+    
+    // Prepare complete feedback data with all necessary context
     const feedbackData = {
-      session_id: associatedSessionId.value, // Use the stored session ID associated with this QA interaction
+      session_id: associatedSessionId.value,
       qa_id: qaId.value,
-      feedback: {
-        answer_rating: answerRating.value,
-        citations_rating: citationsRating.value,
-        feedback_text: feedbackText.value,
-        question: chatHistory.value[chatHistory.value.length - 2]?.content,
-        answer: chatHistory.value[chatHistory.value.length - 1]?.content,
-        citations: chatHistory.value[chatHistory.value.length - 1]?.citations || [],
-        timestamp: new Date().toISOString(),
-        feedback_type: "user_rating",
-        question_text: chatHistory.value[chatHistory.value.length - 2]?.content.substring(0, 500),
-        answer_length: chatHistory.value[chatHistory.value.length - 1]?.content.length || 0,
-        feedback_time_ms: Date.now(),
-        feedback_tags: extractFeedbackTags()
-      }
-    }
-
-    // First try WebSocket submission
-    let submitted = await tryWebSocketSubmission(feedbackData);
+      answer_rating: answerRating.value,
+      citations_rating: citationsRating.value,
+      feedback_text: feedbackText.value,
+      test_target: configData.value || {},
+      question: currentQuestion,
+      answer: currentAnswer,
+      citations: fullCitations,
+      timestamp: new Date().toISOString()
+    };
     
-    // If WebSocket fails, try HTTP fallback
-    if (!submitted) {
-      console.log('WebSocket submission failed, trying HTTP fallback');
-      submitted = await tryHttpSubmission(feedbackData);
-    }
+    // Submit via HTTP POST - simple with no extra options
+    const response = await fetch('/api/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(feedbackData)
+    });
     
-    if (!submitted) {
-      throw new Error('Failed to submit feedback via both WebSocket and HTTP');
+    if (!response.ok) {
+      throw new Error('Feedback submission failed');
     }
-    
-    // Clear the timeout since we got a response
-    clearTimeout(submissionTimeout)
     
     // Emit event to parent component
     emit('feedback-submitted')
     
-    // Reset the form after a short delay to allow transitions to complete
-    setTimeout(() => {
-      resetForm()
-      feedbackSubmitted.value = true
-    }, TRANSITION_DELAY);
-    showForm.value = false;
+    // Reset form
+    resetForm();
     
-    // Add a timeout to handle cases where the server doesn't respond
-    const feedbackTimeout = setTimeout(() => {
-      if (!sessionStore.hasFeedbackBeenSubmitted(qaId.value)) {
-        console.warn('No feedback confirmation received from server after 5 seconds')
-        isSubmitting.value = false
-        
-        // Don't show the form again, instead just notify the user
-        alert('Your feedback has been submitted, but the server has not confirmed receipt. Your feedback may still have been recorded.')
-      }
-    }, 5000)
-
-    // Clean up timeout if component is unmounted
-    onBeforeUnmount(() => {
-      clearTimeout(feedbackTimeout);
-    })
   } catch (error) {
     console.error('Error submitting feedback:', error)
+    alert('There was an issue submitting your feedback. Please try again.');
+  } finally {
     isSubmitting.value = false
-    clearTimeout(submissionTimeout)
-    
-    // Provide a clearer error message but don't modify the feedback text
-    alert(`There was an issue submitting your feedback: ${error.message || 'Unknown error'}. This may be due to a session timeout. Please try refreshing the page.`);
   }
-}
-
-// Helper function to try WebSocket submission
-async function tryWebSocketSubmission(feedbackData) {
-  try {
-    // Check if socket connection is valid
-    if (!socketStore.connected) {
-      console.log('WebSocket not connected, attempting to reconnect...')
-      // Wait for connection with explicit timeout
-      const connectionResult = await socketStore.initializeSocket();
-      
-      if (!connectionResult) {
-        console.warn('Could not establish WebSocket connection. Last error:', socketStore.lastError);
-        return false;
-      }
-    }
-    
-    console.log('Sending feedback data via WebSocket:', feedbackData);
-    // Format the message for WebSocket
-    const wsMessage = {
-      type: 'feedback',
-      data: feedbackData
-    };
-
-    // Send feedback through WebSocket with retries
-    let sent = false;
-    let retries = 0;
-    const maxRetries = 2;
-    
-    while (!sent && retries <= maxRetries) {
-      sent = socketStore.sendMessage(wsMessage);
-      if (!sent) {
-        retries++;
-        if (retries <= maxRetries) {
-          console.log(`Retrying WebSocket feedback submission (attempt ${retries}/${maxRetries})...`);
-          
-          // Try to reinitialize socket before retry
-          if (retries > 1) {
-            socketStore.disconnect();
-            await new Promise(resolve => setTimeout(resolve, 500));
-            const reconnected = await socketStore.initializeSocket();
-            if (!reconnected) {
-              console.warn('Failed to reconnect WebSocket before retry');
-              return false;
-            }
-            await new Promise(resolve => setTimeout(resolve, 500));
-          } else {
-            await new Promise(resolve => setTimeout(resolve, 1000));
-          }
-        }
-      }
-    }
-    
-    return sent;
-  } catch (error) {
-    console.error('Error in WebSocket submission:', error);
-    return false;
-  }
-}
-
-// Helper function to try HTTP fallback submission
-async function tryHttpSubmission(feedbackData) {
-  try {
-    console.log('Attempting HTTP fallback for feedback submission');
-    
-    // Create a UserFeedback object format expected by the API endpoint
-    const httpFeedback = {
-      session_id: feedbackData.session_id,
-      qa_id: feedbackData.qa_id,
-      answer_rating: feedbackData.feedback.answer_rating,
-      citations_rating: feedbackData.feedback.citations_rating,
-      feedback_text: feedbackData.feedback.feedback_text
-    };
-    
-    // Prepare headers with content type
-    const headers = { 'Content-Type': 'application/json' };
-    
-    // Only include authentication headers in HTTPS environments to avoid sending tokens in clear text
-    if (window.location.protocol === 'https:') {
-      try {
-        // Import needed auth utilities
-        const { getIdToken } = await import('@/auth/amplify-auth');
-        
-        // Get the current token if available
-        const token = await getIdToken();
-        if (token) {
-          headers['Authorization'] = `Bearer ${token}`;
-        }
-      } catch (authError) {
-        console.warn('Could not get authentication token for feedback submission:', authError);
-        // Continue without auth token
-      }
-    } else {
-      console.log('Using HTTP without authentication headers in development environment');
-    }
-    
-    // Submit via HTTP POST
-    const response = await fetch('/api/feedback', {
-      method: 'POST',
-      headers: headers,
-      body: JSON.stringify(httpFeedback)
-    });
-    
-    if (!response.ok) {
-      throw new Error(`HTTP submission failed: ${response.status} ${response.statusText}`);
-    }
-    
-    const result = await response.json();
-    console.log('HTTP feedback submission result:', result);
-    
-    // Mark feedback as submitted in session store
-    sessionStore.markFeedbackSubmitted(feedbackData.qa_id);
-    
-    return true;
-  } catch (error) {
-    console.error('HTTP fallback submission failed:', error);
-    return false;
-  }
-}
-
-function extractFeedbackTags() {
-  const tags = []
-  
-  const text = feedbackText.value.toLowerCase()
-  
-  const positiveTerms = ['good', 'great', 'excellent', 'helpful', 'accurate', 'clear']
-  const negativeTerms = ['poor', 'bad', 'wrong', 'incorrect', 'confusing', 'unclear']
-  
-  let isPositive = positiveTerms.some(term => text.includes(term))
-  let isNegative = negativeTerms.some(term => text.includes(term))
-  
-  if (isPositive && !isNegative) tags.push('positive')
-  if (isNegative && !isPositive) tags.push('negative')
-  if (isPositive && isNegative) tags.push('mixed')
-  
-  if (text.includes('citation') || text.includes('source') || text.includes('reference')) {
-    tags.push('citations_feedback')
-  }
-  
-  if (text.includes('clarity') || text.includes('understand') || text.includes('clear')) {
-    tags.push('clarity_feedback')
-  }
-  
-  if (text.includes('accuracy') || text.includes('correct') || text.includes('accurate')) {
-    tags.push('accuracy_feedback')
-  }
-  
-  if (answerRating.value >= 4) tags.push('high_answer_rating')
-  if (answerRating.value <= 2) tags.push('low_answer_rating')
-  if (citationsRating.value >= 4) tags.push('high_citations_rating')
-  if (citationsRating.value <= 2) tags.push('low_citations_rating')
-  
-  return tags
 }
 </script>
 
