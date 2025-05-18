@@ -57,7 +57,7 @@ def trace_operation(
     if qa_id:
         attributes[SpanAttributes.QA_ID] = qa_id
     
-    # Add OpenInference attributes for Phoenix
+    # Add OpenInference attributes for Phoenix - ensure the structure matches Phoenix format
     attributes["openinference.span.kind"] = openinference_kind
     
     # Add timestamp
@@ -66,9 +66,11 @@ def trace_operation(
     # Add input data if provided
     if input_data is not None:
         if isinstance(input_data, str):
-            attributes["input"] = input_data
+            attributes["input.value"] = input_data
         elif isinstance(input_data, dict):
-            attributes["input"] = str(input_data)
+            for key, value in input_data.items():
+                if isinstance(value, (str, int, float, bool)):
+                    attributes[f"input.{key}"] = value
     
     # Create and yield the span
     with create_span(
@@ -100,32 +102,54 @@ def add_test_target_attributes(span, include_all=True):
         import importlib
         target_module = importlib.import_module(f"backend.targets.{test_target}")
         
-        # Add basic attributes
+        # Add basic attributes with flattened structure
         if hasattr(target_module, 'TARGET_ID'):
             span.set_attribute(f"{SpanAttributes.TEST_TARGET_PREFIX}id", target_module.TARGET_ID)
+            span.set_attribute("test_target.id", target_module.TARGET_ID)
         
         if hasattr(target_module, 'MODEL'):
             span.set_attribute(SpanAttributes.LLM_MODEL, target_module.MODEL)
+            span.set_attribute("test_target.model", target_module.MODEL)
         
         # Add detailed configuration if requested
         if include_all:
             if hasattr(target_module, 'EMBEDDING_MODEL'):
                 span.set_attribute(SpanAttributes.EMBEDDING_MODEL, target_module.EMBEDDING_MODEL)
+                span.set_attribute("test_target.embedding_model", target_module.EMBEDDING_MODEL)
             
             if hasattr(target_module, 'SEARCH_TYPE'):
                 span.set_attribute(SpanAttributes.RETRIEVAL_SEARCH_TYPE, target_module.SEARCH_TYPE)
+                span.set_attribute("test_target.search_type", target_module.SEARCH_TYPE)
             
             if hasattr(target_module, 'SEARCH_K'):
                 span.set_attribute(SpanAttributes.RETRIEVAL_K, target_module.SEARCH_K)
+                span.set_attribute("test_target.search_k", target_module.SEARCH_K)
             
             if hasattr(target_module, 'FETCH_K'):
                 span.set_attribute(SpanAttributes.RETRIEVAL_FETCH_K, target_module.FETCH_K)
+                span.set_attribute("test_target.fetch_k", target_module.FETCH_K)
             
             if hasattr(target_module, 'CITATION_LIMIT'):
                 span.set_attribute(SpanAttributes.CITATION_LIMIT, target_module.CITATION_LIMIT)
+                span.set_attribute("test_target.citation_limit", target_module.CITATION_LIMIT)
             
             if hasattr(target_module, 'SYSTEM_PROMPT'):
                 span.set_attribute(SpanAttributes.SYSTEM_PROMPT, target_module.SYSTEM_PROMPT)
+                span.set_attribute("test_target.system_prompt", target_module.SYSTEM_PROMPT)
+            
+            # Add any other target attributes that might be useful
+            for attr_name in dir(target_module):
+                if attr_name.isupper() and not attr_name.startswith('__') and attr_name not in [
+                    'TARGET_ID', 'MODEL', 'EMBEDDING_MODEL', 'SEARCH_TYPE', 
+                    'SEARCH_K', 'FETCH_K', 'CITATION_LIMIT', 'SYSTEM_PROMPT'
+                ]:
+                    try:
+                        value = getattr(target_module, attr_name)
+                        if isinstance(value, (str, int, float, bool)):
+                            span.set_attribute(f"test_target.{attr_name.lower()}", value)
+                    except Exception as e:
+                        logger.debug(f"Could not add test target attribute {attr_name}: {e}")
+        
     except Exception as e:
         logger.warning(f"Failed to add test target attributes: {e}")
 
@@ -140,9 +164,15 @@ def record_model_attributes(span, model_name, latency_ms=None, prompt=None, temp
         prompt: Prompt used (if available)
         temperature: Temperature setting (if known)
     """
-    # Set required OpenInference attributes
-    span.set_attribute("openinference.span.kind", OpenInferenceSpanKind.LLM)
-    span.set_attribute("openinference.llm.model_name", model_name)
+    # Set required OpenInference attributes using the proper nested structure
+    span.set_attribute("openinference", {
+        "span": {
+            "kind": OpenInferenceSpanKind.LLM
+        },
+        "llm": {
+            "model_name": model_name
+        }
+    })
     
     # Set optional attributes if provided
     if latency_ms is not None:

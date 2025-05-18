@@ -62,6 +62,7 @@ from backend.modules.streaming import (
 from backend.modules.llm import generate_response_with_telemetry
 from backend.telemetry.feedback import UserFeedback, FeedbackResponse
 from backend.modules.auth import get_current_user, optional_user
+from backend.telemetry.config_attrs import get_test_target_attributes
 
 if not telemetry_initialized:
     raise RuntimeError("Telemetry is not initialized. The app cannot start without telemetry.")
@@ -365,42 +366,47 @@ def ask(data: dict = Body(...)):
 # --- Streaming Q&A endpoint ---
 @app.post("/api/ask/stream")
 async def ask_stream(data: dict = Body(...)):
-    """Handle a streaming Q&A turn with proper telemetry."""
-    question = data.get('question')
-    chat_history = data.get('chat_history', [])
-    session_id = data.get('session_id')
-    qa_id = data.get('qa_id', str(uuid.uuid4()))
+    """
+    Stream an answer to a question using retrieved documents and a language model.
+    """
+    # Extract request data
+    question = data.get("question", "")
     corpus_filter = data.get("corpus_filter", "all")
-    previous_corpus_filter = data.get('previous_corpus_filter')
-    provider = data.get('provider')  # Allow client to specify the provider
-
-    # Log basic request information
-    logger.info(f"Processing request with session_id={session_id}, qa_id={qa_id}, corpus_filter={corpus_filter}")
+    previous_corpus_filter = data.get("previous_corpus_filter", "all")
+    chat_history = data.get("chat_history", [])
+    session_id = data.get("session_id", str(uuid.uuid4()))
+    qa_id = data.get("qa_id", str(uuid.uuid4()))
+    provider = data.get("provider", None)  # Optional LLM provider override
     
-    # Validate input
-    if not question:
-        return JSONResponse(
-            content={"error": "No 'question' provided."},
-            status_code=400
-        )
-        
-    # Define the streaming generator function
+    # Import required telemetry constants
+    from backend.telemetry import SpanAttributes, OpenInferenceSpanKind, SpanNames
+    
+    # Define async generator for streaming response
     async def response_generator():
         # Use nonlocal to access/modify the qa_id from the outer scope
         nonlocal qa_id
         
-        # Create parent span for the entire streaming operation
+        # Create a parent span for the entire RAG pipeline
+        # This allows us to track the complete operation from retrieval to generation
+        from backend.telemetry import create_span
+        
+        # Get test target configuration for telemetry
+        test_target_attrs = get_test_target_attributes()
+        
         with create_span(
             SpanNames.RAG_PIPELINE,
             attributes={
                 SpanAttributes.SESSION_ID: session_id,
                 SpanAttributes.QA_ID: qa_id,
                 SpanAttributes.INPUT_VALUE: question,
-                SpanAttributes.IS_STREAMING: True,
+                "is_streaming": True,
                 "corpus_filter": corpus_filter,
                 "previous_corpus_filter": previous_corpus_filter,
                 "llm_provider": provider,  # Add provider to telemetry
-                "openinference.span.kind": OpenInferenceSpanKind.AGENT
+                # Use flat structure for OpenInference attributes
+                "openinference.span.kind": OpenInferenceSpanKind.AGENT,
+                # Include all test target attributes
+                **test_target_attrs  # Spread the test target attributes
             },
             session_id=session_id
         ) as parent_span:
@@ -475,6 +481,36 @@ async def ask_stream(data: dict = Body(...)):
                     references_message += '\n\n'
                 yield references_message
                 await asyncio.sleep(0)
+                
+                # Parse the references to get citations for the parent span
+                try:
+                    refs_data = json.loads(references_message.split("data: ")[1])
+                    all_citations = refs_data.get("allCitations", [])
+                    
+                    # Store citations as JSON string in parent span
+                    parent_span.set_attribute("citations_json", json.dumps(all_citations))
+                    
+                    # Store select citation fields as individual attributes for better visibility
+                    for i, citation in enumerate(all_citations[:10]):  # Limit to 10 citations
+                        parent_span.set_attribute(f"citation.{i}.id", citation.get("id", ""))
+                        parent_span.set_attribute(f"citation.{i}.text", citation.get("text", "")[:200])
+                        
+                        # Include key metadata 
+                        for key in ["date", "title", "source", "corpus"]:
+                            if key in citation.get("metadata", {}):
+                                parent_span.set_attribute(f"citation.{i}.{key}", str(citation["metadata"][key]))
+                    
+                    # Add a short document summary for Phoenix UI
+                    if all_citations:
+                        doc_summary = []
+                        for i, citation in enumerate(all_citations[:5]):
+                            first_100_chars = citation.get("content", "")[:100] + "..."
+                            doc_summary.append(f"Doc {i+1}: {first_100_chars}")
+                        
+                        parent_span.set_attribute("document_summary", "\n\n".join(doc_summary))
+                
+                except (IndexError, json.JSONDecodeError, KeyError) as e:
+                    logger.warning(f"Could not extract citations for parent span: {e}")
 
                 # Send completion message
                 complete_message = create_complete_message(

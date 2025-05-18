@@ -10,6 +10,7 @@ import time
 import json
 import os
 from typing import List, Dict, Any, Optional, Generator, Union, Callable, Tuple
+from datetime import datetime
 
 from langchain_core.documents.base import Document
 from langchain_openai import ChatOpenAI
@@ -436,6 +437,8 @@ def generate_response_with_telemetry(
         llm_config = get_llm_config()
         provider = llm_config.get("provider")
     
+    start_time = datetime.now()
+    
     try:
         # Create telemetry span, but handle case where telemetry might not be initialized
         with create_span(
@@ -449,6 +452,7 @@ def generate_response_with_telemetry(
                 "chat_history_turns": len(chat_history) if chat_history else 0,
                 "corpus_filter": corpus_filter or "all",
                 "llm_provider": provider,
+                # Use flat structure for OpenInference attributes
                 "openinference.span.kind": OpenInferenceSpanKind.LLM,
                 "input.value": question  # Set input.value for Phoenix UI
             }
@@ -464,25 +468,57 @@ def generate_response_with_telemetry(
                 
                 def telemetry_wrapped_generator():
                     full_response = ""
+                    chunk_count = 0
+                    generation_start_time = datetime.now()
+                    
                     try:
                         for chunk in response_generator:
                             full_response += chunk
+                            chunk_count += 1
                             yield chunk
                     except Exception as e:
                         # Propagate errors so the caller can handle them (and emit error/citation messages)
                         raise
                     finally:
                         # After the generator is exhausted (normal or error), set the output on the span
+                        generation_end_time = datetime.now()
+                        generation_time_seconds = (generation_end_time - generation_start_time).total_seconds()
+                        
                         if qa_span:
                             # Set OpenInference semantic output for Phoenix Output field
                             if hasattr(qa_span, "set_output"):
                                 qa_span.set_output(full_response)
+                                
+                            # Record telemetry metrics
                             qa_span.set_attribute("output.value", full_response)
-                            # Retain legacy attributes for compatibility
                             qa_span.set_attribute("openinference.llm.output", full_response)
-                            qa_span.set_attribute("openinference.agent.output", full_response)
-                            # Also set input.value again to guarantee both present
-                            qa_span.set_attribute("input.value", question)
+                            qa_span.set_attribute("response_length", len(full_response))
+                            qa_span.set_attribute("chunk_count", chunk_count)
+                            qa_span.set_attribute("generation_time_seconds", generation_time_seconds)
+                            qa_span.set_attribute("generation_complete", True)
+                            qa_span.set_attribute("final_response_length", len(full_response))
+                            qa_span.set_attribute("final_chunk_count", chunk_count)
+                            
+                            # Extract and store quality metrics if available
+                            try:
+                                from backend.modules.quality_evaluation import evaluate_response_quality
+                                quality_metrics = evaluate_response_quality(question, full_response, documents)
+                                if quality_metrics:
+                                    qa_span.set_attribute("quality_metrics", quality_metrics)
+                            except ImportError:
+                                # Quality evaluation module not available
+                                pass
+                            
+                            # Set model information if available 
+                            try:
+                                from backend.config import get_model_info
+                                model_info = get_model_info(provider)
+                                if model_info:
+                                    for key, value in model_info.items():
+                                        qa_span.set_attribute(key, value)
+                            except ImportError:
+                                # Module not available
+                                pass
                 return telemetry_wrapped_generator(), qa_id
                 
             except Exception as e:

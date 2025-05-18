@@ -201,7 +201,8 @@ def stream_documents_as_references(
             SpanAttributes.SESSION_ID: session_id,
             SpanAttributes.QA_ID: qa_id,
             SpanAttributes.DOCUMENT_COUNT: len(documents),
-            "citation_limit": citation_limit
+            "citation_limit": citation_limit,
+            "openinference.span.kind": "COMPONENT"
         },
         link_to_current=True
     ) as ref_span:
@@ -298,6 +299,33 @@ def stream_documents_as_references(
             ref_span.set_attribute("citation_count", len(citations))
             ref_span.set_attribute("all_citation_count", len(all_citations))
             ref_span.set_attribute("reference_count", len(references))
+            
+            # Add citations to telemetry for analysis
+            # Store select important fields as individual attributes
+            for i, citation in enumerate(citations):
+                if i < 15:  # Limit to 15 citations to avoid too many attributes
+                    ref_span.set_attribute(f"citation.{i}.id", citation.get("id", ""))
+                    ref_span.set_attribute(f"citation.{i}.text", citation.get("text", "")[:200])
+                    
+                    # Include key metadata
+                    for key in ["date", "title", "source", "corpus"]:
+                        if key in citation.get("metadata", {}):
+                            ref_span.set_attribute(f"citation.{i}.{key}", str(citation["metadata"][key]))
+
+            # Store full citation data as JSON for Phoenix UI
+            ref_span.set_attribute("citations_json", json.dumps(citations))  
+            ref_span.set_attribute("all_citations_json", json.dumps(all_citations))
+            
+            # Also attach a shortened version of each document to the parent span
+            # for telemetry analysis and debugging (limited to keep span size reasonable)
+            doc_samples = []
+            for i, doc in enumerate(documents[:5]):  # Limit to first 5 docs
+                if hasattr(doc, 'page_content') and hasattr(doc, 'metadata'):
+                    content = doc.page_content[:300] + "..." if len(doc.page_content) > 300 else doc.page_content
+                    meta = {k: v for k, v in doc.metadata.items() if k in ["date", "title", "source", "corpus", "page"]}
+                    doc_samples.append({"content": content, "metadata": meta})
+            
+            ref_span.set_attribute("document_samples_json", json.dumps(doc_samples))
             
             return format_sse_message(message, event="references")
             

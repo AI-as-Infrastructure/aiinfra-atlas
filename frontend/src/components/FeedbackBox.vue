@@ -1,4 +1,4 @@
-<template>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              <template>
   <Transition name="fade">
     <div class="feedback-container">
       <Transition name="slide">
