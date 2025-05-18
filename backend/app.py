@@ -60,6 +60,8 @@ from backend.modules.streaming import (
     stream_documents_as_references
 )
 from backend.modules.llm import generate_response_with_telemetry
+from backend.telemetry.feedback import UserFeedback, FeedbackResponse
+from backend.modules.auth import get_current_user, optional_user
 
 if not telemetry_initialized:
     raise RuntimeError("Telemetry is not initialized. The app cannot start without telemetry.")
@@ -118,57 +120,94 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
     # Import telemetry functions
     from backend.telemetry import using_session, log_user_feedback
     
+    # Log WebSocket connection
+    logger.info(f"WebSocket connected for session_id={session_id}")
+    
     # Use the session context manager to ensure all spans are associated with this session
     with using_session(session_id):
         try:
             while True:
-                data = await websocket.receive_json()
+                # Use a timeout to prevent hanging connections
+                try:
+                    # Wait for a message with a timeout
+                    data = await asyncio.wait_for(websocket.receive_json(), timeout=60.0)
+                    
+                    # Handle different message types
+                    if data.get("type") == "feedback":
+                        # Process feedback
+                        feedback_data = data.get("data", {})
+                        qa_id = feedback_data.get("qa_id")
+                        feedback = feedback_data.get("feedback", {})
+                        
+                        # Debug logging
+                        logger.info(f"Received feedback via WebSocket for session_id={session_id}, qa_id={qa_id}")
+                        
+                        try:
+                            # Validate incoming data
+                            if not qa_id or not feedback:
+                                raise ValueError("Missing qa_id or feedback data")
+                            
+                            # Log feedback using the telemetry system
+                            success = log_user_feedback(session_id, qa_id, feedback)
+                            
+                            # Send confirmation
+                            response = {
+                                "type": "feedback_confirmed",
+                                "qa_id": qa_id,
+                                "success": success
+                            }
+                            
+                            # Add error message if feedback association failed
+                            if not success:
+                                error_msg = "Unable to associate your feedback with this conversation. This may happen if the conversation data has expired."
+                                logger.warning(f"Feedback association failed for session_id={session_id}, qa_id={qa_id}")
+                                response["message"] = error_msg
+                        except Exception as e:
+                            logger.error(f"Error processing feedback for session_id={session_id}, qa_id={qa_id}: {e}", exc_info=True)
+                            response = {
+                                "type": "feedback_confirmed",
+                                "qa_id": qa_id,
+                                "success": False,
+                                "message": "An error occurred while processing your feedback. Please try again later."
+                            }
+                        
+                        await manager.send_message(session_id, response)
+                    
+                    elif data.get("type") == "ping":
+                        # Handle ping and send immediate response
+                        logger.debug(f"Received ping from session_id={session_id}")
+                        await manager.send_message(session_id, {
+                            "type": "pong",
+                            "session_id": session_id
+                        })
+                    
+                    elif data.get("type") == "reset_session":
+                        # Handle session reset
+                        logger.info(f"Session reset requested for session_id={session_id}")
+                        await manager.send_message(session_id, {
+                            "type": "session_reset_confirmed",
+                            "session_id": session_id
+                        })
                 
-                # Handle different message types
-                if data.get("type") == "feedback":
-                    # Process feedback
-                    feedback_data = data.get("data", {})
-                    qa_id = feedback_data.get("qa_id")
-                    feedback = feedback_data.get("feedback", {})
-                    
-                    # Debug logging
-                    logger.info(f"Received feedback via WebSocket for session_id={session_id}, qa_id={qa_id}")
-                    
-                    # Log feedback using the telemetry system
-                    success = log_user_feedback(session_id, qa_id, feedback)
-                    
-                    # Send confirmation
-                    response = {
-                        "type": "feedback_confirmed",
-                        "qa_id": qa_id,
-                        "success": success
-                    }
-                    
-                    # Add error message if feedback association failed
-                    if not success:
-                        response["message"] = "Unable to associate your feedback with this conversation. This may happen if the conversation data has expired."
-                    
-                    await manager.send_message(session_id, response)
-            
-                elif data.get("type") == "ping":
-                    # Handle ping
-                    await manager.send_message(session_id, {
-                        "type": "pong",
-                        "session_id": session_id
-                    })
-                
-                elif data.get("type") == "reset_session":
-                    # Handle session reset
-                    await manager.send_message(session_id, {
-                        "type": "session_reset_confirmed",
-                        "session_id": session_id
-                    })
+                except asyncio.TimeoutError:
+                    # Send a ping to check if client is still there
+                    try:
+                        await manager.send_message(session_id, {"type": "ping"})
+                    except Exception:
+                        # If we can't send a ping, the connection is probably dead
+                        logger.info(f"WebSocket connection timed out for session_id={session_id}")
+                        break
         
         except WebSocketDisconnect:
+            logger.info(f"WebSocket disconnected for session_id={session_id}")
             manager.disconnect(session_id)
         except Exception as e:
-            logger.error(f"WebSocket error: {e}")
+            logger.error(f"WebSocket error for session_id={session_id}: {e}", exc_info=True)
             manager.disconnect(session_id)
+        finally:
+            # Clean up connection
+            manager.disconnect(session_id)
+            logger.info(f"WebSocket connection closed for session_id={session_id}")
 
 # --- Health check endpoint ---
 @app.get("/")
@@ -517,6 +556,101 @@ def diagnostics():
         "config": config_info,
         "telemetry_initialized": telemetry_initialized
     }
+
+# --- HTTP Feedback endpoint (fallback for WebSocket failures) ---
+@app.post("/api/feedback", response_model=FeedbackResponse)
+async def submit_feedback(feedback: UserFeedback, request: Request):
+    """
+    Submit user feedback via HTTP (fallback from WebSocket).
+    This endpoint is used when WebSocket submission fails.
+    """
+    # Check if authentication is required based on environment
+    auth_required = os.getenv("VITE_USE_COGNITO_AUTH", "false").lower() == "true"
+    
+    try:
+        # Authentication check - only enforce in environments with auth enabled
+        if auth_required:
+            # Get the authorization header - will be present in HTTPS environments
+            auth_header = request.headers.get("Authorization")
+            
+            # In production (HTTPS), we should have an auth header
+            if auth_header:
+                # Verify user is authenticated without recording identity
+                user = await optional_user(request)
+                if not user.get("authenticated", False):
+                    logger.warning("Unauthenticated feedback submission attempt")
+                    return FeedbackResponse(
+                        message="Authentication required to submit feedback",
+                        status="error"
+                    )
+                logger.info("Authenticated feedback submission (identity not stored)")
+            else:
+                # In dev environment (HTTP), we may not have auth headers for security reasons
+                # Log this but allow the submission to proceed
+                protocol = request.headers.get("x-forwarded-proto", "http")
+                if protocol.lower() == "https":
+                    # Should have auth in HTTPS but doesn't - log warning
+                    logger.warning("Missing authentication for HTTPS feedback submission")
+                else:
+                    # Expected for HTTP development environment
+                    logger.info("HTTP feedback submission without authentication (development)")
+        
+        client_ip = request.client.host if request.client else "unknown"
+        
+        # Get session ID and QA ID from the feedback
+        session_id = feedback.session_id
+        qa_id = feedback.qa_id
+        
+        # Validate session_id and qa_id
+        if not session_id or not qa_id:
+            logger.warning(f"Invalid feedback submission: missing session_id or qa_id")
+            return FeedbackResponse(
+                message="Invalid feedback submission: missing required identifiers",
+                status="error"
+            )
+        
+        # Log reception of feedback
+        logger.info(f"Received HTTP feedback for session {session_id}, qa {qa_id} from {client_ip}")
+        
+        # Format feedback data for telemetry
+        feedback_data = {
+            "answer_rating": feedback.answer_rating,
+            "citations_rating": feedback.citations_rating,
+            "feedback_text": feedback.feedback_text,
+            "timestamp": datetime.datetime.now().isoformat(),
+            "source": "http_fallback"
+        }
+        
+        # Use the session context to ensure spans are properly associated
+        with using_session(session_id):
+            try:
+                # Log user feedback
+                success = log_user_feedback(session_id, qa_id, feedback_data)
+                
+                if success:
+                    logger.info(f"HTTP Feedback recorded for session_id={session_id}, qa_id={qa_id}")
+                    return FeedbackResponse(
+                        message="Feedback received successfully",
+                        status="success"
+                    )
+                else:
+                    logger.error(f"Failed to record HTTP feedback for session_id={session_id}, qa_id={qa_id}")
+                    return FeedbackResponse(
+                        message="Unable to associate your feedback with this conversation. This may happen if the conversation data has expired.",
+                        status="error"
+                    )
+            except Exception as e:
+                logger.error(f"Error processing HTTP feedback: {e}", exc_info=True)
+                return FeedbackResponse(
+                    message=f"Error processing feedback: {str(e)}",
+                    status="error"
+                )
+    except Exception as e:
+        logger.error(f"Error in HTTP feedback endpoint: {e}", exc_info=True)
+        return FeedbackResponse(
+            message="An error occurred processing your feedback",
+            status="error"
+        )
 
 # --- Entrypoint for running with Uvicorn ---
 if __name__ == "__main__":

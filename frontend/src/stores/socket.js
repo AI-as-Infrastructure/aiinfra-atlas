@@ -9,29 +9,50 @@ export const useSocketStore = defineStore('socket', {
     maxReconnectAttempts: 5,
     reconnectDelay: 2000,
     lastError: null,
-    connectionUrl: null
+    connectionUrl: null,
+    connecting: false,
+    connectionPromise: null
   }),
   actions: {
     /**
      * Initialize the WebSocket connection to the backend
      */
-    initializeSocket() {
-      // Only create a new connection if there is no socket or the socket is closed
-      if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
-        console.log('WebSocket already connected or connecting');
-        return
+    async initializeSocket() {
+      if (this.connecting && this.connectionPromise) {
+        console.log('Connection attempt already in progress, reusing promise');
+        return this.connectionPromise;
+      }
+      
+      if (this.socket && (this.socket.readyState === WebSocket.OPEN)) {
+        console.log('WebSocket already connected');
+        return Promise.resolve(true);
+      }
+      
+      if (this.socket && this.socket.readyState === WebSocket.CONNECTING) {
+        console.log('WebSocket already connecting, waiting...');
+        this.connecting = true;
+        this.connectionPromise = new Promise((resolve) => {
+          const checkConnection = () => {
+            if (this.connected) {
+              resolve(true);
+            } else if (this.lastError) {
+              resolve(false);
+            } else {
+              setTimeout(checkConnection, 100);
+            }
+          };
+          checkConnection();
+        });
+        return this.connectionPromise;
       }
 
       const sessionStore = useSessionStore()
       
-      // Determine the correct WebSocket URL based on environment
       const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
       
-      // Get host and port from the environment or use defaults
       let host = location.hostname;
-      let port = '8000'; // Default backend port
+      let port = '8000';
       
-      // If we have an explicit API URL configured, use that
       const apiUrl = import.meta.env.VITE_API_URL;
       if (apiUrl) {
         try {
@@ -43,38 +64,87 @@ export const useSocketStore = defineStore('socket', {
         }
       }
       
-      // Construct WebSocket URL with session ID
       const wsUrl = `${protocol}//${host}:${port}/ws/${sessionStore.sessionId}`;
       this.connectionUrl = wsUrl;
       
       console.log('Attempting WebSocket connection to:', wsUrl);
       
-      try {
-        this.socket = new WebSocket(wsUrl);
+      this.connecting = true;
+      this.connectionPromise = new Promise((resolve) => {
+        try {
+          this.disconnect();
+          
+          this.lastError = null;
+          
+          this.socket = new WebSocket(wsUrl);
+          console.log('WebSocket object created, waiting for connection...');
 
-        // Set up WebSocket event handlers
-        this.socket.onopen = this.handleSocketOpen.bind(this);
-        this.socket.onclose = this.handleSocketClose.bind(this);
-        this.socket.onerror = this.handleSocketError.bind(this);
-        this.socket.onmessage = this.handleSocketMessage.bind(this);
+          const connectionTimeout = setTimeout(() => {
+            if (this.socket && this.socket.readyState !== WebSocket.OPEN) {
+              console.error('WebSocket connection timed out');
+              this.lastError = 'Connection timed out';
+              if (this.socket) {
+                this.socket.close();
+                this.handleSocketClose({code: 1000, reason: 'Connection timed out'});
+              }
+              resolve(false);
+            }
+          }, 10000);
+          
+          this.socket.onopen = (event) => {
+            clearTimeout(connectionTimeout);
+            this.handleSocketOpen(event);
+            resolve(true);
+          };
+          
+          this.socket.onclose = (event) => {
+            clearTimeout(connectionTimeout);
+            this.handleSocketClose(event);
+            resolve(false);
+          };
+          
+          this.socket.onerror = (error) => {
+            clearTimeout(connectionTimeout);
+            this.handleSocketError(error);
+            resolve(false);
+          };
+          
+          this.socket.onmessage = this.handleSocketMessage.bind(this);
 
-        // Set up ping interval
-        this.startPingInterval();
-      } catch (error) {
-        console.error('Failed to create WebSocket:', error);
-        this.lastError = `Failed to create WebSocket: ${error.message}`;
-        this.handleReconnect();
-      }
+          this.startPingInterval();
+        } catch (error) {
+          console.error('Failed to create WebSocket:', error);
+          this.lastError = `Failed to create WebSocket: ${error.message}`;
+          this.connected = false;
+          resolve(false);
+          this.handleReconnect();
+        } finally {
+          setTimeout(() => {
+            this.connecting = false;
+            this.connectionPromise = null;
+          }, 1000);
+        }
+      });
+      
+      return this.connectionPromise;
     },
 
     /**
      * Handle WebSocket open event
      */
-    handleSocketOpen() {
+    handleSocketOpen(event) {
       console.log('✅ WebSocket connection established to', this.connectionUrl);
       this.connected = true;
       this.reconnectAttempts = 0;
       this.lastError = null;
+      this.connecting = false;
+      
+      this.sendMessage({
+        type: 'ping',
+        data: {
+          session_id: useSessionStore().sessionId
+        }
+      });
     },
 
     /**
@@ -85,8 +155,12 @@ export const useSocketStore = defineStore('socket', {
       const code = event.code;
       console.warn(`❌ WebSocket disconnected - Code: ${code}, Reason: ${reason}`);
       this.connected = false;
+      this.connecting = false;
       this.lastError = `Connection closed (${code}: ${reason})`;
-      this.handleReconnect();
+      
+      if (code !== 1000) {
+        this.handleReconnect();
+      }
     },
 
     /**
@@ -135,10 +209,11 @@ export const useSocketStore = defineStore('socket', {
         if (this.connected && this.socket && this.socket.readyState === WebSocket.OPEN) {
           this.sendMessage({
             type: 'ping',
-            session_id: useSessionStore().sessionId
+            data: {
+              session_id: useSessionStore().sessionId
+            }
           });
         } else if (!this.connected) {
-          // Clear interval if disconnected
           clearInterval(pingInterval);
         }
       }, 10000);
@@ -162,7 +237,6 @@ export const useSocketStore = defineStore('socket', {
             console.log('Marking feedback as submitted for qa_id:', data.qa_id);
             sessionStore.markFeedbackSubmitted(data.qa_id);
             
-            // Show alert if there was an error
             if (!data.success && data.message) {
               console.warn('Feedback submission failed:', data.message);
               alert('Feedback submission issue: ' + data.message);
@@ -197,6 +271,11 @@ export const useSocketStore = defineStore('socket', {
     sendMessage(message) {
       if (this.connected && this.socket && this.socket.readyState === WebSocket.OPEN) {
         try {
+          if (message.data && !message.data.session_id) {
+            const sessionStore = useSessionStore();
+            message.data.session_id = sessionStore.sessionId;
+          }
+          
           const messageStr = JSON.stringify(message);
           console.log('Sending WebSocket message:', message.type);
           this.socket.send(messageStr);
@@ -229,9 +308,17 @@ export const useSocketStore = defineStore('socket', {
      */
     disconnect() {
       if (this.socket) {
-        this.socket.close();
-        this.socket = null;
-        this.connected = false;
+        try {
+          if (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING) {
+            console.log('Closing WebSocket connection gracefully');
+            this.socket.close(1000, 'Client disconnected');
+          }
+        } catch (error) {
+          console.warn('Error while closing WebSocket:', error);
+        } finally {
+          this.socket = null;
+          this.connected = false;
+        }
       }
     }
   }
