@@ -118,6 +118,8 @@ class SpanNames:
     CONTEXT_RETRIEVAL = "com.atlas.rag.retrieval"  # Document retrieval operation
     DOCUMENT_REFERENCES = "com.atlas.rag.references"  # Citation/references formatting
     DOCUMENT_RERANKING = "com.atlas.rag.reranking"  # Document reranking operation
+    DOCUMENT_FILTERING = "com.atlas.rag.filtering"  # Document filtering operation
+    DOCUMENT_RANKING = "com.atlas.rag.ranking"  # Document ranking operation
     
     # Generation spans
     LLM_GENERATION = "com.atlas.rag.generation"  # LLM response generation
