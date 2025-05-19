@@ -491,10 +491,11 @@ def generate_response(
                         span=llm_span,
                         summary=final_summary,
                         details=final_details,
-                        span_kind=OpenInferenceSpanKind.LLM
+                        span_kind=OpenInferenceSpanKind.LLM,
+                        output=full_response
                     )
                     
-                    # Add a truncated output for review
+                    # Add a truncated output preview for review
                     if full_response:
                         preview_length = min(500, len(full_response))
                         preview = full_response[:preview_length] + ("..." if len(full_response) > preview_length else "")
@@ -622,12 +623,7 @@ def generate_response_with_telemetry(
                 "kind": "LLM",  # Direct kind attribute
                 "span.kind": "LLM",  # Alternative format
                 
-                # Standard openinference format (both nested and flat for compatibility)
-                "openinference": {
-                    "span": {
-                        "kind": "LLM"
-                    }
-                },
+                # Standard openinference format with flat attributes (compatible with OpenTelemetry)
                 "openinference.span.kind": OpenInferenceSpanKind.LLM,
                 
                 # Model information
@@ -722,13 +718,16 @@ def generate_response_with_telemetry(
                                 SpanAttributes.SESSION_ID: session_id,
                                 SpanAttributes.QA_ID: qa_id,
                                 
-                                # Response content
-                                "content": full_response,
-                                "output": full_response,
-                                SpanAttributes.OUTPUT: full_response,
+                                # Response content - use standard output.value attribute
+                                "output.value": full_response,
+                                
+                                # Metadata with flat names (no info. prefix)
+                                "response_length": len(full_response),
+                                "word_count": len(full_response.split()),
+                                "generation_time_seconds": generation_time if 'generation_time' in locals() else None,
+                                "description": "LLM Response Output",
                                 
                                 # Span categorization
-                                "description": "LLM Response Output",
                                 "kind": "LLM",
                                 "span.kind": "LLM",
                                 "openinference.span.kind": OpenInferenceSpanKind.LLM,

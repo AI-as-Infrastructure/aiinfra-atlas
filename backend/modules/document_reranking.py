@@ -398,26 +398,58 @@ def rerank_documents_with_telemetry(
     # Create a span manager for ranking
     span_manager = get_span_manager("document_reranking", RAGSpanManager)
     
-    # Use standard attribute approach
+    # Use standard attribute approach with proper separation of info vs attributes
     with span_manager.ranking_span(
         document_count=len(documents),
         session_id=session_id,
         qa_id=qa_id,
-        reranker_type="bm25",  # Example, use your actual reranker type
-        query=query,
-        max_docs=max_docs  # These go into info
     ) as span:
-        # Reranking logic here
-        # ...
-        
-        # Update span with results
-        reranked_docs = documents  # Replace with actual reranking logic
-        span.set_attribute("reranked_document_count", len(reranked_docs))
-        
-        # Use the helper method to add document previews
-        BaseSpanManager.add_document_preview(span, reranked_docs[:3])
-        
-        return reranked_docs
+        try:
+            # Add query and max_docs as regular attributes
+            span.set_attribute("query", query)
+            span.set_attribute("max_docs", str(max_docs))
+            span.set_attribute("reranker_type", "bm25")
+            
+            # Perform actual reranking logic
+            reranked_docs, scores = _rerank_documents_internal(documents, query, max_docs)
+            
+            # Update span with results in attributes section
+            span.set_attribute("reranked_document_count", len(reranked_docs))
+            
+            # Add score information to attributes where it belongs
+            if scores and len(scores) > 0:
+                min_score = min(scores)
+                max_score = max(scores)
+                avg_score = sum(scores) / len(scores)
+                
+                span.set_attribute("score.min", min_score)
+                span.set_attribute("score.max", max_score)
+                span.set_attribute("score.avg", avg_score)
+            
+            # Add document previews with flat attribute names
+            for i, doc in enumerate(reranked_docs[:3]):
+                if hasattr(doc, 'page_content'):
+                    content = doc.page_content[:200]
+                    if len(doc.page_content) > 200:
+                        content += "..."
+                    span.set_attribute(f"doc_{i}_preview", content)
+                    
+                # Add metadata with flat attribute names
+                if hasattr(doc, 'metadata'):
+                    for key, value in doc.metadata.items():
+                        # Limit to important metadata fields
+                        if key in ["date", "corpus", "title", "source"]:
+                            # Ensure value is a string
+                            span.set_attribute(f"doc_{i}_{key}", str(value))
+            
+            return reranked_docs
+            
+        except Exception as e:
+            logger.error(f"Error in document reranking: {e}", exc_info=True)
+            span.record_exception(e)
+            span.set_attribute("error", str(e))
+            # Return original documents as fallback
+            return documents[:max_docs]
 
 def configure_reranker(config: Dict[str, Any]) -> Dict[str, Any]:
     """
