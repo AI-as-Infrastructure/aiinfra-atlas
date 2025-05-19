@@ -5,6 +5,8 @@ This module centralizes all constants used in telemetry to ensure consistency
 across the application.
 """
 
+from enum import Enum, auto
+
 # OpenInference span kinds for Phoenix Arize
 class OpenInferenceSpanKind:
     """Phoenix Arize OpenInference span kinds for proper categorization"""
@@ -20,6 +22,7 @@ class OpenInferenceSpanKind:
     HUMAN = "HUMAN"           # Human interactions (queries, feedback)
     PROCESSOR = "PROCESSOR"   # Data processing operations
     UNKNOWN = "UNKNOWN"       # Default/unknown operations
+    REFERENCES = "REFERENCES" # Document references/citations
 
 # Span attribute constants
 class SpanAttributes:
@@ -75,6 +78,7 @@ class SpanAttributes:
     CITATION_COUNT = "citation_count"
     CITATION_LIMIT = "citation_limit"
     CHUNK_COUNT = "chunk_count"
+    OUTPUT = "output"  # Output for Phoenix UI display
     
     # Query analysis
     QUERY_FOCUS = "query_focus"
@@ -94,36 +98,31 @@ class SpanAttributes:
     FEEDBACK_CITATIONS_RATING = "feedback.citations_rating"
     FEEDBACK_TEXT = "feedback_text"
     TARGET_SPAN_ID = "target_span_id"
+    DOCUMENTS_BEFORE = "documents.before_processing"
+    DOCUMENTS_AFTER = "documents.after_processing"
 
 # Enhanced span operation names with proper namespacing
 class SpanNames:
-    """Consistent name constants for span operations"""
-    # HTTP method-based names
-    HTTP_GET_CONFIG = "http.GET.api.config"
-    HTTP_POST_ASK = "http.POST.api.ask"
-    HTTP_POST_ASK_STREAM = "http.POST.api.ask.stream"
-    HTTP_POST_FEEDBACK = "http.POST.api.feedback"
+    """Constants for span names in the ATLAS application."""
     
-    # Top-level RAG pipeline operation
-    RAG_PIPELINE = "com.atlas.rag.pipeline"
+    # Pipeline spans
+    RAG_PIPELINE = "com.atlas.rag.pipeline"  # Root span for RAG process
     
-    # RAG pipeline phases with more specific naming
-    QUESTION_REFORMULATION = "com.atlas.rag.question_reformulation"
-    CONTEXT_RETRIEVAL = "com.atlas.rag.context_retrieval"
-    DOCUMENT_FILTERING = "com.atlas.rag.document_filtering"
-    DOCUMENT_RANKING = "com.atlas.rag.document_ranking"
-    PROMPT_GENERATION = "com.atlas.rag.prompt_generation"
-    LLM_GENERATION = "com.atlas.rag.llm_generation"
-    CITATION_FORMATTING = "com.atlas.rag.citation_formatting"
-    STREAMING_RESPONSE = "com.atlas.rag.streaming_response"
-    DOCUMENT_REFERENCES = "com.atlas.rag.document_references"
+    # Retrieval spans
+    CONTEXT_RETRIEVAL = "com.atlas.rag.retrieval"  # Document retrieval operation
+    DOCUMENT_REFERENCES = "com.atlas.rag.references"  # Citation/references formatting
+    DOCUMENT_RERANKING = "com.atlas.rag.reranking"  # Document reranking operation
     
-    # Feedback operations
-    FEEDBACK_PROCESSING = "com.atlas.feedback.processing"
-    FEEDBACK_ANNOTATION = "com.atlas.feedback.annotation"
+    # Generation spans
+    LLM_GENERATION = "com.atlas.rag.generation"  # LLM response generation
+    STREAMING_RESPONSE = "com.atlas.rag.streaming"  # Text chunk streaming
     
-    # Session operations
-    SESSION_CONFIGURATION = "com.atlas.session.configuration"
+    # User interaction spans
+    HUMAN_QUERY = "com.atlas.user.query"  # Human query input
+    FEEDBACK_ANNOTATION = "com.atlas.user.feedback"  # User feedback
+    GENERATION = "com.atlas.rag.generation"
+    STREAMING = "com.atlas.rag.streaming"
+    CITATIONS = "com.atlas.rag.citations"  # Keep for backwards compatibility
 
 # Test target configuration schema
 TEST_TARGET_SCHEMA = {

@@ -29,7 +29,7 @@ except ImportError:
     logger.error("OpenInference not available. Session tracking will use fallback method.")
 
 # Import constants
-from .constants import SpanAttributes
+from .constants import SpanAttributes, SpanNames
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -325,29 +325,38 @@ def create_span(
         if not hasattr(span, "set_output"):
             def set_output(output):
                 try:
-                    # Try to use OpenInference's native set_output if available
-                    from openinference.instrumentation import get_current_span
-                    openinference_span = get_current_span()
-                    if openinference_span and hasattr(openinference_span, "set_output"):
-                        openinference_span.set_output(output)
-                    # Always set our own attributes as a fallback
-                    if isinstance(output, str):
-                        span.set_attribute("output.value", output)
-                        # Add the OpenInference compatible attribute 
+                    # Direct Phoenix content field - this is the most reliable field for Phoenix UI display
+                    span.set_attribute("content", output)
+                    
+                    # Also set output as Phoenix may look for this
+                    span.set_attribute("output", output)
+                    
+                    # Standard fields that are commonly used
+                    span.set_attribute("output.value", output)
+                    
+                    # For LLM outputs, use the openinference.llm.output attribute
+                    if SpanNames.LLM_GENERATION in operation_name or SpanNames.GENERATION in operation_name:
                         span.set_attribute("openinference.llm.output", output)
-                    elif isinstance(output, dict):
-                        span.set_attribute("output", json.dumps(output))
-                        # Add individual attributes for dict elements
-                        for key, value in output.items():
-                            if isinstance(value, (str, int, float, bool)):
-                                span.set_attribute(f"output.{key}", value)
+                    
+                    # For references, use references output attribute
+                    if SpanNames.DOCUMENT_REFERENCES in operation_name:
+                        span.set_attribute("openinference.references.output", output)
+                    
+                    # Try OpenInference's native set_output if available
+                    try:
+                        from openinference.instrumentation import get_current_span
+                        openinference_span = get_current_span()
+                        if openinference_span and hasattr(openinference_span, "set_output"):
+                            openinference_span.set_output(output)
+                    except ImportError:
+                        pass  # OpenInference not available
+                        
                 except Exception as e:
-                    # If anything fails, at least set the output value attribute
+                    # If anything fails, at least set these core attributes
                     logger.warning(f"Error in set_output: {e}")
-                    if isinstance(output, str):
-                        span.set_attribute("output.value", output)
-                    elif isinstance(output, dict):
-                        span.set_attribute("output", json.dumps(output))
+                    span.set_attribute("content", output)  # Primary field for Phoenix 
+                    span.set_attribute("output", output)   # Secondary field for Phoenix
+                    
             span.set_output = set_output
             
         try:
