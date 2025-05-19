@@ -10,7 +10,9 @@ import logging
 import time
 from typing import Dict, Any, Generator, Optional, List, Callable, AsyncGenerator
 
-from backend.telemetry import create_span, SpanAttributes, SpanNames, OpenInferenceSpanKind
+# Import telemetry modules at the beginning to avoid UnboundLocalError
+from backend.telemetry.core import create_span, SpanKind
+from backend.telemetry.constants import SpanAttributes, SpanNames, OpenInferenceSpanKind
 
 logger = logging.getLogger(__name__)
 
@@ -162,11 +164,18 @@ async def stream_response_chunks(
         attributes={
             SpanAttributes.SESSION_ID: session_id,
             SpanAttributes.QA_ID: qa_id,
-            "openinference.span.kind": OpenInferenceSpanKind.PROCESSOR,
+            
+            # Critical: Set the kind in the exact format Phoenix expects
+            "type": "PROCESSOR",
+            "span_kind": "PROCESSOR",
+            "otel.kind": "PROCESSOR",
+            "openinference.span.kind": "PROCESSOR",
+            
             "processor.type": "stream_formatter",
             "component.type": "sse",
             "processor.description": "Formats and streams text chunks as server-sent events"
         },
+        kind=SpanKind.INTERNAL,
         link_to_current=True
     ) as streaming_span:
         chunk_count = 0
@@ -236,10 +245,6 @@ def stream_documents_as_references(
     Returns:
         Formatted SSE message with references
     """
-    # Import telemetry modules at the beginning to avoid UnboundLocalError
-    from backend.telemetry.core import create_span
-    from backend.telemetry.constants import SpanAttributes, SpanNames, OpenInferenceSpanKind
-    
     with create_span(
         SpanNames.DOCUMENT_REFERENCES,
         attributes={
@@ -257,21 +262,21 @@ def stream_documents_as_references(
             "citation_display_limit": citation_limit,
             "processing_type": "document_references",
             
-            # Span classification - use explicit kind string for Phoenix UI
-            "kind": "REFERENCES",  # Direct kind attribute
-            "span.kind": "REFERENCES",  # Alternative format
+            # Critical: Set the kind in the exact format Phoenix expects
+            # Use a single, proven span kind format that Phoenix definitely understands
+            "type": "REFERENCES",  # This is what Phoenix often looks for
+            "span_kind": "REFERENCES",  # Alternative that Phoenix might recognize
             
-            # Standard openinference format (both nested and flat for compatibility)
-            "openinference": {
-                "span": {
-                    "kind": "REFERENCES"
-                }
-            },
-            "openinference.span.kind": OpenInferenceSpanKind.REFERENCES,
+            # Standard OpenTelemetry span kind
+            "otel.kind": "PROCESSOR",  # Standard OTel kind
+            
+            # Use the most direct attribute Phoenix specifically looks for
+            "openinference.span.kind": "REFERENCES",  # This is the one Phoenix prioritizes
             
             "processor.type": "citation_formatter",
             "processor.description": "Transforms document objects into structured citations and references for display"
         },
+        kind=SpanKind.INTERNAL,  # Use INTERNAL kind for processors
         link_to_current=True
     ) as ref_span:
         # Preserve all documents for full analysis view
