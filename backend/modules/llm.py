@@ -23,9 +23,12 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.language_models.chat_models import BaseChatModel
 
-from backend.telemetry import create_span, SpanAttributes, SpanNames, OpenInferenceSpanKind
+from backend.telemetry import create_span, SpanAttributes, SpanNames, OpenInferenceSpanKind, SpanKind, BaseSpanManager
 from backend.modules.config import get_system_prompt, get_llm_config
 from backend.modules.system_prompts import get_qa_prompt_template, system_prompt
+from backend.telemetry import get_span_manager, RAGSpanManager
+from backend.telemetry.span_manager import BaseSpanManager
+from backend.telemetry.spans import register_span
 
 logger = logging.getLogger(__name__)
 
@@ -333,28 +336,35 @@ def generate_response(
                 
             return
         
-        # Create span for telemetry, but handle case where spans might not be available
+        # Create span for telemetry
         with create_span(
             SpanNames.LLM_GENERATION,
             attributes={
-                "question": question,
-                "document_count": len(documents),
+                # Essential input information
+                SpanAttributes.INPUT_VALUE: question,
+                SpanAttributes.DOCUMENT_COUNT: len(documents),
+                
+                # Input characteristics
                 "has_chat_history": bool(chat_history),
                 "temperature": temperature,
+                
+                # Span categorization
                 "openinference.span.kind": OpenInferenceSpanKind.LLM
             },
+            kind=SpanKind.INTERNAL,
             link_to_current=True
         ) as llm_span:
             try:
+                start_time = time.time()
+                
                 # Format documents for context
                 context = format_documents(documents)
-                if llm_span:
-                    llm_span.set_attribute("context_length", len(context))
+                llm_span.set_attribute("context_length", len(context))
                 
                 # Create LLM with the specified provider (or from config)
                 llm = create_llm(temperature=temperature, provider=provider)
-                if llm_span:
-                    llm_span.set_attribute("model", getattr(llm, "model_name", str(llm)))
+                model_name = getattr(llm, "model_name", str(llm))
+                llm_span.set_attribute("model", model_name)
                 
                 # Format chat history (ensure it's not None)
                 chat_history_list = chat_history or []
@@ -362,8 +372,7 @@ def generate_response(
                 chat_history_str = "\n".join([f"{'User' if isinstance(msg, HumanMessage) else 'Assistant'}: {msg.content}" 
                                            for msg in formatted_history])
                 
-                if llm_span:
-                    llm_span.set_attribute("chat_history_turns", len(formatted_history))
+                llm_span.set_attribute("chat_history_turns", len(formatted_history))
                 
                 # Create the prompt template using the standard approach
                 prompt = create_qa_prompt(system_prompt, bool(chat_history_list))
@@ -381,9 +390,6 @@ def generate_response(
                 if chat_history_list:
                     input_data["chat_history"] = chat_history_str
                 
-                # Start generation timer
-                start_time = time.time()
-                
                 # Create the chain using proper LangChain constructs
                 chain = prompt | llm
 
@@ -397,14 +403,37 @@ def generate_response(
                 try:
                     # Check the formatted prompt
                     formatted_prompt = prompt.format(**input_data)
-                    logger.debug(f"Formatted prompt: {formatted_prompt[:200]}...")
+                    prompt_length = len(formatted_prompt)
+                    llm_span.set_attribute("prompt_length", prompt_length)
                     
-                    # Process the streaming response
+                    # Set initial state using BaseSpanManager
+                    summary = f"Generating response with {model_name}"
+                    initial_details = {
+                        "model": model_name,
+                        "temperature": temperature,
+                        "prompt_length": prompt_length,
+                        "context_length": len(context),
+                        "chat_history_turns": len(formatted_history),
+                        "document_count": len(documents),
+                        "status": "generating"
+                    }
+                    
+                    BaseSpanManager.set_standard_outputs(
+                        span=llm_span,
+                        summary=summary,
+                        details=initial_details,
+                        span_kind=OpenInferenceSpanKind.LLM
+                    )
+                    
+                    # Process the streaming response from the LLM
                     for chunk in llm.stream(formatted_prompt):
-                        # Extract content from chunk based on provider and format
+                        # Update chunk count for telemetry
+                        chunk_count += 1
+                        
+                        # Extract content from chunk
                         content = None
                         
-                        # Handle different chunk formats
+                        # Handle different chunk formats from different providers
                         if hasattr(chunk, 'content'):
                             # Standard LangChain format
                             content = chunk.content
@@ -417,12 +446,9 @@ def generate_response(
                             elif 'chunk' in chunk and hasattr(chunk['chunk'], 'content'):
                                 content = chunk['chunk'].content
                         
-                        # Skip if no content
+                        # Skip if no content extracted
                         if not content:
                             continue
-                        
-                        # Log chunk content for debugging (truncated)
-                        logger.debug(f"Raw chunk content: {content[:20]}...")
                             
                         # Detect and handle placeholder text if somehow still present
                         placeholder_pattern = "{answer}"
@@ -433,94 +459,100 @@ def generate_response(
                         
                         # Update tracking variables
                         full_response += content
-                        chunk_count += 1
                         
-                        # Record intermediate metrics
-                        if llm_span and chunk_count % 10 == 0:
+                        # Track chunk information
+                        if chunk_count % 10 == 0:  # Update only periodically to avoid excessive spans
                             llm_span.set_attribute("chunk_count", chunk_count)
                             llm_span.set_attribute("response_length", len(full_response))
                         
-                        # Yield the content
+                        # Yield content to the caller
                         yield content
                     
+                    # Calculate generation time
+                    generation_time = time.time() - start_time
+                    
+                    # Set final response information using BaseSpanManager
+                    final_summary = f"Generated response ({len(full_response)} chars) with {model_name}"
+                    
+                    final_details = {
+                        "model": model_name,
+                        "temperature": temperature,
+                        "prompt_length": prompt_length,
+                        "context_length": len(context),
+                        "chat_history_turns": len(formatted_history),
+                        "document_count": len(documents),
+                        "response_length": len(full_response),
+                        "chunk_count": chunk_count,
+                        "generation_time_seconds": generation_time,
+                        "status": "complete"
+                    }
+                    
+                    BaseSpanManager.set_standard_outputs(
+                        span=llm_span,
+                        summary=final_summary,
+                        details=final_details,
+                        span_kind=OpenInferenceSpanKind.LLM
+                    )
+                    
+                    # Add a truncated output for review
+                    if full_response:
+                        preview_length = min(500, len(full_response))
+                        preview = full_response[:preview_length] + ("..." if len(full_response) > preview_length else "")
+                        llm_span.set_attribute("response_preview", preview)
+                    
                 except Exception as e:
-                    logger.error(f"Error during streaming: {e}")
-                    if llm_span:
-                        llm_span.record_exception(e)
+                    # Handle streaming errors
+                    logger.error(f"Error during streaming: {e}", exc_info=True)
+                    
+                    # Set error information using BaseSpanManager
+                    error_summary = f"Error generating response: {str(e)}"
+                    
+                    BaseSpanManager.set_standard_outputs(
+                        span=llm_span,
+                        summary=error_summary,
+                        error=e,
+                        details={
+                            "model": model_name,
+                            "temperature": temperature,
+                            "prompt_length": prompt_length if 'prompt_length' in locals() else None,
+                            "context_length": len(context),
+                            "document_count": len(documents),
+                            "error_during_streaming": True,
+                            "status": "error"
+                        },
+                        span_kind=OpenInferenceSpanKind.LLM
+                    )
+                    
+                    # Yield error message if no response has been generated
                     if not full_response:
-                        full_response = f"Error generating response: {str(e)}"
-                        yield full_response
-                
-                # Calculate generation time
-                generation_time = time.time() - start_time
-                
-                # Record final metrics
-                if llm_span:
-                    llm_span.set_attribute("final_chunk_count", chunk_count)
-                    llm_span.set_attribute("final_response_length", len(full_response))
-                    llm_span.set_attribute("generation_time_seconds", generation_time)
-                    llm_span.set_attribute("generation_complete", True)
-                    llm_span.set_attribute("openinference.llm.output", full_response)
-                    if hasattr(SpanAttributes, 'OUTPUT'):
-                        llm_span.set_attribute(SpanAttributes.OUTPUT, full_response)
+                        error_msg = f"Error generating response: {str(e)}"
+                        yield error_msg
                 
             except Exception as e:
-                # Record error in telemetry
-                if llm_span:
-                    llm_span.record_exception(e)
-                    llm_span.set_attribute("generation_error", str(e))
-                    llm_span.set_attribute("generation_complete", False)
-                    logger.error(f"Error generating response: {e}")
-                    
-                    # Set partial output directly on main span if available
-                    if full_response:
-                        # Primary content field - most important for Phoenix display
-                        llm_span.set_attribute("content", full_response)
-                        
-                        # Set using the output method if available
-                        if hasattr(llm_span, "set_output"):
-                            llm_span.set_output(full_response)
-                        
-                        # Also set standard output attributes for maximum compatibility
-                        llm_span.set_attribute("output", full_response)
-                        llm_span.set_attribute("output.value", full_response)
-                        llm_span.set_attribute(SpanAttributes.OUTPUT, full_response)
-                        llm_span.set_attribute("openinference.llm.output", full_response)
-                        llm_span.set_attribute("llm.output", full_response)
-                        llm_span.set_attribute("error", str(e))
-                        
-                        # Create a specific error output span for Phoenix compatibility
-                        with create_span(
-                            SpanNames.LLM_GENERATION + ".error",  # Use error name to distinguish
-                            attributes={
-                                SpanAttributes.SESSION_ID: session_id,
-                                SpanAttributes.QA_ID: qa_id,
-                                "description": "LLM Generation Error",
-                                "kind": "LLM",  # Direct kind attribute
-                                "span.kind": "LLM",  # Alternative format
-                                "openinference.span.kind": OpenInferenceSpanKind.LLM,
-                                "content": str(e),
-                                "output": str(e),
-                                "error_message": str(e),
-                                "partial_response": full_response,
-                                "error_type": e.__class__.__name__,
-                            },
-                            link_to_current=True  # Link to parent LLM span
-                        ) as error_span:
-                            # Set the error using the method for double insurance
-                            if hasattr(error_span, "set_output"):
-                                error_span.set_output(str(e))
-                                
-                    # Re-raise
-                    error_msg = f"Error generating response: {str(e)}"
-                    yield error_msg
+                # Handle any other errors
+                logger.error(f"Error in LLM processing: {e}", exc_info=True)
+                
+                # Set error information using BaseSpanManager
+                error_summary = f"Error in LLM processing: {str(e)}"
+                
+                BaseSpanManager.set_standard_outputs(
+                    span=llm_span,
+                    summary=error_summary,
+                    error=e,
+                    span_kind=OpenInferenceSpanKind.LLM
+                )
+                
+                # Yield error message
+                error_msg = f"Error generating response: {str(e)}"
+                yield error_msg
                 
     except Exception as e:
-        # Handle the case where create_span itself fails (telemetry not initialized)
-        logger.error(f"Telemetry error in response generation: {e}", exc_info=True)
-        error_message = f"Error generating response: {str(e)}"
-        # No span available, but if you add telemetry later, this is where to set output
-        yield error_message
+        # Handle any exceptions outside of span context
+        logger.error(f"Error creating LLM span: {e}", exc_info=True)
+        
+        # Yield error message
+        error_msg = f"Error generating response: {str(e)}"
+        yield error_msg
 
 def generate_response_with_telemetry(
     question: str,
@@ -564,6 +596,8 @@ def generate_response_with_telemetry(
         # Generate QA ID if not provided
         if not qa_id:
             qa_id = str(uuid.uuid4())
+            
+        logger.info(f"Starting LLM generation with qa_id={qa_id}, session_id={session_id}")
         
         # Create telemetry span directly linked to the parent pipeline span
         with create_span(
@@ -607,6 +641,11 @@ def generate_response_with_telemetry(
             link_to_current=True  # Ensure linkage to parent
         ) as llm_span:
             try:
+                # Register the main LLM span - critical for feedback association
+                span_id = llm_span.get_span_context().span_id
+                register_span(session_id, qa_id, span_id)
+                logger.info(f"Registered main LLM span with session_id={session_id}, qa_id={qa_id}, span_id={span_id}")
+                
                 # Generate response directly without creating an additional nested LLM span
                 # by passing create_llm_span=False to avoid redundancy
                 response_gen = generate_response(
@@ -672,23 +711,39 @@ def generate_response_with_telemetry(
                         llm_span.set_attribute("openinference.llm.output", full_response)
                         llm_span.set_attribute("llm.output", full_response)
                         
-                        # Create a specific LLM output span that Phoenix will recognize
-                        # This is purely for Phoenix compatibility and may be removed if not needed
+                        # Create a specific response output span for feedback association
+                        response_span_name = f"{SpanNames.LLM_GENERATION}.response"
+                        logger.info(f"Creating response span {response_span_name} for qa_id={qa_id}")
+                        
                         with create_span(
-                            SpanNames.LLM_GENERATION + ".response",  # Use a clear name
+                            response_span_name,
                             attributes={
+                                # Critical metadata for identification
                                 SpanAttributes.SESSION_ID: session_id,
                                 SpanAttributes.QA_ID: qa_id,
-                                "description": "LLM Response Output",
-                                "kind": "LLM",  # Direct kind attribute
-                                "span.kind": "LLM",  # Alternative format
-                                "openinference.span.kind": OpenInferenceSpanKind.LLM,
+                                
+                                # Response content
                                 "content": full_response,
                                 "output": full_response,
                                 SpanAttributes.OUTPUT: full_response,
+                                
+                                # Span categorization
+                                "description": "LLM Response Output",
+                                "kind": "LLM",
+                                "span.kind": "LLM",
+                                "openinference.span.kind": OpenInferenceSpanKind.LLM,
                             },
-                            link_to_current=True  # Link to parent LLM span
+                            link_to_current=True
                         ) as output_span:
+                            # Get the span ID for registration
+                            response_span_id = output_span.get_span_context().span_id
+                            
+                            # Register the output span with a predictable key for feedback association
+                            # This is the key pattern that log_user_feedback will look for
+                            response_key = f"{qa_id}_response"
+                            register_span(session_id, response_key, response_span_id)
+                            logger.info(f"Registered response span with session_id={session_id}, key={response_key}, span_id={response_span_id}")
+                            
                             # Set the output using the method for double insurance
                             if hasattr(output_span, "set_output"):
                                 output_span.set_output(full_response)

@@ -29,7 +29,8 @@ def trace_operation(
     kind: SpanKind = SpanKind.CLIENT,
     openinference_kind: str = OpenInferenceSpanKind.CHAIN,
     input_data: Any = None,
-    parent_context = None
+    parent_context = None,
+    link_to_current: bool = False
 ) -> ContextManager:
     """
     Create a span for a synchronous operation with consistent naming.
@@ -43,6 +44,7 @@ def trace_operation(
         openinference_kind: OpenInference span kind for Phoenix
         input_data: Optional input data to record
         parent_context: Optional parent context to use
+        link_to_current: Whether to link to the current span as parent
         
     Yields:
         The created span
@@ -72,13 +74,23 @@ def trace_operation(
                 if isinstance(value, (str, int, float, bool)):
                     attributes[f"input.{key}"] = value
     
+    # If link_to_current is True and no specific parent_context is provided, 
+    # try to get the current span as parent
+    if link_to_current and parent_context is None:
+        current_span = get_current_span()
+        if current_span and hasattr(current_span, 'get_span_context'):
+            current_context = current_span.get_span_context()
+            if hasattr(current_context, 'is_valid') and current_context.is_valid:
+                parent_context = trace.set_span_in_context(current_span)
+    
     # Create and yield the span
     with create_span(
         operation_name=operation_name,
         attributes=attributes,
         context=parent_context,
         kind=kind,
-        session_id=session_id
+        session_id=session_id,
+        link_to_current=link_to_current
     ) as span:
         yield span
 
@@ -306,6 +318,9 @@ def create_human_query_span(
     """
     Create a span for a human query/input.
     
+    This span represents the user's question that initiates the RAG process.
+    It's designed to appear as a child span of the RAG pipeline.
+    
     Args:
         query: User query/question
         session_id: Session identifier
@@ -321,25 +336,40 @@ def create_human_query_span(
     # Add required OpenInference attributes for human interactions
     span_attributes = {
         **attributes,
+        # Session identifiers
         SpanAttributes.SESSION_ID: session_id,
         "session.id": session_id,
         SpanAttributes.QA_ID: qa_id,
-        "input": query,
-        "openinference.agent.input": query,
-        "role": "human",  # Add explicit role
+        
+        # User input
+        "input.value": query,
+        
+        # Span classification
+        "openinference.span.kind": OpenInferenceSpanKind.HUMAN,
+        "openinference.human.input": query,
+        "role": "human",
+        "human.role": "user",
+        "human.description": "User query that initiates the RAG process",
+        
+        # Timestamp
         "timestamp": datetime.now().isoformat()
     }
     
-    # Create span with proper kind
+    # Create span with proper kind and ensure it's linked to current context (parent)
     with trace_operation(
-        "com.atlas.human.query",
+        SpanNames.HUMAN_QUERY,
         attributes=span_attributes,
         session_id=session_id,
         qa_id=qa_id,
         openinference_kind=OpenInferenceSpanKind.HUMAN,
         input_data=query,
-        kind=SpanKind.CONSUMER  # CONSUMER kind for incoming requests
+        kind=SpanKind.CONSUMER,  # CONSUMER kind for incoming requests
+        link_to_current=True  # Explicitly link to current context (parent)
     ) as span:
+        # Register this span for the qa_id
+        current_span_id = otel_format_span_id(span.get_span_context().span_id)
+        register_span(session_id, qa_id, current_span_id)
+        
         yield span
 
 # Track spans for deduplication
@@ -357,54 +387,107 @@ def get_current_span_id():
 
 def register_span(session_id, qa_id, span_id):
     """
-    Register a span ID for a specific session and QA ID.
-    This allows feedback to be linked to the original span later.
+    Register a span ID for a specific session and QA pair.
+    This allows finding spans later for feedback association.
     
     Args:
         session_id: Session ID
-        qa_id: Question/answer ID
-        span_id: Span ID as a hex string
+        qa_id: Question/answer ID, or special key
+        span_id: Span ID
     """
     global _span_registry
     
-    if not session_id or not qa_id or not span_id:
+    if not session_id:
+        logger.warning("Cannot register span without session_id")
         return
-    
-    # Create session entry if it doesn't exist
+        
+    # Initialize session entry if needed
     if session_id not in _span_registry:
         _span_registry[session_id] = {}
     
-    # Store span ID for this QA ID
-    _span_registry[session_id][qa_id] = span_id
-    logger.debug(f"Registered span ID {span_id} for session {session_id}, qa_id {qa_id}")
+    # Store the span ID
+    if qa_id is not None:  # Allow None or empty string as qa_id values
+        _span_registry[session_id][qa_id] = span_id
+        
+        # Special logging for response spans to aid debugging
+        if qa_id and isinstance(qa_id, str) and qa_id.endswith("_response"):
+            logger.info(f"Registered response span for session={session_id}, qa_id={qa_id}, span_id={span_id}")
+        else:
+            logger.debug(f"Registered span for session={session_id}, qa_id={qa_id}, span_id={span_id}")
 
 def find_qa_span_id(session_id, qa_id):
     """
-    Find the span ID for a specific QA interaction.
-    This is used to link feedback to the original QA span.
+    Find a span ID for a specific session and QA pair.
     
     Args:
         session_id: Session ID
         qa_id: Question/answer ID
         
     Returns:
-        str: Span ID as a hex string, or None if not found
+        Span ID if found, None otherwise
     """
     global _span_registry
     
-    # Check if we have a registered span ID for this session and QA ID
-    if session_id in _span_registry and qa_id in _span_registry[session_id]:
-        span_id = _span_registry[session_id][qa_id]
-        logger.debug(f"Found registered span ID {span_id} for session {session_id}, qa_id {qa_id}")
-        return span_id
+    if not session_id or qa_id is None:
+        return None
+        
+    # Check if session exists in registry
+    if session_id not in _span_registry:
+        logger.warning(f"Session {session_id} not found in registry")
+        return None
     
-    # Log detailed information about the missing span
-    if session_id in _span_registry:
-        available_qa_ids = list(_span_registry[session_id].keys())
-        logger.warning(f"No span found for qa_id={qa_id} in session {session_id}. Available qa_ids: {available_qa_ids}")
+    # Check if qa_id exists in session
+    if qa_id not in _span_registry[session_id]:
+        # Special handling for response span keys
+        if isinstance(qa_id, str) and qa_id.endswith("_response"):
+            # Log the miss but don't show it as a warning
+            logger.info(f"Response span for qa_id={qa_id} not found in session={session_id}")
+        else:
+            logger.info(f"QA ID {qa_id} not found in session {session_id}")
+            
+        # Log available keys for debugging
+        available_keys = list(_span_registry[session_id].keys())
+        if available_keys:
+            logger.info(f"Available qa_ids for session {session_id}: {available_keys}")
+        return None
+    
+    # Return the span ID
+    span_id = _span_registry[session_id][qa_id]
+    
+    # Special logging for response spans
+    if isinstance(qa_id, str) and qa_id.endswith("_response"):
+        logger.info(f"Found response span for qa_id={qa_id} in session={session_id}: span_id={span_id}")
     else:
-        logger.warning(f"Session {session_id} not found in span registry. Registry keys: {list(_span_registry.keys())}")
+        logger.debug(f"Found span for qa_id={qa_id} in session={session_id}: span_id={span_id}")
+        
+    return span_id
+
+def find_session_root_span_id(session_id: str) -> Optional[int]:
+    """
+    Find the root span ID for a session.
     
-    # Return None instead of falling back to the current span
-    # This ensures feedback is only associated with the correct span
-    return None
+    Args:
+        session_id: Session ID
+        
+    Returns:
+        Root span ID if found, None otherwise
+    """
+    global _span_registry
+    
+    try:
+        # First check the registry for the root span (qa_id=None)
+        if session_id in _span_registry:
+            # Check for the root span (qa_id=None)
+            if None in _span_registry[session_id]:
+                return _span_registry[session_id][None]
+            
+            # If no root span is explicitly registered, use the first span ID
+            if _span_registry[session_id]:
+                # Get the first qa_id (any will do for linking)
+                first_qa_id = next(iter(_span_registry[session_id]))
+                return _span_registry[session_id][first_qa_id]
+                
+        return None
+    except Exception as e:
+        logger.error(f"Error finding session root span: {e}", exc_info=True)
+        return None
