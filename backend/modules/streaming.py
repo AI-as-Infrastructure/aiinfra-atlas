@@ -8,13 +8,16 @@ to clients, with built-in telemetry instrumentation.
 import json
 import logging
 import time
+import asyncio
 from typing import Dict, Any, Generator, Optional, List, Callable, AsyncGenerator
+from datetime import datetime
 
 # Import telemetry modules at the beginning to avoid UnboundLocalError
 from backend.telemetry.core import create_span, SpanKind
 from backend.telemetry.constants import SpanAttributes, SpanNames, OpenInferenceSpanKind
 from backend.telemetry import BaseSpanManager
 from backend.telemetry.spans import register_span
+from backend.retrievers.hansard_retriever import format_document_for_citation
 
 logger = logging.getLogger(__name__)
 
@@ -275,186 +278,60 @@ def stream_documents_as_references(
     Returns:
         Formatted SSE message with references
     """
+    # Create a span for the citation and reference generation
     with create_span(
         SpanNames.DOCUMENT_REFERENCES,
         attributes={
-            # Session identifiers
             SpanAttributes.SESSION_ID: session_id,
             SpanAttributes.QA_ID: qa_id,
-            
-            # Document information
-            SpanAttributes.DOCUMENT_COUNT: len(documents),
+            "document_count": len(documents),
             "citation_limit": citation_limit,
-            
-            # Span categorization - use multiple formats for maximum compatibility
             "openinference.span.kind": OpenInferenceSpanKind.REFERENCES,
-            "kind": "REFERENCES",
-            "span.kind": "REFERENCES",
-            "span_kind": "REFERENCES",
         },
-        session_id=session_id,  # Critical for session association
-        kind=SpanKind.INTERNAL,
-        link_to_current=True
+        session_id=session_id
     ) as ref_span:
-        # Register the references span with a predictable key for feedback association
-        references_span_id = ref_span.get_span_context().span_id
-        references_key = f"{qa_id}_references"
-        register_span(session_id, references_key, references_span_id)
-        logger.info(f"Registered references span with session_id={session_id}, key={references_key}, span_id={references_span_id}")
-        
-        # Preserve all documents for full analysis view
-        all_documents = documents.copy()
-        
-        # Create a limited set for default display
-        limited_documents = documents
-        if citation_limit > 0 and len(documents) > citation_limit:
-            limited_documents = documents[:citation_limit]
-            ref_span.set_attribute("documents_limited", True)
-        else:
-            ref_span.set_attribute("documents_limited", False)
-        
-        ref_span.set_attribute("final_document_count", len(limited_documents))
-        ref_span.set_attribute("total_document_count", len(all_documents))
-        
-        # Format documents as references
-        references = {}
-        citations = []
-        all_citations = []
+        # Register span for feedback association
+        register_span(session_id, f"{qa_id}_references", ref_span.get_span_context().span_id)
         
         try:
-            # Start time for performance tracking
-            start_time = time.time()
+            # Format documents as citations
+            citations = []
+            for idx, doc in enumerate(documents[:citation_limit]):
+                # Format the document as a citation
+                citation = format_document_for_citation(doc, idx)
+                citation["idx"] = idx
+                citations.append(citation)
             
-            # Format documents as references and citations
-            for i, doc in enumerate(documents):
-                if hasattr(doc, 'metadata'):
-                    # Generate citation ID
-                    citation_id = f"citation-{i+1}"
-                    
-                    # Extract metadata
-                    metadata = doc.metadata.copy() if hasattr(doc, 'metadata') else {}
-                    
-                    # Extract text content
-                    text = doc.page_content if hasattr(doc, 'page_content') else str(doc)
-                    
-                    # Add to references
-                    references[citation_id] = {
-                        "text": text,
-                        "metadata": metadata
-                    }
-                    
-                    # Add to citations list
-                    url = metadata.get('url', '')
-                    
-                    citations.append({
-                        "id": citation_id,
-                        "text": text[:100] + "..." if len(text) > 100 else text,
-                        "content": text,  # Include full content
-                        "full_content": text,  # Include full content in alternative field
-                        "url": url,  # Include URL directly
-                        "metadata": {
-                            k: v for k, v in metadata.items() 
-                            if k in ["date", "title", "source", "corpus", "page", "url"]
-                        }
-                    })
+            # Get all citations for telemetry
+            all_citations = []
+            for doc in documents:
+                cite = format_document_for_citation(doc)
+                if cite:
+                    all_citations.append(cite)
             
-            # Process all documents into citations
-            for i, doc in enumerate(all_documents):
-                if i >= len(citations) and hasattr(doc, 'metadata'):
-                    # Only process documents that weren't already processed
-                    # Generate citation ID
-                    citation_id = f"citation-{i+1}"
-                    
-                    # Extract metadata
-                    metadata = doc.metadata.copy() if hasattr(doc, 'metadata') else {}
-                    
-                    # Extract text content
-                    text = doc.page_content if hasattr(doc, 'page_content') else str(doc)
-                    
-                    # Add to all_citations list
-                    url = metadata.get('url', '')
-                    
-                    all_citations.append({
-                        "id": citation_id,
-                        "text": text[:100] + "..." if len(text) > 100 else text,
-                        "content": text,  # Include full content
-                        "full_content": text,  # Include full content in alternative field
-                        "url": url,  # Include URL directly
-                        "metadata": {
-                            k: v for k, v in metadata.items() 
-                            if k in ["date", "title", "source", "corpus", "page", "url"]
-                        }
-                    })
+            # Create references object for frontend display
+            references = {
+                "qa_id": qa_id,
+                "citations": citations
+            }
             
-            # Create message with references
-            message = {
-                "qaId": qa_id,
-                "responseComplete": False,
-                "references": references,
+            # Set reference information on span for telemetry
+            ref_span.set_attribute("description", "Citations and references for the RAG response")
+            ref_span.set_attribute("citations", json.dumps(citations))
+            ref_span.set_attribute("all_citations", json.dumps(all_citations))
+            ref_span.set_attribute("references", json.dumps(references))
+            ref_span.set_attribute("citation_count", len(citations))
+            
+            # Create the SSE response
+            ref_message = {
+                "type": "references",
+                "qa_id": qa_id,
                 "citations": citations,
-                "allCitations": all_citations,  # Send all citations for the modal view
-                "timestamp": time.time()
+                "allCitations": all_citations
             }
             
-            # Calculate processing time
-            processing_time = time.time() - start_time
-            
-            # Create summary for display 
-            citations_summary = f"Generated {len(citations)} citations from {len(documents)} documents"
-            
-            # Create summary data for details
-            summary_data = []
-            for i, citation in enumerate(citations[:5]):  # First 5 citations only
-                title = citation.get("metadata", {}).get("title", f"Document {i+1}")
-                source = citation.get("metadata", {}).get("source", "Unknown")
-                date = citation.get("metadata", {}).get("date", "")
-                summary_data.append(f"{i+1}. {title} ({source}, {date})")
-            
-            # Detailed information for the span
-            details = {
-                "citation_count": len(citations),
-                "all_citation_count": len(all_citations),
-                "reference_count": len(references),
-                "documents_limited": len(documents) > citation_limit,
-                "citation_limit": citation_limit,
-                "processing_time_seconds": processing_time
-            }
-            
-            # Add first few citations to details for better display
-            if summary_data:
-                details["citation_examples"] = summary_data
-            
-            # Set standard outputs using BaseSpanManager
-            BaseSpanManager.set_standard_outputs(
-                span=ref_span,
-                summary=citations_summary,
-                details=details,
-                span_kind=OpenInferenceSpanKind.REFERENCES
-            )
-            
-            # Add structured data for citations directly rather than using add_structured_data
-            try:
-                # Convert citations to JSON string for storage on the span
-                citations_json = json.dumps(citations[:10])  # Limit to 10 citations to keep size reasonable
-                ref_span.set_attribute("citations_json", citations_json)
-                
-                # Add individual citation information for better visibility
-                for i, citation in enumerate(citations[:5]):  # Limit to 5 for span attributes
-                    ref_span.set_attribute(f"citation.{i}.id", citation.get("id", ""))
-                    ref_span.set_attribute(f"citation.{i}.text", citation.get("text", "")[:100])  # Truncate text
-                    
-                    # Add key metadata
-                    metadata = citation.get("metadata", {})
-                    for key in ["date", "title", "source", "corpus"]:
-                        if key in metadata:
-                            ref_span.set_attribute(f"citation.{i}.{key}", str(metadata[key]))
-            except Exception as e:
-                logger.warning(f"Failed to add structured citation data to span: {e}")
-            
-            # Add document previews using BaseSpanManager
-            BaseSpanManager.add_document_preview(ref_span, documents[:5])
-            
-            return format_sse_message(message, event="references")
+            # Format as SSE
+            return format_sse_message(ref_message, event="references")
             
         except Exception as e:
             # Set error using BaseSpanManager
