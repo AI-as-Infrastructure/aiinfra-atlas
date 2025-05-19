@@ -19,6 +19,7 @@ from langchain_core.documents.base import Document
 from backend.retrievers.base_retriever import BaseRetriever
 from backend.retrievers.retriever_config_utils import require_config_keys, get_with_default, ConfigError
 from backend.modules.embeddings import get_embeddings_model
+from backend.modules.document_reranking import rerank_documents_with_telemetry
 
 
 
@@ -75,52 +76,6 @@ def get_default_index_schema():
             {"name": "corpus", "type": "TAG"},  # Ensure corpus is marked as TAG type
         ]
     }
-
-def enhance_document_relevance(documents: List[Document], query: str, max_docs: int = 10) -> List[Document]:
-    """Apply lightweight relevance enhancement to document ordering without changing the core retrieval.
-    
-    Args:
-        documents: List of retrieved documents to re-score
-        query: The user query string
-        max_docs: Maximum documents to consider
-        
-    Returns:
-        Re-ordered list of documents (same documents, potentially different order)
-    """
-    # Don't process if we have fewer documents than the limit
-    if len(documents) <= max_docs or not query or len(query.strip()) < 3:
-        return documents
-    
-    # Extract important terms from query (very basic approach)
-    stop_words = {'a', 'an', 'the', 'and', 'or', 'but', 'is', 'are', 'of', 'on', 'in', 'to', 'for', 'with'}
-    query_terms = set([term.lower() for term in re.findall(r'\b\w+\b', query) 
-                     if term.lower() not in stop_words and len(term) > 2])
-    
-    # No important terms to match, keep original order
-    if not query_terms:
-        return documents
-    
-    # Quick re-ranking with minimal processing 
-    scores = []
-    for idx, doc in enumerate(documents[:max_docs]):
-        # Maintain much of the original vector ranking (position importance)
-        base_score = 1.0 - (idx * 0.05)  # Gradually decreasing importance by position
-        
-        # Simple term frequency in document
-        content_lower = doc.page_content.lower()
-        term_matches = sum(1 for term in query_terms if term in content_lower)        
-        relevance_boost = term_matches / len(query_terms) if query_terms else 0
-        
-        # Combine scores with more weight on original ranking (70%) vs term matching (30%)
-        final_score = (base_score * 0.7) + (relevance_boost * 0.3)
-        scores.append((idx, final_score))
-    
-    # Sort by score and maintain original order for documents beyond max_docs
-    scores.sort(key=lambda x: x[1], reverse=True)
-    reordered = [documents[idx] for idx, _ in scores]
-    
-    # Return the reordered list plus any remaining documents
-    return reordered + documents[max_docs:]
 
 def format_citations(docs_with_weight: List[Tuple[Document, float]]) -> List[Dict[str, Any]]:
     """Format documents into a consistent citation structure with better quotes.
@@ -389,18 +344,19 @@ class HansardRetriever(BaseRetriever):
         # Attach citation formatting methods to the instance
         self.format_document_for_citation = format_document_for_citation
         self.format_citations = format_citations
-        self.enhance_document_relevance = enhance_document_relevance
 
     def get_retriever(self):
         """Get the base retriever instance."""
         return self._retriever
         
-    def retrieve(self, query, corpus_filter=None):
+    def retrieve(self, query, corpus_filter=None, session_id=None, qa_id=None):
         """Retrieve documents based on a query and optional corpus filter.
         
         Args:
             query: The query string to search for
             corpus_filter: Optional corpus name to filter results
+            session_id: Optional session ID for telemetry tracking
+            qa_id: Optional QA ID for telemetry tracking
             
         Returns:
             List of retrieved documents
@@ -437,8 +393,14 @@ class HansardRetriever(BaseRetriever):
                 except Exception as e:
                     logger.error(f"Error retrieving documents for {corpus}: {e}")
             
-            # Sort all documents by relevance (using enhance_document_relevance)
-            all_documents = self.enhance_document_relevance(all_documents, query)
+            # Sort all documents by relevance using reranker with telemetry
+            all_documents = rerank_documents_with_telemetry(
+                documents=all_documents, 
+                query=query,
+                session_id=session_id,
+                qa_id=qa_id,
+                max_docs=self.search_kwargs.get("k", 20)
+            )
             logger.info(f"Retrieved total of {len(all_documents)} documents from all corpora")
             return all_documents
         else:
@@ -455,8 +417,14 @@ class HansardRetriever(BaseRetriever):
                     filter={"corpus": corpus_filter_str}  # Direct metadata filtering
                 )
                 
-                # Apply document enhancement to improve relevance
-                enhanced_docs = self.enhance_document_relevance(documents, query)
+                # Apply document enhancement to improve relevance using reranker with telemetry
+                enhanced_docs = rerank_documents_with_telemetry(
+                    documents=documents, 
+                    query=query,
+                    session_id=session_id,
+                    qa_id=qa_id,
+                    max_docs=self.search_kwargs.get("k", 20)
+                )
                 
                 return enhanced_docs
             except Exception as e:
@@ -744,9 +712,16 @@ class HansardRetriever(BaseRetriever):
         try:
             # Extract corpus_filter from config if present
             corpus_filter = None
-            if config and isinstance(config, dict) and "corpus_filter" in config:
-                corpus_filter = config["corpus_filter"]
-                logger.info(f"Retrieving documents with corpus filter: '{corpus_filter}'")
+            session_id = None
+            qa_id = None
+            
+            if config and isinstance(config, dict):
+                corpus_filter = config.get("corpus_filter")
+                session_id = config.get("session_id")
+                qa_id = config.get("qa_id")
+                
+                if corpus_filter:
+                    logger.info(f"Retrieving documents with corpus filter: '{corpus_filter}'")
             
             # Check if we need to reset the filter state
             if config and isinstance(config, dict) and config.get("reset_filter_state", False):
@@ -767,7 +742,12 @@ class HansardRetriever(BaseRetriever):
                 )
             
             # Use the retrieve method with the corpus filter
-            documents = self.retrieve(query, corpus_filter=corpus_filter)
+            documents = self.retrieve(
+                query, 
+                corpus_filter=corpus_filter,
+                session_id=session_id,
+                qa_id=qa_id
+            )
             
             # Log basic retrieval stats
             logger.info(f"Retrieved {len(documents)} documents for query")
