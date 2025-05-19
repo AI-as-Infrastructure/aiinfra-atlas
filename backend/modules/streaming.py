@@ -264,14 +264,14 @@ def stream_documents_as_references(
             
             # Critical: Set the kind in the exact format Phoenix expects
             # Use a single, proven span kind format that Phoenix definitely understands
-            "type": "REFERENCES",  # This is what Phoenix often looks for
-            "span_kind": "REFERENCES",  # Alternative that Phoenix might recognize
+            "type": OpenInferenceSpanKind.REFERENCES,
+            "span_kind": OpenInferenceSpanKind.REFERENCES,
             
             # Standard OpenTelemetry span kind
             "otel.kind": "PROCESSOR",  # Standard OTel kind
             
             # Use the most direct attribute Phoenix specifically looks for
-            "openinference.span.kind": "REFERENCES",  # This is the one Phoenix prioritizes
+            "openinference.span.kind": OpenInferenceSpanKind.REFERENCES,
             
             "processor.type": "citation_formatter",
             "processor.description": "Transforms document objects into structured citations and references for display"
