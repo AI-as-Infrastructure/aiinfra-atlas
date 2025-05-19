@@ -13,6 +13,8 @@ from typing import Dict, Any, Generator, Optional, List, Callable, AsyncGenerato
 # Import telemetry modules at the beginning to avoid UnboundLocalError
 from backend.telemetry.core import create_span, SpanKind
 from backend.telemetry.constants import SpanAttributes, SpanNames, OpenInferenceSpanKind
+from backend.telemetry import BaseSpanManager
+from backend.telemetry.spans import register_span
 
 logger = logging.getLogger(__name__)
 
@@ -162,24 +164,20 @@ async def stream_response_chunks(
     with create_span(
         SpanNames.STREAMING_RESPONSE,
         attributes={
+            # Session identifiers
             SpanAttributes.SESSION_ID: session_id,
             SpanAttributes.QA_ID: qa_id,
             
-            # Critical: Set the kind in the exact format Phoenix expects
-            "type": "PROCESSOR",
-            "span_kind": "PROCESSOR",
-            "otel.kind": "PROCESSOR",
-            "openinference.span.kind": "PROCESSOR",
-            
-            "processor.type": "stream_formatter",
-            "component.type": "sse",
-            "processor.description": "Formats and streams text chunks as server-sent events"
+            # Span categorization
+            "openinference.span.kind": OpenInferenceSpanKind.PROCESSOR,
         },
+        session_id=session_id,  # Critical for session association
         kind=SpanKind.INTERNAL,
         link_to_current=True
     ) as streaming_span:
         chunk_count = 0
         total_chars = 0
+        start_time = time.time()
         
         try:
             for chunk in chunks_generator:
@@ -194,23 +192,55 @@ async def stream_response_chunks(
                 # Create chunk message
                 message = create_chunk_message(chunk, qa_id)
                 
-                # Record telemetry
+                # Record telemetry with basic counts
                 streaming_span.set_attribute("chunk_count", chunk_count)
                 streaming_span.set_attribute("total_chars", total_chars)
                 
                 # Yield formatted SSE message
                 yield format_sse_message(message)
-                
-            # Record final metrics
-            streaming_span.set_attribute("final_chunk_count", chunk_count)
-            streaming_span.set_attribute("final_char_count", total_chars)
-            streaming_span.set_attribute("streaming_complete", True)
+            
+            # Calculate processing time
+            processing_time = time.time() - start_time
+            
+            # Create a summary of the streaming process
+            summary = f"Streamed {chunk_count} chunks ({total_chars} characters)"
+            
+            # Create detailed information
+            details = {
+                "chunk_count": chunk_count,
+                "total_characters": total_chars,
+                "avg_chars_per_chunk": total_chars / max(1, chunk_count),
+                "processing_time_seconds": processing_time,
+                "streaming_complete": True
+            }
+            
+            # Set standard outputs using BaseSpanManager
+            BaseSpanManager.set_standard_outputs(
+                span=streaming_span,
+                summary=summary,
+                details=details,
+                span_kind=OpenInferenceSpanKind.PROCESSOR
+            )
             
         except Exception as e:
-            # Record error in telemetry
-            streaming_span.record_exception(e)
-            streaming_span.set_attribute("streaming_error", str(e))
-            streaming_span.set_attribute("streaming_complete", False)
+            # Calculate processing time up to error
+            processing_time = time.time() - start_time
+            
+            # Set error using BaseSpanManager
+            error_summary = f"Error streaming response: {str(e)}"
+            BaseSpanManager.set_standard_outputs(
+                span=streaming_span,
+                summary=error_summary,
+                error=e,
+                details={
+                    "chunk_count": chunk_count,
+                    "total_characters": total_chars,
+                    "processing_time_seconds": processing_time,
+                    "streaming_complete": False,
+                    "error_during_streaming": True
+                },
+                span_kind=OpenInferenceSpanKind.PROCESSOR
+            )
             
             # Log the error
             logger.error(f"Error streaming response: {e}", exc_info=True)
@@ -256,29 +286,22 @@ def stream_documents_as_references(
             SpanAttributes.DOCUMENT_COUNT: len(documents),
             "citation_limit": citation_limit,
             
-            # Detailed document information
-            "description": f"Formatting {len(documents)} documents as references/citations for display",
-            "operation": "citation_formatting",
-            "citation_display_limit": citation_limit,
-            "processing_type": "document_references",
-            
-            # Critical: Set the kind in the exact format Phoenix expects
-            # Use a single, proven span kind format that Phoenix definitely understands
-            "type": OpenInferenceSpanKind.REFERENCES,
-            "span_kind": OpenInferenceSpanKind.REFERENCES,
-            
-            # Standard OpenTelemetry span kind
-            "otel.kind": "PROCESSOR",  # Standard OTel kind
-            
-            # Use the most direct attribute Phoenix specifically looks for
+            # Span categorization - use multiple formats for maximum compatibility
             "openinference.span.kind": OpenInferenceSpanKind.REFERENCES,
-            
-            "processor.type": "citation_formatter",
-            "processor.description": "Transforms document objects into structured citations and references for display"
+            "kind": "REFERENCES",
+            "span.kind": "REFERENCES",
+            "span_kind": "REFERENCES",
         },
-        kind=SpanKind.INTERNAL,  # Use INTERNAL kind for processors
+        session_id=session_id,  # Critical for session association
+        kind=SpanKind.INTERNAL,
         link_to_current=True
     ) as ref_span:
+        # Register the references span with a predictable key for feedback association
+        references_span_id = ref_span.get_span_context().span_id
+        references_key = f"{qa_id}_references"
+        register_span(session_id, references_key, references_span_id)
+        logger.info(f"Registered references span with session_id={session_id}, key={references_key}, span_id={references_span_id}")
+        
         # Preserve all documents for full analysis view
         all_documents = documents.copy()
         
@@ -299,6 +322,10 @@ def stream_documents_as_references(
         all_citations = []
         
         try:
+            # Start time for performance tracking
+            start_time = time.time()
+            
+            # Format documents as references and citations
             for i, doc in enumerate(documents):
                 if hasattr(doc, 'metadata'):
                     # Generate citation ID
@@ -369,27 +396,13 @@ def stream_documents_as_references(
                 "timestamp": time.time()
             }
             
-            ref_span.set_attribute("citation_count", len(citations))
-            ref_span.set_attribute("all_citation_count", len(all_citations))
-            ref_span.set_attribute("reference_count", len(references))
+            # Calculate processing time
+            processing_time = time.time() - start_time
             
-            # Add citations to telemetry for analysis
-            # Store select important fields as individual attributes
-            for i, citation in enumerate(citations):
-                if i < 15:  # Limit to 15 citations to avoid too many attributes
-                    ref_span.set_attribute(f"citation.{i}.id", citation.get("id", ""))
-                    ref_span.set_attribute(f"citation.{i}.text", citation.get("text", "")[:200])
-                    
-                    # Include key metadata
-                    for key in ["date", "title", "source", "corpus"]:
-                        if key in citation.get("metadata", {}):
-                            ref_span.set_attribute(f"citation.{i}.{key}", str(citation["metadata"][key]))
-
-            # Store full citation data as JSON for Phoenix UI
-            ref_span.set_attribute("citations_json", json.dumps(citations))  
-            ref_span.set_attribute("all_citations_json", json.dumps(all_citations))
+            # Create summary for display 
+            citations_summary = f"Generated {len(citations)} citations from {len(documents)} documents"
             
-            # Add a summary for Info display in Phoenix
+            # Create summary data for details
             summary_data = []
             for i, citation in enumerate(citations[:5]):  # First 5 citations only
                 title = citation.get("metadata", {}).get("title", f"Document {i+1}")
@@ -397,49 +410,61 @@ def stream_documents_as_references(
                 date = citation.get("metadata", {}).get("date", "")
                 summary_data.append(f"{i+1}. {title} ({source}, {date})")
             
+            # Detailed information for the span
+            details = {
+                "citation_count": len(citations),
+                "all_citation_count": len(all_citations),
+                "reference_count": len(references),
+                "documents_limited": len(documents) > citation_limit,
+                "citation_limit": citation_limit,
+                "processing_time_seconds": processing_time
+            }
+            
+            # Add first few citations to details for better display
             if summary_data:
-                ref_span.set_attribute("citations_summary", "\n".join(summary_data))
+                details["citation_examples"] = summary_data
             
-            # Also attach a shortened version of each document to the parent span
-            # for telemetry analysis and debugging (limited to keep span size reasonable)
-            doc_samples = []
-            for i, doc in enumerate(documents[:5]):  # Limit to first 5 docs
-                if hasattr(doc, 'page_content') and hasattr(doc, 'metadata'):
-                    content = doc.page_content[:300] + "..." if len(doc.page_content) > 300 else doc.page_content
-                    meta = {k: v for k, v in doc.metadata.items() if k in ["date", "title", "source", "corpus", "page"]}
-                    doc_samples.append({"content": content, "metadata": meta})
+            # Set standard outputs using BaseSpanManager
+            BaseSpanManager.set_standard_outputs(
+                span=ref_span,
+                summary=citations_summary,
+                details=details,
+                span_kind=OpenInferenceSpanKind.REFERENCES
+            )
             
-            ref_span.set_attribute("document_samples_json", json.dumps(doc_samples))
+            # Add structured data for citations directly rather than using add_structured_data
+            try:
+                # Convert citations to JSON string for storage on the span
+                citations_json = json.dumps(citations[:10])  # Limit to 10 citations to keep size reasonable
+                ref_span.set_attribute("citations_json", citations_json)
+                
+                # Add individual citation information for better visibility
+                for i, citation in enumerate(citations[:5]):  # Limit to 5 for span attributes
+                    ref_span.set_attribute(f"citation.{i}.id", citation.get("id", ""))
+                    ref_span.set_attribute(f"citation.{i}.text", citation.get("text", "")[:100])  # Truncate text
+                    
+                    # Add key metadata
+                    metadata = citation.get("metadata", {})
+                    for key in ["date", "title", "source", "corpus"]:
+                        if key in metadata:
+                            ref_span.set_attribute(f"citation.{i}.{key}", str(metadata[key]))
+            except Exception as e:
+                logger.warning(f"Failed to add structured citation data to span: {e}")
             
-            # Set output for Phoenix display
-            citations_summary = f"Generated {len(citations)} citations from {len(documents)} documents"
-            
-            # Create nicely formatted citation summary with details
-            if summary_data:
-                formatted_summary = "\n".join(summary_data)
-                citation_output = f"{citations_summary}\n\n{formatted_summary}"
-            else:
-                citation_output = citations_summary
-            
-            # Set all output attributes directly on the main span
-            # Primary content field - most important for Phoenix display
-            ref_span.set_attribute("content", citation_output)
-            
-            # Set using the output method if available
-            if hasattr(ref_span, "set_output"):
-                ref_span.set_output(citation_output)
-            
-            # Also set standard output attributes for maximum compatibility
-            ref_span.set_attribute("output", citation_output)
-            ref_span.set_attribute("output.value", citation_output)
-            ref_span.set_attribute(SpanAttributes.OUTPUT, citation_output)
+            # Add document previews using BaseSpanManager
+            BaseSpanManager.add_document_preview(ref_span, documents[:5])
             
             return format_sse_message(message, event="references")
             
         except Exception as e:
-            # Record error in telemetry
-            ref_span.record_exception(e)
-            ref_span.set_attribute("reference_error", str(e))
+            # Set error using BaseSpanManager
+            error_summary = f"Error formatting references: {str(e)}"
+            BaseSpanManager.set_standard_outputs(
+                span=ref_span,
+                summary=error_summary,
+                error=e,
+                span_kind=OpenInferenceSpanKind.REFERENCES
+            )
             
             # Log the error
             logger.error(f"Error formatting references: {e}", exc_info=True)

@@ -257,8 +257,10 @@ def submit_span_annotation(span_id: str, feedback_data: Dict[str, Any], qa_id: s
 def log_user_feedback(session_id: str, qa_id: str, feedback_data: Dict[str, Any]) -> bool:
     """
     Log user feedback to telemetry by adding annotations to the existing spans.
-    Each type of feedback (answer rating, citation rating, text) is preserved
-    as a separate annotation, all attached to the same span.
+    Associates different feedback types with the appropriate spans:
+    - answer_rating -> response span (com.atlas.rag.generation.response)
+    - citations_rating -> references span (com.atlas.rag.references)
+    - feedback_text -> added to both spans for context
     
     Args:
         session_id: Session ID 
@@ -273,45 +275,100 @@ def log_user_feedback(session_id: str, qa_id: str, feedback_data: Dict[str, Any]
         return False
     
     try:
-        # First try to find the response-specific span for this qa_id (preferred target)
-        target_span_id = find_qa_span_id(session_id, f"{qa_id}_response")
+        # Import the global registry directly to check available spans
+        from backend.telemetry.spans import _span_registry
         
-        # If not found, fall back to the regular qa_id span
-        if not target_span_id:
-            target_span_id = find_qa_span_id(session_id, qa_id)
-            logger.info(f"Response-specific span not found for {qa_id}, using general qa span")
+        # Log available spans for debugging
+        if session_id in _span_registry:
+            available_spans = list(_span_registry[session_id].keys())
+            logger.info(f"Available spans for session {session_id}: {available_spans}")
         
-        # If still not found, log available spans for debugging
-        if not target_span_id:
-            # Import the global registry directly
-            from backend.telemetry.spans import _span_registry
-            
-            if session_id in _span_registry:
-                logger.info(f"Available spans for session {session_id}: {list(_span_registry[session_id].keys())}")
-            
-            logger.warning(f"Cannot find any target span for feedback: session_id={session_id}, qa_id={qa_id}")
+        # Find the response span for answer rating
+        response_span_id = find_qa_span_id(session_id, f"{qa_id}_response")
+        
+        # Find the references span for citations rating
+        references_span_id = find_qa_span_id(session_id, f"{qa_id}_references")
+        
+        # If specific spans not found, fall back to the main QA span
+        main_qa_span_id = find_qa_span_id(session_id, qa_id)
+        
+        if not response_span_id and not references_span_id and not main_qa_span_id:
+            logger.warning(f"No valid spans found for feedback: session_id={session_id}, qa_id={qa_id}")
             return False
         
-        # Count how many feedback items we have
-        feedback_count = 0
+        success = True
+        annotations_count = 0
+        
+        # Associate answer rating with response span (or fall back to main span)
         if 'answer_rating' in feedback_data:
-            feedback_count += 1
+            target_span_id = response_span_id or main_qa_span_id
+            if target_span_id:
+                # Create answer feedback subset
+                answer_feedback = {
+                    'answer_rating': feedback_data['answer_rating']
+                }
+                
+                # Include feedback text with answer rating if present
+                if feedback_data.get('feedback_text'):
+                    answer_feedback['feedback_text'] = feedback_data['feedback_text']
+                
+                logger.info(f"Associating answer_rating with span {target_span_id} (response span)")
+                answer_success = submit_span_annotation(target_span_id, answer_feedback, qa_id)
+                success = success and answer_success
+                annotations_count += 1
+                
+                if answer_success:
+                    logger.info(f"Successfully associated answer_rating with span {target_span_id}")
+                else:
+                    logger.warning(f"Failed to associate answer_rating with span {target_span_id}")
+            else:
+                logger.warning(f"No target span found for answer_rating")
+        
+        # Associate citations rating with references span
         if 'citations_rating' in feedback_data:
-            feedback_count += 1
-        if feedback_data.get('feedback_text'):
-            feedback_count += 1
-            
-        # Submit the feedback as multiple annotations to the existing span
-        logger.info(f"Associating {feedback_count} feedback annotations with span ID {target_span_id} for qa_id {qa_id}")
-        annotation_success = submit_span_annotation(target_span_id, feedback_data, qa_id)
+            target_span_id = references_span_id or main_qa_span_id
+            if target_span_id:
+                # Create citations feedback subset
+                citations_feedback = {
+                    'citations_rating': feedback_data['citations_rating']
+                }
+                
+                logger.info(f"Associating citations_rating with span {target_span_id} (references span)")
+                citations_success = submit_span_annotation(target_span_id, citations_feedback, qa_id)
+                success = success and citations_success
+                annotations_count += 1
+                
+                if citations_success:
+                    logger.info(f"Successfully associated citations_rating with span {target_span_id}")
+                else:
+                    logger.warning(f"Failed to associate citations_rating with span {target_span_id}")
+            else:
+                logger.warning(f"No target span found for citations_rating")
         
-        # Log success/failure
-        if annotation_success:
-            logger.info(f"Successfully associated {feedback_count} feedback annotations with span {target_span_id} for qa_id {qa_id}")
-        else:
-            logger.error(f"Failed to associate feedback annotations with span {target_span_id} for qa_id {qa_id}")
+        # Associate standalone feedback text (if not already included with answer rating)
+        if feedback_data.get('feedback_text') and not 'answer_rating' in feedback_data:
+            # Determine the best span for text feedback - prefer response span over reference span
+            target_span_id = response_span_id or main_qa_span_id
+            if target_span_id:
+                # Create text feedback subset
+                text_feedback = {
+                    'feedback_text': feedback_data['feedback_text']
+                }
+                
+                logger.info(f"Associating feedback_text with span {target_span_id}")
+                text_success = submit_span_annotation(target_span_id, text_feedback, qa_id)
+                success = success and text_success
+                annotations_count += 1
+                
+                if text_success:
+                    logger.info(f"Successfully associated feedback_text with span {target_span_id}")
+                else:
+                    logger.warning(f"Failed to associate feedback_text with span {target_span_id}")
+            else:
+                logger.warning(f"No target span found for feedback_text")
         
-        return annotation_success
+        logger.info(f"Total annotations associated with spans: {annotations_count}")
+        return success
     except Exception as e:
         logger.error(f"Error logging feedback: {e}", exc_info=True)
         return False
