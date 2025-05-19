@@ -19,11 +19,24 @@ logger = logging.getLogger(__name__)
 # Load environment variables from config/.env (relative to project root)
 project_root = os.path.dirname(os.path.dirname(__file__))
 env_path = os.path.join(project_root, "config", ".env")
+env_dev_path = os.path.join(project_root, "config", ".env.development")
+
+# Check for both files in order
+env_loaded = False
+
+# Try .env file first
 if os.path.exists(env_path):
     logger.info(f"Loading environment variables from: {env_path}")
     load_dotenv(env_path)
+    env_loaded = True
+# Then try .env.development
+elif os.path.exists(env_dev_path):
+    logger.info(f"Loading environment variables from: {env_dev_path}")
+    load_dotenv(env_dev_path)
+    env_loaded = True
+# Only log an error if neither file is found
 else:
-    logger.error(f"Environment file not found at: {env_path}")
+    logger.warning(f"No environment files found at: {env_path} or {env_dev_path}")
 
 # Import core modules and telemetry utilities
 from backend.telemetry import (

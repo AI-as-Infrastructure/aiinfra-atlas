@@ -71,6 +71,25 @@ from .api import (
     register_telemetry_api
 )
 
+# Import span manager
+from .span_manager import BaseSpanManager
+from .rag_span_manager import RAGSpanManager
+
+# Add this function
+def get_span_manager(name, manager_type=BaseSpanManager):
+    """Get a span manager with a properly configured tracer.
+    
+    Args:
+        name: Name for the tracer
+        manager_type: Type of span manager to create (default: BaseSpanManager)
+        
+    Returns:
+        An instance of the specified span manager type
+    """
+    from opentelemetry import trace
+    tracer = trace.get_tracer(name)
+    return manager_type(tracer)
+
 # Export everything for backward compatibility
 __all__ = [
     # OpenTelemetry classes
@@ -125,5 +144,10 @@ __all__ = [
     
     # API
     'telemetry_router',
-    'register_telemetry_api'
+    'register_telemetry_api',
+    
+    # Span Manager
+    'BaseSpanManager',
+    'RAGSpanManager',
+    'get_span_manager',
 ]

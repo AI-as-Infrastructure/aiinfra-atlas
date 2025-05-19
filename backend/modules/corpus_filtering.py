@@ -74,71 +74,30 @@ def verify_corpus_distribution(distribution: Dict[str, int], corpus_filter: Opti
             
         return result
 
-def apply_corpus_filter(
-    documents: List[Document], 
-    corpus_filter: Optional[str] = None, 
-    span: Optional[Any] = None
-) -> List[Document]:
+def apply_corpus_filter(documents, corpus_filter, **kwargs):
     """
     Filter documents by corpus.
     
     Args:
-        documents: List of documents
-        corpus_filter: Corpus to filter for, or None for all
-        span: Optional parent span for telemetry
+        documents: List of documents to filter
+        corpus_filter: Corpus to filter by
+        **kwargs: Additional keyword arguments (ignored)
         
     Returns:
         Filtered list of documents
     """
-    with create_span(
-        SpanNames.DOCUMENT_FILTERING,
-        attributes={
-            "openinference.span.kind": OpenInferenceSpanKind.PROCESSOR,
-            "corpus_filter": corpus_filter or "all",
-            "initial_document_count": len(documents)
-        },
-        link_to_current=True
-    ) as filtering_span:
-        # If no filter or 'all', return all documents
-        if not corpus_filter or corpus_filter.lower() == 'all':
-            filtering_span.set_attribute("filtered_document_count", len(documents))
-            filtering_span.set_attribute("filtering_applied", False)
-            return documents
-            
-        # Count documents by corpus before filtering
-        before_distribution = get_corpus_distribution(documents)
-        for corpus, count in before_distribution.items():
-            filtering_span.set_attribute(f"before.corpus.{corpus}", count)
-        
-        # Apply corpus filter
-        before_count = len(documents)
-        filtered_documents = [
-            doc for doc in documents 
-            if str(doc.metadata.get('corpus', '')).strip() == corpus_filter
-        ]
-        after_count = len(filtered_documents)
-        
-        # Log filtering results
-        logger.debug(f"Applied corpus filter '{corpus_filter}': {before_count} → {after_count} documents")
-        
-        # Count documents by corpus after filtering
-        after_distribution = get_corpus_distribution(filtered_documents)
-        for corpus, count in after_distribution.items():
-            filtering_span.set_attribute(f"after.corpus.{corpus}", count)
-        
-        # Add telemetry attributes
-        filtering_span.set_attribute("filtered_document_count", after_count)
-        filtering_span.set_attribute("filtering_applied", True)
-        filtering_span.set_attribute("documents_removed", before_count - after_count)
-        
-        # Verify filtering worked correctly
-        filtering_success = verify_corpus_distribution(after_distribution, corpus_filter)
-        filtering_span.set_attribute("filtering_success", filtering_success)
-        
-        if not filtering_success:
-            logger.warning(f"Corpus filtering may not have worked correctly. After distribution: {after_distribution}")
-        
-        return filtered_documents
+    # If no corpus filter or "all", return all documents
+    if not corpus_filter or corpus_filter.lower() == "all":
+        return documents
+    
+    # Filter documents by corpus
+    filtered_docs = []
+    for doc in documents:
+        if hasattr(doc, 'metadata') and 'corpus' in doc.metadata:
+            if doc.metadata['corpus'] == corpus_filter:
+                filtered_docs.append(doc)
+    
+    return filtered_docs
 
 def filter_documents_with_telemetry(
     documents: List[Document], 
@@ -171,8 +130,8 @@ def filter_documents_with_telemetry(
             "openinference.span.kind": OpenInferenceSpanKind.PROCESSOR
         }
     ) as span:
-        # Apply corpus filter with this span as parent
-        filtered_docs = apply_corpus_filter(documents, corpus_filter, span)
+        # Fix: Don't pass span as a positional argument
+        filtered_docs = apply_corpus_filter(documents, corpus_filter)
         
         # Document counts
         span.set_attribute(SpanAttributes.DOCUMENT_COUNT, len(filtered_docs))

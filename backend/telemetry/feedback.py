@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from opentelemetry.trace import SpanKind
 
 from .core import create_span, tracer
-from .spans import trace_operation, find_qa_span_id
+from .spans import trace_operation, find_qa_span_id, find_session_root_span_id
 from .constants import SpanAttributes, OpenInferenceSpanKind, SpanNames
 
 logger = logging.getLogger(__name__)
@@ -112,7 +112,7 @@ def validate_feedback(feedback_data: Dict[str, Any]) -> Tuple[Dict[str, Any], Li
 
 def submit_span_annotation(span_id: str, feedback_data: Dict[str, Any], qa_id: str = None) -> bool:
     """
-    Submit feedback as a span annotation to Phoenix using the span annotations API.
+    Submit feedback as span annotations to Phoenix, preserving each type of feedback separately.
     
     Args:
         span_id: The ID of the span to annotate
@@ -148,108 +148,95 @@ def submit_span_annotation(span_id: str, feedback_data: Dict[str, Any], qa_id: s
         phoenix_endpoint = phoenix_endpoint[:-10]  # Remove '/v1/traces'
     
     # Construct annotation endpoint
-    annotation_endpoint = f"{phoenix_endpoint}/v1/span_annotations?sync=false"
+    annotation_endpoint = f"{phoenix_endpoint}/v1/span_annotations?sync=true"
     
     # Extract feedback values
     answer_rating = feedback_data.get('answer_rating')
     citations_rating = feedback_data.get('citations_rating')
     feedback_text = feedback_data.get('feedback_text', '')
+    timestamp = feedback_data.get('timestamp', datetime.now().isoformat())
     
-    # Use the answer rating for the main label and score
-    label = get_rating_name(answer_rating)
-    score = answer_rating / 5.0 if answer_rating is not None else 0.5
-    
-    # Ensure span_id is properly formatted using OpenTelemetry's format_span_id
+    # Format the span ID correctly for Phoenix
     if isinstance(span_id, int):
+        from opentelemetry.trace import format_span_id
         formatted_span_id = format_span_id(span_id)
     else:
-        # Ensure it's a proper hex string with correct length
-        if len(span_id) == 16:  # Already correctly formatted
-            formatted_span_id = span_id
-        else:
-            try:
-                # Try to convert to int and then format
-                int_span_id = int(span_id, 16)
-                formatted_span_id = format_span_id(int_span_id)
-            except ValueError:
-                # If conversion fails, use as is but log a warning
-                logger.warning(f"Could not format span_id {span_id}, using as is")
-                formatted_span_id = span_id
+        formatted_span_id = span_id
     
-    logger.info(f"Using formatted span_id: {formatted_span_id} for annotation")
+    # Create a list to hold all annotations - we'll create separate ones for each type of feedback
+    annotations = []
     
-    # Generate a unique annotation ID that includes the QA ID for traceability
-    annotation_id = f"feedback_{qa_id}_{int(time.time())}" if qa_id else f"feedback_{int(time.time())}"
-    
-    # Create a list to hold all annotations - we'll create separate ones for different ratings
-    annotation_data = []
-    
-    # Add a dedicated annotation for user free text feedback if present
-    if feedback_text:
-        user_comment_annotation = {
-            "id": f"{annotation_id}_user_comment",
+    # Create answer rating annotation if provided
+    if answer_rating is not None:
+        answer_annotation = {
+            "id": f"feedback_answer_{qa_id}_{int(time.time())}",
             "span_id": formatted_span_id,
-            "name": "user feedback",
+            "name": "answer_rating",
+            "annotator_kind": "HUMAN",
+            "result": {
+                "label": f"answer_rating_{answer_rating}",
+                "score": answer_rating / 5.0
+            },
+            "metadata": {
+                "rating_type": "answer",
+                "rating_value": answer_rating,
+                "qa_id": qa_id,
+                "timestamp": timestamp
+            }
+        }
+        annotations.append(answer_annotation)
+    
+    # Create citation rating annotation if provided
+    if citations_rating is not None:
+        citation_annotation = {
+            "id": f"feedback_citation_{qa_id}_{int(time.time())}",
+            "span_id": formatted_span_id,
+            "name": "citation_rating",
+            "annotator_kind": "HUMAN",
+            "result": {
+                "label": f"citation_rating_{citations_rating}",
+                "score": citations_rating / 5.0
+            },
+            "metadata": {
+                "rating_type": "citations",
+                "rating_value": citations_rating,
+                "qa_id": qa_id,
+                "timestamp": timestamp
+            }
+        }
+        annotations.append(citation_annotation)
+    
+    # Create text feedback annotation if provided
+    if feedback_text:
+        text_annotation = {
+            "id": f"feedback_text_{qa_id}_{int(time.time())}",
+            "span_id": formatted_span_id,
+            "name": "feedback_text",
             "annotator_kind": "HUMAN",
             "result": {
                 "label": "user_comment",
                 "explanation": feedback_text
             },
             "metadata": {
+                "feedback_type": "text",
                 "qa_id": qa_id,
-                "timestamp": feedback_data.get('timestamp', datetime.now().isoformat())
+                "timestamp": timestamp
             }
         }
-        annotation_data.append(user_comment_annotation)
-
-    # Optionally, keep rating annotations (without using explanation for Likert score, just label/score)
-    if answer_rating is not None:
-        answer_annotation = {
-            "id": f"{annotation_id}_answer",
-            "span_id": formatted_span_id,
-            "name": "answer_rating",
-            "annotator_kind": "HUMAN",
-            "result": {
-                "label": get_rating_name(answer_rating),
-                "score": answer_rating / 5.0
-            },
-            "metadata": {
-                "answer_rating": answer_rating,
-                "citations_rating": citations_rating,
-                "qa_id": qa_id,
-                "timestamp": feedback_data.get('timestamp', datetime.now().isoformat())
-            }
-        }
-        annotation_data.append(answer_annotation)
+        annotations.append(text_annotation)
     
-    if citations_rating is not None:
-        citations_annotation = {
-            "id": f"{annotation_id}_citations",
-            "span_id": formatted_span_id,
-            "name": "citations_rating",
-            "annotator_kind": "HUMAN",
-            "result": {
-                "label": get_rating_name(citations_rating),
-                "score": citations_rating / 5.0
-            },
-            "metadata": {
-                "answer_rating": answer_rating,
-                "citations_rating": citations_rating,
-                "qa_id": qa_id,
-                "timestamp": feedback_data.get('timestamp', datetime.now().isoformat())
-            }
-        }
-        annotation_data.append(citations_annotation)
-    
-    # Construct annotation payload according to Phoenix API requirements
+    # Construct annotation payload
     annotation_payload = {
-        "data": annotation_data
+        "data": annotations
     }
     
-    # Send annotation to Phoenix using httpx
+    # Send annotation to Phoenix
     try:
         headers = {"api_key": phoenix_api_key}
-        client = httpx.Client(timeout=10.0)  # Set a reasonable timeout
+        client = httpx.Client(timeout=10.0)
+        
+        # Log details for debugging
+        logger.info(f"Sending {len(annotations)} annotations to Phoenix for span {formatted_span_id}")
         
         response = client.post(
             annotation_endpoint,
@@ -257,103 +244,76 @@ def submit_span_annotation(span_id: str, feedback_data: Dict[str, Any], qa_id: s
             headers=headers
         )
         
-        if response.status_code == 200:
-            logger.info(f"Successfully submitted annotation for span {formatted_span_id}")
+        if response.status_code >= 200 and response.status_code < 300:
+            logger.info(f"Successfully submitted {len(annotations)} annotations for span {formatted_span_id}")
             return True
         else:
-            logger.error(f"Failed to submit annotation: {response.status_code} - {response.text}")
+            logger.error(f"Failed to submit annotations: {response.status_code} - {response.text}")
             return False
     except Exception as e:
-        logger.error(f"Error submitting annotation: {e}", exc_info=True)
+        logger.error(f"Error submitting annotations: {e}", exc_info=True)
         return False
 
 def log_user_feedback(session_id: str, qa_id: str, feedback_data: Dict[str, Any]) -> bool:
     """
-    Log user feedback for a specific QA interaction.
+    Log user feedback to telemetry by adding annotations to the existing spans.
+    Each type of feedback (answer rating, citation rating, text) is preserved
+    as a separate annotation, all attached to the same span.
     
     Args:
-        session_id: Session ID
+        session_id: Session ID 
         qa_id: Question/answer ID
-        feedback_data: Dictionary containing feedback data
+        feedback_data: Feedback data dictionary
         
     Returns:
-        bool: True if feedback was successfully logged, False otherwise
+        True if feedback was logged successfully, False otherwise
     """
-    logger.info(f"DEBUG: log_user_feedback called with session_id={session_id}, qa_id={qa_id}")
-    logger.info(f"DEBUG: feedback_data keys: {list(feedback_data.keys())}")
-    if not tracer:
-        logger.error("Phoenix tracer not initialized")
-        return False
-    
     if not session_id or not qa_id:
-        logger.error("Missing session_id or qa_id in feedback")
+        logger.warning(f"Cannot log feedback: missing session_id or qa_id")
         return False
     
     try:
-        # Validate feedback data
-        validated_feedback, warnings = validate_feedback(feedback_data)
+        # First try to find the response-specific span for this qa_id (preferred target)
+        target_span_id = find_qa_span_id(session_id, f"{qa_id}_response")
         
-        # Log any validation warnings
-        if warnings:
-            logger.warning(f"Feedback validation warnings: {warnings}")
-        
-        # Try to find the span ID for this QA interaction
-        target_span_id = find_qa_span_id(session_id, qa_id)
-        
+        # If not found, fall back to the regular qa_id span
         if not target_span_id:
-            error_message = f"Unable to associate feedback with QA interaction {qa_id} in session {session_id}."
-            logger.error(f"{error_message} The span was not properly registered when the QA interaction occurred.")
+            target_span_id = find_qa_span_id(session_id, qa_id)
+            logger.info(f"Response-specific span not found for {qa_id}, using general qa span")
+        
+        # If still not found, log available spans for debugging
+        if not target_span_id:
+            # Import the global registry directly
+            from backend.telemetry.spans import _span_registry
             
-            # Return False to indicate failure - this will be reported to the user
-            # The error message in the logs will help diagnose the issue
+            if session_id in _span_registry:
+                logger.info(f"Available spans for session {session_id}: {list(_span_registry[session_id].keys())}")
+            
+            logger.warning(f"Cannot find any target span for feedback: session_id={session_id}, qa_id={qa_id}")
             return False
-        else:
-            # Submit feedback as a span annotation
-            logger.info(f"Found target span ID: {target_span_id} for qa_id={qa_id}")
-            success = submit_span_annotation(target_span_id, validated_feedback, qa_id)
+        
+        # Count how many feedback items we have
+        feedback_count = 0
+        if 'answer_rating' in feedback_data:
+            feedback_count += 1
+        if 'citations_rating' in feedback_data:
+            feedback_count += 1
+        if feedback_data.get('feedback_text'):
+            feedback_count += 1
             
-            # Try to update the RAG pipeline span with the feedback
-            try:
-                # Get the parent span (RAG pipeline) using the target span association
-                from backend.telemetry.core import get_span_by_id
-                parent_span = get_span_by_id(target_span_id)
-                
-                if parent_span:
-                    # Create a properly structured feedback object
-                    answer_rating = validated_feedback.get("answer_rating")
-                    citations_rating = validated_feedback.get("citations_rating")
-                    feedback_text = validated_feedback.get("feedback_text", "")
-                    
-                    # Get rating names for better readability
-                    answer_rating_name = get_rating_name(answer_rating)
-                    citations_rating_name = get_rating_name(citations_rating)
-                    
-                    # Add feedback data to the parent span
-                    parent_span.set_attribute("feedback.answer_rating", answer_rating)
-                    parent_span.set_attribute("feedback.citations_rating", citations_rating)
-                    parent_span.set_attribute("feedback.feedback_text", feedback_text)
-                    parent_span.set_attribute("feedback.answer_rating_name", answer_rating_name)
-                    parent_span.set_attribute("feedback.citations_rating_name", citations_rating_name)
-                    parent_span.set_attribute("feedback.timestamp", datetime.now().isoformat())
-                    
-                    # Also store feedback in a properly nested structure for OpenInference
-                    parent_span.set_attribute("openinference.feedback.answer_rating", answer_rating)
-                    parent_span.set_attribute("openinference.feedback.citations_rating", citations_rating)
-                    parent_span.set_attribute("openinference.feedback.feedback_text", feedback_text)
-                    parent_span.set_attribute("openinference.feedback.answer_rating_name", answer_rating_name)
-                    parent_span.set_attribute("openinference.feedback.citations_rating_name", citations_rating_name)
-                    parent_span.set_attribute("openinference.feedback.timestamp", datetime.now().isoformat())
-                    
-                    logger.info(f"Successfully added feedback to parent span for qa_id {qa_id}")
-                    return True
-                else:
-                    logger.warning(f"Could not find parent span with ID {target_span_id}")
-                    return success
-            except Exception as e:
-                logger.warning(f"Could not update parent span with feedback: {e}")
-                return success
+        # Submit the feedback as multiple annotations to the existing span
+        logger.info(f"Associating {feedback_count} feedback annotations with span ID {target_span_id} for qa_id {qa_id}")
+        annotation_success = submit_span_annotation(target_span_id, feedback_data, qa_id)
+        
+        # Log success/failure
+        if annotation_success:
+            logger.info(f"Successfully associated {feedback_count} feedback annotations with span {target_span_id} for qa_id {qa_id}")
+        else:
+            logger.error(f"Failed to associate feedback annotations with span {target_span_id} for qa_id {qa_id}")
+        
+        return annotation_success
     except Exception as e:
-        logger.error(f"Failed to log user feedback: {e}", exc_info=True)
+        logger.error(f"Error logging feedback: {e}", exc_info=True)
         return False
 
 def associate_feedback_with_spans(qa_id, session_id, feedback_data):
