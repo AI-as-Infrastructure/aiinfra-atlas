@@ -470,16 +470,50 @@ def generate_response(
                     llm_span.record_exception(e)
                     llm_span.set_attribute("generation_error", str(e))
                     llm_span.set_attribute("generation_complete", False)
-                    llm_span.set_attribute("openinference.llm.output", full_response)
-                    if hasattr(SpanAttributes, 'OUTPUT'):
+                    logger.error(f"Error generating response: {e}")
+                    
+                    # Set partial output directly on main span if available
+                    if full_response:
+                        # Primary content field - most important for Phoenix display
+                        llm_span.set_attribute("content", full_response)
+                        
+                        # Set using the output method if available
+                        if hasattr(llm_span, "set_output"):
+                            llm_span.set_output(full_response)
+                        
+                        # Also set standard output attributes for maximum compatibility
+                        llm_span.set_attribute("output", full_response)
+                        llm_span.set_attribute("output.value", full_response)
                         llm_span.set_attribute(SpanAttributes.OUTPUT, full_response)
-                
-                # Log the error
-                logger.error(f"Error generating response: {e}", exc_info=True)
-                
-                # Yield error message and stop
-                error_message = f"Error generating response: {str(e)}"
-                yield error_message
+                        llm_span.set_attribute("openinference.llm.output", full_response)
+                        llm_span.set_attribute("llm.output", full_response)
+                        llm_span.set_attribute("error", str(e))
+                        
+                        # Create a specific error output span for Phoenix compatibility
+                        with create_span(
+                            SpanNames.LLM_GENERATION + ".error",  # Use error name to distinguish
+                            attributes={
+                                SpanAttributes.SESSION_ID: session_id,
+                                SpanAttributes.QA_ID: qa_id,
+                                "description": "LLM Generation Error",
+                                "kind": "LLM",  # Direct kind attribute
+                                "span.kind": "LLM",  # Alternative format
+                                "openinference.span.kind": OpenInferenceSpanKind.LLM,
+                                "content": str(e),
+                                "output": str(e),
+                                "error_message": str(e),
+                                "partial_response": full_response,
+                                "error_type": e.__class__.__name__,
+                            },
+                            link_to_current=True  # Link to parent LLM span
+                        ) as error_span:
+                            # Set the error using the method for double insurance
+                            if hasattr(error_span, "set_output"):
+                                error_span.set_output(str(e))
+                                
+                    # Re-raise
+                    error_msg = f"Error generating response: {str(e)}"
+                    yield error_msg
                 
     except Exception as e:
         # Handle the case where create_span itself fails (telemetry not initialized)
@@ -515,6 +549,10 @@ def generate_response_with_telemetry(
     Returns:
         Tuple of (response generator, QA ID)
     """
+    # Import telemetry modules at the beginning to avoid UnboundLocalError
+    from backend.telemetry.core import create_span
+    from backend.telemetry.constants import SpanAttributes, SpanNames, OpenInferenceSpanKind
+    
     # Get LLM configuration if not explicitly provided
     if not provider:
         llm_config = get_llm_config()
@@ -541,12 +579,26 @@ def generate_response_with_telemetry(
                 "input.chat_history_turns": len(chat_history) if chat_history else 0,
                 "input.has_chat_history": bool(chat_history),
                 
-                # Span classification
+                # Detailed operation information
+                "description": f"Generating answer to: {question[:100]}{'...' if len(question) > 100 else ''}",
+                "operation": "llm_generation",
+                "question_text": question[:500],  # Truncate if very long
+                
+                # Span classification - use explicit kind string for Phoenix UI
+                "kind": "LLM",  # Direct kind attribute
+                "span.kind": "LLM",  # Alternative format
+                
+                # Standard openinference format (both nested and flat for compatibility)
+                "openinference": {
+                    "span": {
+                        "kind": "LLM"
+                    }
+                },
                 "openinference.span.kind": OpenInferenceSpanKind.LLM,
                 
                 # Model information
                 "llm.provider": provider,
-                "llm.description": "Generates text response based on retrieved documents",
+                "llm.description": "Generates text response based on retrieved documents and user query",
                 
                 # Context information
                 "corpus_filter": corpus_filter or "all",
@@ -582,7 +634,7 @@ def generate_response_with_telemetry(
                             chunk_count += 1
                             
                             # Periodically update span with progress
-                            if chunk_count % 10 == 0:
+                            if chunk_count % 5 == 0:
                                 llm_span.set_attribute("chunk_count", chunk_count)
                                 llm_span.set_attribute("response_length", len(full_response))
                             
@@ -596,13 +648,51 @@ def generate_response_with_telemetry(
                         llm_span.set_attribute("generation_time_seconds", generation_time)
                         llm_span.set_attribute("generation_complete", True)
                         
-                        # Set output in Phoenix-compatible format
+                        # Update summary information on parent span
+                        summary = f"Generated {len(full_response.split())} words in {generation_time:.2f} seconds"
+                        llm_span.set_attribute("generation_summary", summary)
+                        
+                        # Add summary of first few sentences for quick reference
+                        sentences = full_response.split('. ')
+                        preview = '. '.join(sentences[:3]) + ('...' if len(sentences) > 3 else '')
+                        llm_span.set_attribute("response_preview", preview)
+                        
+                        # Set all output attributes directly on the LLM span for Phoenix UI
+                        # Primary content field - most important for Phoenix display
+                        llm_span.set_attribute("content", full_response)
+                        
+                        # Set using the output method if available
                         if hasattr(llm_span, "set_output"):
                             llm_span.set_output(full_response)
+                        
+                        # Also set standard output attributes for maximum compatibility
+                        llm_span.set_attribute("output", full_response)
+                        llm_span.set_attribute("output.value", full_response)
+                        llm_span.set_attribute(SpanAttributes.OUTPUT, full_response)
                         llm_span.set_attribute("openinference.llm.output", full_response)
-                        if hasattr(SpanAttributes, 'OUTPUT'):
-                            llm_span.set_attribute(SpanAttributes.OUTPUT, full_response)
-                            
+                        llm_span.set_attribute("llm.output", full_response)
+                        
+                        # Create a specific LLM output span that Phoenix will recognize
+                        # This is purely for Phoenix compatibility and may be removed if not needed
+                        with create_span(
+                            SpanNames.LLM_GENERATION + ".response",  # Use a clear name
+                            attributes={
+                                SpanAttributes.SESSION_ID: session_id,
+                                SpanAttributes.QA_ID: qa_id,
+                                "description": "LLM Response Output",
+                                "kind": "LLM",  # Direct kind attribute
+                                "span.kind": "LLM",  # Alternative format
+                                "openinference.span.kind": OpenInferenceSpanKind.LLM,
+                                "content": full_response,
+                                "output": full_response,
+                                SpanAttributes.OUTPUT: full_response,
+                            },
+                            link_to_current=True  # Link to parent LLM span
+                        ) as output_span:
+                            # Set the output using the method for double insurance
+                            if hasattr(output_span, "set_output"):
+                                output_span.set_output(full_response)
+                        
                     except Exception as e:
                         # Record error in telemetry
                         llm_span.record_exception(e)
@@ -610,12 +700,45 @@ def generate_response_with_telemetry(
                         llm_span.set_attribute("generation_complete", False)
                         logger.error(f"Error generating response: {e}")
                         
-                        # Set partial output
+                        # Set partial output directly on main span if available
                         if full_response:
+                            # Primary content field - most important for Phoenix display
+                            llm_span.set_attribute("content", full_response)
+                            
+                            # Set using the output method if available
                             if hasattr(llm_span, "set_output"):
                                 llm_span.set_output(full_response)
-                            llm_span.set_attribute("openinference.llm.output", full_response)
                             
+                            # Also set standard output attributes for maximum compatibility
+                            llm_span.set_attribute("output", full_response)
+                            llm_span.set_attribute("output.value", full_response)
+                            llm_span.set_attribute(SpanAttributes.OUTPUT, full_response)
+                            llm_span.set_attribute("openinference.llm.output", full_response)
+                            llm_span.set_attribute("llm.output", full_response)
+                            llm_span.set_attribute("error", str(e))
+                            
+                        # Create a specific error output span for Phoenix compatibility
+                        with create_span(
+                            SpanNames.LLM_GENERATION + ".error",  # Use error name to distinguish
+                            attributes={
+                                SpanAttributes.SESSION_ID: session_id,
+                                SpanAttributes.QA_ID: qa_id,
+                                "description": "LLM Generation Error",
+                                "kind": "LLM",  # Direct kind attribute
+                                "span.kind": "LLM",  # Alternative format
+                                "openinference.span.kind": OpenInferenceSpanKind.LLM,
+                                "content": str(e),
+                                "output": str(e),
+                                "error_message": str(e),
+                                "partial_response": full_response,
+                                "error_type": e.__class__.__name__,
+                            },
+                            link_to_current=True  # Link to parent LLM span
+                        ) as error_span:
+                            # Set the error using the method for double insurance
+                            if hasattr(error_span, "set_output"):
+                                error_span.set_output(str(e))
+                                
                         # Re-raise
                         error_msg = f"Error generating response: {str(e)}"
                         yield error_msg

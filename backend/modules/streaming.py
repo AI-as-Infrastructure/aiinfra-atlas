@@ -236,6 +236,10 @@ def stream_documents_as_references(
     Returns:
         Formatted SSE message with references
     """
+    # Import telemetry modules at the beginning to avoid UnboundLocalError
+    from backend.telemetry.core import create_span
+    from backend.telemetry.constants import SpanAttributes, SpanNames, OpenInferenceSpanKind
+    
     with create_span(
         SpanNames.DOCUMENT_REFERENCES,
         attributes={
@@ -247,10 +251,26 @@ def stream_documents_as_references(
             SpanAttributes.DOCUMENT_COUNT: len(documents),
             "citation_limit": citation_limit,
             
-            # Span classification
-            "openinference.span.kind": OpenInferenceSpanKind.PROCESSOR,
+            # Detailed document information
+            "description": f"Formatting {len(documents)} documents as references/citations for display",
+            "operation": "citation_formatting",
+            "citation_display_limit": citation_limit,
+            "processing_type": "document_references",
+            
+            # Span classification - use explicit kind string for Phoenix UI
+            "kind": "REFERENCES",  # Direct kind attribute
+            "span.kind": "REFERENCES",  # Alternative format
+            
+            # Standard openinference format (both nested and flat for compatibility)
+            "openinference": {
+                "span": {
+                    "kind": "REFERENCES"
+                }
+            },
+            "openinference.span.kind": OpenInferenceSpanKind.REFERENCES,
+            
             "processor.type": "citation_formatter",
-            "processor.description": "Transforms document objects into structured citations and references"
+            "processor.description": "Transforms document objects into structured citations and references for display"
         },
         link_to_current=True
     ) as ref_span:
@@ -364,6 +384,17 @@ def stream_documents_as_references(
             ref_span.set_attribute("citations_json", json.dumps(citations))  
             ref_span.set_attribute("all_citations_json", json.dumps(all_citations))
             
+            # Add a summary for Info display in Phoenix
+            summary_data = []
+            for i, citation in enumerate(citations[:5]):  # First 5 citations only
+                title = citation.get("metadata", {}).get("title", f"Document {i+1}")
+                source = citation.get("metadata", {}).get("source", "Unknown")
+                date = citation.get("metadata", {}).get("date", "")
+                summary_data.append(f"{i+1}. {title} ({source}, {date})")
+            
+            if summary_data:
+                ref_span.set_attribute("citations_summary", "\n".join(summary_data))
+            
             # Also attach a shortened version of each document to the parent span
             # for telemetry analysis and debugging (limited to keep span size reasonable)
             doc_samples = []
@@ -374,6 +405,29 @@ def stream_documents_as_references(
                     doc_samples.append({"content": content, "metadata": meta})
             
             ref_span.set_attribute("document_samples_json", json.dumps(doc_samples))
+            
+            # Set output for Phoenix display
+            citations_summary = f"Generated {len(citations)} citations from {len(documents)} documents"
+            
+            # Create nicely formatted citation summary with details
+            if summary_data:
+                formatted_summary = "\n".join(summary_data)
+                citation_output = f"{citations_summary}\n\n{formatted_summary}"
+            else:
+                citation_output = citations_summary
+            
+            # Set all output attributes directly on the main span
+            # Primary content field - most important for Phoenix display
+            ref_span.set_attribute("content", citation_output)
+            
+            # Set using the output method if available
+            if hasattr(ref_span, "set_output"):
+                ref_span.set_output(citation_output)
+            
+            # Also set standard output attributes for maximum compatibility
+            ref_span.set_attribute("output", citation_output)
+            ref_span.set_attribute("output.value", citation_output)
+            ref_span.set_attribute(SpanAttributes.OUTPUT, citation_output)
             
             return format_sse_message(message, event="references")
             
