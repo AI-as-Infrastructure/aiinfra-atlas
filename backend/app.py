@@ -336,6 +336,15 @@ def ask(data: dict = Body(...)):
         qa_id=qa_id
     )
     
+    # Apply document reranking to improve relevance
+    from backend.modules.document_reranking import rerank_documents_with_telemetry
+    documents = rerank_documents_with_telemetry(
+        documents=documents,
+        query=question,
+        session_id=session_id,
+        qa_id=qa_id
+    )
+    
     # Generate response
     response_generator, qa_id = generate_response_with_telemetry(
         question=question,
@@ -432,7 +441,25 @@ async def ask_stream(data: dict = Body(...)):
                 # Record document count in parent span
                 parent_span.set_attribute(SpanAttributes.DOCUMENT_COUNT, len(documents))
                 
-
+                # Apply corpus filter if needed
+                if corpus_filter and corpus_filter.lower() != "all":
+                    from backend.modules.corpus_filtering import filter_documents_with_telemetry
+                    documents = filter_documents_with_telemetry(
+                        documents=documents,
+                        corpus_filter=corpus_filter,
+                        session_id=session_id,
+                        qa_id=qa_id
+                    )
+                
+                # Apply document reranking to improve relevance
+                from backend.modules.document_reranking import rerank_documents_with_telemetry
+                documents = rerank_documents_with_telemetry(
+                    documents=documents,
+                    query=question,
+                    session_id=session_id,
+                    qa_id=qa_id
+                )
+                
                 # Generate and stream the response
                 response_generator, qa_id = generate_response_with_telemetry(
                     question=question,
