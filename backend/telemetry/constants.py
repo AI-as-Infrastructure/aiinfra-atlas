@@ -80,6 +80,12 @@ class SpanAttributes:
     CHUNK_COUNT = "chunk_count"
     OUTPUT = "output"  # Output for Phoenix UI display
     
+    # Span kind attributes (for Phoenix compatibility)
+    SPAN_KIND = "span_kind"          # General span kind attribute
+    SPAN_TYPE = "type"               # Type indicator for Phoenix  
+    OTEL_KIND = "otel.kind"          # OpenTelemetry kind attribute
+    OPENINFERENCE_SPAN_KIND = "openinference.span.kind"  # OpenInference specific kind
+    
     # Query analysis
     QUERY_FOCUS = "query_focus"
     DETECTED_CONTEXTS = "detected_contexts"
