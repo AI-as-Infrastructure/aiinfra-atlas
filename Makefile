@@ -146,6 +146,8 @@ dsl: ## Basic cleanup of local staging deployment
 	@sudo rm -f /etc/nginx/sites-enabled/atlas || true
 	@sudo rm -f /etc/nginx/sites-available/atlas || true
 	@sudo systemctl restart nginx || true
+	@echo "Removing log files..."
+	@rm -f deploy/staging/logs/*.log || true
 	@echo "✅ Basic cleanup completed (code at /opt/atlas is preserved)"
 
 # Full cleanup of local staging deployment (including code removal)
@@ -157,6 +159,8 @@ dslf: ## Full cleanup of local staging deployment
 	@sudo rm -f /etc/nginx/sites-enabled/atlas || true
 	@sudo rm -f /etc/nginx/sites-available/atlas || true
 	@sudo systemctl restart nginx || true
+	@echo "Removing log files..."
+	@rm -f deploy/staging/logs/*.log || true
 	@echo "Clearing npm cache..."
 	@cd frontend && npm cache clean --force || true
 	@echo "Removing node_modules and package-lock.json from frontend..."
