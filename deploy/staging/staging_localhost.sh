@@ -95,10 +95,10 @@ sudo mkdir -p $APP_DIR && sudo chown -R $CURRENT_USER:$CURRENT_USER $APP_DIR
 echo "Checking for existing repository..."
 if [ -d "$APP_DIR/.git" ]; then
     echo "Updating existing repository..."
-    cd $APP_DIR && git fetch && git reset --hard origin/main && git clean -fd && git lfs pull
+    cd $APP_DIR && git fetch && git reset --hard origin/0.1.0-staging && git clean -fd && git lfs pull
 else
     echo "Cloning fresh repository..."
-    git clone https://github.com/AI-as-Infrastructure/aiinfra-atlas.git $APP_DIR && cd $APP_DIR && git lfs pull
+    git clone -b 0.1.0-staging https://github.com/AI-as-Infrastructure/aiinfra-atlas.git $APP_DIR && cd $APP_DIR && git lfs pull
 fi
 
 # 5. Copy environment file
@@ -216,8 +216,6 @@ EOL
 # 7. Build frontend
 echo "Building frontend..."
 cd $APP_DIR/frontend
-echo "Removing problematic CSS import..."
-sed -i "/import.*window.css/d" ./src/main.js
 npm install && npm run build
 
 # 8. Set up Nginx and Gunicorn
