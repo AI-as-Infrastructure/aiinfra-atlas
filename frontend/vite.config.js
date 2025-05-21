@@ -1,10 +1,15 @@
 import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import path from 'path'
+import fs from 'fs'
 
 export default ({ mode }) => {
   // Load env file based on mode (development, production, staging)
   const env = loadEnv(mode, process.cwd())
+  
+  // Check for custom certificate files
+  const certPath = process.env.DEV_CERTS_PATH || path.resolve(__dirname, '../config/dev_certs')
+  const hasCerts = fs.existsSync(`${certPath}/fullchain.pem`) && fs.existsSync(`${certPath}/privkey.pem`)
   
   return defineConfig({
     plugins: [vue()],
@@ -17,12 +22,28 @@ export default ({ mode }) => {
     server: {
       port: 5173,
       host: true,
+      https: env.ENVIRONMENT === 'staging' || env.ENVIRONMENT === 'production',
       proxy: {
         '/api': {
-          target: 'http://localhost:8000',
+          target: (env.ENVIRONMENT === 'staging' || env.ENVIRONMENT === 'production')
+            ? 'https://localhost:8000' 
+            : 'http://localhost:8000',
           changeOrigin: true,
           secure: false,
+        },
+        '/ws': {
+          target: (env.ENVIRONMENT === 'staging' || env.ENVIRONMENT === 'production')
+            ? 'wss://localhost:8000' 
+            : 'ws://localhost:8000',
+          ws: true,
+          secure: false,
         }
+      },
+      // Explicitly configure HMR for HTTPS
+      hmr: {
+        protocol: (env.ENVIRONMENT === 'staging' || env.ENVIRONMENT === 'production') ? 'wss' : 'ws',
+        clientPort: 5173,
+        host: 'localhost'
       }
     },
     envPrefix: 'VITE_',

@@ -1,0 +1,57 @@
+# Full template for Nginx configuration in staging.sh
+server {
+    listen 80;
+    server_name staging.example.com;  # Replace with your domain or server IP
+    
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    server_name staging.example.com;  # Replace with your domain or server IP
+    
+    ssl_certificate $CERT_DIR/$APP_NAME.crt;
+    ssl_certificate_key $CERT_DIR/$APP_NAME.key;
+    
+    # SSL configuration
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+    ssl_ciphers "EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH";
+    ssl_session_cache shared:SSL:10m;
+    
+    # Frontend - Vue.js static files
+    location / {
+        root $APP_DIR/frontend/dist;  # Path to your Vue.js build output
+        try_files $uri $uri/ /index.html;  # For Vue Router history mode
+        
+        # Cache static assets
+        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
+            expires 30d;
+            add_header Cache-Control "public, no-transform";
+        }
+    }
+    
+    # Backend - FastAPI API endpoints
+    location /api {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    
+    # WebSockets support
+    location /ws {
+        proxy_pass http://127.0.0.1:8000/ws;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+    }
+    
+    # Logs
+    access_log $LOG_DIR/access.log;
+    error_log $LOG_DIR/error.log;
+} 

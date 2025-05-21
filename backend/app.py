@@ -11,32 +11,35 @@ import datetime
 import logging
 from typing import Dict, List, Optional
 import uuid
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load environment variables from config/.env (relative to project root)
+# Load environment variables from config/.env.{environment} (relative to project root)
 project_root = os.path.dirname(os.path.dirname(__file__))
-env_path = os.path.join(project_root, "config", ".env")
-env_dev_path = os.path.join(project_root, "config", ".env.development")
-
-# Check for both files in order
 env_loaded = False
 
-# Try .env file first
-if os.path.exists(env_path):
-    logger.info(f"Loading environment variables from: {env_path}")
-    load_dotenv(env_path)
-    env_loaded = True
-# Then try .env.development
-elif os.path.exists(env_dev_path):
-    logger.info(f"Loading environment variables from: {env_dev_path}")
-    load_dotenv(env_dev_path)
-    env_loaded = True
-# Only log an error if neither file is found
-else:
-    logger.warning(f"No environment files found at: {env_path} or {env_dev_path}")
+# Try different environment files in priority order
+env_files = [
+    os.path.join(project_root, "config", ".env"),              # Legacy path
+    os.path.join(project_root, "config", ".env.production"),   # Production settings
+    os.path.join(project_root, "config", ".env.staging"),      # Staging settings
+    os.path.join(project_root, "config", ".env.development")   # Development settings
+]
+
+# Check for environment files in order
+for env_path in env_files:
+    if os.path.exists(env_path):
+        logger.info(f"Loading environment variables from: {env_path}")
+        load_dotenv(env_path)
+        env_loaded = True
+        break
+
+# Log warning if no environment file is found
+if not env_loaded:
+    logger.warning(f"No environment files found at: {', '.join(env_files)}")
 
 # Import core modules and telemetry utilities
 from backend.telemetry import (
@@ -739,7 +742,40 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
             status="error"
         )
 
+# --- Security middleware for HTTPS support ---
+
+# Allow requests only from specific hosts (prevents host header attacks)
+app.add_middleware(
+    TrustedHostMiddleware, 
+    allowed_hosts=[
+        "localhost",           # Development hostname
+        "staging.example.com"  # Add your staging hostname here
+        # Add production hostnames when deploying to production
+    ]
+)
+
+# Make FastAPI correctly detect HTTPS when behind Nginx proxy
+@app.middleware("http")
+async def handle_forwarded_proto(request: Request, call_next):
+    """
+    Process the X-Forwarded-Proto header to detect HTTPS correctly.
+    This ensures that all URL generation and security features work properly
+    when the app is behind an Nginx proxy handling HTTPS.
+    """
+    forwarded_proto = request.headers.get("X-Forwarded-Proto")
+    if forwarded_proto:
+        # Update request's scheme to the original client protocol (http/https)
+        request.scope["scheme"] = forwarded_proto
+    
+    response = await call_next(request)
+    return response
+
 # --- Entrypoint for running with Uvicorn ---
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("backend.app:app", host="0.0.0.0", port=8000, reload=True)
+
+# Add this to your existing backend/app.py file
+@app.get("/api/health")
+def health_check():
+    return {"status": "ok"}
