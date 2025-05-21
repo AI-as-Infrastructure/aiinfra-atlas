@@ -1,0 +1,45 @@
+[2025-05-20 16:44:22 -0700] [704152] [INFO] Starting gunicorn 23.0.0
+[2025-05-20 16:44:22 -0700] [704152] [INFO] Listening at: http://127.0.0.1:8000 (704152)
+[2025-05-20 16:44:22 -0700] [704152] [INFO] Using worker: uvicorn.workers.UvicornWorker
+[2025-05-20 16:44:22 -0700] [704180] [INFO] Booting worker with pid: 704180
+[2025-05-20 16:44:22 -0700] [704181] [INFO] Booting worker with pid: 704181
+[2025-05-20 16:44:22 -0700] [704182] [INFO] Booting worker with pid: 704182
+[2025-05-20 16:44:22 -0700] [704183] [INFO] Booting worker with pid: 704183
+[2025-05-20 16:44:43 -0700] [704182] [INFO] Started server process [704182]
+[2025-05-20 16:44:43 -0700] [704182] [INFO] Waiting for application startup.
+[2025-05-20 16:44:43 -0700] [704182] [INFO] Application startup complete.
+[2025-05-20 16:44:43 -0700] [704180] [INFO] Started server process [704180]
+[2025-05-20 16:44:43 -0700] [704180] [INFO] Waiting for application startup.
+[2025-05-20 16:44:43 -0700] [704180] [INFO] Application startup complete.
+[2025-05-20 16:44:43 -0700] [704181] [INFO] Started server process [704181]
+[2025-05-20 16:44:43 -0700] [704181] [INFO] Waiting for application startup.
+[2025-05-20 16:44:43 -0700] [704181] [INFO] Application startup complete.
+[2025-05-20 16:44:43 -0700] [704183] [INFO] Started server process [704183]
+[2025-05-20 16:44:43 -0700] [704183] [INFO] Waiting for application startup.
+[2025-05-20 16:44:43 -0700] [704183] [INFO] Application startup complete.
+[2025-05-20 16:48:48 -0700] [704152] [INFO] Handling signal: term
+[2025-05-20 16:48:48 -0700] [704181] [INFO] Shutting down
+[2025-05-20 16:48:48 -0700] [704182] [INFO] Shutting down
+[2025-05-20 16:48:48 -0700] [704181] [INFO] Error while closing socket [Errno 9] Bad file descriptor
+[2025-05-20 16:48:48 -0700] [704182] [INFO] Error while closing socket [Errno 9] Bad file descriptor
+[2025-05-20 16:48:48 -0700] [704180] [INFO] Shutting down
+[2025-05-20 16:48:48 -0700] [704183] [INFO] Shutting down
+[2025-05-20 16:48:48 -0700] [704180] [INFO] Error while closing socket [Errno 9] Bad file descriptor
+[2025-05-20 16:48:48 -0700] [704183] [INFO] Error while closing socket [Errno 9] Bad file descriptor
+[2025-05-20 16:48:48 -0700] [704181] [INFO] Waiting for application shutdown.
+[2025-05-20 16:48:48 -0700] [704180] [INFO] Waiting for application shutdown.
+[2025-05-20 16:48:48 -0700] [704183] [INFO] Waiting for application shutdown.
+[2025-05-20 16:48:48 -0700] [704180] [INFO] Application shutdown complete.
+[2025-05-20 16:48:48 -0700] [704180] [INFO] Finished server process [704180]
+[2025-05-20 16:48:48 -0700] [704183] [INFO] Application shutdown complete.
+[2025-05-20 16:48:48 -0700] [704181] [INFO] Application shutdown complete.
+[2025-05-20 16:48:48 -0700] [704181] [INFO] Finished server process [704181]
+[2025-05-20 16:48:48 -0700] [704183] [INFO] Finished server process [704183]
+[2025-05-20 16:48:48 -0700] [704182] [INFO] Waiting for application shutdown.
+[2025-05-20 16:48:48 -0700] [704182] [INFO] Application shutdown complete.
+[2025-05-20 16:48:48 -0700] [704182] [INFO] Finished server process [704182]
+[2025-05-20 16:48:48 -0700] [704152] [ERROR] Worker (pid:704180) was sent SIGTERM!
+[2025-05-20 16:48:48 -0700] [704152] [ERROR] Worker (pid:704182) was sent SIGTERM!
+[2025-05-20 16:48:48 -0700] [704152] [ERROR] Worker (pid:704183) was sent SIGTERM!
+[2025-05-20 16:48:48 -0700] [704152] [ERROR] Worker (pid:704181) was sent SIGTERM!
+[2025-05-20 16:48:48 -0700] [704152] [INFO] Shutting down: Master

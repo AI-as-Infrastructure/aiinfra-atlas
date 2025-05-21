@@ -127,3 +127,35 @@ retriever:
 		pip install --upgrade pip && \
 		pip install -r config/requirements.lock && \
 		python create/create_hansard_retriever.py'
+
+# === STAGING DEPLOYMENT TARGETS ===
+.PHONY: sl dsl dslf
+
+# Deploy to local staging environment
+sl: ## Deploy to staging on localhost
+	@echo "Deploying to local staging environment..."
+	@chmod +x deploy/staging/staging_localhost.sh
+	@./deploy/staging/staging_localhost.sh
+
+# Basic cleanup of local staging deployment (without removing code)
+dsl: ## Basic cleanup of local staging deployment
+	@echo "Performing basic cleanup of local staging deployment..."
+	@sudo systemctl stop gunicorn || true
+	@sudo systemctl disable gunicorn || true
+	@sudo rm -f /etc/systemd/system/gunicorn.service || true
+	@sudo rm -f /etc/nginx/sites-enabled/atlas || true
+	@sudo rm -f /etc/nginx/sites-available/atlas || true
+	@sudo systemctl restart nginx || true
+	@echo "✅ Basic cleanup completed (code at /opt/atlas is preserved)"
+
+# Full cleanup of local staging deployment (including code removal)
+dslf: ## Full cleanup of local staging deployment
+	@echo "Performing full cleanup of local staging deployment..."
+	@sudo systemctl stop gunicorn || true
+	@sudo systemctl disable gunicorn || true
+	@sudo rm -f /etc/systemd/system/gunicorn.service || true
+	@sudo rm -f /etc/nginx/sites-enabled/atlas || true
+	@sudo rm -f /etc/nginx/sites-available/atlas || true
+	@sudo systemctl restart nginx || true
+	@sudo rm -rf /opt/atlas || true
+	@echo "✅ Full cleanup completed (including removal of /opt/atlas)"
