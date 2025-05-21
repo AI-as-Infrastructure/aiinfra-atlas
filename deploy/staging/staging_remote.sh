@@ -132,7 +132,6 @@ run_cmd "chmod 644 $APP_DIR/.venv/lib/python3.10/site-packages/atlas.pth"
 # 7. Build frontend
 echo "Building frontend..."
 run_cmd "cd $APP_DIR/frontend"
-run_cmd "sed -i \"/import.*window.css/d\" ./src/main.js"
 run_cmd "npm install && npm run build"
 
 # 8. Set up Nginx and Gunicorn
