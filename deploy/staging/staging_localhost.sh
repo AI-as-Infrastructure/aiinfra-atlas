@@ -49,9 +49,18 @@ if [ ! -f "$PROJECT_ROOT/config/.env.staging" ]; then
     exit 1
 fi
 
+# Extract Python version from the environment file
+PYTHON_VERSION=$(grep "^PYTHON_VERSION=" "$PROJECT_ROOT/config/.env.staging" | cut -d '"' -f 2)
+if [ -z "$PYTHON_VERSION" ]; then
+    echo "ERROR: PYTHON_VERSION not found in config/.env.staging"
+    echo "Please ensure your environment file contains PYTHON_VERSION=\"x.y\""
+    exit 1
+fi
+echo "Using Python version $PYTHON_VERSION from environment file"
+
 # 2. Install required packages with specific versions
 echo "Installing required packages..."
-sudo apt-get update && sudo apt-get install -y python3.10 python3.10-venv python3.10-dev python3-pip nginx git git-lfs gunicorn
+sudo apt-get update && sudo apt-get install -y python$PYTHON_VERSION python$PYTHON_VERSION-venv python$PYTHON_VERSION-dev python3-pip nginx git git-lfs gunicorn
 
 # Fix the Node.js version handling - MUST use 22.14.0 exactly
 echo "Setting up Node.js environment..."
@@ -120,8 +129,8 @@ fi
 # 6. Setup Python environment
 echo "Setting up Python environment..."
 cd $APP_DIR
-# Be explicit about using Python 3.10
-python3.10 -m venv .venv
+# Use the version from environment file
+python$PYTHON_VERSION -m venv .venv
 . .venv/bin/activate
 pip install --upgrade pip
 pip install -r config/requirements.txt gunicorn
@@ -135,8 +144,8 @@ if [ ! -f "$APP_DIR/backend/__init__.py" ]; then
 fi
 
 # Create a proper .pth file for Python module path
-echo "$APP_DIR" > $APP_DIR/.venv/lib/python3.10/site-packages/atlas.pth
-chmod 644 $APP_DIR/.venv/lib/python3.10/site-packages/atlas.pth
+echo "$APP_DIR" > $APP_DIR/.venv/lib/python$PYTHON_VERSION/site-packages/atlas.pth
+chmod 644 $APP_DIR/.venv/lib/python$PYTHON_VERSION/site-packages/atlas.pth
 
 # Make sure the Gunicorn service uses the correct Python version
 cat > /tmp/gunicorn.service << EOL
@@ -292,15 +301,19 @@ echo "Creating symlinks to system logs..."
 sudo ln -sf /var/log/nginx/error.log "$PROJECT_ROOT/deploy/staging/logs/nginx-error.log"
 sudo ln -sf /var/log/nginx/access.log "$PROJECT_ROOT/deploy/staging/logs/nginx-access.log"
 
-# Copy environment variables for frontend
-echo "Setting up frontend environment..."
-grep "^VITE_" "$APP_DIR/config/.env.staging" > "$APP_DIR/frontend/.env"
-echo "✅ Frontend environment configured"
-
-# Create proper environment files instead of symlinks
+# Set up backend environment
 echo "Setting up backend environment..."
-sudo cp "$APP_DIR/config/.env.staging" "$APP_DIR/config/.env"
-echo "✅ Backend environment configured"
+# Ensure the staging environment file is in place at .env.staging (NOT .env)
+sudo cp "$PROJECT_ROOT/config/.env.staging" "$APP_DIR/config/.env.staging"
+echo "✅ Backend environment configured to use config/.env.staging"
+
+# Set up frontend environment using the enhanced script with environment parameter
+echo "Setting up frontend environment..."
+cd $APP_DIR
+chmod +x config/generate_vue_files.sh
+# Run the script with 'staging' parameter
+./config/generate_vue_files.sh staging
+echo "✅ Frontend environment configured for staging"
 
 echo "Deployment complete!"
 echo "Access at: https://localhost"
