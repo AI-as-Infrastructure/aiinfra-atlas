@@ -1,6 +1,8 @@
 import 'bulma/css/bulma.css'
 import './global.css'
-import './polyfills' // Must be imported before Amplify
+// Changed from side-effect import to namespace import
+import * as Polyfills from './polyfills' // Must be imported before Amplify
+// Rest of imports
 import { createApp } from 'vue'
 import App from './App.vue'
 import router from './router'

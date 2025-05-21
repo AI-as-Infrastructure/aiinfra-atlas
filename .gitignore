@@ -12,6 +12,7 @@ frontend/node_modules
 appendonly.aof
 dump.rdb
 deploy/certs/
+deploy/staging/logs/
 *.key
 *.crt
 *.pem

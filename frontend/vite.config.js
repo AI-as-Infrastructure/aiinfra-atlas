@@ -7,16 +7,32 @@ export default ({ mode }) => {
   // Load env file based on mode (development, production, staging)
   const env = loadEnv(mode, process.cwd())
   
+  console.log(`Building for mode: ${mode}`);
+  
   // Check for custom certificate files
   const certPath = process.env.DEV_CERTS_PATH || path.resolve(__dirname, '../config/dev_certs')
   const hasCerts = fs.existsSync(`${certPath}/fullchain.pem`) && fs.existsSync(`${certPath}/privkey.pem`)
   
   return defineConfig({
-    plugins: [vue()],
+    plugins: [
+      vue(),
+      // Custom plugin to log all CSS imports during build
+      {
+        name: 'css-import-logger',
+        enforce: 'pre',
+        // Log CSS import resolution
+        resolveId(id, importer) {
+          if (id.endsWith('.css')) {
+            console.log(`CSS import detected: ${id} from ${importer}`);
+          }
+        }
+      }
+    ],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, 'src'),
         './runtimeConfig': './runtimeConfig.browser', // Fix for AWS Amplify
+        './window.css': path.resolve(__dirname, 'src/global.css'),
       },
     },
     server: {

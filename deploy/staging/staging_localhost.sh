@@ -147,6 +147,15 @@ fi
 echo "$APP_DIR" > $APP_DIR/.venv/lib/python$PYTHON_VERSION/site-packages/atlas.pth
 chmod 644 $APP_DIR/.venv/lib/python$PYTHON_VERSION/site-packages/atlas.pth
 
+# Create logs directory and configure logging - MOVED UP BEFORE GUNICORN SERVICE SETUP
+echo "Setting up logging..."
+mkdir -p "$PROJECT_ROOT/deploy/staging/logs"
+sudo mkdir -p /var/log/$APP_NAME
+
+# Create absolute path for log files
+LOGS_ABS_PATH="$PROJECT_ROOT/deploy/staging/logs"
+mkdir -p "$LOGS_ABS_PATH"
+
 # Make sure the Gunicorn service uses the correct Python version
 cat > /tmp/gunicorn.service << EOL
 [Unit]
@@ -159,8 +168,12 @@ Group=$CURRENT_USER
 WorkingDirectory=$APP_DIR
 Environment="PATH=$APP_DIR/.venv/bin"
 Environment="PYTHONPATH=$APP_DIR"
-# Use full path to Python executable in the venv
-ExecStart=$APP_DIR/.venv/bin/python -m gunicorn backend.app:app -k uvicorn.workers.UvicornWorker -w 4 -b 127.0.0.1:8000 --access-logfile ${LOGS_ABS_PATH}/gunicorn-access.log --error-logfile ${LOGS_ABS_PATH}/gunicorn-error.log
+# Pass Phoenix telemetry environment variables directly to the service
+Environment="PHOENIX_CLIENT_HEADERS=$(grep PHOENIX_CLIENT_HEADERS $APP_DIR/config/.env.staging | cut -d'=' -f2-)"
+Environment="PHOENIX_PROJECT_NAME=$(grep PHOENIX_PROJECT_NAME $APP_DIR/config/.env.staging | cut -d'=' -f2-)"
+Environment="PHOENIX_COLLECTOR_ENDPOINT=$(grep PHOENIX_COLLECTOR_ENDPOINT $APP_DIR/config/.env.staging | cut -d'=' -f2-)"
+# Use full path to Python executable in the venv with a single worker for better telemetry
+ExecStart=$APP_DIR/.venv/bin/python -m gunicorn backend.app:app -k uvicorn.workers.UvicornWorker -w 1 -b 127.0.0.1:8000 --access-logfile ${LOGS_ABS_PATH}/gunicorn-access.log --error-logfile ${LOGS_ABS_PATH}/gunicorn-error.log
 Restart=on-failure
 
 [Install]
@@ -197,9 +210,28 @@ server {
     add_header X-Frame-Options "SAMEORIGIN";
     add_header X-XSS-Protection "1; mode=block";
 
+    # Proper MIME types for CSS and JS files
+    types {
+        text/css css;
+        application/javascript js;
+        text/html html;
+    }
+    
+    # Ensure assets are properly cached
+    location ~* \.(css|js)$ {
+        root $APP_DIR/frontend/dist;
+        expires 7d;
+        add_header Cache-Control "public, max-age=604800";
+    }
+
     location / {
         root $APP_DIR/frontend/dist;
         try_files \$uri \$uri/ /index.html;
+        
+        # Add specific handling for CSS files
+        location ~* \.css$ {
+            add_header Content-Type text/css;
+        }
     }
 
     location /api {
@@ -222,23 +254,64 @@ server {
 }
 EOL
 
-# 7. Build frontend
+# 7. Build frontend with troubleshooting
 echo "Building frontend..."
 cd $APP_DIR/frontend
-npm install && npm run build
+
+# Clean up any previous builds
+echo "Cleaning up previous builds..."
+rm -rf dist node_modules package-lock.json
+
+# Install dependencies 
+echo "Installing dependencies..."
+npm install
+
+# Generate environment file for staging
+echo "Setting up frontend environment variables..."
+cd $APP_DIR
+chmod +x config/generate_vue_files.sh
+./config/generate_vue_files.sh staging
+
+# Create empty window.css file to fix the build error
+echo "Creating empty window.css file as workaround..."
+cd $APP_DIR/frontend/src
+touch window.css
+
+# Go back to frontend and build
+cd $APP_DIR/frontend
+echo "Building frontend with clean environment and verbose logging..."
+
+# Print environment information for debugging
+echo "Node version: $(node -v)"
+echo "NPM version: $(npm -v)"
+echo "Build target directory: $APP_DIR/frontend"
+
+# Use both staging mode and production mode to ensure proper CSS bundling
+export DEBUG=vite:* 
+export NODE_ENV=production
+echo "Building with mode: staging"
+npm run build:staging -- --debug
+
+# Verify CSS files were created
+echo "Verifying CSS files were created:"
+find ./dist -name "*.css" -type f
+
+# Verify Phoenix environment variables are properly set for the API
+echo "Verifying Phoenix API variables..."
+cd $APP_DIR
+echo "Phoenix API key: $(grep PHOENIX_CLIENT_HEADERS config/.env.staging)"
+echo "Phoenix project: $(grep PHOENIX_PROJECT_NAME config/.env.staging)"
+echo "Phoenix endpoint: $(grep PHOENIX_COLLECTOR_ENDPOINT config/.env.staging)"
+
+# Ensure Python environment has access to Phoenix variables
+cd $APP_DIR
+echo "export PHOENIX_CLIENT_HEADERS=\"$(grep PHOENIX_CLIENT_HEADERS config/.env.staging | cut -d'=' -f2-)\"" >> .venv/bin/activate
+echo "export PHOENIX_PROJECT_NAME=\"$(grep PHOENIX_PROJECT_NAME config/.env.staging | cut -d'=' -f2-)\"" >> .venv/bin/activate
+echo "export PHOENIX_COLLECTOR_ENDPOINT=\"$(grep PHOENIX_COLLECTOR_ENDPOINT config/.env.staging | cut -d'=' -f2-)\"" >> .venv/bin/activate
 
 # 8. Set up Nginx and Gunicorn
 echo "Setting up Nginx and Gunicorn..."
 sudo mkdir -p /var/log/$APP_NAME
-
-# Create logs directory and configure logging
-echo "Setting up logging..."
-mkdir -p "$PROJECT_ROOT/deploy/staging/logs"
-sudo mkdir -p /var/log/$APP_NAME
-
-# Create absolute path for log files
-LOGS_ABS_PATH="$PROJECT_ROOT/deploy/staging/logs"
-mkdir -p "$LOGS_ABS_PATH"
 
 # Install config files
 sudo mv /tmp/gunicorn.service /etc/systemd/system/gunicorn.service
@@ -305,6 +378,51 @@ sudo ln -sf /var/log/nginx/access.log "$PROJECT_ROOT/deploy/staging/logs/nginx-a
 echo "Setting up backend environment..."
 # Ensure the staging environment file is in place at .env.staging (NOT .env)
 sudo cp "$PROJECT_ROOT/config/.env.staging" "$APP_DIR/config/.env.staging"
+
+# Create an environment loader script for the backend
+cat > "$APP_DIR/backend/load_env.py" << EOF
+"""Load environment variables from .env.staging file."""
+import os
+import re
+from pathlib import Path
+
+def load_dotenv(env_file):
+    """Load environment variables from a file."""
+    if not os.path.exists(env_file):
+        print(f"Warning: {env_file} not found")
+        return False
+    
+    with open(env_file) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            
+            # Extract key and value with proper handling of quotes
+            match = re.match(r'^([A-Za-z0-9_]+)=(?:"([^"]*)"|(.*))$', line)
+            if match:
+                key = match.group(1)
+                value = match.group(2) if match.group(2) is not None else match.group(3)
+                os.environ[key] = value
+    
+    return True
+
+# Load from the staging environment file
+env_file = Path(__file__).parent.parent / "config" / ".env.staging"
+load_dotenv(str(env_file))
+print(f"Loaded environment from {env_file}")
+EOF
+
+# Make sure permissions are correct
+sudo chown $CURRENT_USER:$CURRENT_USER "$APP_DIR/backend/load_env.py"
+
+# Modify the main app to load environment variables early
+if ! grep -q "import load_env" "$APP_DIR/backend/app.py"; then
+    # Add import at the top of the file
+    sed -i '1s/^/import backend.load_env\n/' "$APP_DIR/backend/app.py"
+    echo "✅ Added environment loader to backend/app.py"
+fi
+
 echo "✅ Backend environment configured to use config/.env.staging"
 
 # Set up frontend environment using the enhanced script with environment parameter
