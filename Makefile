@@ -157,5 +157,16 @@ dslf: ## Full cleanup of local staging deployment
 	@sudo rm -f /etc/nginx/sites-enabled/atlas || true
 	@sudo rm -f /etc/nginx/sites-available/atlas || true
 	@sudo systemctl restart nginx || true
+	@echo "Clearing npm cache..."
+	@cd frontend && npm cache clean --force || true
+	@echo "Removing node_modules and package-lock.json from frontend..."
+	@rm -rf frontend/node_modules frontend/package-lock.json frontend/.vite || true
+	@echo "Removing frontend/dist directory..."
+	@rm -rf frontend/dist || true
+	@echo "Removing any generated environment files..."
+	@rm -f frontend/.env || true
 	@sudo rm -rf /opt/atlas || true
-	@echo "✅ Full cleanup completed (including removal of /opt/atlas)"
+	@echo "Checking for any Vite cache directories..."
+	@rm -rf $$HOME/.vite || true
+	@rm -rf $$HOME/.cache/vite || true
+	@echo "✅ Full cleanup completed (including removal of /opt/atlas and npm/node caches)"

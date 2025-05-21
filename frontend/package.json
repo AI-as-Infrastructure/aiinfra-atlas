@@ -18,7 +18,7 @@
   "dependencies": {
     "@aws-amplify/ui-vue": "^3.0.0",
     "aws-amplify": "^5.0.0",
-    "bulma": "^1.0.4",
+    "bulma": "^0.9.4",
     "pinia": "^3.0.2",
     "vue": "^3.4.0",
     "vue-router": "^4.5.1"
