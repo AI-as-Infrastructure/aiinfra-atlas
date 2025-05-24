@@ -142,7 +142,10 @@ dsl: ## Basic cleanup of local staging deployment
 	@echo "Performing basic cleanup of local staging deployment..."
 	@sudo systemctl stop gunicorn || true
 	@sudo systemctl disable gunicorn || true
+	@sudo systemctl stop llm-worker || true
+	@sudo systemctl disable llm-worker || true
 	@sudo rm -f /etc/systemd/system/gunicorn.service || true
+	@sudo rm -f /etc/systemd/system/llm-worker.service || true
 	@sudo rm -f /etc/nginx/sites-enabled/atlas || true
 	@sudo rm -f /etc/nginx/sites-available/atlas || true
 	@sudo systemctl restart nginx || true
@@ -155,7 +158,10 @@ dslf: ## Full cleanup of local staging deployment
 	@echo "Performing full cleanup of local staging deployment..."
 	@sudo systemctl stop gunicorn || true
 	@sudo systemctl disable gunicorn || true
+	@sudo systemctl stop llm-worker || true
+	@sudo systemctl disable llm-worker || true
 	@sudo rm -f /etc/systemd/system/gunicorn.service || true
+	@sudo rm -f /etc/systemd/system/llm-worker.service || true
 	@sudo rm -f /etc/nginx/sites-enabled/atlas || true
 	@sudo rm -f /etc/nginx/sites-available/atlas || true
 	@sudo systemctl restart nginx || true

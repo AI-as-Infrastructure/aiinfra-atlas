@@ -60,20 +60,81 @@ echo "Using Python version $PYTHON_VERSION from environment file"
 
 # 2. Install required packages with specific versions
 echo "Installing required packages..."
-sudo apt-get update && sudo apt-get install -y python$PYTHON_VERSION python$PYTHON_VERSION-venv python$PYTHON_VERSION-dev python3-pip nginx git git-lfs gunicorn
+sudo apt-get update && sudo apt-get install -y python$PYTHON_VERSION python$PYTHON_VERSION-venv python$PYTHON_VERSION-dev python3-pip nginx git git-lfs gunicorn redis-server
+
+# Configure Redis with authentication
+echo "Configuring Redis with authentication..."
+REDIS_PASSWORD=$(grep "^REDIS_PASSWORD=" "$PROJECT_ROOT/config/.env.staging" | cut -d '"' -f 2 | cut -d '=' -f 2)
+if [ -z "$REDIS_PASSWORD" ]; then
+    echo "ERROR: REDIS_PASSWORD not found in config/.env.staging"
+    echo "Please add REDIS_PASSWORD=\"your_password\" to your .env.staging file"
+    exit 1
+fi
+
+# Configure Redis for in-memory mode with authentication
+sudo tee -a /etc/redis/redis.conf << EOF
+
+# Atlas staging configuration
+requirepass $REDIS_PASSWORD
+bind 127.0.0.1
+port 6379
+
+# In-memory configuration (no persistence)
+save ""
+appendonly no
+
+# Memory management
+maxmemory 256mb
+maxmemory-policy allkeys-lru
+EOF
+
+# Start and enable Redis
+sudo systemctl enable redis-server
+sudo systemctl restart redis-server
+
+# Test Redis connection
+echo "Testing Redis connection..."
+redis-cli -a "$REDIS_PASSWORD" ping
+if [ $? -eq 0 ]; then
+    echo "✅ Redis configured successfully"
+else
+    echo "❌ Redis configuration failed"
+    exit 1
+fi
 
 # Fix the Node.js version handling - MUST use 22.14.0 exactly
 echo "Setting up Node.js environment..."
-if command -v nvm &> /dev/null; then
-    # Use nvm (preferred method)
-    echo "Using nvm to install Node.js 22.14.0..."
-    export NVM_DIR="$HOME/.nvm"
-    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # Load nvm
-    nvm install 22.14.0
-    nvm use 22.14.0
-    NODE_PATH=$(which node)
-    echo "Using Node.js at: $NODE_PATH"
+
+# Always try to load nvm first
+export NVM_DIR="$HOME/.nvm"
+if [ -s "$NVM_DIR/nvm.sh" ]; then
+    echo "Loading nvm..."
+    \. "$NVM_DIR/nvm.sh"  # Load nvm
+    
+    # Check if nvm is now available
+    if command -v nvm &> /dev/null || type nvm &> /dev/null; then
+        echo "Using nvm to install Node.js 22.14.0..."
+        nvm install 22.14.0
+        nvm use 22.14.0
+        NODE_PATH=$(which node)
+        echo "Using Node.js at: $NODE_PATH"
+    else
+        echo "nvm failed to load, falling back to system installation"
+        # Install system-wide from NodeSource
+        echo "Installing Node.js 22.14.0 from NodeSource..."
+        curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+        sudo apt-get install -y nodejs
+        
+        # Check version after installation
+        node_version=$(node -v)
+        if [[ "$node_version" != "v22.14.0" ]]; then
+            echo "ERROR: Node.js version mismatch! Found $node_version but need v22.14.0"
+            echo "Try installing nvm and running this script again"
+            exit 1
+        fi
+    fi
 else
+    echo "nvm not found, installing system-wide Node.js..."
     # Install system-wide from NodeSource
     echo "Installing Node.js 22.14.0 from NodeSource..."
     curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
@@ -92,6 +153,8 @@ fi
 node_version=$(node -v)
 if [[ "$node_version" != "v22.14.0" ]]; then
     echo "ERROR: Node.js version mismatch! Found $node_version but need v22.14.0"
+    echo "Current PATH: $PATH"
+    echo "Node.js location: $(which node)"
     exit 1
 fi
 echo "Node.js v22.14.0 confirmed"
@@ -172,9 +235,42 @@ Environment="PYTHONPATH=$APP_DIR"
 Environment="PHOENIX_CLIENT_HEADERS=$(grep PHOENIX_CLIENT_HEADERS $APP_DIR/config/.env.staging | cut -d'=' -f2-)"
 Environment="PHOENIX_PROJECT_NAME=$(grep PHOENIX_PROJECT_NAME $APP_DIR/config/.env.staging | cut -d'=' -f2-)"
 Environment="PHOENIX_COLLECTOR_ENDPOINT=$(grep PHOENIX_COLLECTOR_ENDPOINT $APP_DIR/config/.env.staging | cut -d'=' -f2-)"
-# Use full path to Python executable in the venv with a single worker for better telemetry
-ExecStart=$APP_DIR/.venv/bin/python -m gunicorn backend.app:app -k uvicorn.workers.UvicornWorker -w 1 -b 127.0.0.1:8000 --access-logfile ${LOGS_ABS_PATH}/gunicorn-access.log --error-logfile ${LOGS_ABS_PATH}/gunicorn-error.log
+# Pass Redis configuration to the service
+Environment="REDIS_PASSWORD=$(grep REDIS_PASSWORD $APP_DIR/config/.env.staging | cut -d'=' -f2-)"
+Environment="REDIS_URL=redis://:$(grep REDIS_PASSWORD $APP_DIR/config/.env.staging | cut -d'=' -f2-)@localhost:6379"
+# Use full path to Python executable in the venv with multiple workers for better concurrency
+ExecStart=$APP_DIR/.venv/bin/python -m gunicorn backend.app:app -k uvicorn.workers.UvicornWorker -w 4 -b 127.0.0.1:8000 --access-logfile ${LOGS_ABS_PATH}/gunicorn-access.log --error-logfile ${LOGS_ABS_PATH}/gunicorn-error.log
 Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+EOL
+
+# Create LLM Worker service
+cat > /tmp/llm-worker.service << EOL
+[Unit]
+Description=Atlas LLM Background Worker
+After=network.target redis-server.service
+Requires=redis-server.service
+
+[Service]
+User=$CURRENT_USER
+Group=$CURRENT_USER
+WorkingDirectory=$APP_DIR
+Environment="PATH=$APP_DIR/.venv/bin"
+Environment="PYTHONPATH=$APP_DIR"
+# Pass Phoenix telemetry environment variables to the worker
+Environment="PHOENIX_CLIENT_HEADERS=$(grep PHOENIX_CLIENT_HEADERS $APP_DIR/config/.env.staging | cut -d'=' -f2-)"
+Environment="PHOENIX_PROJECT_NAME=$(grep PHOENIX_PROJECT_NAME $APP_DIR/config/.env.staging | cut -d'=' -f2-)"
+Environment="PHOENIX_COLLECTOR_ENDPOINT=$(grep PHOENIX_COLLECTOR_ENDPOINT $APP_DIR/config/.env.staging | cut -d'=' -f2-)"
+# Pass Redis configuration to the worker
+Environment="REDIS_PASSWORD=$(grep REDIS_PASSWORD $APP_DIR/config/.env.staging | cut -d'=' -f2-)"
+Environment="REDIS_URL=redis://:$(grep REDIS_PASSWORD $APP_DIR/config/.env.staging | cut -d'=' -f2-)@localhost:6379"
+Environment="WORKER_ID=staging-worker-1"
+# Run the LLM worker
+ExecStart=$APP_DIR/.venv/bin/python $APP_DIR/backend/services/worker.py
+Restart=on-failure
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
@@ -315,6 +411,7 @@ sudo mkdir -p /var/log/$APP_NAME
 
 # Install config files
 sudo mv /tmp/gunicorn.service /etc/systemd/system/gunicorn.service
+sudo mv /tmp/llm-worker.service /etc/systemd/system/llm-worker.service
 sudo mv /tmp/nginx.conf /etc/nginx/sites-available/$APP_NAME
 sudo ln -sf /etc/nginx/sites-available/$APP_NAME /etc/nginx/sites-enabled/
 sudo rm -f /etc/nginx/sites-enabled/default
@@ -354,18 +451,31 @@ sudo chown $CURRENT_USER:$CURRENT_USER $CERT_DIR/fullchain.pem $CERT_DIR/privkey
 
 # Before setting permissions and restarting services
 # Clean up any existing failed service
-echo "Cleaning up any existing service..."
+echo "Cleaning up any existing services..."
 sudo systemctl stop gunicorn || true
 sudo systemctl disable gunicorn || true
+sudo systemctl stop llm-worker || true
+sudo systemctl disable llm-worker || true
 sudo systemctl daemon-reload
 
 # 9. Set permissions and restart services
 echo "Setting permissions and restarting services..."
 sudo chown -R $CURRENT_USER:$CURRENT_USER $APP_DIR
 sudo chown -R $CURRENT_USER:$CURRENT_USER /var/log/$APP_NAME
+
+# Reload systemd and start services
 sudo systemctl daemon-reload
 sudo systemctl enable gunicorn
+sudo systemctl enable llm-worker
 sudo systemctl restart gunicorn
+sudo systemctl restart llm-worker
+
+# Check service status
+echo "Checking service status..."
+sudo systemctl status gunicorn --no-pager -l
+sudo systemctl status llm-worker --no-pager -l
+
+# Test Nginx configuration and restart
 sudo nginx -t
 sudo systemctl restart nginx
 

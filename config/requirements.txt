@@ -33,6 +33,7 @@ numpy==1.26.4
 asgiref==3.8.1
 requests==2.32.3
 python-jose[cryptography]==3.4.0  # For AWS Cognito JWT validation
+redis==5.0.1  # For async LLM request queuing
 
 # GraphQL and Pydantic
 strawberry-graphql==0.208.2
