@@ -80,6 +80,15 @@ from backend.telemetry.feedback import UserFeedback, FeedbackResponse
 from backend.modules.auth import get_current_user, optional_user
 from backend.telemetry.config_attrs import get_test_target_attributes
 
+# Import async queue management
+try:
+    from backend.services.queue_manager import get_queue_manager
+    async_queue_available = True
+    logger.info("✅ Async queue manager imported successfully")
+except ImportError as e:
+    logger.warning(f"⚠️ Async queue manager not available: {e}")
+    async_queue_available = False
+
 if not telemetry_initialized:
     raise RuntimeError("Telemetry is not initialized. The app cannot start without telemetry.")
 
@@ -779,3 +788,131 @@ if __name__ == "__main__":
 @app.get("/api/health")
 def health_check():
     return {"status": "ok"}
+
+# === ASYNC LLM REQUEST ENDPOINTS ===
+
+@app.post("/api/ask/async")
+async def ask_async(data: dict = Body(...), request: Request = None):
+    """
+    Submit an LLM query for async processing
+    Returns immediately with a request ID for status checking
+    """
+    if not async_queue_available:
+        raise HTTPException(
+            status_code=503, 
+            detail="Async processing not available. Redis queue not configured."
+        )
+    
+    try:
+        # Extract user information if available
+        user_id = None
+        if request:
+            # Try to get user from request (adjust based on your auth system)
+            try:
+                user_id = getattr(request.state, 'user_id', None)
+            except:
+                pass
+        
+        # Get queue manager
+        queue_manager = get_queue_manager()
+        
+        # Queue the request
+        request_id = await queue_manager.queue_request(data, user_id)
+        
+        return {
+            "request_id": request_id,
+            "status": "queued",
+            "message": "Your query has been queued for processing",
+            "estimated_wait_time": "2-10 seconds"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error queuing async request: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to queue request: {str(e)}")
+
+@app.get("/api/ask/async/{request_id}")
+async def get_async_status(request_id: str):
+    """
+    Get the status and result of an async LLM request
+    """
+    if not async_queue_available:
+        raise HTTPException(
+            status_code=503, 
+            detail="Async processing not available. Redis queue not configured."
+        )
+    
+    try:
+        queue_manager = get_queue_manager()
+        status_data = await queue_manager.get_request_status(request_id)
+        
+        if status_data["status"] == "not_found":
+            raise HTTPException(status_code=404, detail="Request not found or expired")
+        
+        return status_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting async status for {request_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get status: {str(e)}")
+
+@app.get("/api/queue/stats")
+async def get_queue_stats():
+    """
+    Get current queue statistics (admin endpoint)
+    """
+    if not async_queue_available:
+        raise HTTPException(
+            status_code=503, 
+            detail="Async processing not available. Redis queue not configured."
+        )
+    
+    try:
+        queue_manager = get_queue_manager()
+        stats = await queue_manager.get_queue_stats()
+        
+        return {
+            "queue_stats": stats,
+            "async_enabled": True,
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting queue stats: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get queue stats: {str(e)}")
+
+@app.websocket("/ws/async/{request_id}")
+async def websocket_async_status(websocket: WebSocket, request_id: str):
+    """
+    WebSocket endpoint for real-time async request status updates
+    """
+    if not async_queue_available:
+        await websocket.close(code=1011, reason="Async processing not available")
+        return
+    
+    await websocket.accept()
+    
+    try:
+        queue_manager = get_queue_manager()
+        
+        # Send initial status
+        initial_status = await queue_manager.get_request_status(request_id)
+        await websocket.send_json(initial_status)
+        
+        # Poll for status updates
+        while True:
+            status_data = await queue_manager.get_request_status(request_id)
+            
+            if status_data["status"] in ["completed", "failed", "not_found"]:
+                # Send final status and close
+                await websocket.send_json(status_data)
+                break
+            
+            # Wait before next poll
+            await asyncio.sleep(0.5)
+            
+    except WebSocketDisconnect:
+        logger.info(f"WebSocket disconnected for async request {request_id}")
+    except Exception as e:
+        logger.error(f"WebSocket error for async request {request_id}: {e}")
+        await websocket.close(code=1011, reason="Internal server error")
