@@ -10,17 +10,21 @@ from typing import Dict, Any
 from concurrent.futures import ThreadPoolExecutor
 import sys
 from pathlib import Path
+import uuid
 
 # Add project root to path if needed
 project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-# Import your existing LLM processing functions
-# Note: Adjust these imports based on your actual LLM processing code
+# Import the actual processing functions from the modules
 try:
-    from backend.api.ask import process_ask_request
-    from backend.api.models import AskRequest
+    from backend.modules.document_retrieval import retrieve_documents_with_telemetry
+    from backend.modules.corpus_filtering import filter_documents_with_telemetry
+    from backend.modules.document_reranking import rerank_documents_with_telemetry
+    from backend.modules.llm import generate_response_with_telemetry
+    from backend.modules.config import get_retriever
+    print("✅ Successfully imported LLM processing modules")
 except ImportError as e:
     print(f"⚠️ Could not import LLM processing functions: {e}")
     print("Please ensure your LLM processing code is available")
@@ -28,49 +32,124 @@ except ImportError as e:
 # Thread pool for running sync LLM operations
 llm_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="llm-worker")
 
+def process_query_sync(query_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Process an LLM query synchronously using the same logic as the main app
+    
+    This function replicates the processing logic from the /api/ask endpoint
+    """
+    try:
+        # Extract query parameters
+        question = query_data.get("query", "")
+        corpus_filter = query_data.get("corpus_selection", "all")
+        model_selection = query_data.get("model_selection", "claude-3-5-sonnet-20241022")
+        chat_history = query_data.get("chat_history", [])
+        session_id = str(uuid.uuid4())  # Generate session ID for async processing
+        qa_id = str(uuid.uuid4())       # Generate QA ID for async processing
+        
+        if not question:
+            return {
+                "type": "error",
+                "error": "No question provided",
+                "query_data": query_data
+            }
+        
+        print(f"🔄 Processing query: {question[:50]}...")
+        
+        # Step 1: Retrieve documents
+        documents, qa_id = retrieve_documents_with_telemetry(
+            query=question,
+            retriever=get_retriever(),
+            session_id=session_id,
+            qa_id=qa_id,
+            corpus_filter=corpus_filter
+        )
+        
+        if not documents:
+            return {
+                "type": "error",
+                "error": "No relevant documents found for your query",
+                "query": question
+            }
+        
+        print(f"📄 Retrieved {len(documents)} documents")
+        
+        # Step 2: Apply corpus filter
+        documents = filter_documents_with_telemetry(
+            documents=documents,
+            corpus_filter=corpus_filter,
+            session_id=session_id,
+            qa_id=qa_id
+        )
+        
+        # Step 3: Apply document reranking
+        documents = rerank_documents_with_telemetry(
+            documents=documents,
+            query=question,
+            session_id=session_id,
+            qa_id=qa_id
+        )
+        
+        print(f"🔍 Filtered and reranked to {len(documents)} documents")
+        
+        # Step 4: Generate response
+        response_generator, qa_id = generate_response_with_telemetry(
+            question=question,
+            documents=documents,
+            session_id=session_id,
+            qa_id=qa_id,
+            chat_history=chat_history,
+            corpus_filter=corpus_filter,
+            provider=model_selection  # Use model_selection as provider
+        )
+        
+        # Step 5: Collect the entire response
+        response_text = ""
+        chunk_count = 0
+        for chunk in response_generator:
+            response_text += chunk
+            chunk_count += 1
+        
+        print(f"✅ Generated response with {chunk_count} chunks, {len(response_text)} characters")
+        
+        return {
+            "type": "ask_response",
+            "result": response_text,
+            "query": question,
+            "corpus_selection": corpus_filter,
+            "model_selection": model_selection,
+            "document_count": len(documents),
+            "session_id": session_id,
+            "qa_id": qa_id
+        }
+        
+    except Exception as e:
+        print(f"❌ Error in sync processing: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            "type": "error",
+            "error": str(e),
+            "query_data": query_data
+        }
+
 async def process_query_async(query_data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Process an LLM query asynchronously
     
-    This function wraps your existing synchronous LLM processing
+    This function wraps the synchronous LLM processing
     to run in a thread pool, making it non-blocking.
     """
     try:
-        # Convert query_data to the format expected by your LLM processor
-        # Adjust this based on your actual data models
+        # Run the synchronous LLM processing in a thread pool
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            llm_executor,
+            process_query_sync,
+            query_data
+        )
         
-        if "query" in query_data:
-            # Handle ask-style queries
-            ask_request = AskRequest(
-                query=query_data["query"],
-                corpus_selection=query_data.get("corpus_selection", "all"),
-                model_selection=query_data.get("model_selection", "claude-3-5-sonnet-20241022"),
-                user_id=query_data.get("user_id")
-            )
-            
-            # Run the synchronous LLM processing in a thread pool
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                llm_executor,
-                process_ask_request,
-                ask_request
-            )
-            
-            return {
-                "type": "ask_response",
-                "result": result,
-                "query": query_data["query"],
-                "corpus_selection": ask_request.corpus_selection,
-                "model_selection": ask_request.model_selection
-            }
-        
-        else:
-            # Handle other query types or return error
-            return {
-                "type": "error",
-                "error": "Unsupported query type",
-                "query_data": query_data
-            }
+        return result
             
     except Exception as e:
         print(f"❌ Error processing LLM query: {e}")

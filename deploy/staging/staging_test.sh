@@ -320,6 +320,128 @@ else
     curl -k -v https://localhost/api/health 2>&1 | sed 's/^/    /'
 fi
 
+# 11. Redis and LLM Worker checks
+run_test "🔴 REDIS AND LLM WORKER CHECKS"
+
+# Check if Redis service is active
+if systemctl is-active --quiet redis-server; then
+    echo -e "  ${GREEN}✓ Redis service is active${NC}"
+    
+    # Test Redis connection
+    REDIS_PASSWORD=$(grep "^REDIS_PASSWORD=" "$APP_DIR/config/.env.staging" | cut -d '"' -f 2 | cut -d '=' -f 2)
+    if redis-cli -a "$REDIS_PASSWORD" ping 2>/dev/null | grep -q "PONG"; then
+        echo -e "  ${GREEN}✓ Redis connection successful${NC}"
+    else
+        echo -e "  ${RED}✗ Redis connection failed${NC}"
+    fi
+else
+    echo -e "  ${RED}✗ Redis service is not active${NC}"
+    systemctl status redis-server | head -n 10
+fi
+
+# Check if LLM worker service is active
+if systemctl is-active --quiet llm-worker; then
+    echo -e "  ${GREEN}✓ LLM worker service is active${NC}"
+else
+    echo -e "  ${RED}✗ LLM worker service is not active${NC}"
+    echo "    Status details:"
+    systemctl status llm-worker | head -n 10
+fi
+
+# 12. Async API endpoint tests
+run_test "🚀 ASYNC API ENDPOINT TESTS"
+
+echo "  Testing queue statistics endpoint..."
+QUEUE_STATS_RESPONSE=$(curl -k -s https://localhost/api/queue/stats 2>/dev/null)
+if echo "$QUEUE_STATS_RESPONSE" | grep -q "queue_stats"; then
+    echo -e "  ${GREEN}✓ Queue stats endpoint working${NC}"
+    echo "    Queue stats: $(echo "$QUEUE_STATS_RESPONSE" | jq -r '.queue_stats' 2>/dev/null || echo "JSON parse failed")"
+else
+    echo -e "  ${RED}✗ Queue stats endpoint failed${NC}"
+    echo "    Response: $QUEUE_STATS_RESPONSE"
+fi
+
+echo "  Testing async query submission..."
+# Create a test async query
+ASYNC_QUERY_DATA='{"query": "What is the capital of France?", "corpus_selection": "all", "model_selection": "claude-3-5-sonnet-20241022"}'
+ASYNC_RESPONSE=$(curl -k -s -X POST -H "Content-Type: application/json" -d "$ASYNC_QUERY_DATA" https://localhost/api/ask/async 2>/dev/null)
+
+if echo "$ASYNC_RESPONSE" | grep -q "request_id"; then
+    echo -e "  ${GREEN}✓ Async query submission working${NC}"
+    
+    # Extract request ID for status checking
+    REQUEST_ID=$(echo "$ASYNC_RESPONSE" | jq -r '.request_id' 2>/dev/null)
+    if [ "$REQUEST_ID" != "null" ] && [ -n "$REQUEST_ID" ]; then
+        echo "    Request ID: $REQUEST_ID"
+        
+        # Test status checking
+        echo "  Testing async status checking..."
+        sleep 2  # Give worker time to process
+        
+        STATUS_RESPONSE=$(curl -k -s https://localhost/api/ask/async/$REQUEST_ID 2>/dev/null)
+        if echo "$STATUS_RESPONSE" | grep -q "status"; then
+            echo -e "  ${GREEN}✓ Async status checking working${NC}"
+            STATUS=$(echo "$STATUS_RESPONSE" | jq -r '.status' 2>/dev/null)
+            echo "    Status: $STATUS"
+            
+            # If completed, show result summary
+            if [ "$STATUS" = "completed" ]; then
+                RESULT_TYPE=$(echo "$STATUS_RESPONSE" | jq -r '.result.type' 2>/dev/null)
+                echo "    Result type: $RESULT_TYPE"
+            fi
+        else
+            echo -e "  ${RED}✗ Async status checking failed${NC}"
+            echo "    Response: $STATUS_RESPONSE"
+        fi
+    else
+        echo -e "  ${YELLOW}⚠️ Could not extract request ID from response${NC}"
+    fi
+else
+    echo -e "  ${RED}✗ Async query submission failed${NC}"
+    echo "    Response: $ASYNC_RESPONSE"
+fi
+
+# 13. WebSocket connectivity test
+run_test "🔌 WEBSOCKET CONNECTIVITY TEST"
+
+echo "  Testing WebSocket connection (basic connectivity)..."
+# Use a simple WebSocket test with timeout
+WS_TEST_RESULT=$(timeout 5 bash -c '
+    exec 3<>/dev/tcp/localhost/443
+    echo -e "GET /ws/test-session HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n" >&3
+    read -t 2 response <&3
+    echo "$response"
+    exec 3<&-
+    exec 3>&-
+' 2>/dev/null)
+
+if echo "$WS_TEST_RESULT" | grep -q "101"; then
+    echo -e "  ${GREEN}✓ WebSocket endpoint accessible${NC}"
+else
+    echo -e "  ${YELLOW}⚠️ WebSocket test inconclusive (may require proper handshake)${NC}"
+    echo "    This is normal - WebSocket requires proper client handshake"
+fi
+
+# Test async WebSocket endpoint if we have a request ID
+if [ -n "$REQUEST_ID" ] && [ "$REQUEST_ID" != "null" ]; then
+    echo "  Testing async WebSocket status endpoint..."
+    # Create a simple WebSocket client test for async status
+    WS_ASYNC_TEST=$(timeout 3 bash -c "
+        exec 3<>/dev/tcp/localhost/443
+        echo -e 'GET /ws/async/$REQUEST_ID HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n' >&3
+        read -t 2 response <&3
+        echo \"\$response\"
+        exec 3<&-
+        exec 3>&-
+    " 2>/dev/null)
+    
+    if echo "$WS_ASYNC_TEST" | grep -q "101"; then
+        echo -e "  ${GREEN}✓ Async WebSocket endpoint accessible${NC}"
+    else
+        echo -e "  ${YELLOW}⚠️ Async WebSocket test inconclusive${NC}"
+    fi
+fi
+
 # Final summary
 echo ""
 echo -e "${BLUE}=== DIAGNOSTIC SUMMARY ===${NC}"
@@ -332,7 +454,19 @@ echo "4. Wrong file permissions"
 echo "5. Incorrect environment settings"
 echo "6. Certificate issues"
 echo ""
+echo "If async functionality is not working, check:"
+echo "1. Redis service status and authentication"
+echo "2. LLM worker service status"
+echo "3. Queue manager Redis connection"
+echo "4. Environment variables: REDIS_PASSWORD, REDIS_URL"
+echo ""
 echo "For more detailed debugging, try running Gunicorn manually with:"
 echo "cd $APP_DIR && .venv/bin/python -m gunicorn backend.app:app -k uvicorn.workers.UvicornWorker --log-level debug"
+echo ""
+echo "To test the LLM worker manually:"
+echo "cd $APP_DIR && .venv/bin/python backend/services/worker.py"
+echo ""
+echo "To test Redis connection manually:"
+echo "redis-cli -a \$(grep REDIS_PASSWORD $APP_DIR/config/.env.staging | cut -d'\"' -f2) ping"
 echo ""
 echo "Diagnostic complete." 
