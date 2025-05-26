@@ -6,9 +6,11 @@ feedback with spans using Phoenix's native span evaluation system.
 """
 
 import logging
+import json
 from pydantic import BaseModel, ConfigDict
 from typing import Optional, List, Dict, Any
 from .spans import find_qa_span_id
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +26,13 @@ class UserFeedback(BaseModel):
     clarity: Optional[int] = None
     tags: Optional[List[str]] = []
     feedback_text: Optional[str] = None
+    
+    # Additional rich data from frontend
+    test_target: Optional[Dict[str, Any]] = None
+    question: Optional[str] = None
+    answer: Optional[str] = None
+    citations: Optional[List[Dict[str, Any]]] = []
+    timestamp: Optional[str] = None
 
 class FeedbackResponse(BaseModel):
     """Feedback submission response model"""
@@ -32,135 +41,109 @@ class FeedbackResponse(BaseModel):
 
 def associate_feedback_with_spans(session_id: str, qa_id: str, feedback_data: Dict[str, Any]) -> bool:
     """
-    Associate feedback with spans using Phoenix's native span evaluation system.
-    This is the correct Phoenix Arize approach for span-level feedback.
+    Associate feedback with spans by adding evaluation attributes directly to existing spans.
+    This creates annotations on the original spans rather than separate evaluation spans.
     """
     try:
-        # Import Phoenix native components
-        import phoenix as px
-        from phoenix.trace import SpanEvaluations
-        from phoenix.client import Client
-        import pandas as pd
+        from opentelemetry import trace
+        import json
         
-        # Find the original span ID
-        span_id = find_qa_span_id(session_id, qa_id)
-        if span_id is None:
-            logger.warning(f"Could not find answer span for session_id={session_id}, qa_id={qa_id}")
+        # Find span IDs - try multiple patterns
+        response_span_id = find_qa_span_id(session_id, f"{qa_id}_response")
+        qa_span_id = find_qa_span_id(session_id, qa_id)
+        
+        # Use any available span
+        primary_span_id = response_span_id or qa_span_id
+        
+        if primary_span_id is None:
+            logger.error(f"No spans found for feedback: session_id={session_id}, qa_id={qa_id}")
+            # Log what spans we do have
+            from .spans import _span_registry
+            available_spans = _span_registry.get(session_id, {})
+            logger.error(f"Available spans: {list(available_spans.keys())}")
             return False
         
-        # Get Phoenix client for evaluation logging with proper configuration
-        import os
-        phoenix_endpoint = os.getenv("PHOENIX_COLLECTOR_ENDPOINT")
-        phoenix_client_headers = os.getenv("PHOENIX_CLIENT_HEADERS")
+        logger.info(f"Adding feedback annotations to span: {primary_span_id}")
         
-        if not phoenix_endpoint or not phoenix_client_headers:
-            logger.error("Phoenix configuration missing - PHOENIX_COLLECTOR_ENDPOINT and PHOENIX_CLIENT_HEADERS required")
-            return False
+        # Create evaluation attributes for the span
+        evaluation_attributes = {}
         
-        # Parse the api_key from PHOENIX_CLIENT_HEADERS
-        # Format is "api_key=<actual_key>"
-        api_key = None
-        if phoenix_client_headers.startswith("api_key="):
-            api_key = phoenix_client_headers.split("api_key=", 1)[1]
-        
-        if not api_key:
-            logger.error("Could not parse api_key from PHOENIX_CLIENT_HEADERS")
-            return False
-        
-        # Initialize Phoenix client for online service
-        client = Client(
-            base_url=phoenix_endpoint,
-            headers={"api_key": api_key}
-        )
-        
-        # Create evaluation records for Phoenix native logging
-        evaluations = []
-        
-        # Add structured evaluations using Phoenix's evaluation format
+        # Add Phoenix-style evaluation attributes
         if feedback_data.get("relevance") is not None:
-            evaluations.append({
-                "span_id": str(span_id),
-                "label": "user_feedback",
-                "score": feedback_data["relevance"],
-                "explanation": f"User rated relevance as {feedback_data['relevance']}/5"
-            })
+            evaluation_attributes["evals.relevance.score"] = float(feedback_data["relevance"]) / 5.0
+            evaluation_attributes["evals.relevance.label"] = "relevance"
+            evaluation_attributes["evals.relevance.explanation"] = f"User rated relevance: {feedback_data['relevance']}/5"
         
         if feedback_data.get("factual_accuracy") is not None:
-            evaluations.append({
-                "span_id": str(span_id),
-                "label": "user_feedback",
-                "score": 1.0 if feedback_data["factual_accuracy"] else 0.0,
-                "explanation": f"User marked as {'factually accurate' if feedback_data['factual_accuracy'] else 'factually inaccurate'}"
-            })
-        
-        if feedback_data.get("source_quality") is not None:
-            evaluations.append({
-                "span_id": str(span_id),
-                "label": "user_feedback",
-                "score": feedback_data["source_quality"],
-                "explanation": f"User rated source quality as {feedback_data['source_quality']}/5"
-            })
+            evaluation_attributes["evals.factual_accuracy.score"] = 1.0 if feedback_data["factual_accuracy"] else 0.0
+            evaluation_attributes["evals.factual_accuracy.label"] = "factual_accuracy"
+            evaluation_attributes["evals.factual_accuracy.explanation"] = f"Factually accurate: {feedback_data['factual_accuracy']}"
         
         if feedback_data.get("clarity") is not None:
-            evaluations.append({
-                "span_id": str(span_id),
-                "label": "user_feedback", 
-                "score": feedback_data["clarity"],
-                "explanation": f"User rated clarity as {feedback_data['clarity']}/5"
-            })
+            evaluation_attributes["evals.clarity.score"] = float(feedback_data["clarity"]) / 5.0
+            evaluation_attributes["evals.clarity.label"] = "clarity"
+            evaluation_attributes["evals.clarity.explanation"] = f"User rated clarity: {feedback_data['clarity']}/5"
         
-        # Apply tags as evaluations
-        if feedback_data.get("tags"):
-            for tag in feedback_data["tags"]:
-                evaluations.append({
-                    "span_id": str(span_id),
-                    "label": "user_tag",
-                    "score": 1.0,
-                    "explanation": f"User tagged response as '{tag}'"
-                })
+        if feedback_data.get("source_quality") is not None:
+            evaluation_attributes["evals.source_quality.score"] = float(feedback_data["source_quality"]) / 5.0
+            evaluation_attributes["evals.source_quality.label"] = "source_quality"
+            evaluation_attributes["evals.source_quality.explanation"] = f"User rated source quality: {feedback_data['source_quality']}/5"
         
-        # Add feedback text as an evaluation
         if feedback_data.get("feedback_text"):
-            evaluations.append({
-                "span_id": str(span_id),
-                "label": "user_feedback",
-                "score": None,  # Text feedback doesn't have a score
-                "explanation": feedback_data["feedback_text"]
-            })
+            evaluation_attributes["evals.user_comment.label"] = "user_comment"
+            evaluation_attributes["evals.user_comment.explanation"] = feedback_data["feedback_text"]
         
-        # Log evaluations to Phoenix using the correct API
-        if evaluations:
-            try:
-                # Create DataFrame with correct schema for Phoenix
-                eval_df = pd.DataFrame(evaluations)
-                
-                # Use SpanEvaluations class as required by Phoenix 3.25.0
-                span_evaluations = SpanEvaluations(
-                    dataframe=eval_df,
-                    eval_name="User Feedback"
-                )
-                
-                # Log evaluations using Phoenix client
-                client.log_evaluations(span_evaluations)
-                logger.info(f"Successfully logged Phoenix native evaluations for span {span_id} (session_id={session_id}, qa_id={qa_id})")
-                return True
-            except Exception as eval_error:
-                if "401" in str(eval_error) or "Unauthorized" in str(eval_error):
-                    logger.error(f"Phoenix authentication failed - check PHOENIX_API_KEY: {eval_error}")
-                    logger.error("Ensure PHOENIX_API_KEY is set to: YOUR_API_KEY")
-                else:
-                    logger.error(f"Phoenix native feedback logging failed: {eval_error}")
-                
-                # Don't fall back - let the failure be visible
-                logger.error("Phoenix feedback logging failed - no fallback used to ensure visibility of issues")
-                return False
-        else:
-            logger.warning(f"No evaluation data to record for session_id={session_id}, qa_id={qa_id}")
+        if not evaluation_attributes:
+            logger.warning(f"No feedback data to log for {qa_id}")
             return False
         
-    except ImportError:
-        logger.error("Phoenix not available - feedback logging disabled")
-        return False
+        # Add summary attributes
+        evaluation_attributes["user_feedback.submitted"] = True
+        evaluation_attributes["user_feedback.timestamp"] = datetime.now().isoformat()
+        evaluation_attributes["user_feedback.session_id"] = session_id
+        evaluation_attributes["user_feedback.qa_id"] = qa_id
+        evaluation_attributes["user_feedback.evaluation_count"] = len([k for k in evaluation_attributes.keys() if k.startswith("evals.") and k.endswith(".score")])
+        
+        # Try to add attributes to the current span if it's still active
+        current_span = trace.get_current_span()
+        if current_span and hasattr(current_span, 'get_span_context'):
+            current_span_id = str(current_span.get_span_context().span_id)
+            if current_span_id == str(primary_span_id):
+                # We're in the context of the target span, add attributes directly
+                for key, value in evaluation_attributes.items():
+                    current_span.set_attribute(key, value)
+                logger.info(f"Added {len(evaluation_attributes)} evaluation attributes to active span {primary_span_id}")
+                return True
+        
+        # If we can't add to the active span, create a linked evaluation span
+        # This will appear as an annotation in Phoenix
+        from .core import create_span
+        from .constants import SpanNames, OpenInferenceSpanKind, SpanAttributes
+        
+        # Create a linked evaluation span that references the original span
+        with create_span(
+            name=f"{SpanNames.USER_FEEDBACK}.{qa_id}",
+            attributes={
+                SpanAttributes.SESSION_ID: session_id,
+                SpanAttributes.QA_ID: qa_id,
+                "span_id": str(primary_span_id),  # Reference to the evaluated span
+                "evaluation_type": "user_feedback",
+                "openinference.span.kind": OpenInferenceSpanKind.EVALUATOR,
+                **evaluation_attributes  # Add all evaluation attributes
+            },
+            session_id=session_id,
+            kind=OpenInferenceSpanKind.EVALUATOR
+        ) as eval_span:
+            # Add span link to connect this evaluation to the original span
+            # This creates a proper parent-child or reference relationship
+            eval_span.set_attribute("links.target_span_id", str(primary_span_id))
+            eval_span.set_attribute("links.relationship", "evaluates")
+            
+            logger.info(f"Created linked evaluation span with {len(evaluation_attributes)} feedback attributes")
+            logger.info(f"Linked to span: {primary_span_id}")
+            
+            return True
+        
     except Exception as e:
-        logger.error(f"Error applying Phoenix native feedback: {e}", exc_info=True)
+        logger.error(f"Error in feedback association: {e}", exc_info=True)
         return False

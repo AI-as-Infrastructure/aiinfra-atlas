@@ -723,13 +723,23 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
         # Log reception of feedback
         logger.info(f"Received HTTP feedback for session {session_id}, qa {qa_id} from {client_ip}")
         
-        # Format feedback data for telemetry
+        # Format feedback data for telemetry using the correct field names
         feedback_data = {
-            "answer_rating": feedback.answer_rating,
-            "citations_rating": feedback.citations_rating,
+            "relevance": feedback.relevance,
+            "factual_accuracy": feedback.factual_accuracy,
+            "source_quality": feedback.source_quality,
+            "clarity": feedback.clarity,
+            "tags": feedback.tags,
             "feedback_text": feedback.feedback_text,
-            "timestamp": datetime.datetime.now().isoformat(),
-            "source": "http_fallback"
+            "timestamp": feedback.timestamp or datetime.datetime.now().isoformat(),
+            "source": "http_fallback",
+            
+            # Include rich context data from frontend
+            "test_target": feedback.test_target,
+            "question": feedback.question,
+            "answer": feedback.answer,
+            "citations": feedback.citations,
+            "citation_count": len(feedback.citations) if feedback.citations else 0,
         }
         
         # Use the session context to ensure spans are properly associated

@@ -402,12 +402,6 @@ def register_span(session_id, qa_id, span_id):
     """
     Register a span ID for a specific session and QA pair.
     This allows finding spans later for feedback association.
-    Works with both Phoenix native and OpenTelemetry spans.
-    
-    Args:
-        session_id: Session ID
-        qa_id: Question/answer ID, or special key
-        span_id: Span ID (Phoenix span object or OpenTelemetry span ID)
     """
     global _span_registry
     
@@ -419,63 +413,41 @@ def register_span(session_id, qa_id, span_id):
     if session_id not in _span_registry:
         _span_registry[session_id] = {}
     
-    # Store the span ID or span object
-    if qa_id is not None:  # Allow None or empty string as qa_id values
-        _span_registry[session_id][qa_id] = span_id
+    # Store the span ID as string
+    if qa_id is not None:
+        span_id_str = str(span_id)
+        _span_registry[session_id][qa_id] = span_id_str
         
-        # Special logging for response spans to aid debugging
+        # Log registration
         if qa_id and isinstance(qa_id, str) and qa_id.endswith("_response"):
-            logger.info(f"Registered response span for session={session_id}, qa_id={qa_id}, span_id={span_id}")
+            logger.info(f"Registered response span: session={session_id}, qa_id={qa_id}, span_id={span_id_str}")
         else:
-            logger.debug(f"Registered span for session={session_id}, qa_id={qa_id}, span_id={span_id}")
+            logger.debug(f"Registered span: session={session_id}, qa_id={qa_id}, span_id={span_id_str}")
 
 def find_qa_span_id(session_id, qa_id):
     """
     Find a span ID for a specific session and QA pair.
-    Returns Phoenix span object if available, otherwise OpenTelemetry span ID.
-    
-    Args:
-        session_id: Session ID
-        qa_id: Question/answer ID
-        
-    Returns:
-        Span ID/object if found, None otherwise
     """
     global _span_registry
     
     if not session_id or qa_id is None:
         return None
         
-    # Check if session exists in registry
-    if session_id not in _span_registry:
-        logger.warning(f"Session {session_id} not found in registry")
-        return None
+    # Check local registry
+    if session_id in _span_registry and qa_id in _span_registry[session_id]:
+        span_id = _span_registry[session_id][qa_id]
+        logger.debug(f"Found span: session={session_id}, qa_id={qa_id}, span_id={span_id}")
+        return span_id
     
-    # Check if qa_id exists in session
-    if qa_id not in _span_registry[session_id]:
-        # Special handling for response span keys
-        if isinstance(qa_id, str) and qa_id.endswith("_response"):
-            # Log the miss but don't show it as a warning
-            logger.info(f"Response span for qa_id={qa_id} not found in session={session_id}")
-        else:
-            logger.info(f"QA ID {qa_id} not found in session {session_id}")
-            
-        # Log available keys for debugging
-        available_keys = list(_span_registry[session_id].keys())
-        if available_keys:
-            logger.info(f"Available qa_ids for session {session_id}: {available_keys}")
-        return None
-    
-    # Return the span ID/object
-    span_id = _span_registry[session_id][qa_id]
-    
-    # Special logging for response spans
-    if isinstance(qa_id, str) and qa_id.endswith("_response"):
-        logger.info(f"Found response span for qa_id={qa_id} in session={session_id}: span_id={span_id}")
+    # Log the miss with available information
+    logger.warning(f"Could not find span: session={session_id}, qa_id={qa_id}")
+    available_spans = _span_registry.get(session_id, {})
+    if available_spans:
+        logger.info(f"Available spans for session {session_id}: {list(available_spans.keys())}")
     else:
-        logger.debug(f"Found span for qa_id={qa_id} in session={session_id}: span_id={span_id}")
-        
-    return span_id
+        logger.info(f"No spans registered for session {session_id}")
+    
+    return None
 
 def find_session_root_span_id(session_id: str) -> Optional[int]:
     """
