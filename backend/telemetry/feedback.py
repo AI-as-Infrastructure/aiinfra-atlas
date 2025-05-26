@@ -51,16 +51,26 @@ def associate_feedback_with_spans(session_id: str, qa_id: str, feedback_data: Di
         # Get Phoenix client for evaluation logging with proper configuration
         import os
         phoenix_endpoint = os.getenv("PHOENIX_COLLECTOR_ENDPOINT")
-        phoenix_api_key = os.getenv("PHOENIX_API_KEY")
+        phoenix_client_headers = os.getenv("PHOENIX_CLIENT_HEADERS")
         
-        if not phoenix_endpoint or not phoenix_api_key:
-            logger.error("Phoenix configuration missing - PHOENIX_COLLECTOR_ENDPOINT and PHOENIX_API_KEY required")
+        if not phoenix_endpoint or not phoenix_client_headers:
+            logger.error("Phoenix configuration missing - PHOENIX_COLLECTOR_ENDPOINT and PHOENIX_CLIENT_HEADERS required")
             return False
         
-        # Initialize Phoenix client for online service using the new API
+        # Parse the api_key from PHOENIX_CLIENT_HEADERS
+        # Format is "api_key=<actual_key>"
+        api_key = None
+        if phoenix_client_headers.startswith("api_key="):
+            api_key = phoenix_client_headers.split("api_key=", 1)[1]
+        
+        if not api_key:
+            logger.error("Could not parse api_key from PHOENIX_CLIENT_HEADERS")
+            return False
+        
+        # Initialize Phoenix client for online service
         client = Client(
             base_url=phoenix_endpoint,
-            headers={"api_key": phoenix_api_key}
+            headers={"api_key": api_key}
         )
         
         # Create evaluation records for Phoenix native logging
