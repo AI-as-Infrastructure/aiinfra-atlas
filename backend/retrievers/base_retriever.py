@@ -14,7 +14,7 @@ import datetime
 from abc import ABC, abstractmethod
 from backend.retrievers.retriever_config_utils import require_config_keys, get_with_default
 from typing import Dict, List, Any, Optional, Sequence, Tuple
-from typing_extensions import TypedDict
+from typing import TypedDict
 import asyncio
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
@@ -31,9 +31,8 @@ from backend.modules.system_prompts import system_prompt, contextualize_q_system
 
 # Import telemetry
 from backend.telemetry import (
-    create_span, extract_trace_context, SpanAttributes, SpanKind,
-    trace_document_retrieval, OpenInferenceSpanKind, SpanNames,
-    telemetry_initialized
+    create_span, SpanAttributes, OpenInferenceSpanKind, SpanNames,
+    telemetry_initialized, Status, StatusCode
 )
 
 # Use telemetry functions directly
@@ -138,39 +137,56 @@ class BaseRetriever(ABC):
         
         # Create a telemetry span for this query if telemetry is initialized
         if telemetry_initialized():
+            # Create span attributes for document retrieval
+            span_attributes = {
+                SpanAttributes.SESSION_ID: session_id,
+                SpanAttributes.QA_ID: qa_id,
+                "input": query,
+                "query": query,
+                "retriever.type": self.__class__.__name__,
+                "chunking.enabled": self.chunking_enabled if hasattr(self, "chunking_enabled") else False,
+                "chunking.size": self.chunk_size,
+                "chunking.overlap": self.chunk_overlap,
+                "openinference.span.kind": OpenInferenceSpanKind.RETRIEVER
+            }
+            
             # Span for document retrieval
-            with trace_document_retrieval(
-                query=query,
-                session_id=session_id,
-                qa_id=qa_id
+            with create_span(
+                SpanNames.DOCUMENT_RETRIEVAL,
+                attributes=span_attributes,
+                session_id=session_id
             ) as span:
-                # Record details about the retriever configuration
-                span.set_attribute("retriever.type", self.__class__.__name__)
-                span.set_attribute("chunking.enabled", self.chunking_enabled if hasattr(self, "chunking_enabled") else False)
-                span.set_attribute("chunking.size", self.chunk_size)
-                span.set_attribute("chunking.overlap", self.chunk_overlap)
-                
-                # Perform the actual retrieval
-                docs = await self._get_relevant_documents(
-                    query,
-                    **kwargs
-                )
-                
-                # Record information about the results
-                span.set_attribute("document_count", len(docs))
-                
-                # Get size details for each document (up to 10 docs to avoid giant spans)
-                for i, doc in enumerate(docs[:10]):
-                    page_content = getattr(doc, "page_content", "")
-                    span.set_attribute(f"document.{i}.content_length", len(page_content) if page_content else 0)
+                try:
+                    # Perform the actual retrieval
+                    docs = await self._get_relevant_documents(
+                        query,
+                        **kwargs
+                    )
                     
-                    # For string metadata fields, get their lengths
-                    if hasattr(doc, "metadata") and isinstance(doc.metadata, dict):
-                        for key, value in doc.metadata.items():
-                            if isinstance(value, str):
-                                span.set_attribute(f"document.{i}.metadata.{key}_length", len(value))
-                
-                return docs
+                    # Record information about the results
+                    span.set_attribute("document_count", len(docs))
+                    span.set_attribute(SpanAttributes.DOCUMENT_COUNT, len(docs))
+                    
+                    # Get size details for each document (up to 10 docs to avoid giant spans)
+                    for i, doc in enumerate(docs[:10]):
+                        page_content = getattr(doc, "page_content", "")
+                        span.set_attribute(f"document.{i}.content_length", len(page_content) if page_content else 0)
+                        
+                        # For string metadata fields, get their lengths
+                        if hasattr(doc, "metadata") and isinstance(doc.metadata, dict):
+                            for key, value in doc.metadata.items():
+                                if isinstance(value, str):
+                                    span.set_attribute(f"document.{i}.metadata.{key}_length", len(value))
+                    
+                    # Mark span as successful
+                    span.set_status(Status(StatusCode.OK))
+                    return docs
+                    
+                except Exception as e:
+                    # Record error in span
+                    span.record_exception(e)
+                    span.set_status(Status(StatusCode.ERROR, str(e)))
+                    raise
         else:
             # If telemetry is not initialized, just do the retrieval directly
             try:

@@ -2,7 +2,7 @@
 API endpoints for telemetry in the ATLAS application.
 
 This module provides FastAPI routes for telemetry-related functionality,
-including feedback submission and debugging endpoints.
+including Phoenix native feedback submission and debugging endpoints.
 """
 
 import logging
@@ -10,9 +10,8 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 from fastapi import APIRouter, Request, HTTPException
 
-from .core import tracer
-from .feedback import UserFeedback, FeedbackResponse, log_user_feedback, validate_feedback
-
+from .core import get_tracer, _phoenix_session, PHOENIX_AVAILABLE, is_telemetry_enabled
+from .feedback import UserFeedback, FeedbackResponse, associate_feedback_with_spans
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +21,7 @@ router = APIRouter()
 @router.post("/api/feedback", response_model=FeedbackResponse)
 async def submit_feedback(feedback: UserFeedback, request: Request):
     """
-    Submit user feedback for a session and question.
+    Submit user feedback for a session and question using Phoenix native evaluation system.
     """
     client_ip = request.client.host
     
@@ -30,29 +29,49 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
     session_id = feedback.session_id
     qa_id = feedback.qa_id
     
+    # Check if telemetry is enabled
+    telemetry_enabled = is_telemetry_enabled()
+    
+    if not telemetry_enabled:
+        logger.info(f"Telemetry disabled - feedback submission skipped for session_id={session_id}, qa_id={qa_id}")
+        return FeedbackResponse(
+            message="Feedback received but telemetry is disabled. Feedback was not recorded.",
+            status="success"
+        )
+    
     try:
         # Log reception of feedback
         logger.debug(f"Received feedback for session {session_id}, qa {qa_id} from {client_ip}")
         
-        # Format feedback data for OpenTelemetry
+        # Format feedback data for Phoenix native evaluation system
         feedback_data = {
-            "answer_rating": feedback.answer_rating,
-            "citations_rating": feedback.citations_rating, 
+            "relevance": feedback.relevance,
+            "factual_accuracy": feedback.factual_accuracy,
+            "source_quality": feedback.source_quality,
+            "clarity": feedback.clarity,
+            "tags": feedback.tags,
             "feedback_text": feedback.feedback_text,
             "timestamp": datetime.now().isoformat(),
-            "client_ip": client_ip  # Store client IP for debugging
+            "client_ip": client_ip
         }
         
-        # Log user feedback
-        success = log_user_feedback(session_id, qa_id, feedback_data)
+        # Use Phoenix native feedback association
+        success = associate_feedback_with_spans(session_id, qa_id, feedback_data)
         
         # Respond with success
         if success:
-            logger.info(f"Feedback recorded for session_id={session_id}, qa_id={qa_id}")
-            return FeedbackResponse(
-                message="Feedback received successfully",
-                status="success"
-            )
+            if PHOENIX_AVAILABLE and _phoenix_session:
+                logger.info(f"Phoenix native feedback recorded for session_id={session_id}, qa_id={qa_id}")
+                return FeedbackResponse(
+                    message="Feedback recorded successfully using Phoenix native evaluation system",
+                    status="success"
+                )
+            else:
+                logger.info(f"Fallback feedback recorded for session_id={session_id}, qa_id={qa_id}")
+                return FeedbackResponse(
+                    message="Feedback recorded successfully using fallback system",
+                    status="success"
+                )
         else:
             logger.error(f"Failed to record feedback for session_id={session_id}, qa_id={qa_id}")
             return FeedbackResponse(
@@ -66,13 +85,23 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
             status="error"
         )
 
-
 @router.get("/api/telemetry/status")
 async def telemetry_status():
     """Check the status of the Phoenix telemetry integration"""
     try:
-        # Check if Phoenix tracer is initialized
-        phoenix_initialized = tracer is not None
+        # Check if telemetry is enabled via environment variable
+        telemetry_enabled = is_telemetry_enabled()
+        
+        # Check Phoenix native status
+        phoenix_native_available = PHOENIX_AVAILABLE and _phoenix_session is not None
+        
+        # Check if tracer is initialized
+        tracer_initialized = False
+        try:
+            tracer = get_tracer()
+            tracer_initialized = tracer is not None
+        except:
+            pass
         
         # Get Phoenix API key status
         import os
@@ -94,12 +123,17 @@ async def telemetry_status():
         # Return status information
         return {
             "status": "ok",
-            "phoenix_initialized": phoenix_initialized,
+            "telemetry_enabled": telemetry_enabled,
+            "telemetry_env_var": os.getenv('TELEMETRY_ENABLED', 'true'),
+            "phoenix_native_available": phoenix_native_available and telemetry_enabled,
+            "phoenix_session_active": _phoenix_session is not None and telemetry_enabled,
+            "tracer_initialized": tracer_initialized and telemetry_enabled,
             "phoenix_project_name": phoenix_project_name,
             "phoenix_collector_endpoint": phoenix_collector_endpoint,
             "otel_protocol": otel_protocol,
             "api_key_format": "PHOENIX_CLIENT_HEADERS" if client_api_key else "PHOENIX_API_KEY" if phoenix_api_key else "None",
             "otel_headers_configured": bool(otel_headers),
+            "feedback_system": "phoenix_native" if (phoenix_native_available and telemetry_enabled) else "opentelemetry_fallback" if telemetry_enabled else "disabled",
             "timestamp": datetime.now().isoformat()
         }
     except Exception as e:

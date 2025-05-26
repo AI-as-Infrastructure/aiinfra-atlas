@@ -41,6 +41,18 @@ for env_path in env_files:
 if not env_loaded:
     logger.warning(f"No environment files found at: {', '.join(env_files)}")
 
+# Initialize telemetry after environment variables are loaded
+from backend.telemetry.core import initialize_telemetry
+try:
+    telemetry_success = initialize_telemetry()
+    if telemetry_success:
+        logger.info("✅ Telemetry initialized successfully")
+    else:
+        logger.warning("⚠️ Telemetry initialization returned False (may be disabled)")
+except Exception as e:
+    logger.error(f"❌ Failed to initialize telemetry: {e}")
+    raise RuntimeError(f"Telemetry initialization failed: {e}")
+
 # Import core modules and telemetry utilities
 from backend.telemetry import (
 

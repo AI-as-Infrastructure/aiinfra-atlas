@@ -15,7 +15,8 @@ from langchain_core.documents.base import Document
 from langchain_core.embeddings import Embeddings
 from langchain_core.vectorstores import VectorStore
 
-from backend.telemetry import create_span, SpanAttributes, SpanNames, OpenInferenceSpanKind, SpanKind, BaseSpanManager, get_span_manager, RAGSpanManager
+from backend.telemetry import create_span, SpanAttributes, SpanNames, OpenInferenceSpanKind, set_span_outputs
+from opentelemetry.trace import SpanKind
 from backend.modules.corpus_filtering import apply_corpus_filter, filter_documents_with_telemetry
 from backend.modules.config import get_search_k, get_citation_limit, get_large_retrieval_size
 
@@ -223,7 +224,7 @@ def retrieve_documents(
             # Get document distribution for detailed information
             distribution = get_document_distribution(documents)
             
-            # Set standard outputs using BaseSpanManager
+            # Set span attributes for Phoenix UI display
             if corpus_filter and corpus_filter.lower() != "all":
                 summary = f"Retrieved {len(documents)} documents for query with corpus filter: {corpus_filter}"
             else:
@@ -251,17 +252,17 @@ def retrieve_documents(
                 if len(values) <= 10:  # Keep manageable size for display
                     details[f"distribution_{field}"] = values
             
-            # Set standard outputs with BaseSpanManager
-            BaseSpanManager.set_standard_outputs(
-                span=retrieval_span,
-                summary=summary,
-                details=details,
-                span_kind=OpenInferenceSpanKind.RETRIEVER
-            )
+            # Set span attributes for Phoenix UI display
+            retrieval_span.set_attribute("summary", summary)
+            retrieval_span.set_attribute("output", summary)
+            retrieval_span.set_attribute("openinference.span.kind", OpenInferenceSpanKind.RETRIEVER)
+            for key, value in details.items():
+                retrieval_span.set_attribute(key, value)
             
-            # Add document previews using BaseSpanManager
+            # Add document previews
             if documents:
-                BaseSpanManager.add_document_preview(retrieval_span, documents[:3])
+                for i, doc in enumerate(documents[:3]):
+                    retrieval_span.set_attribute(f"document_{i}_preview", doc.page_content[:200])
             
             # Apply corpus filter if needed
             if corpus_filter and corpus_filter.lower() != "all":
@@ -287,25 +288,22 @@ def retrieve_documents(
                 filter_details = details.copy()
                 filter_details["filtered_document_count"] = len(documents)
                 
-                # Update outputs with filtered information
-                BaseSpanManager.set_standard_outputs(
-                    span=retrieval_span,
-                    summary=filter_summary,
-                    details=filter_details,
-                    span_kind=OpenInferenceSpanKind.RETRIEVER
-                )
+                # Update outputs with filtered information using direct span attributes
+                retrieval_span.set_attribute("summary", filter_summary)
+                retrieval_span.set_attribute("output", filter_summary)
+                retrieval_span.set_attribute("openinference.span.kind", OpenInferenceSpanKind.RETRIEVER)
+                for key, value in filter_details.items():
+                    retrieval_span.set_attribute(key, value)
             
             return documents
             
         except Exception as e:
-            # Handle error with BaseSpanManager
+            # Handle error with direct span attributes
             error_summary = f"Error retrieving documents: {str(e)}"
-            BaseSpanManager.set_standard_outputs(
-                span=retrieval_span,
-                summary=error_summary,
-                error=e,
-                span_kind=OpenInferenceSpanKind.RETRIEVER
-            )
+            retrieval_span.set_attribute("summary", error_summary)
+            retrieval_span.set_attribute("output", error_summary)
+            retrieval_span.set_attribute("openinference.span.kind", OpenInferenceSpanKind.RETRIEVER)
+            retrieval_span.set_status(Status(StatusCode.ERROR, str(e)))
             
             # Log the error
             logger.error(f"Error retrieving documents: {e}", exc_info=True)
@@ -377,9 +375,10 @@ def retrieve_documents_with_telemetry(
             },
             session_id=session_id
         ) as span:
-            # Add this line to explicitly register the span
+            # Register the span with the spans module directly
             from backend.telemetry.spans import register_span
-            register_span(session_id, qa_id, span.get_span_context().span_id)
+            span_id = str(span.get_span_context().span_id)
+            register_span(session_id, qa_id, span_id)
             
             # Call retrieve_documents with create_parent_span=False to avoid creating a duplicate span
             documents = retrieve_documents(
@@ -396,7 +395,7 @@ def retrieve_documents_with_telemetry(
             # Update span with results
             span.set_attribute("document_count", len(documents))
             
-            # Use BaseSpanManager for standard outputs
+            # Set span attributes for Phoenix UI display
             summary = f"Retrieved {len(documents)} documents for query"
             details = {
                 "retriever_name": retriever_name,
@@ -404,15 +403,16 @@ def retrieve_documents_with_telemetry(
                 "corpus_filter": corpus_filter or "all"
             }
             
-            BaseSpanManager.set_standard_outputs(
-                span=span,
-                summary=summary,
-                details=details,
-                span_kind=OpenInferenceSpanKind.RETRIEVER
-            )
+            span.set_attribute("summary", summary)
+            span.set_attribute("output", summary)
+            span.set_attribute("openinference.span.kind", OpenInferenceSpanKind.RETRIEVER)
+            for key, value in details.items():
+                span.set_attribute(key, value)
             
             # Add document previews 
-            BaseSpanManager.add_document_preview(span, documents[:3])
+            if documents:
+                for i, doc in enumerate(documents[:3]):
+                    span.set_attribute(f"document_{i}_preview", doc.page_content[:200])
             
             return documents, qa_id
         

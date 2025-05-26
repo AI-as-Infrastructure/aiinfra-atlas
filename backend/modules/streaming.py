@@ -13,11 +13,11 @@ from typing import Dict, Any, Generator, Optional, List, Callable, AsyncGenerato
 from datetime import datetime
 
 # Import telemetry modules at the beginning to avoid UnboundLocalError
-from backend.telemetry.core import create_span, SpanKind
+from backend.telemetry.core import create_span
 from backend.telemetry.constants import SpanAttributes, SpanNames, OpenInferenceSpanKind
-from backend.telemetry import BaseSpanManager
-from backend.telemetry.spans import register_span
+from opentelemetry.trace import SpanKind, Status, StatusCode
 from backend.retrievers.hansard_retriever import format_document_for_citation
+from backend.telemetry import set_span_outputs
 
 logger = logging.getLogger(__name__)
 
@@ -206,7 +206,7 @@ async def stream_response_chunks(
             processing_time = time.time() - start_time
             
             # Create a summary of the streaming process
-            summary = f"Streamed {chunk_count} chunks ({total_chars} characters)"
+            summary = f"Streamed {chunk_count} chunks ({total_chars} chars)"
             
             # Create detailed information
             details = {
@@ -217,33 +217,29 @@ async def stream_response_chunks(
                 "streaming_complete": True
             }
             
-            # Set standard outputs using BaseSpanManager
-            BaseSpanManager.set_standard_outputs(
-                span=streaming_span,
-                summary=summary,
-                details=details,
-                span_kind=OpenInferenceSpanKind.PROCESSOR
-            )
+            # Set standard outputs using direct span attributes
+            streaming_span.set_attribute("summary", summary)
+            streaming_span.set_attribute("output", summary)
+            streaming_span.set_attribute("openinference.span.kind", OpenInferenceSpanKind.PROCESSOR)
+            for key, value in details.items():
+                streaming_span.set_attribute(key, value)
             
         except Exception as e:
             # Calculate processing time up to error
             processing_time = time.time() - start_time
             
-            # Set error using BaseSpanManager
+            # Set error using direct span attributes
             error_summary = f"Error streaming response: {str(e)}"
-            BaseSpanManager.set_standard_outputs(
-                span=streaming_span,
-                summary=error_summary,
-                error=e,
-                details={
-                    "chunk_count": chunk_count,
-                    "total_characters": total_chars,
-                    "processing_time_seconds": processing_time,
-                    "streaming_complete": False,
-                    "error_during_streaming": True
-                },
-                span_kind=OpenInferenceSpanKind.PROCESSOR
-            )
+            streaming_span.set_attribute("summary", error_summary)
+            streaming_span.set_attribute("output", error_summary)
+            streaming_span.set_attribute("openinference.span.kind", OpenInferenceSpanKind.PROCESSOR)
+            streaming_span.set_attribute("error", str(e))
+            streaming_span.set_attribute("chunk_count", chunk_count)
+            streaming_span.set_attribute("total_characters", total_chars)
+            streaming_span.set_attribute("processing_time_seconds", processing_time)
+            streaming_span.set_attribute("streaming_complete", False)
+            streaming_span.set_attribute("error_during_streaming", True)
+            streaming_span.set_status(Status(StatusCode.ERROR, str(e)))
             
             # Log the error
             logger.error(f"Error streaming response: {e}", exc_info=True)
@@ -290,8 +286,10 @@ def stream_documents_as_references(
         },
         session_id=session_id
     ) as ref_span:
-        # Register span for feedback association
-        register_span(session_id, f"{qa_id}_references", ref_span.get_span_context().span_id)
+        # Register span for feedback association using spans module directly
+        from backend.telemetry.spans import register_span
+        span_id = str(ref_span.get_span_context().span_id)
+        register_span(session_id, f"{qa_id}_references", span_id)
         
         try:
             # Format documents as citations
@@ -334,14 +332,13 @@ def stream_documents_as_references(
             return format_sse_message(ref_message, event="references")
             
         except Exception as e:
-            # Set error using BaseSpanManager
+            # Set error using direct span attributes
             error_summary = f"Error formatting references: {str(e)}"
-            BaseSpanManager.set_standard_outputs(
-                span=ref_span,
-                summary=error_summary,
-                error=e,
-                span_kind=OpenInferenceSpanKind.REFERENCES
-            )
+            ref_span.set_attribute("summary", error_summary)
+            ref_span.set_attribute("output", error_summary)
+            ref_span.set_attribute("openinference.span.kind", OpenInferenceSpanKind.REFERENCES)
+            ref_span.set_attribute("error", str(e))
+            ref_span.set_status(Status(StatusCode.ERROR, str(e)))
             
             # Log the error
             logger.error(f"Error formatting references: {e}", exc_info=True)
