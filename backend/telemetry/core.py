@@ -1,525 +1,385 @@
 """
-Core telemetry functionality for Phoenix Arize integration.
+Enhanced Telemetry Core for ATLAS Application
 
-This module provides the foundation for telemetry in the ATLAS application,
-handling initialization, trace context management, and basic span creation.
+This module provides the core telemetry functionality with Phoenix native tracing
+for proper span-level feedback association as recommended by Phoenix Arize.
 """
 
 import os
+import uuid
 import logging
-import json
-from typing import Dict, Any, Optional, List, Tuple, Union
 from contextlib import contextmanager
+from typing import Dict, Any, Optional, ContextManager
 
-# OpenTelemetry imports
-from opentelemetry import trace
-from opentelemetry.trace import Status, StatusCode, SpanKind, Span
-from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
-from phoenix.otel import register
-from opentelemetry.propagate import extract, inject
-from opentelemetry.context import Context, get_current
-
-# Try to import OpenInference for session management
+# Phoenix native imports for proper span management
 try:
-    from openinference.instrumentation import using_session as openinference_using_session
-    HAS_OPENINFERENCE = True
-except ImportError:
-    HAS_OPENINFERENCE = False
-    logger = logging.getLogger(__name__)
-    logger.error("OpenInference not available. Session tracking will use fallback method.")
+    import phoenix as px
+    from phoenix.trace import using_project
+    PHOENIX_AVAILABLE = True
+except ImportError as e:
+    raise ImportError("Phoenix telemetry is required but the 'phoenix' package is not installed.") from e
 
-# Import constants
-from .constants import SpanAttributes, SpanNames
+from .constants import SpanAttributes, SpanNames, OpenInferenceSpanKind
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Global tracer provider and tracer
-tracer_provider = None
-tracer = None
+# Global telemetry state
+_telemetry_initialized = False
+_phoenix_session = None
+_tracer = None
+_project_name = None
+_telemetry_enabled = True  # Track if telemetry is actually enabled
 
-# Track spans for deduplication
-_current_spans = {}
-
-def initialize_telemetry(service_name: str = None) -> bool:
+def initialize_telemetry() -> bool:
     """
-    Initialize the telemetry system with Phoenix Arize.
-    
-    Args:
-        service_name: Optional service name for the tracer
-        
+    Initialize the Phoenix native telemetry system for proper feedback association
+    Raises an error if Phoenix is not available or not configured correctly.
     Returns:
-        bool: True if initialization was successful, False otherwise
+        bool: True if initialization successful, False otherwise
     """
-    global tracer_provider, tracer
+    global _telemetry_initialized, _phoenix_session, _tracer, _project_name
     
-    # If already initialized, return
-    if tracer is not None:
+    if _telemetry_initialized:
+        logger.info("Telemetry already initialized")
         return True
     
-    # Get configuration from environment variables
-    phoenix_project_name = os.getenv('PHOENIX_PROJECT_NAME', 'ATLAS')
+    # Check if telemetry is enabled via environment variable
+    telemetry_enabled = is_telemetry_enabled()
     
-    # Ensure the collector endpoint has the /v1/traces path
-    phoenix_collector_endpoint = os.getenv('PHOENIX_COLLECTOR_ENDPOINT', 'https://app.phoenix.arize.com')
-    if not phoenix_collector_endpoint.endswith('/v1/traces'):
-        phoenix_collector_endpoint = f"{phoenix_collector_endpoint}/v1/traces"
-    
-    # Use OTEL protocol from environment
-    otel_protocol = os.getenv('OTEL_EXPORTER_OTLP_PROTOCOL')
-    if not otel_protocol:
-        logger.warning("OTEL_EXPORTER_OTLP_PROTOCOL not set in environment")
-    
-    try:
-        # Get API key from headers (preferred method for hosted Phoenix)
-        client_api_key = None
-        if os.getenv('PHOENIX_CLIENT_HEADERS', ''):
-            headers_str = os.getenv('PHOENIX_CLIENT_HEADERS', '')
-            if 'api_key=' in headers_str:
-                client_api_key = headers_str.split('api_key=')[1].split(',')[0].strip()
-                logger.info("Using API key from PHOENIX_CLIENT_HEADERS")
-        
-        # Fallback to PHOENIX_API_KEY for backward compatibility
-        if not client_api_key:
-            client_api_key = os.getenv('PHOENIX_API_KEY', '')
-            if client_api_key:
-                logger.warning("Using deprecated PHOENIX_API_KEY. Consider switching to PHOENIX_CLIENT_HEADERS.")
-        
-        # Check if we have a valid API key
-        if not client_api_key:
-            logger.error("No Phoenix API key found in environment variables")
-            return False
-            
-        logger.info(f"Initializing Phoenix connection for project: {phoenix_project_name}")
-        
-        # Register the tracer provider with Phoenix
-        headers = {"api_key": client_api_key}
-        
-        tracer_provider = register(
-            project_name=phoenix_project_name,
-            endpoint=phoenix_collector_endpoint,
-            headers=headers,
-        )
-        
-        # Get a tracer from the provider
-        tracer = trace.get_tracer(service_name or __name__)
-        
-        logger.info(f"Phoenix tracing initialized for project: {phoenix_project_name}")
-        return True
-    except Exception as e:
-        logger.error(f"Failed to initialize Phoenix tracing: {e}", exc_info=True)
-        tracer = None
+    if not telemetry_enabled:
+        logger.info("🚫 Telemetry disabled via TELEMETRY_ENABLED environment variable")
+        _telemetry_initialized = True  # Mark as initialized but disabled
         return False
+    
+    # Get Phoenix configuration from environment
+    phoenix_endpoint = os.getenv("PHOENIX_COLLECTOR_ENDPOINT")
+    _project_name = os.getenv("PHOENIX_PROJECT_NAME", "atlas-telemetry")
+    phoenix_api_key = os.getenv("PHOENIX_API_KEY")
+
+    if not phoenix_endpoint:
+        raise RuntimeError("PHOENIX_COLLECTOR_ENDPOINT environment variable is required for Phoenix telemetry.")
+    if not phoenix_api_key:
+        raise RuntimeError("PHOENIX_API_KEY environment variable is required for Phoenix Arize Cloud.")
+
+    try:
+        from opentelemetry import trace as otel_trace
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+        from opentelemetry.sdk.resources import Resource
+
+        resource = Resource.create({
+            "service.name": "atlas",
+            "service.version": "1.0.0"
+        })
+        tracer_provider = TracerProvider(resource=resource)
+        otlp_exporter = OTLPSpanExporter(
+            endpoint=f"{phoenix_endpoint}/v1/traces",
+            headers={"api_key": phoenix_api_key}
+        )
+        span_processor = BatchSpanProcessor(otlp_exporter)
+        tracer_provider.add_span_processor(span_processor)
+        otel_trace.set_tracer_provider(tracer_provider)
+        _tracer = tracer_provider.get_tracer("atlas.telemetry")
+        _phoenix_session = True  # Flag to indicate Phoenix is configured
+        logger.info(f"✅ Phoenix Arize online tracing initialized")
+        logger.info(f"📊 Project: {_project_name}")
+        logger.info(f"🔗 Endpoint: {phoenix_endpoint}")
+        _telemetry_initialized = True
+        return True
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize Phoenix telemetry: {e}")
+        import traceback
+        traceback.print_exc()
+        raise RuntimeError(f"Failed to initialize Phoenix telemetry: {e}")
+
+def get_tracer():
+    """Get the tracer instance (Phoenix only, fails if not initialized)"""
+    if not _telemetry_initialized:
+        raise RuntimeError("Telemetry not initialized. Call initialize_telemetry() first.")
+    if not _tracer:
+        raise RuntimeError("Phoenix tracer is not initialized.")
+    return _tracer
 
 @contextmanager
-def using_session(session_id: str):
+def using_session(session_id: str = None, metadata: Dict[str, Any] = None):
     """
-    Context manager to set the session ID for all spans created within the context.
-    This ensures proper session tracking in Phoenix Arize.
-    
-    Args:
-        session_id: The session ID to associate with spans
-        
-    Yields:
-        None
+    Context manager for session-scoped operations using Phoenix native session management
+    Raises if Phoenix is not available.
     """
     if not session_id:
-        # If no session ID is provided, just yield without setting anything
-        yield
-        return
-    
-    if HAS_OPENINFERENCE:
-        # Use OpenInference's built-in session context manager if available
-        with openinference_using_session(session_id):
-            yield
-    else:
-        # Fallback implementation - we'll rely on our create_span function
-        # which already adds session_id to all spans
-        yield
+        session_id = str(uuid.uuid4())
+    if not PHOENIX_AVAILABLE or not _phoenix_session:
+        raise RuntimeError("Phoenix telemetry session is not available. Ensure Phoenix is configured and initialized.")
+    with using_project(_project_name):
+        yield session_id
 
-def extract_trace_context(carrier: Any) -> Optional[Context]:
+def is_telemetry_enabled() -> bool:
     """
-    Extract trace context from a carrier object (request, dict, etc.)
+    Check if telemetry is enabled via environment variable.
     
-    Args:
-        carrier: Object containing trace context (request, dict, etc.)
-        
-    Returns:
-        Optional[Context]: Extracted trace context or None if not found
-    """
-    if carrier is None:
-        return None
+    The TELEMETRY_ENABLED environment variable controls whether telemetry
+    is active. When disabled, all telemetry operations become no-ops.
     
-    try:
-        # Handle different carrier types
-        if hasattr(carrier, 'headers'):
-            # Request object with headers
-            context = extract(TraceContextTextMapPropagator(), carrier.headers)
-            return context
-        elif isinstance(carrier, dict):
-            # Dictionary carrier
-            if 'traceparent' in carrier or 'traceId' in carrier:
-                context = extract(TraceContextTextMapPropagator(), carrier)
-                return context
-        
-        # Try to access as a generic object
-        if hasattr(carrier, 'traceparent') or hasattr(carrier, 'traceId'):
-            # Convert object attributes to dict
-            headers_dict = {}
-            for attr in ['traceparent', 'tracestate', 'traceId', 'spanId']:
-                if hasattr(carrier, attr):
-                    headers_dict[attr] = getattr(carrier, attr)
-            
-            if headers_dict:
-                context = extract(TraceContextTextMapPropagator(), headers_dict)
-                return context
-    except Exception as e:
-        logger.warning(f"Failed to extract trace context: {e}")
+    Accepted values for enabling telemetry:
+    - "true", "1", "yes", "on" (case-insensitive)
+    - Empty string or unset (defaults to enabled)
     
-    return None
-
-def extract_session_info(carrier: Any) -> Tuple[str, Optional[str]]:
-    """
-    Extract session ID and QA ID from a carrier object.
-    
-    Args:
-        carrier: Object containing session information
-        
-    Returns:
-        Tuple[str, Optional[str]]: Session ID and QA ID (or None if not found)
-    """
-    session_id = None
-    qa_id = None
-    
-    try:
-        # Handle different carrier types
-        if hasattr(carrier, 'headers'):
-            # Request object with headers
-            session_id = carrier.headers.get('X-Session-ID')
-            qa_id = carrier.headers.get('X-QA-ID')
-        elif isinstance(carrier, dict):
-            # Dictionary carrier
-            session_id = carrier.get('session_id') or carrier.get('X-Session-ID')
-            qa_id = carrier.get('qa_id') or carrier.get('X-QA-ID')
-        
-        # Try to access as a generic object
-        if not session_id and hasattr(carrier, 'session_id'):
-            session_id = getattr(carrier, 'session_id')
-        
-        if not qa_id and hasattr(carrier, 'qa_id'):
-            qa_id = getattr(carrier, 'qa_id')
-    except Exception as e:
-        logger.warning(f"Failed to extract session info: {e}")
-    
-    return session_id, qa_id
-
-def inject_trace_context() -> Dict[str, str]:
-    """
-    Inject the current trace context into a carrier dictionary.
+    Accepted values for disabling telemetry:
+    - "false", "0", "no", "off" (case-insensitive)
+    - Any other value
     
     Returns:
-        Dict[str, str]: Dictionary with traceparent and tracestate
+        bool: True if telemetry should be enabled, False otherwise
+        
+    Examples:
+        export TELEMETRY_ENABLED=false  # Disables telemetry
+        export TELEMETRY_ENABLED=true   # Enables telemetry
+        unset TELEMETRY_ENABLED         # Defaults to enabled
     """
-    carrier = {}
-    inject(TraceContextTextMapPropagator(), carrier, get_current())
-    return carrier
+    value = os.getenv("TELEMETRY_ENABLED", "true").strip()
+    if not value:  # Handle empty string case
+        return True
+    return value.lower() in ("true", "1", "yes", "on")
 
 @contextmanager
-def create_span(
-    operation_name: str,
-    attributes: Dict[str, Any] = None,
-    context: Context = None,
-    kind: SpanKind = SpanKind.CLIENT,
-    session_id: str = None,
-    deduplicate: bool = True,
-    link_to_current: bool = True
-):
+def create_span(name: str, attributes: Dict[str, Any] = None, 
+               session_id: str = None, kind: Any = None) -> ContextManager:
     """
-    Create a span with the given operation name and attributes.
+    Create a telemetry span using Phoenix native tracing for proper feedback support
     
     Args:
-        operation_name: Name of the operation being traced
-        attributes: Dictionary of span attributes
-        context: Optional parent context
-        kind: Kind of span (default: CLIENT)
-        session_id: Optional session ID for tracking
-        deduplicate: Whether to deduplicate identical spans
-        link_to_current: Whether to link to the current span
-        
-    Yields:
-        The created span
+        name: Span operation name
+        attributes: Span attributes
+        session_id: Session identifier
+        kind: OpenInference span kind string
     """
-    global _current_spans
-    
-    # If telemetry is not initialized, just yield a dummy span
-    if not tracer:
-        class DummySpan:
-            def set_attribute(self, *args, **kwargs): pass
-            def set_attributes(self, *args, **kwargs): pass
-            def record_exception(self, *args, **kwargs): pass
-            def set_status(self, *args, **kwargs): pass
-            def add_event(self, *args, **kwargs): pass
-            def set_output(self, *args, **kwargs): pass
-            def get_span_context(self): 
-                class DummyContext:
-                    def __init__(self):
-                        self.span_id = 0
-                return DummyContext()
-        yield DummySpan()
-        return
-    
-    # If no attributes provided, create empty dict
-    if attributes is None:
-        attributes = {}
-    
-    # Add session ID if provided
-    if session_id and SpanAttributes.SESSION_ID not in attributes:
-        attributes[SpanAttributes.SESSION_ID] = session_id
-    
-    # Check for duplicate spans if deduplication is enabled
-    if deduplicate:
-        span_key = f"{operation_name}:{session_id}"
-        if span_key in _current_spans:
-            # Use existing span
-            yield _current_spans[span_key]
-            return
-    
-    # Ensure we capture the current span as parent if available
-    if link_to_current and context is None:
-        current_span = trace.get_current_span()
-        if current_span and hasattr(current_span, 'get_span_context'):
-            current_context = current_span.get_span_context()
-            if hasattr(current_context, 'is_valid') and current_context.is_valid:
-                # Use current context to ensure proper parent-child relationship
-                context = trace.set_span_in_context(current_span)
-    
-    # Start the span with the tracer
-    with tracer.start_as_current_span(
-        operation_name,
-        context=context,
-        kind=kind,
-        attributes=attributes
-    ) as span:
-        # Register the span in our registry
-        from opentelemetry.trace import format_span_id
-        span_id = format_span_id(span.get_span_context().span_id)
-        _current_spans[span_id] = span
-        
-        # Store span for deduplication if needed
-        if deduplicate and session_id:
-            span_key = f"{operation_name}:{session_id}"
-            _current_spans[span_key] = span
-            
-        # Get QA ID if present in attributes
-        qa_id = attributes.get(SpanAttributes.QA_ID)
-        
-        # Register span for feedback association if session_id and qa_id are present
-        if session_id and qa_id and 'feedback' not in operation_name.lower():
-            # Get span ID for registration
-            # Import here to avoid circular imports
-            from .spans import register_span
-            register_span(session_id, qa_id, span_id)
-        
-        # Add specialized output setter method (for Phoenix UI)
-        if not hasattr(span, "set_output"):
-            def set_output(output):
-                try:
-                    # Direct Phoenix content field - this is the most reliable field for Phoenix UI display
-                    span.set_attribute("content", output)
-                    
-                    # Also set output as Phoenix may look for this
-                    span.set_attribute("output", output)
-                    
-                    # Standard fields that are commonly used
-                    span.set_attribute("output.value", output)
-                    
-                    # For LLM outputs, use the openinference.llm.output attribute
-                    if SpanNames.LLM_GENERATION in operation_name or SpanNames.GENERATION in operation_name:
-                        span.set_attribute("openinference.llm.output", output)
-                    
-                    # For references, use references output attribute
-                    if SpanNames.DOCUMENT_REFERENCES in operation_name:
-                        span.set_attribute("openinference.references.output", output)
-                    
-                    # Try OpenInference's native set_output if available
-                    try:
-                        from openinference.instrumentation import get_current_span
-                        openinference_span = get_current_span()
-                        if openinference_span and hasattr(openinference_span, "set_output"):
-                            openinference_span.set_output(output)
-                    except ImportError:
-                        pass  # OpenInference not available
-                        
-                except Exception as e:
-                    # If anything fails, at least set these core attributes
-                    logger.warning(f"Error in set_output: {e}")
-                    span.set_attribute("content", output)  # Primary field for Phoenix 
-                    span.set_attribute("output", output)   # Secondary field for Phoenix
-                    
-            span.set_output = set_output
-            
-        try:
-            yield span
-        except Exception as e:
-            # Record exception on span
-            span.record_exception(e)
-            span.set_status(Status(StatusCode.ERROR, str(e)))
-            raise
-        finally:
-            # Remove span from registry when it's completed to prevent memory leaks
-            if span_id in _current_spans:
-                del _current_spans[span_id]
-            
-            # Clean up span reference if deduplication was used
-            if deduplicate and session_id:
-                span_key = f"{operation_name}:{session_id}"
-                if span_key in _current_spans:
-                    del _current_spans[span_key]
-
-def create_trace_span(carrier=None, default_session_id=None, operation_name="api_request", kind=SpanKind.SERVER):
-    """
-    Create a span with the appropriate trace context.
-    Returns the span directly instead of using a context manager.
-    
-    Args:
-        carrier: Dictionary containing traceparent and tracestate, or request object
-        default_session_id: Default session ID to use if not found in carrier
-        operation_name: Name for the span
-        kind: Kind of span (default: SERVER)
-        
-    Returns:
-        A tuple (span, session_id, qa_id) or (None, default_session_id, None) if tracer not available
-    """
-    if tracer is None:
-        return None, default_session_id, None
-    
-    # Extract trace context from carrier
-    context = extract_trace_context(carrier)
-    
-    # Extract session ID and QA ID
-    session_id, qa_id = extract_session_info(carrier)
-    
-    # Use default session ID if not found
-    if not session_id:
-        session_id = default_session_id
+    # Check if telemetry is enabled
+    if not is_telemetry_enabled():
+        # Return a no-op context manager when telemetry is disabled
+        @contextmanager
+        def no_op_span():
+            class NoOpSpan:
+                def set_attribute(self, key, value):
+                    pass
+                def set_status(self, status):
+                    pass
+                def record_exception(self, exception):
+                    pass
+                def get_span_context(self):
+                    class NoOpContext:
+                        span_id = 0
+                        def is_valid(self):
+                            return False
+                    return NoOpContext()
+            yield NoOpSpan()
+        return no_op_span()
     
     # Prepare attributes
-    attributes = {}
-    if session_id:
-        attributes[SpanAttributes.SESSION_ID] = session_id
-    if qa_id:
-        attributes[SpanAttributes.QA_ID] = qa_id
+    span_attributes = attributes or {}
     
-    # Create the span
-    span = tracer.start_span(
-        operation_name,
-        context=context,
-        kind=kind,
-        attributes=attributes
+    # Add session ID if provided
+    if session_id:
+        span_attributes[SpanAttributes.SESSION_ID] = session_id
+    
+    # Add OpenInference span kind
+    if kind:
+        span_attributes[SpanAttributes.OPENINFERENCE_SPAN_KIND] = kind
+    
+    if not PHOENIX_AVAILABLE or not _phoenix_session:
+        raise RuntimeError("Phoenix telemetry is not available. Ensure Phoenix is configured and initialized.")
+    
+    # Use OpenTelemetry with Phoenix OTLP exporter
+    tracer = get_tracer()
+    with tracer.start_as_current_span(name, attributes=span_attributes) as span:
+        yield span
+
+def create_rag_pipeline_span(session_id: str, qa_id: str, query: str, **kwargs):
+    """Create a RAG pipeline span directly without span factory"""
+    span_context = create_span(
+        SpanNames.RAG_PIPELINE,
+        attributes={
+            SpanAttributes.SESSION_ID: session_id,
+            SpanAttributes.QA_ID: qa_id,
+            SpanAttributes.INPUT_VALUE: query,
+            **kwargs
+        },
+        session_id=session_id,
+        kind=OpenInferenceSpanKind.CHAIN
     )
     
-    return span, session_id, qa_id
+    # Register the span for feedback association
+    def _register_span_on_enter(span):
+        from .spans import register_span
+        if not PHOENIX_AVAILABLE or not _phoenix_session:
+            raise RuntimeError("Phoenix telemetry is not available for span registration.")
+        # For Phoenix native, register the span object itself
+        register_span(session_id, qa_id, span)
+        return span
+    
+    # Wrap the context manager to register the span
+    @contextmanager
+    def _wrapped_span():
+        with span_context as span:
+            yield _register_span_on_enter(span)
+    
+    return _wrapped_span()
 
-def validate_config(config: Dict[str, Any], schema: Dict[str, Any], path: str = "") -> Tuple[Dict[str, Any], List[str]]:
+def create_retrieval_span(session_id: str, qa_id: str, query: str, **kwargs):
+    """Create a document retrieval span directly without span factory"""
+    span_context = create_span(
+        SpanNames.CONTEXT_RETRIEVAL,
+        attributes={
+            SpanAttributes.SESSION_ID: session_id,
+            SpanAttributes.QA_ID: qa_id,
+            SpanAttributes.INPUT_VALUE: query,
+            **kwargs
+        },
+        session_id=session_id,
+        kind=OpenInferenceSpanKind.RETRIEVER
+    )
+    
+    # Register the span for feedback association
+    def _register_span_on_enter(span):
+        from .spans import register_span
+        if not PHOENIX_AVAILABLE or not _phoenix_session:
+            raise RuntimeError("Phoenix telemetry is not available for span registration.")
+        # For Phoenix native, register the span object itself
+        register_span(session_id, f"{qa_id}_retrieval", span)
+        return span
+    
+    @contextmanager
+    def _wrapped_span():
+        with span_context as span:
+            yield _register_span_on_enter(span)
+    
+    return _wrapped_span()
+
+def create_llm_span(session_id: str, qa_id: str, model: str, **kwargs):
+    """Create an LLM generation span directly without span factory"""
+    span_context = create_span(
+        SpanNames.LLM_GENERATION,
+        attributes={
+            SpanAttributes.SESSION_ID: session_id,
+            SpanAttributes.QA_ID: qa_id,
+            SpanAttributes.LLM_MODEL: model,
+            **kwargs
+        },
+        session_id=session_id,
+        kind=OpenInferenceSpanKind.LLM
+    )
+    
+    # Register the span for feedback association - this is the key span for feedback
+    def _register_span_on_enter(span):
+        from .spans import register_span
+        if not PHOENIX_AVAILABLE or not _phoenix_session:
+            raise RuntimeError("Phoenix telemetry is not available for span registration.")
+        # Register as the main response span for feedback
+        register_span(session_id, qa_id, span)
+        register_span(session_id, f"{qa_id}_response", span)
+        return span
+    
+    @contextmanager
+    def _wrapped_span():
+        with span_context as span:
+            yield _register_span_on_enter(span)
+    
+    return _wrapped_span()
+
+def create_feedback_span(session_id: str, qa_id: str, feedback_data: Dict[str, Any], **kwargs):
+    """Create a feedback span directly without span factory"""
+    return create_span(
+        SpanNames.USER_FEEDBACK,
+        attributes={
+            SpanAttributes.SESSION_ID: session_id,
+            SpanAttributes.QA_ID: qa_id,
+            **feedback_data,
+            **kwargs
+        },
+        session_id=session_id,
+        kind=OpenInferenceSpanKind.HUMAN
+    )
+
+def log_user_feedback(session_id: str, qa_id: str, feedback_data: Dict[str, Any]) -> bool:
+    """Log user feedback by associating it with the appropriate span."""
+    if not is_telemetry_enabled():
+        logger.info("Telemetry disabled - skipping feedback logging")
+        return True  # Return True to indicate "success" even when disabled
+    
+    from .feedback import associate_feedback_with_spans
+    return associate_feedback_with_spans(session_id, qa_id, feedback_data)
+
+def set_span_outputs(span, summary: str = None, details: Dict[str, Any] = None, 
+                    output: str = None, error: Exception = None):
     """
-    Validate a configuration dictionary against a schema.
+    Set standard output attributes on a span for Phoenix UI display.
     
     Args:
-        config: Configuration dictionary to validate
-        schema: Schema dictionary defining the expected structure
-        path: Current path in the schema (for nested validation)
-        
-    Returns:
-        Tuple[Dict[str, Any], List[str]]: Validated config and list of validation errors
+        span: The span to update
+        summary: Brief summary of the operation
+        details: Detailed information as a dictionary
+        output: Main output content
+        error: Exception if an error occurred
     """
-    validated = {}
-    errors = []
-    
-    # Check if config is None or not a dictionary
-    if config is None:
-        errors.append(f"{path}: Configuration is None")
-        return {}, errors
-    
-    if not isinstance(config, dict):
-        errors.append(f"{path}: Configuration is not a dictionary")
-        return {}, errors
-    
-    # Validate each field in the schema
-    for field, field_schema in schema.items():
-        field_path = f"{path}.{field}" if path else field
-        field_type = field_schema.get("type")
-        required = field_schema.get("required", False)
+    # Check if span is still active to prevent "setting attribute on ended span" warnings
+    try:
+        # Try to check if span is ended (this works for OpenTelemetry spans)
+        if hasattr(span, 'is_recording') and not span.is_recording():
+            logger.debug("Skipping attribute setting on ended span")
+            return
         
-        # Check if required field is missing
-        if required and (field not in config or config[field] is None):
-            errors.append(f"{field_path}: Required field is missing")
-            continue
-        
-        # Skip validation if field is not present and not required
-        if field not in config:
-            continue
-        
-        value = config[field]
-        
-        # Validate field type
-        if field_type and not isinstance(value, field_type):
-            errors.append(f"{field_path}: Expected type {field_type.__name__}, got {type(value).__name__}")
-            continue
-        
-        # Handle nested schema validation
-        if field_type == dict and "schema" in field_schema:
-            nested_schema = field_schema["schema"]
-            nested_validated, nested_errors = validate_config(value, nested_schema, field_path)
-            validated[field] = nested_validated
-            errors.extend(nested_errors)
-        else:
-            validated[field] = value
-    
-    return validated, errors
-
-def get_span_by_id(span_id: str) -> Optional[Span]:
-    """
-    Attempt to retrieve an active span by its ID.
-    
-    This is a best-effort function that may not work for all spans, especially
-    if the span has been completed/ended.
-    
-    Args:
-        span_id: The span ID to look for
-        
-    Returns:
-        Optional[Span]: The span if found, None otherwise
-    """
-    # Check if OpenTelemetry is initialized
-    if not tracer:
-        logger.warning("Cannot get span by ID: telemetry not initialized")
-        return None
+        # For Phoenix spans, check if span context is valid
+        if hasattr(span, 'get_span_context'):
+            context = span.get_span_context()
+            if hasattr(context, 'is_valid') and not context.is_valid():
+                logger.debug("Skipping attribute setting on invalid span context")
+                return
+    except Exception:
+        # If we can't determine span state, proceed cautiously
+        pass
     
     try:
-        # Get current active span if available
-        current_span = trace.get_current_span()
-        if current_span:
-            # Format the current span's ID
-            from opentelemetry.trace import format_span_id
-            current_span_id = format_span_id(current_span.get_span_context().span_id)
-            
-            # If this is the span we're looking for, return it
-            if current_span_id == span_id:
-                return current_span
+        if summary:
+            span.set_attribute("summary", summary)
         
-        # Check if the span is in our registry
-        # This is basically a fallback and may not work in all cases
-        # as OTEL doesn't provide native support for looking up spans by ID
-        global _current_spans
-        if span_id in _current_spans:
-            return _current_spans.get(span_id)
+        if details:
+            import json
+            try:
+                span.set_attribute("details", json.dumps(details))
+                # Add key metrics as direct attributes for filtering
+                for key in ["document_count", "citation_count", "response_time", "error"]:
+                    if key in details:
+                        span.set_attribute(key, details[key])
+            except:
+                span.set_attribute("details", str(details))
+        
+        if output:
+            span.set_attribute("output.value", output)
+            span.set_attribute("content", output)  # Phoenix UI displays this
+        
+        if error:
+            span.set_attribute("error", True)
+            span.set_attribute("error.message", str(error))
+            span.set_attribute("error.type", error.__class__.__name__)
+            span.record_exception(error)
             
-        logger.warning(f"Span with ID {span_id} not found")
-        return None
     except Exception as e:
-        logger.error(f"Error retrieving span by ID: {e}")
-        return None
+        # Log the error but don't fail the operation
+        logger.debug(f"Error setting span attributes: {e}")
+        pass
 
-# Initialize telemetry at import time
-telemetry_initialized = initialize_telemetry(service_name="ATLAS")
+def is_telemetry_initialized() -> bool:
+    """Check if telemetry has been initialized"""
+    return _telemetry_initialized
+
+# Backward compatibility alias
+def telemetry_initialized() -> bool:
+    """Check if telemetry has been initialized (alias for is_telemetry_initialized)"""
+    return is_telemetry_initialized()
+
+# Expose tracer for direct access
+tracer = get_tracer 
+
+# Note: Telemetry initialization is now handled by the application startup
+# instead of at import time to ensure environment variables are loaded first 

@@ -1,4 +1,4 @@
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              <template>
+<template>
   <Transition name="fade">
     <div class="feedback-container">
       <Transition name="slide">
@@ -10,23 +10,44 @@
         <div v-else class="feedback-form">
           <form @submit.prevent="submitFeedback">
             <div class="field">
-              <label class="label">Answer Rating (1-5)</label>
+              <label class="label">Relevance (1–5):</label>
               <div class="control">
-                <div class="select is-fullwidth">
-                  <select v-model.number="answerRating" required>
-                    <option v-for="n in 5" :key="n" :value="n">{{ n }}</option>
-                  </select>
-                </div>
+                <select v-model="relevance" class="input">
+                  <option v-for="n in 5" :key="n" :value="n">{{ n }}</option>
+                </select>
               </div>
             </div>
             <div class="field">
-              <label class="label">Citations Rating (1-5)</label>
+              <label class="label">Factual Accuracy:</label>
               <div class="control">
-                <div class="select is-fullwidth">
-                  <select v-model.number="citationsRating" required>
-                    <option v-for="n in 5" :key="n" :value="n">{{ n }}</option>
-                  </select>
-                </div>
+                <label><input type="radio" value="true" v-model="factualAccuracy"> True</label>
+                <label><input type="radio" value="false" v-model="factualAccuracy"> False</label>
+              </div>
+            </div>
+            <div class="field">
+              <label class="label">Source Quality (1–5):</label>
+              <div class="control">
+                <select v-model="sourceQuality" class="input">
+                  <option v-for="n in 5" :key="n" :value="n">{{ n }}</option>
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <label class="label">Clarity (1–5):</label>
+              <div class="control">
+                <select v-model="clarity" class="input">
+                  <option v-for="n in 5" :key="n" :value="n">{{ n }}</option>
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <label class="label">Tags:</label>
+              <div class="control">
+                <label><input type="checkbox" value="hallucination" v-model="tags"> Hallucination</label>
+                <label><input type="checkbox" value="anachronism" v-model="tags"> Anachronism</label>
+                <label><input type="checkbox" value="biased" v-model="tags"> Biased</label>
+                <label><input type="checkbox" value="off-topic" v-model="tags"> Off-topic</label>
+                <label><input type="checkbox" value="well-sourced" v-model="tags"> Well-sourced</label>
               </div>
             </div>
             <div class="field">
@@ -82,11 +103,14 @@ const { chatHistory, sessionId, qaId } = storeToRefs(sessionStore)
 // Store the session ID associated with the current QA ID to ensure feedback is associated with the correct session
 const associatedSessionId = ref(sessionId.value)
 
-// State
+// State - only Phoenix-compatible fields
 const showForm = ref(false)
 const isSubmitting = ref(false)
-const answerRating = ref(1)
-const citationsRating = ref(1)
+const relevance = ref(3)
+const factualAccuracy = ref('true')
+const sourceQuality = ref(3)
+const clarity = ref(3)
+const tags = ref([])
 const feedbackText = ref('')
 const configData = ref(null)
 
@@ -120,8 +144,11 @@ watch(() => qaId.value, (newVal, oldVal) => {
 function resetForm() {
   showForm.value = false;
   isSubmitting.value = false;
-  answerRating.value = 1;
-  citationsRating.value = 1;
+  relevance.value = 3;
+  factualAccuracy.value = 'true';
+  sourceQuality.value = 3;
+  clarity.value = 3;
+  tags.value = [];
   feedbackText.value = '';
 }
 
@@ -133,7 +160,7 @@ async function submitFeedback() {
   if (isSubmitting.value || !qaId.value) return
   
   isSubmitting.value = true
-  console.log('Submitting feedback for qa_id:', qaId.value)
+  console.log('Submitting Phoenix-compatible feedback for qa_id:', qaId.value)
   
   try {
     // Get the current question and answer from the chat history
@@ -144,12 +171,15 @@ async function submitFeedback() {
     // The citations are stored directly on the chat message object
     const fullCitations = chatHistory.value[chatHistory.value.length - 1]?.citations || [];
     
-    // Prepare complete feedback data with all necessary context
+    // Prepare Phoenix-compatible feedback data
     const feedbackData = {
       session_id: associatedSessionId.value,
       qa_id: qaId.value,
-      answer_rating: answerRating.value,
-      citations_rating: citationsRating.value,
+      relevance: Number(relevance.value),
+      factual_accuracy: factualAccuracy.value === 'true',
+      source_quality: Number(sourceQuality.value),
+      clarity: Number(clarity.value),
+      tags: tags.value,
       feedback_text: feedbackText.value,
       test_target: configData.value || {},
       question: currentQuestion,
@@ -158,7 +188,9 @@ async function submitFeedback() {
       timestamp: new Date().toISOString()
     };
     
-    // Submit via HTTP POST - simple with no extra options
+    console.log('Phoenix feedback data:', feedbackData);
+    
+    // Submit via HTTP POST
     const response = await fetch('/api/feedback', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -168,6 +200,9 @@ async function submitFeedback() {
     if (!response.ok) {
       throw new Error('Feedback submission failed');
     }
+    
+    const result = await response.json();
+    console.log('Feedback submission result:', result);
     
     // Emit event to parent component
     emit('feedback-submitted')

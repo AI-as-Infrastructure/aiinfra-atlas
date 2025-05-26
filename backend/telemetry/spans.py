@@ -10,14 +10,22 @@ from datetime import datetime
 from typing import Dict, Any, Optional, ContextManager
 from contextlib import contextmanager
 
+from opentelemetry import trace
 from opentelemetry.trace import SpanKind
 from opentelemetry.trace import format_span_id as otel_format_span_id
-from openinference.instrumentation.langchain import get_current_span
 
 from .core import create_span, tracer
 from .constants import SpanAttributes, OpenInferenceSpanKind, SpanNames
 
 logger = logging.getLogger(__name__)
+
+# Try to import get_current_span - fallback if not available
+try:
+    from openinference.instrumentation.langchain import get_current_span
+except ImportError:
+    # Fallback to OpenTelemetry's get_current_span
+    def get_current_span():
+        return trace.get_current_span()
 
 
 @contextmanager
@@ -85,12 +93,10 @@ def trace_operation(
     
     # Create and yield the span
     with create_span(
-        operation_name=operation_name,
+        name=operation_name,
         attributes=attributes,
-        context=parent_context,
-        kind=kind,
         session_id=session_id,
-        link_to_current=link_to_current
+        kind=openinference_kind
     ) as span:
         yield span
 
@@ -372,14 +378,21 @@ def create_human_query_span(
         
         yield span
 
-# Track spans for deduplication
-_current_spans = {}
-
-# Registry to store span IDs by session and QA ID
+# Global span registry for tracking spans across sessions
 _span_registry = {}
 
 def get_current_span_id():
     """Get the current span ID as a hex string."""
+    try:
+        # Try Phoenix native first
+        import phoenix as px
+        current_span = px.trace.get_current_span()
+        if current_span:
+            return str(current_span.span_id)
+    except ImportError:
+        pass
+    
+    # Fallback to OpenTelemetry
     current_span = get_current_span()
     if current_span:
         return otel_format_span_id(current_span.get_span_context().span_id)
@@ -389,11 +402,12 @@ def register_span(session_id, qa_id, span_id):
     """
     Register a span ID for a specific session and QA pair.
     This allows finding spans later for feedback association.
+    Works with both Phoenix native and OpenTelemetry spans.
     
     Args:
         session_id: Session ID
         qa_id: Question/answer ID, or special key
-        span_id: Span ID
+        span_id: Span ID (Phoenix span object or OpenTelemetry span ID)
     """
     global _span_registry
     
@@ -405,7 +419,7 @@ def register_span(session_id, qa_id, span_id):
     if session_id not in _span_registry:
         _span_registry[session_id] = {}
     
-    # Store the span ID
+    # Store the span ID or span object
     if qa_id is not None:  # Allow None or empty string as qa_id values
         _span_registry[session_id][qa_id] = span_id
         
@@ -418,13 +432,14 @@ def register_span(session_id, qa_id, span_id):
 def find_qa_span_id(session_id, qa_id):
     """
     Find a span ID for a specific session and QA pair.
+    Returns Phoenix span object if available, otherwise OpenTelemetry span ID.
     
     Args:
         session_id: Session ID
         qa_id: Question/answer ID
         
     Returns:
-        Span ID if found, None otherwise
+        Span ID/object if found, None otherwise
     """
     global _span_registry
     
@@ -451,7 +466,7 @@ def find_qa_span_id(session_id, qa_id):
             logger.info(f"Available qa_ids for session {session_id}: {available_keys}")
         return None
     
-    # Return the span ID
+    # Return the span ID/object
     span_id = _span_registry[session_id][qa_id]
     
     # Special logging for response spans
