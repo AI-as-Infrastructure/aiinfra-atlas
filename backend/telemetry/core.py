@@ -55,34 +55,57 @@ def initialize_telemetry() -> bool:
     # Get Phoenix configuration from environment
     phoenix_endpoint = os.getenv("PHOENIX_COLLECTOR_ENDPOINT")
     _project_name = os.getenv("PHOENIX_PROJECT_NAME", "atlas-telemetry")
-    phoenix_api_key = os.getenv("PHOENIX_API_KEY")
-
+    
+    # For Phoenix Arize Cloud, use PHOENIX_CLIENT_HEADERS
+    phoenix_client_headers = os.getenv("PHOENIX_CLIENT_HEADERS")
+    
     if not phoenix_endpoint:
         raise RuntimeError("PHOENIX_COLLECTOR_ENDPOINT environment variable is required for Phoenix telemetry.")
-    if not phoenix_api_key:
-        raise RuntimeError("PHOENIX_API_KEY environment variable is required for Phoenix Arize Cloud.")
+    
+    if not phoenix_client_headers:
+        raise RuntimeError("PHOENIX_CLIENT_HEADERS environment variable is required for Phoenix Arize Cloud.")
 
     try:
+        # Set OTEL environment variables for Phoenix Arize Cloud
+        # According to Phoenix docs, use OTEL_EXPORTER_OTLP_HEADERS with api_key (underscore)
+        os.environ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] = f"{phoenix_endpoint}/v1/traces"
+        os.environ["OTEL_EXPORTER_OTLP_HEADERS"] = phoenix_client_headers
+        os.environ["OTEL_EXPORTER_OTLP_PROTOCOL"] = "http/protobuf"
+        os.environ["OTEL_RESOURCE_ATTRIBUTES"] = f"project.name={_project_name}"
+        
+        logger.info(f"Setting OTEL_EXPORTER_OTLP_HEADERS for Phoenix Arize Cloud authentication")
+        
+        # Use standard OpenTelemetry setup
         from opentelemetry import trace as otel_trace
         from opentelemetry.sdk.trace import TracerProvider
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
         from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
         from opentelemetry.sdk.resources import Resource
 
+        # Create resource with service information
         resource = Resource.create({
             "service.name": "atlas",
-            "service.version": "1.0.0"
+            "service.version": "1.0.0",
+            "project.name": _project_name,
         })
+        
+        # Create tracer provider
         tracer_provider = TracerProvider(resource=resource)
-        otlp_exporter = OTLPSpanExporter(
-            endpoint=f"{phoenix_endpoint}/v1/traces",
-            headers={"api_key": phoenix_api_key}
-        )
+        
+        # Create OTLP exporter - it will use the environment variables we set
+        otlp_exporter = OTLPSpanExporter()
+        
+        # Add batch processor for production use
         span_processor = BatchSpanProcessor(otlp_exporter)
         tracer_provider.add_span_processor(span_processor)
+        
+        # Set as global tracer provider
         otel_trace.set_tracer_provider(tracer_provider)
+        
+        # Get tracer instance
         _tracer = tracer_provider.get_tracer("atlas.telemetry")
-        _phoenix_session = True  # Flag to indicate Phoenix is configured
+        _phoenix_session = True
+        
         logger.info(f"✅ Phoenix Arize online tracing initialized")
         logger.info(f"📊 Project: {_project_name}")
         logger.info(f"🔗 Endpoint: {phoenix_endpoint}")
