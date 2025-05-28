@@ -42,6 +42,39 @@ class FeedbackResponse(BaseModel):
     message: str
     status: str  # "success" or "error"
 
+def get_relevance_description(score: int) -> str:
+    """Return a description for a relevance score"""
+    descriptions = {
+        1: "1/5: Not relevant - Answer doesn't address the question",
+        2: "2/5: Somewhat relevant - Answer touches on the topic but misses key points",
+        3: "3/5: Moderately relevant - Answer addresses main points but could be more focused",
+        4: "4/5: Very relevant - Answer addresses the question well",
+        5: "5/5: Perfectly relevant - Answer completely addresses the question"
+    }
+    return descriptions.get(score, f"Relevance score: {score}/5")
+
+def get_clarity_description(score: int) -> str:
+    """Return a description for a clarity score"""
+    descriptions = {
+        1: "1/5: Very unclear - Hard to understand the answer",
+        2: "2/5: Somewhat unclear - Parts of the answer are confusing",
+        3: "3/5: Moderately clear - Answer is understandable but could be clearer",
+        4: "4/5: Very clear - Answer is easy to understand",
+        5: "5/5: Perfectly clear - Answer is exceptionally well-explained"
+    }
+    return descriptions.get(score, f"Clarity score: {score}/5")
+
+def get_source_quality_description(score: int) -> str:
+    """Return a description for a source quality score"""
+    descriptions = {
+        1: "1/5: Poor sources - Unreliable or irrelevant",
+        2: "2/5: Fair sources - Limited reliability or relevance",
+        3: "3/5: Good sources - Adequate reliability and relevance",
+        4: "4/5: Very good sources - Reliable and highly relevant",
+        5: "5/5: Excellent sources - Authoritative and perfectly matched"
+    }
+    return descriptions.get(score, f"Source quality score: {score}/5")
+
 def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None) -> bool:
     """
     Submit feedback as a span annotation to Phoenix using their span annotations API.
@@ -148,12 +181,18 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
             "id": f"{annotation_id}_user_comment",
             "name": "User Comment",  # Required field by Phoenix API
             "span_id": formatted_span_id,
-            "label": "user_feedback",
-            "score": None,
-            "explanation": feedback_data.get("feedback_text"),
             "annotator_kind": "HUMAN",  # Required field by Phoenix API
-            # Keep qa_id as custom metadata
-            "metadata": {"qa_id": qa_id} if qa_id else {}
+            "result": {  # Nest these fields inside result as expected by Phoenix
+                "label": "user_feedback",
+                "score": None,
+                "explanation": feedback_data.get("feedback_text")
+            },
+            # Include the question and answer if available
+            "metadata": {
+                "qa_id": qa_id,
+                "question": feedback_data.get("question"),
+                "answer": feedback_data.get("answer")
+            } if qa_id else {}
         })
     
     # Add answer/relevance rating annotation
@@ -162,27 +201,79 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
             "id": f"{annotation_id}_relevance",
             "name": "Relevance Rating",  # Required field by Phoenix API
             "span_id": formatted_span_id,
-            "label": "relevance",
-            "score": feedback_data["relevance"],
-            "explanation": None,
             "annotator_kind": "HUMAN",  # Required field by Phoenix API
-            # Keep qa_id as custom metadata
+            "result": {  # Nest these fields inside result as expected by Phoenix
+                "label": "relevance",
+                "score": feedback_data["relevance"],
+                "explanation": get_relevance_description(feedback_data['relevance'])  # Add explanation for Phoenix UI
+            },
             "metadata": {"qa_id": qa_id} if qa_id else {}
         })
     
     # Add factual accuracy annotation
     if "factual_accuracy" in feedback_data:
+        accuracy_value = bool(feedback_data["factual_accuracy"])
+        explanation = "Response is factually accurate" if accuracy_value else "Response contains factual errors"
         annotation_data.append({
             "id": f"{annotation_id}_factual",
             "name": "Factual Accuracy",  # Required field by Phoenix API
             "span_id": formatted_span_id,
-            "label": "factual_accuracy",
-            "score": int(bool(feedback_data["factual_accuracy"])),
-            "explanation": None,
             "annotator_kind": "HUMAN",  # Required field by Phoenix API
-            # Keep qa_id as custom metadata
+            "result": {  # Nest these fields inside result as expected by Phoenix
+                "label": "factual_accuracy",
+                "score": int(accuracy_value),
+                "explanation": explanation  # Add explanation for Phoenix UI
+            },
             "metadata": {"qa_id": qa_id} if qa_id else {}
         })
+    
+    # Add clarity rating annotation if present
+    if "clarity" in feedback_data:
+        clarity_score = feedback_data["clarity"]
+        annotation_data.append({
+            "id": f"{annotation_id}_clarity",
+            "name": "Clarity",  # Required field by Phoenix API
+            "span_id": formatted_span_id,
+            "annotator_kind": "HUMAN",  # Required field by Phoenix API
+            "result": {  # Nest these fields inside result as expected by Phoenix
+                "label": "clarity",
+                "score": clarity_score,
+                "explanation": get_clarity_description(clarity_score)  # Add detailed explanation for Phoenix UI
+            },
+            "metadata": {"qa_id": qa_id} if qa_id else {}
+        })
+        
+    # Add source quality rating annotation if present
+    if "source_quality" in feedback_data and feedback_data["source_quality"] is not None:
+        source_quality_score = feedback_data["source_quality"]
+        annotation_data.append({
+            "id": f"{annotation_id}_source_quality",
+            "name": "Source Quality",  # Required field by Phoenix API
+            "span_id": formatted_span_id,
+            "annotator_kind": "HUMAN",  # Required field by Phoenix API
+            "result": {  # Nest these fields inside result as expected by Phoenix
+                "label": "source_quality",
+                "score": source_quality_score,
+                "explanation": get_source_quality_description(source_quality_score)  # Add detailed explanation for Phoenix UI
+            },
+            "metadata": {"qa_id": qa_id} if qa_id else {}
+        })
+        
+    # Add tags as separate annotations if present
+    if "tags" in feedback_data and feedback_data["tags"]:
+        for i, tag in enumerate(feedback_data["tags"]):
+            annotation_data.append({
+                "id": f"{annotation_id}_tag_{i}",
+                "name": f"Tag: {tag}",  # Make the tag name visible
+                "span_id": formatted_span_id,
+                "annotator_kind": "HUMAN",  # Required field by Phoenix API
+                "result": {  # Nest these fields inside result as expected by Phoenix
+                    "label": "feedback_tag",
+                    "score": 1,  # Binary presence of tag
+                    "explanation": f"User tagged response as: {tag}"
+                },
+                "metadata": {"qa_id": qa_id, "tag": tag} if qa_id else {"tag": tag}
+            })
     
     # Skip if no annotation data was created
     if not annotation_data:

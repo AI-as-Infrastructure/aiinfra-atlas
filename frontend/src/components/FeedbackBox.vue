@@ -13,7 +13,11 @@
               <label class="label">Relevance (1–5):</label>
               <div class="control">
                 <select v-model="relevance" class="input">
-                  <option v-for="n in 5" :key="n" :value="n">{{ n }}</option>
+                  <option :value="1">1 - Not relevant</option>
+                  <option :value="2">2 - Somewhat relevant</option>
+                  <option :value="3">3 - Moderately relevant</option>
+                  <option :value="4">4 - Very relevant</option>
+                  <option :value="5">5 - Perfectly relevant</option>
                 </select>
               </div>
             </div>
@@ -28,7 +32,11 @@
               <label class="label">Source Quality (1–5):</label>
               <div class="control">
                 <select v-model="sourceQuality" class="input">
-                  <option v-for="n in 5" :key="n" :value="n">{{ n }}</option>
+                  <option :value="1">1 - Poor sources</option>
+                  <option :value="2">2 - Fair sources</option>
+                  <option :value="3">3 - Good sources</option>
+                  <option :value="4">4 - Very good sources</option>
+                  <option :value="5">5 - Excellent sources</option>
                 </select>
               </div>
             </div>
@@ -36,7 +44,11 @@
               <label class="label">Clarity (1–5):</label>
               <div class="control">
                 <select v-model="clarity" class="input">
-                  <option v-for="n in 5" :key="n" :value="n">{{ n }}</option>
+                  <option :value="1">1 - Very unclear</option>
+                  <option :value="2">2 - Somewhat unclear</option>
+                  <option :value="3">3 - Moderately clear</option>
+                  <option :value="4">4 - Very clear</option>
+                  <option :value="5">5 - Perfectly clear</option>
                 </select>
               </div>
             </div>
