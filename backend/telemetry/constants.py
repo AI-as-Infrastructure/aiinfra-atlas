@@ -128,6 +128,7 @@ class SpanNames:
     # User interaction spans
     HUMAN_QUERY = "com.atlas.user.query"  # Human query input
     FEEDBACK_ANNOTATION = "com.atlas.user.feedback"  # User feedback
+    FEEDBACK_ANNOTATOR = "com.atlas.user.feedback.annotator"  # Feedback annotation span
     USER_FEEDBACK = "com.atlas.user.feedback"  # User feedback (alias)
     GENERATION = "com.atlas.rag.generation"
     STREAMING = "com.atlas.rag.streaming"

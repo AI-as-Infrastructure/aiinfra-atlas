@@ -5,7 +5,8 @@ config/.env.production
 config/dev_certs
 letsencrypt/
 var/lib/letsencrypt/
-.span_cache
+telemetry_span_registry.db
+*.db
 frontend/.env
 frontend/package-lock.json
 frontend/node_modules

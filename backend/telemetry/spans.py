@@ -378,8 +378,14 @@ def create_human_query_span(
         
         yield span
 
-# Global span registry for tracking spans across sessions
+# Import the span registry
+from .registry import span_registry
+
+# Legacy support - redirect to registry for backward compatibility
 _span_registry = {}
+
+# Flag to indicate we're using the new registry system
+_using_registry = True
 
 def get_current_span_id():
     """Get the current span ID as a hex string."""
@@ -398,58 +404,45 @@ def get_current_span_id():
         return otel_format_span_id(current_span.get_span_context().span_id)
     return None
 
-def register_span(session_id, qa_id, span_id):
+def register_span(session_id, qa_id, span_id, trace_id=None):
     """
     Register a span ID for a specific session and QA pair.
     This allows finding spans later for feedback association.
+    
+    Args:
+        session_id: Session identifier
+        qa_id: Question-answer identifier
+        span_id: Span identifier
+        trace_id: Optional trace identifier for Phoenix correlation
     """
-    global _span_registry
+    # Use the registry for registration
+    span_registry.register_span(session_id, qa_id, str(span_id), trace_id)
     
-    if not session_id:
-        logger.warning("Cannot register span without session_id")
-        return
+    # For backward compatibility, also update in-memory registry
+    if not _using_registry:
+        global _span_registry
         
-    # Initialize session entry if needed
-    if session_id not in _span_registry:
-        _span_registry[session_id] = {}
-    
-    # Store the span ID as string
-    if qa_id is not None:
-        span_id_str = str(span_id)
-        _span_registry[session_id][qa_id] = span_id_str
+        if not session_id:
+            logger.warning("Cannot register span without session_id")
+            return
+            
+        # Initialize session entry if needed
+        if session_id not in _span_registry:
+            _span_registry[session_id] = {}
         
-        # Log registration
-        if qa_id and isinstance(qa_id, str) and qa_id.endswith("_response"):
-            logger.info(f"Registered response span: session={session_id}, qa_id={qa_id}, span_id={span_id_str}")
-        else:
-            logger.debug(f"Registered span: session={session_id}, qa_id={qa_id}, span_id={span_id_str}")
+        # Store the span ID as string
+        if qa_id is not None:
+            span_id_str = str(span_id)
+            _span_registry[session_id][qa_id] = span_id_str
 
 def find_qa_span_id(session_id, qa_id):
     """
     Find a span ID for a specific session and QA pair.
     """
-    global _span_registry
-    
-    if not session_id or qa_id is None:
-        return None
-        
-    # Check local registry
-    if session_id in _span_registry and qa_id in _span_registry[session_id]:
-        span_id = _span_registry[session_id][qa_id]
-        logger.debug(f"Found span: session={session_id}, qa_id={qa_id}, span_id={span_id}")
-        return span_id
-    
-    # Log the miss with available information
-    logger.warning(f"Could not find span: session={session_id}, qa_id={qa_id}")
-    available_spans = _span_registry.get(session_id, {})
-    if available_spans:
-        logger.info(f"Available spans for session {session_id}: {list(available_spans.keys())}")
-    else:
-        logger.info(f"No spans registered for session {session_id}")
-    
-    return None
+    # Use registry to find span
+    return span_registry.find_span(session_id, qa_id)
 
-def find_session_root_span_id(session_id: str) -> Optional[int]:
+def find_session_root_span_id(session_id: str) -> Optional[str]:
     """
     Find the root span ID for a session.
     
@@ -459,22 +452,104 @@ def find_session_root_span_id(session_id: str) -> Optional[int]:
     Returns:
         Root span ID if found, None otherwise
     """
-    global _span_registry
+    # Use registry to find root span
+    return span_registry.find_root_span(session_id)
+
+
+def register_session_root_span(session_id: str, span_id: str, trace_id: Optional[str] = None):
+    """
+    Register a root span for a session.
     
+    Args:
+        session_id: Session identifier
+        span_id: Span identifier
+        trace_id: Optional trace identifier for Phoenix correlation
+    """
+    span_registry.register_root_span(session_id, str(span_id), trace_id)
+
+
+def find_span_by_trace_id(trace_id: str) -> Optional[str]:
+    """
+    Find a span by its trace ID.
+    
+    Args:
+        trace_id: Trace identifier for Phoenix correlation
+        
+    Returns:
+        Span ID if found, None otherwise
+    """
+    return span_registry.find_span_by_trace(trace_id)
+
+
+def update_span_attributes(span_id: str, attributes: Dict[str, Any]) -> bool:
+    """
+    Update a span with the given attributes directly, without creating a separate span.
+    This function is specifically designed for attaching feedback to existing spans.
+    
+    Args:
+        span_id: The ID of the span to update
+        attributes: Dictionary of attributes to add to the span
+        
+    Returns:
+        True if the span was successfully updated, False otherwise
+    """
+    if not span_id:
+        logger.warning("Cannot update span attributes: no span_id provided")
+        return False
+        
     try:
-        # First check the registry for the root span (qa_id=None)
-        if session_id in _span_registry:
-            # Check for the root span (qa_id=None)
-            if None in _span_registry[session_id]:
-                return _span_registry[session_id][None]
+        # Attempt 1: Try using Phoenix API if available
+        try:
+            import phoenix
+            if hasattr(phoenix, 'update_span'):
+                # Direct Phoenix API call if available
+                success = phoenix.update_span(span_id, attributes)
+                if success:
+                    logger.info(f"Updated span {span_id} using Phoenix API")
+                    return True
+        except ImportError:
+            pass
             
-            # If no root span is explicitly registered, use the first span ID
-            if _span_registry[session_id]:
-                # Get the first qa_id (any will do for linking)
-                first_qa_id = next(iter(_span_registry[session_id]))
-                return _span_registry[session_id][first_qa_id]
+        # Attempt 2: Try OpenTelemetry's get_tracer().get_span method if available
+        try:
+            from opentelemetry import trace
+            tracer = trace.get_tracer(__name__)
+            if hasattr(tracer, 'get_span'):
+                span = tracer.get_span(span_id)
+                if span:
+                    for key, value in attributes.items():
+                        span.set_attribute(key, value)
+                    logger.info(f"Updated span {span_id} using OpenTelemetry API")
+                    return True
+        except (ImportError, AttributeError):
+            pass
+            
+        # Attempt 3: Create a feedback.annotator span that manually sets these attributes
+        # on its parent span with explicit links
+        from .core import create_span
+        from .constants import SpanNames, OpenInferenceSpanKind
+        
+        with create_span(
+            name=f"{SpanNames.FEEDBACK_ANNOTATOR}",
+            attributes={
+                "feedback.target_span_id": span_id,
+                "feedback.annotator": "true",
+                "feedback.is_annotation": "true",
+                "openinference.span.kind": OpenInferenceSpanKind.ANNOTATOR
+            }
+        ) as annotator_span:
+            # Add special attributes that Phoenix might recognize
+            annotator_span.set_attribute("links.target_span_id", span_id)
+            annotator_span.set_attribute("links.relationship", "annotates")
+            annotator_span.set_attribute("target.span_id", span_id)
+            
+            # Add all the feedback attributes
+            for key, value in attributes.items():
+                annotator_span.set_attribute(f"target.{key}", value)
                 
-        return None
+            logger.info(f"Created annotator span for {span_id}")
+            return True
+            
     except Exception as e:
-        logger.error(f"Error finding session root span: {e}", exc_info=True)
-        return None
+        logger.error(f"Failed to update span {span_id}: {e}", exc_info=True)
+        return False
