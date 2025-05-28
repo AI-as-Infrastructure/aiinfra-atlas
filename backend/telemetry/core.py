@@ -247,6 +247,8 @@ def create_rag_pipeline_span(session_id: str, qa_id: str, query: str, **kwargs):
             SpanAttributes.SESSION_ID: session_id,
             SpanAttributes.QA_ID: qa_id,
             SpanAttributes.INPUT_VALUE: query,
+            "span.kind": "CHAIN",  # Explicit span kind for Phoenix
+            "openinference.span.kind": OpenInferenceSpanKind.CHAIN,  # OpenInference span kind
             **kwargs
         },
         session_id=session_id,
@@ -255,7 +257,7 @@ def create_rag_pipeline_span(session_id: str, qa_id: str, query: str, **kwargs):
     
     # Register the span for feedback association
     def _register_span_on_enter(span):
-        from .spans import register_span
+        from .spans import register_span, register_session_root_span
         from opentelemetry.trace import format_span_id as otel_format_span_id
         if not PHOENIX_AVAILABLE or not _phoenix_session:
             raise RuntimeError("Phoenix telemetry is not available for span registration.")
@@ -265,7 +267,11 @@ def create_rag_pipeline_span(session_id: str, qa_id: str, query: str, **kwargs):
         
         # Register as the main pipeline span
         register_span(session_id, qa_id, span_id)
-        logger.info(f"Registered RAG pipeline span: session={session_id}, qa_id={qa_id}, span_id={span_id}")
+        
+        # Also register as the root span for the session - this is crucial for feedback association
+        register_session_root_span(session_id, span_id)
+        
+        logger.info(f"Registered RAG pipeline as root span: session={session_id}, qa_id={qa_id}, span_id={span_id}")
         return span
     
     # Wrap the context manager to register the span

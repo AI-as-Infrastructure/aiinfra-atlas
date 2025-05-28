@@ -316,30 +316,49 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
 
 def associate_feedback_with_spans(session_id: str, qa_id: str, feedback_data: Dict[str, Any]) -> bool:
     """
-    Attach feedback as an annotation to the correct Phoenix span using the native API and the span registry (Redis or in-memory).
+    Attach feedback as an annotation to the LLM generation response span using the native API and the span registry.
+    This ensures feedback is directly associated with the model's response output.
     Returns True if successful, False otherwise.
     """
     import logging
     logger = logging.getLogger(__name__)
     try:
-        # Look up the span_id using the registry (handles Redis or in-memory)
+        # The LLM response span is registered with a special key format of {qa_id}_response
+        # Look up this response span specifically for feedback
         from .spans import find_qa_span_id
-        target_span_id = find_qa_span_id(session_id, qa_id)
-        if not target_span_id:
-            logger.error(f"No span ID found for session {session_id}, qa_id {qa_id}")
-            return False
+        
+        # Special key pattern used for the response span in llm.py
+        response_key = f"{qa_id}_response"
+        response_span_id = find_qa_span_id(session_id, response_key)
+        
+        if response_span_id:
+            logger.info(f"Found response span ID: {response_span_id} for session={session_id}, qa_id={qa_id}")
             
-        # Log the span ID we found for debugging
-        logger.info(f"Found target span ID: {target_span_id} for session={session_id}, qa_id={qa_id}")
-            
-        # Submit annotation to Phoenix
-        success = submit_span_annotation(target_span_id, feedback_data, qa_id)
-        if success:
-            logger.info(f"Feedback annotation submitted for session {session_id}, qa_id {qa_id}")
-            return True
+            # Submit annotation to Phoenix using the response span
+            success = submit_span_annotation(response_span_id, feedback_data, qa_id)
+            if success:
+                logger.info(f"Feedback annotation submitted to response span for session {session_id}, qa_id {qa_id}")
+                return True
+            else:
+                logger.error(f"Failed to submit feedback annotation for session {session_id}, qa_id {qa_id}")
+                return False
         else:
-            logger.error(f"Failed to submit feedback annotation for session {session_id}, qa_id {qa_id}")
-            return False
+            # Fall back to the regular QA span if no response span is found
+            logger.warning(f"No response span found for {response_key}, falling back to QA span")
+            
+            qa_span_id = find_qa_span_id(session_id, qa_id)
+            if not qa_span_id:
+                logger.error(f"No span ID found for session {session_id}, qa_id {qa_id}")
+                return False
+                
+            # Submit annotation to Phoenix using the QA span as fallback
+            success = submit_span_annotation(qa_span_id, feedback_data, qa_id)
+            if success:
+                logger.info(f"Feedback annotation submitted to QA span for session {session_id}, qa_id {qa_id}")
+                return True
+            else:
+                logger.error(f"Failed to submit feedback annotation for session {session_id}, qa_id {qa_id}")
+                return False
     except Exception as e:
         logger.error(f"Failed to associate feedback with spans: {e}", exc_info=True)
         return False

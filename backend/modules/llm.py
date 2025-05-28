@@ -334,8 +334,10 @@ def generate_response(
                 
             return
         
-        # Create span for telemetry
-        with create_span(
+        # Create span for telemetry using trace_operation which properly handles span kind
+        from backend.telemetry.spans import trace_operation
+        
+        with trace_operation(
             SpanNames.LLM_GENERATION,
             attributes={
                 # Essential input information
@@ -345,11 +347,11 @@ def generate_response(
                 # Input characteristics
                 "has_chat_history": bool(chat_history),
                 "temperature": temperature,
-                
-                # Span categorization
-                "openinference.span.kind": OpenInferenceSpanKind.LLM
             },
-            kind=SpanKind.INTERNAL
+            session_id=session_id,
+            qa_id=qa_id,
+            openinference_kind=OpenInferenceSpanKind.LLM,
+            input_data=question
         ) as llm_span:
             try:
                 start_time = time.time()

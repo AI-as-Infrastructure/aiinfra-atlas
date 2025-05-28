@@ -275,16 +275,19 @@ def stream_documents_as_references(
         Formatted SSE message with references
     """
     # Create a span for the citation and reference generation
-    with create_span(
+    from backend.telemetry.spans import trace_operation
+    
+    # Use trace_operation which properly handles the span kind for Phoenix
+    with trace_operation(
         SpanNames.DOCUMENT_REFERENCES,
         attributes={
             SpanAttributes.SESSION_ID: session_id,
             SpanAttributes.QA_ID: qa_id,
             "document_count": len(documents),
             "citation_limit": citation_limit,
-            "openinference.span.kind": OpenInferenceSpanKind.REFERENCES,
         },
-        session_id=session_id
+        session_id=session_id,
+        openinference_kind=OpenInferenceSpanKind.REFERENCES
     ) as ref_span:
         # Register span for feedback association using spans module directly
         from backend.telemetry.spans import register_span
