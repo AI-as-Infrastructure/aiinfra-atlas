@@ -30,19 +30,26 @@
 </template>
 
 <script>
+import { useTelemetryStore } from '@/stores/telemetry';
+
 export default {
   name: 'FeedbackForm',
   data() {
     return {
       feedbackData: {
         message: '',
-        sessionId: '',
         timestamp: null
       },
       feedbackMessage: null,
       error: null,
-      isSubmitting: false
+      isSubmitting: false,
+      telemetryStore: null
     };
+  },
+  
+  created() {
+    // Initialize telemetry store
+    this.telemetryStore = useTelemetryStore();
   },
   methods: {
     async submitFeedback() {
@@ -55,20 +62,30 @@ export default {
       this.error = null;
       
       try {
-        // Prepare feedback data (anonymous)
-        this.feedbackData.timestamp = new Date().toISOString();
-        this.feedbackData.sessionId = this.generateSessionId();
-        
-        // Simple headers - no authentication
-        const headers = {
-          'Content-Type': 'application/json'
+        // Prepare feedback data with telemetry information
+        const feedbackPayload = {
+          message: this.feedbackData.message,
+          timestamp: new Date().toISOString(),
+          session_id: this.telemetryStore.sessionId || 'anonymous',
+          trace_id: this.telemetryStore.traceId,
+          feedback_text: this.feedbackData.message
         };
         
-        // Submit feedback without auth token
+        // Headers with telemetry information
+        const headers = {
+          'Content-Type': 'application/json',
+          'X-Trace-Id': this.telemetryStore.traceId
+        };
+        
+        if (this.telemetryStore.sessionId) {
+          headers['X-Session-Id'] = this.telemetryStore.sessionId;
+        }
+        
+        // Submit feedback with telemetry headers
         const response = await fetch('/api/feedback', {
           method: 'POST',
           headers,
-          body: JSON.stringify(this.feedbackData)
+          body: JSON.stringify(feedbackPayload)
         });
         
         if (!response.ok) {
@@ -85,11 +102,7 @@ export default {
         this.isSubmitting = false;
       }
     },
-    
-    generateSessionId() {
-      // Simple session ID generator
-      return 'session_' + Math.random().toString(36).substring(2, 15);
-    }
+
   }
 };
 </script>

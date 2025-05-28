@@ -95,9 +95,30 @@ def initialize_telemetry() -> bool:
         # Create OTLP exporter - it will use the environment variables we set
         otlp_exporter = OTLPSpanExporter()
         
-        # Add batch processor for production use
-        span_processor = BatchSpanProcessor(otlp_exporter)
+        # Add debug wrapper to verify spans are being exported
+        original_export = otlp_exporter.export
+        def debug_export(spans):
+            span_ids = [str(span.context.span_id) for span in spans]
+            logger.info(f"Exporting {len(spans)} spans to Phoenix: {span_ids[:5]}{'...' if len(span_ids) > 5 else ''}")
+            try:
+                result = original_export(spans)
+                logger.info(f"Export result: {result}")
+                return result
+            except Exception as e:
+                logger.error(f"Error exporting spans: {e}")
+                raise
+        otlp_exporter.export = debug_export
+        
+        # Add standard batch processor for spans
+        # Using default settings (5-second delay) for more responsive feedback
+        span_processor = BatchSpanProcessor(
+            otlp_exporter,
+            # Use default delay (5 seconds) for more responsive span export
+            # max_export_batch_size=512 (using default)
+        )
         tracer_provider.add_span_processor(span_processor)
+        
+        logger.info("✅ Configured BatchSpanProcessor with 45-second delay for feedback association")
         
         # Set as global tracer provider
         otel_trace.set_tracer_provider(tracer_provider)
@@ -323,6 +344,69 @@ def create_llm_span(session_id: str, qa_id: str, model: str, **kwargs):
             yield _register_span_on_enter(span)
     
     return _wrapped_span()
+
+def create_child_span(parent_span_id: str, name: str, attributes: Dict[str, Any] = None, kind: Any = None):
+    """
+    Create a span that is explicitly a child of another span using the parent's span_id
+    
+    Args:
+        parent_span_id: The ID of the parent span
+        name: Span operation name
+        attributes: Span attributes
+        kind: OpenInference span kind string
+    """
+    from .registry import span_registry
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    # Skip if telemetry is disabled
+    if not is_telemetry_enabled():
+        return no_op_span()
+    
+    # Default attributes
+    if attributes is None:
+        attributes = {}
+    
+    try:
+        # Try to get parent span context from registry
+        parent_context = span_registry.get_span_context(parent_span_id)
+        
+        if not parent_context:
+            logger.warning(f"Parent span {parent_span_id} not found in registry. Creating detached span.")
+            # Fall back to a regular span if parent not found
+            return create_span(name, attributes, kind=kind)
+        
+        # Set the parent span ID attribute for explicit linking
+        attributes["parent_span_id"] = parent_span_id
+        
+        # Get tracer
+        tracer = get_tracer()
+        
+        # Create a span with link to parent context
+        span_context = tracer.start_span(
+            name=name,
+            context=parent_context,  # This makes it a child of the parent span
+            attributes=attributes,
+            kind=kind
+        )
+        
+        # Register the new span
+        span_id = uuid.uuid4().hex
+        span_registry.register_span(span_id, span_context)
+        
+        # Return the span with its context for use in a with statement
+        @contextmanager
+        def _span_context():
+            try:
+                yield span_context
+            finally:
+                span_context.end()
+        
+        return _span_context()
+    except Exception as e:
+        logger.error(f"Error creating child span: {e}")
+        return no_op_span()
 
 def create_feedback_span(session_id: str, qa_id: str, feedback_data: Dict[str, Any], **kwargs):
     """Create a feedback span directly without span factory"""

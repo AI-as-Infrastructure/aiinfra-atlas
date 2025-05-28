@@ -153,6 +153,7 @@ Group=www-data
 WorkingDirectory=$APP_DIR
 Environment="PATH=$APP_DIR/.venv/bin"
 Environment="PYTHONPATH=$APP_DIR"
+Environment="ATLAS_ENV=staging"
 ExecStart=$APP_DIR/.venv/bin/python -m gunicorn backend.app:app -k uvicorn.workers.UvicornWorker -w 4 -b 127.0.0.1:8000 --access-logfile /var/log/$APP_NAME/gunicorn-access.log --error-logfile /var/log/$APP_NAME/gunicorn-error.log
 Restart=on-failure
 

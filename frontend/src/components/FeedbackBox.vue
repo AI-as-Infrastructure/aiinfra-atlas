@@ -89,6 +89,7 @@ import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useSessionStore } from '@/stores/session'
 import { useSocketStore } from '@/stores/socket'
+import { useTelemetryStore } from '@/stores/telemetry'
 import { onMounted } from 'vue'
 
 // No props needed since visibility is controlled by parent component
@@ -98,7 +99,9 @@ const emit = defineEmits(['feedback-submitted'])
 
 const sessionStore = useSessionStore()
 const socketStore = useSocketStore()
+const telemetryStore = useTelemetryStore()
 const { chatHistory, sessionId, qaId } = storeToRefs(sessionStore)
+const { traceId } = storeToRefs(telemetryStore)
 
 // Store the session ID associated with the current QA ID to ensure feedback is associated with the correct session
 const associatedSessionId = ref(sessionId.value)
@@ -175,6 +178,7 @@ async function submitFeedback() {
     const feedbackData = {
       session_id: associatedSessionId.value,
       qa_id: qaId.value,
+      trace_id: traceId.value,  // Include trace_id for telemetry correlation
       relevance: Number(relevance.value),
       factual_accuracy: factualAccuracy.value === 'true',
       source_quality: Number(sourceQuality.value),
@@ -188,12 +192,16 @@ async function submitFeedback() {
       timestamp: new Date().toISOString()
     };
     
-    console.log('Phoenix feedback data:', feedbackData);
+    console.log('Phoenix feedback data with trace_id:', feedbackData);
     
-    // Submit via HTTP POST
+    // Submit via HTTP POST with telemetry headers
     const response = await fetch('/api/feedback', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Trace-Id': traceId.value,  // Include trace_id in headers
+        'X-Session-Id': associatedSessionId.value
+      },
       body: JSON.stringify(feedbackData)
     });
     

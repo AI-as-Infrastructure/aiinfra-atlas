@@ -17,29 +17,27 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load environment variables from config/.env.{environment} (relative to project root)
+# Determine environment and load corresponding .env file
 project_root = os.path.dirname(os.path.dirname(__file__))
-env_loaded = False
 
-# Try different environment files in priority order
-env_files = [
-    os.path.join(project_root, "config", ".env"),              # Legacy path
-    os.path.join(project_root, "config", ".env.production"),   # Production settings
-    os.path.join(project_root, "config", ".env.staging"),      # Staging settings
-    os.path.join(project_root, "config", ".env.development")   # Development settings
-]
+# Deployment scripts should set ATLAS_ENV (e.g., development, staging, production).
+# Defaults to 'development' if not set, to support local `python backend/app.py` runs without dev.sh.
+atlas_environment = os.getenv("ATLAS_ENV", "development").lower()
+env_file_name = f".env.{atlas_environment}"
+env_path = os.path.join(project_root, "config", env_file_name)
 
-# Check for environment files in order
-for env_path in env_files:
-    if os.path.exists(env_path):
-        logger.info(f"Loading environment variables from: {env_path}")
-        load_dotenv(env_path)
-        env_loaded = True
-        break
-
-# Log warning if no environment file is found
-if not env_loaded:
-    logger.warning(f"No environment files found at: {', '.join(env_files)}")
+if os.path.exists(env_path):
+    logger.info(f"Loading environment variables from: {env_path} (ATLAS_ENV='{atlas_environment}')")
+    load_dotenv(dotenv_path=env_path, override=True) # `override=True` ensures .env takes precedence
+else:
+    # If the specific .env file is not found, log a clear warning.
+    # The application will then rely on system-set environment variables.
+    logger.warning(
+        f"Environment file not found: {env_path} (for ATLAS_ENV='{atlas_environment}'). "
+        f"The application will rely on system-set environment variables. "
+        f"Ensure all required variables are set in the execution environment if this .env file is expected."
+    )
+# Environment variables are now loaded directly with no need for an env_loaded flag
 
 # Initialize telemetry after environment variables are loaded
 from backend.telemetry.core import initialize_telemetry

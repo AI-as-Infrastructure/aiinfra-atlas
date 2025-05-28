@@ -27,6 +27,9 @@
 
 set -e
 
+# Set the environment for app.py
+export ATLAS_ENV=staging
+
 # ---- CONFIGURATION SECTION ----
 # App settings
 APP_NAME="atlas"                         # Name of the application
@@ -263,6 +266,7 @@ Environment="PYTHONPATH=$APP_DIR"
 Environment="PHOENIX_CLIENT_HEADERS=$(grep PHOENIX_CLIENT_HEADERS $APP_DIR/config/.env.staging | cut -d'=' -f2-)"
 Environment="PHOENIX_PROJECT_NAME=$(grep PHOENIX_PROJECT_NAME $APP_DIR/config/.env.staging | cut -d'=' -f2-)"
 Environment="PHOENIX_COLLECTOR_ENDPOINT=$(grep PHOENIX_COLLECTOR_ENDPOINT $APP_DIR/config/.env.staging | cut -d'=' -f2-)"
+Environment="ATLAS_ENV=staging"
 # Pass Redis configuration to the worker
 Environment="REDIS_PASSWORD=$(grep REDIS_PASSWORD $APP_DIR/config/.env.staging | cut -d'=' -f2-)"
 Environment="REDIS_URL=redis://:$(grep REDIS_PASSWORD $APP_DIR/config/.env.staging | cut -d'=' -f2-)@localhost:6379"

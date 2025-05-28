@@ -50,6 +50,9 @@ fi
 PROJECT_ROOT="$(dirname $(dirname $(dirname $(readlink -f "$0"))))"
 cd "$PROJECT_ROOT"
 
+# Set the environment for app.py
+export ATLAS_ENV=development
+
 # Function to check version requirements
 check_version() {
     local required_version=$1

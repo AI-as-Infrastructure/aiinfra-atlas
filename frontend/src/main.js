@@ -7,7 +7,9 @@ import { createApp } from 'vue'
 import App from './App.vue'
 import router from './router'
 import { createPinia } from 'pinia'
+import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
 import { configureAmplify } from './auth/amplify-auth'
+import { setupTelemetryInterceptors } from './utils/telemetryInterceptor'
 
 // Debug mode setup based on environment variables
 const isDebugMode = import.meta.env.VITE_DEBUG_MODE === 'true'
@@ -35,6 +37,10 @@ configureAmplify()
 // Create and configure the Vue app
 const app = createApp(App)
 const pinia = createPinia()
+
+// Register the persistedstate plugin for Pinia
+pinia.use(piniaPluginPersistedstate)
+
 app.use(pinia)
 app.use(router)
 
@@ -50,7 +56,19 @@ app.mount('#app')
 // Initialize WebSocket only after Pinia is registered and app is mounted
 import { nextTick } from 'vue'
 import { useSocketStore } from '@/stores/socket'
+import { useTelemetryStore } from '@/stores/telemetry'
+
 nextTick(() => {
+  // Initialize socket connection
   const socketStore = useSocketStore()
   socketStore.initializeSocket()
+  
+  // Initialize telemetry interceptors
+  setupTelemetryInterceptors()
+  
+  // Ensure telemetry store is initialized
+  const telemetryStore = useTelemetryStore()
+  if (!telemetryStore.traceId) {
+    telemetryStore.regenerateTraceId()
+  }
 })

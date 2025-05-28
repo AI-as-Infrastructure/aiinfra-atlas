@@ -37,10 +37,14 @@ dd:
 	@lsof -ti :8000 | xargs -r kill -9 || true
 	@echo "Removing virtual environment..."
 	@rm -rf .venv
+	@echo "Removing frontend .env file"
+	@rm -rf frontend/.env
 	@echo "Removing node_modules and package-lock.json from project root and frontend/ ..."
 	@rm -rf node_modules package-lock.json
 	@rm -rf frontend/node_modules frontend/package-lock.json
 	@rm -rf frontend/dist
+	@echo "Removing span registry..." 
+	@rm -rf telemetry_span_registry.db
 	@echo "Removed frontend/dist directory"
 	@echo "FastAPI dev environment destroyed."
 

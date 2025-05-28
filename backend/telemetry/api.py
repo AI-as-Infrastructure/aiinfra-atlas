@@ -25,6 +25,13 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
     """
     client_ip = request.client.host
     
+    # Get trace ID from header if available
+    trace_id = request.headers.get("X-Trace-Id", None)
+    
+    # If trace_id in header but not in feedback model, add it
+    if trace_id and not feedback.trace_id:
+        feedback.trace_id = trace_id
+    
     # Get session ID and QA ID from the feedback
     session_id = feedback.session_id
     qa_id = feedback.qa_id
@@ -52,7 +59,8 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
             "tags": feedback.tags,
             "feedback_text": feedback.feedback_text,
             "timestamp": datetime.now().isoformat(),
-            "client_ip": client_ip
+            "client_ip": client_ip,
+            "trace_id": feedback.trace_id  # Include trace_id for span correlation
         }
         
         # Use Phoenix native feedback association
@@ -60,18 +68,12 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
         
         # Respond with success
         if success:
-            if PHOENIX_AVAILABLE and _phoenix_session:
-                logger.info(f"Phoenix native feedback recorded for session_id={session_id}, qa_id={qa_id}")
-                return FeedbackResponse(
-                    message="Feedback recorded successfully using Phoenix native evaluation system",
-                    status="success"
-                )
-            else:
-                logger.info(f"Fallback feedback recorded for session_id={session_id}, qa_id={qa_id}")
-                return FeedbackResponse(
-                    message="Feedback recorded successfully using fallback system",
-                    status="success"
-                )
+            # Success - we've successfully submitted the annotation
+            logger.info(f"Feedback annotation recorded for session_id={session_id}, qa_id={qa_id}")
+            return FeedbackResponse(
+                message="Feedback recorded successfully",
+                status="success"
+            )
         else:
             logger.error(f"Failed to record feedback for session_id={session_id}, qa_id={qa_id}")
             return FeedbackResponse(
