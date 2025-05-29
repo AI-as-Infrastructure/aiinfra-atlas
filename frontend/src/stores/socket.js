@@ -48,23 +48,34 @@ export const useSocketStore = defineStore('socket', {
 
       const sessionStore = useSessionStore()
       
-      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      
-      let host = location.hostname;
-      let port = '8000';
-      
+      // For WebSockets, use the same host and protocol as the API URL
+      // This ensures we go through the Nginx proxy instead of connecting directly
       const apiUrl = import.meta.env.VITE_API_URL;
+      let wsProtocol, wsHost, wsPort;
+      
       if (apiUrl) {
         try {
           const url = new URL(apiUrl);
-          host = url.hostname;
-          port = url.port || (url.protocol === 'https:' ? '443' : '80');
+          wsProtocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+          wsHost = url.hostname;
+          wsPort = url.port || (url.protocol === 'https:' ? '443' : '80');
         } catch (e) {
           console.error('Invalid API URL format:', apiUrl);
+          // Fallback to browser location if API URL is invalid
+          wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+          wsHost = location.hostname;
+          wsPort = location.port || (location.protocol === 'https:' ? '443' : '80');
         }
+      } else {
+        // Fallback to browser location if no API URL is provided
+        wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        wsHost = location.hostname; 
+        wsPort = location.port || (location.protocol === 'https:' ? '443' : '80');
       }
       
-      const wsUrl = `${protocol}//${host}:${port}/ws/${sessionStore.sessionId}`;
+      console.log('WebSocket configuration:', { wsProtocol, wsHost, wsPort });
+      
+      const wsUrl = `${wsProtocol}//${wsHost}:${wsPort}/ws/${sessionStore.sessionId}`;
       this.connectionUrl = wsUrl;
       
       console.log('Attempting WebSocket connection to:', wsUrl);
