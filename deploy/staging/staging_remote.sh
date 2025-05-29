@@ -233,8 +233,6 @@ sed -i 's#API_BASE_URL=.*#API_BASE_URL=https://'"$DOMAIN"'/api#' $APP_DIR/config
 sed -i 's#WS_BASE_URL=.*#WS_BASE_URL=wss://'"$DOMAIN"'/ws#' $APP_DIR/config/.env.staging
 
 echo "✅ Environment file updated with domain: $DOMAIN"
-echo "⚠️ IMPORTANT: If you need additional environment changes, edit the file manually on the server at:"
-echo "    $APP_DIR/config/.env.staging"
 
 # 6. Setup Python environment with explicit Python 3.10
 echo "Setting up Python environment..."
@@ -294,10 +292,15 @@ After=network.target
 User=$USER
 Group=$USER
 WorkingDirectory=$APP_DIR
+# Basic environment settings
 Environment="PATH=$APP_DIR/.venv/bin"
 Environment="PYTHONPATH=$APP_DIR"
-Environment="ENVIRONMENT=staging"
-ExecStart=$APP_DIR/.venv/bin/python -m gunicorn backend.app:app -k uvicorn.workers.UvicornWorker -w 4 -b 127.0.0.1:8000 --access-logfile /var/log/$APP_NAME/gunicorn-access.log --error-logfile /var/log/$APP_NAME/gunicorn-error.log
+
+# Source the environment file directly in the ExecStart command
+# This properly loads all variables from .env.staging without duplication
+
+# Source the environment file and start Gunicorn
+ExecStart=/bin/bash -c 'set -a && source $APP_DIR/config/.env.staging && set +a && $APP_DIR/.venv/bin/python -m gunicorn backend.app:app -k uvicorn.workers.UvicornWorker -w 4 -b 127.0.0.1:8000 --access-logfile /var/log/$APP_NAME/gunicorn-access.log --error-logfile /var/log/$APP_NAME/gunicorn-error.log'
 Restart=on-failure
 
 [Install]
