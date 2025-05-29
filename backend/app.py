@@ -17,26 +17,26 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Determine environment and load corresponding .env file
+# Load environment variables with strict mode - fail if environment file is missing
 project_root = os.path.dirname(os.path.dirname(__file__))
 
-# Deployment scripts should set ATLAS_ENV (e.g., development, staging, production).
-# Defaults to 'development' if not set, to support local `python backend/app.py` runs without dev.sh.
-atlas_environment = os.getenv("ATLAS_ENV", "development").lower()
-env_file_name = f".env.{atlas_environment}"
+# Get environment from ATLAS_ENV (set by deployment scripts)
+atlas_environment = os.getenv("ATLAS_ENV")
+if not atlas_environment:
+    logger.error("ATLAS_ENV environment variable is not set. Cannot determine which configuration to use.")
+    raise EnvironmentError("ATLAS_ENV must be set (e.g., 'development', 'staging', 'production') in your deployment script")
+    
+env_file_name = f".env.{atlas_environment.lower()}"
 env_path = os.path.join(project_root, "config", env_file_name)
 
-if os.path.exists(env_path):
-    logger.info(f"Loading environment variables from: {env_path} (ATLAS_ENV='{atlas_environment}')")
-    load_dotenv(dotenv_path=env_path, override=True) # `override=True` ensures .env takes precedence
-else:
-    # If the specific .env file is not found, log a clear warning.
-    # The application will then rely on system-set environment variables.
-    logger.warning(
-        f"Environment file not found: {env_path} (for ATLAS_ENV='{atlas_environment}'). "
-        f"The application will rely on system-set environment variables. "
-        f"Ensure all required variables are set in the execution environment if this .env file is expected."
-    )
+# Strict checking - application will not start if the environment file is missing
+if not os.path.exists(env_path):
+    logger.error(f"Required environment file not found: {env_path} (ATLAS_ENV='{atlas_environment}')")
+    raise FileNotFoundError(f"Cannot find environment file: {env_path}. Deployment is misconfigured.")
+
+# Load the environment file
+logger.info(f"Loading environment variables from: {env_path} (ATLAS_ENV='{atlas_environment}')")
+load_dotenv(dotenv_path=env_path, override=True)
 # Environment variables are now loaded directly with no need for an env_loaded flag
 
 # Initialize telemetry after environment variables are loaded
