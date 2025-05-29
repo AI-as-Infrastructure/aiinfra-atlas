@@ -28,7 +28,7 @@
 set -e
 
 # Set the environment for app.py
-export ATLAS_ENV=staging
+export ENVIRONMENT=staging
 
 # ---- CONFIGURATION SECTION ----
 # App settings
@@ -234,13 +234,12 @@ Group=$CURRENT_USER
 WorkingDirectory=$APP_DIR
 Environment="PATH=$APP_DIR/.venv/bin"
 Environment="PYTHONPATH=$APP_DIR"
-# Pass Phoenix telemetry environment variables directly to the service
-Environment="PHOENIX_CLIENT_HEADERS=$(grep PHOENIX_CLIENT_HEADERS $APP_DIR/config/.env.staging | cut -d'=' -f2-)"
-Environment="PHOENIX_PROJECT_NAME=$(grep PHOENIX_PROJECT_NAME $APP_DIR/config/.env.staging | cut -d'=' -f2-)"
-Environment="PHOENIX_COLLECTOR_ENDPOINT=$(grep PHOENIX_COLLECTOR_ENDPOINT $APP_DIR/config/.env.staging | cut -d'=' -f2-)"
-# Pass Redis configuration to the service
-Environment="REDIS_PASSWORD=$(grep REDIS_PASSWORD $APP_DIR/config/.env.staging | cut -d'=' -f2-)"
-Environment="REDIS_URL=redis://:$(grep REDIS_PASSWORD $APP_DIR/config/.env.staging | cut -d'=' -f2-)@localhost:6379"
+Environment="ENVIRONMENT=staging"
+
+# Source all environment from .env.staging file
+EnvironmentFile=$APP_DIR/config/.env.staging
+
+# Redis configuration comes from the .env.staging file
 # Use full path to Python executable in the venv with multiple workers for better concurrency
 ExecStart=$APP_DIR/.venv/bin/python -m gunicorn backend.app:app -k uvicorn.workers.UvicornWorker -w 4 -b 127.0.0.1:8000 --access-logfile ${LOGS_ABS_PATH}/gunicorn-access.log --error-logfile ${LOGS_ABS_PATH}/gunicorn-error.log
 Restart=on-failure
@@ -265,11 +264,12 @@ Environment="PYTHONPATH=$APP_DIR"
 # Pass Phoenix telemetry environment variables to the worker
 Environment="PHOENIX_CLIENT_HEADERS=$(grep PHOENIX_CLIENT_HEADERS $APP_DIR/config/.env.staging | cut -d'=' -f2-)"
 Environment="PHOENIX_PROJECT_NAME=$(grep PHOENIX_PROJECT_NAME $APP_DIR/config/.env.staging | cut -d'=' -f2-)"
-Environment="PHOENIX_COLLECTOR_ENDPOINT=$(grep PHOENIX_COLLECTOR_ENDPOINT $APP_DIR/config/.env.staging | cut -d'=' -f2-)"
-Environment="ATLAS_ENV=staging"
-# Pass Redis configuration to the worker
-Environment="REDIS_PASSWORD=$(grep REDIS_PASSWORD $APP_DIR/config/.env.staging | cut -d'=' -f2-)"
-Environment="REDIS_URL=redis://:$(grep REDIS_PASSWORD $APP_DIR/config/.env.staging | cut -d'=' -f2-)@localhost:6379"
+Environment="ENVIRONMENT=staging"
+
+# Source all environment from .env.staging file
+EnvironmentFile=$APP_DIR/config/.env.staging
+
+# Worker-specific variables
 Environment="WORKER_ID=staging-worker-1"
 # Run the LLM worker
 ExecStart=$APP_DIR/.venv/bin/python $APP_DIR/backend/services/worker.py
@@ -493,49 +493,9 @@ echo "Setting up backend environment..."
 # Ensure the staging environment file is in place at .env.staging (NOT .env)
 sudo cp "$PROJECT_ROOT/config/.env.staging" "$APP_DIR/config/.env.staging"
 
-# Create an environment loader script for the backend
-cat > "$APP_DIR/backend/load_env.py" << EOF
-"""Load environment variables from .env.staging file."""
-import os
-import re
-from pathlib import Path
-
-def load_dotenv(env_file):
-    """Load environment variables from a file."""
-    if not os.path.exists(env_file):
-        print(f"Warning: {env_file} not found")
-        return False
-    
-    with open(env_file) as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
-            
-            # Extract key and value with proper handling of quotes
-            match = re.match(r'^([A-Za-z0-9_]+)=(?:"([^"]*)"|(.*))$', line)
-            if match:
-                key = match.group(1)
-                value = match.group(2) if match.group(2) is not None else match.group(3)
-                os.environ[key] = value
-    
-    return True
-
-# Load from the staging environment file
-env_file = Path(__file__).parent.parent / "config" / ".env.staging"
-load_dotenv(str(env_file))
-print(f"Loaded environment from {env_file}")
-EOF
-
-# Make sure permissions are correct
-sudo chown $CURRENT_USER:$CURRENT_USER "$APP_DIR/backend/load_env.py"
-
-# Modify the main app to load environment variables early
-if ! grep -q "import load_env" "$APP_DIR/backend/app.py"; then
-    # Add import at the top of the file
-    sed -i '1s/^/import backend.load_env\n/' "$APP_DIR/backend/app.py"
-    echo "✅ Added environment loader to backend/app.py"
-fi
+# Simply modify the Gunicorn service to source environment variables
+echo "✅ Environment variables will be sourced from .env.staging by the systemd service"
+echo "   All Phoenix telemetry variables including project name will be properly loaded"
 
 echo "✅ Backend environment configured to use config/.env.staging"
 
