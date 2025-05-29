@@ -142,20 +142,6 @@ sl: ## Deploy to staging on localhost
 	@chmod +x deploy/staging/staging_localhost.sh
 	@./deploy/staging/staging_localhost.sh
 
-# === REMOTE STAGING DEPLOYMENT TARGETS ===
-# These targets operate on the remote staging server (192.168.20.17) as atlas_deploy
-
-# Deploy to remote staging environment
-sr: ## Deploy to remote staging environment (192.168.20.17)
-	@echo "Deploying to remote staging environment..."
-	@chmod +x deploy/staging/staging_remote.sh
-	# Use the correct SSH private key for all remote commands
-	# Use the correct SSH private key for all remote commands and force only this key
-	# Enable SSH debug output for troubleshooting
-	@scp -v -i ~/.ssh/atlas_deploy_key -o IdentitiesOnly=yes deploy/staging/staging_remote.sh atlas_deploy@192.168.20.17:/tmp/staging_remote.sh
-	@scp -v -i ~/.ssh/atlas_deploy_key -o IdentitiesOnly=yes config/.env.staging atlas_deploy@192.168.20.17:/tmp/.env.staging
-	@ssh -v -i ~/.ssh/atlas_deploy_key -o IdentitiesOnly=yes -t atlas_deploy@192.168.20.17 'chmod +x /tmp/staging_remote.sh && /tmp/staging_remote.sh'
-
 # Basic cleanup of local staging deployment (without removing code)
 dsl: ## Basic cleanup of local staging deployment
 	@echo "Performing basic cleanup of local staging deployment..."
@@ -171,22 +157,6 @@ dsl: ## Basic cleanup of local staging deployment
 	@echo "Removing log files..."
 	@rm -f deploy/staging/logs/*.log || true
 	@echo "✅ Basic cleanup completed (code at /opt/atlas is preserved)"
-
-# Basic cleanup of remote staging deployment (without removing code)
-dsr: ## Basic cleanup of remote staging deployment (192.168.20.17)
-	@echo "Performing basic cleanup of remote staging deployment..."
-	@ssh -i ~/.ssh/atlas_deploy_key -o IdentitiesOnly=yes -t atlas_deploy@192.168.20.17 'sudo systemctl stop gunicorn || true; \
-		sudo systemctl disable gunicorn || true; \
-		sudo systemctl stop llm-worker || true; \
-		sudo systemctl disable llm-worker || true; \
-		sudo rm -f /etc/systemd/system/gunicorn.service || true; \
-		sudo rm -f /etc/systemd/system/llm-worker.service || true; \
-		sudo rm -f /etc/nginx/sites-enabled/atlas || true; \
-		sudo rm -f /etc/nginx/sites-available/atlas || true; \
-		sudo systemctl restart nginx || true; \
-		echo "Removing log files..."; \
-		rm -f /opt/atlas/deploy/staging/logs/*.log || true; \
-		echo "✅ Basic cleanup completed (code at /opt/atlas is preserved)"'
 
 # Full cleanup of local staging deployment (including code removal)
 dslf: ## Full cleanup of local staging deployment
@@ -215,8 +185,39 @@ dslf: ## Full cleanup of local staging deployment
 	@rm -rf $$HOME/.vite || true
 	@rm -rf $$HOME/.cache/vite || true
 
+# === REMOTE STAGING DEPLOYMENT TARGETS ===
+# These targets operate on the remote staging server as atlas_deploy
+
+# Deploy to remote staging environment
+sr: ## Deploy to remote staging environment 
+	@echo "Deploying to remote staging environment..."
+	@chmod +x deploy/staging/staging_remote.sh
+	# Use the correct SSH private key for all remote commands
+	# Use the correct SSH private key for all remote commands and force only this key
+	# Enable SSH debug output for troubleshooting
+	@scp -v -i ~/.ssh/atlas_deploy_key -o IdentitiesOnly=yes deploy/staging/staging_remote.sh atlas_deploy@192.168.20.17:/tmp/staging_remote.sh
+	@scp -v -i ~/.ssh/atlas_deploy_key -o IdentitiesOnly=yes config/.env.staging atlas_deploy@192.168.20.17:/tmp/.env.staging
+	@ssh -v -i ~/.ssh/atlas_deploy_key -o IdentitiesOnly=yes -t atlas_deploy@192.168.20.17 'chmod +x /tmp/staging_remote.sh && /tmp/staging_remote.sh'
+
+# Basic cleanup of remote staging deployment (without removing code)
+dsr: ## Basic cleanup of remote staging deployment 
+	@echo "Performing basic cleanup of remote staging deployment..."
+	@ssh -i ~/.ssh/atlas_deploy_key -o IdentitiesOnly=yes -t atlas_deploy@192.168.20.17 'sudo systemctl stop gunicorn || true; \
+		sudo systemctl disable gunicorn || true; \
+		sudo systemctl stop llm-worker || true; \
+		sudo systemctl disable llm-worker || true; \
+		sudo rm -f /etc/systemd/system/gunicorn.service || true; \
+		sudo rm -f /etc/systemd/system/llm-worker.service || true; \
+		sudo rm -f /etc/nginx/sites-enabled/atlas || true; \
+		sudo rm -f /etc/nginx/sites-available/atlas || true; \
+		sudo systemctl restart nginx || true; \
+		echo "Removing log files..."; \
+		rm -f /opt/atlas/deploy/staging/logs/*.log || true; \
+		echo "✅ Basic cleanup completed (code at /opt/atlas is preserved)"'
+
+
 # Full cleanup of remote staging deployment (including code removal)
-dsrf: ## Full cleanup of remote staging deployment (192.168.20.17)
+dsrf: ## Full cleanup of remote staging deployment 
 	@echo "Performing full cleanup of remote staging deployment..."
 	@ssh -i ~/.ssh/atlas_deploy_key -o IdentitiesOnly=yes -t atlas_deploy@192.168.20.17 'sudo systemctl stop gunicorn || true; \
 		sudo systemctl disable gunicorn || true; \

@@ -76,37 +76,105 @@ fi
 
 # Install specific Node.js version
 echo "Setting up Node.js environment..."
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-sudo apt-get install -y nodejs
-sudo npm install -g npm@latest
+
+# Always try to load nvm first
+export NVM_DIR="$HOME/.nvm"
+if [ -s "$NVM_DIR/nvm.sh" ]; then
+    echo "Loading nvm..."
+    \. "$NVM_DIR/nvm.sh"  # Load nvm
+    
+    # Check if nvm is now available
+    if command -v nvm &> /dev/null || type nvm &> /dev/null; then
+        echo "Using nvm to install Node.js 22.14.0"
+        nvm install 22.14.0
+        nvm use 22.14.0
+        nvm alias default 22.14.0
+        
+        # Verify the correct version is active
+        node_version=$(node -v)
+        echo "Active Node.js version: $node_version"
+        
+        if [[ "$node_version" != "v22.14.0" ]]; then
+            echo "ERROR: Node.js version mismatch! Found $node_version but need v22.14.0"
+            echo "Try installing nvm and running this script again"
+            exit 1
+        fi
+    else
+        echo "nvm command not available even though nvm.sh exists"
+    fi
+else
+    echo "nvm not found, installing system-wide Node.js..."
+    # Install system-wide from NodeSource
+    echo "Installing Node.js 22.14.0 from NodeSource..."
+    curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+    sudo apt-get update && sudo apt-get install -y nodejs
+    
+    # Verify Node.js installation
+    node_version=$(node -v)
+    echo "Active Node.js version: $node_version"
+    
+    # Create symlinks to ensure the right version is used
+    if [[ "$node_version" == "v22.14.0" ]]; then
+        echo "Node.js 22.14.0 installed successfully"
+    else
+        echo "WARNING: Node.js version mismatch! Found $node_version but need v22.14.0"
+        echo "Attempting to fix with symlinks..."
+        
+        # If using nvm, create symlinks to the nvm version
+        if [ -d "$NVM_DIR/versions/node/v22.14.0/bin" ]; then
+            sudo ln -sf "$NVM_DIR/versions/node/v22.14.0/bin/node" /usr/bin/node
+            sudo ln -sf "$NVM_DIR/versions/node/v22.14.0/bin/npm" /usr/bin/npm
+            echo "Created symlinks to nvm version"
+        else
+            echo "ERROR: Cannot find Node.js 22.14.0 installation"
+            exit 1
+        fi
+    fi
+fi
+
+# Final verification
+node_version=$(node -v)
+if [[ "$node_version" != "v22.14.0" ]]; then
+    echo "ERROR: Node.js version verification failed! Found $node_version but need v22.14.0"
+    exit 1
+fi
+
+echo "✅ Node.js 22.14.0 configured successfully"
+npm -v
 
 # 3. Setup application directory
 echo "Setting up application directory..."
 sudo mkdir -p $APP_DIR && sudo chown -R $USER:$USER $APP_DIR
-
-# Ensure frontend directory is owned by atlas_deploy for build permissions
-sudo chown -R atlas_deploy:atlas_deploy $APP_DIR/frontend
 
 # 4. Clone or update the repository
 echo "Checking for existing repository..."
 # --- Use 0.1.0-staging branch for remote production deployment ---
 if [ -d "$APP_DIR/.git" ]; then
     echo "Updating existing repository..."
-    cd $APP_DIR && git fetch && git reset --hard origin/0.1.0-staging && git clean -fd && git lfs pull
+    cd $APP_DIR && git fetch --all && git reset --hard origin/0.1.0-staging && git lfs pull
 else
     echo "Cloning fresh repository..."
     git clone --branch 0.1.0-staging https://github.com/AI-as-Infrastructure/aiinfra-atlas.git $APP_DIR && cd $APP_DIR && git lfs pull
 fi
 
-# 5. Move the environment file into place (copied from Makefile before running this script)
+# 5. Copy the environment file from /tmp to the app's config directory
+echo "Copying environment file from /tmp to app directory..."
 if [ -f "/tmp/.env.staging" ]; then
-    echo "Copying .env.staging into $APP_DIR/config/.env.staging"
     mkdir -p "$APP_DIR/config"
     mv /tmp/.env.staging "$APP_DIR/config/.env.staging"
+    chmod 644 "$APP_DIR/config/.env.staging"
+    echo "✅ Environment file copied successfully"
+    
+    # Clean up any remaining temporary files
+    echo "Cleaning up temporary files..."
+    rm -f /tmp/.env.staging 2>/dev/null || true
 else
     echo "ERROR: /tmp/.env.staging not found! Please transfer it before running this script."
     exit 1
 fi
+
+# Ensure frontend directory is owned by atlas_deploy for build permissions
+sudo chown -R atlas_deploy:atlas_deploy $APP_DIR/frontend
 
 # Update URLs in the environment file to use the actual domain
 echo "Updating environment URLs for remote deployment..."
@@ -130,7 +198,28 @@ touch $APP_DIR/backend/__init__.py
 echo '$APP_DIR' > $APP_DIR/.venv/lib/python3.10/site-packages/atlas.pth
 chmod 644 $APP_DIR/.venv/lib/python3.10/site-packages/atlas.pth
 
-# 7. Build frontend
+# 7. Set up environment variables and generate frontend templates
+echo "Setting up frontend environment..."
+cd $APP_DIR
+
+# Verify environment file exists before running the script
+if [ ! -f "config/.env.staging" ]; then
+    echo "ERROR: config/.env.staging not found in $APP_DIR"
+    ls -la config/
+    exit 1
+fi
+
+# Make sure ATLAS_ENV is exported to child processes
+export ATLAS_ENV="staging"
+
+# Ensure script is executable
+chmod +x config/generate_vue_files.sh
+
+# Run the script with explicit path to environment file
+cd $APP_DIR && ATLAS_ENV="staging" ./config/generate_vue_files.sh
+echo "✅ Frontend environment configured"
+
+# 8. Build frontend
 echo "Building frontend..."
 cd $APP_DIR/frontend
 npm install && npm run build
@@ -237,21 +326,68 @@ sudo nginx -t
 sudo systemctl restart nginx
 
 echo "Deployment complete!"
-echo "Access at: https://$DOMAIN"
 
 # Add command to download remote logs
 echo "To download logs from the server, run:"
 echo "mkdir -p deploy/staging/logs && cp /var/log/$APP_NAME/*.log deploy/staging/logs/"
 
-# Copy environment variables for frontend
-echo "Setting up frontend environment..."
-grep '^VITE_' $APP_DIR/config/.env.staging > $APP_DIR/frontend/.env
-echo "✅ Frontend environment configured"
+# Final cleanup of temporary files
+echo "Performing final cleanup..."
+rm -f /tmp/staging_remote.sh 2>/dev/null || true
+echo "✅ Temporary files removed from /tmp"
+
+# Frontend environment is already set up before the build
 
 # Create proper environment files instead of symlinks
 echo "Setting up backend environment..."
-cp $APP_DIR/config/.env.staging $APP_DIR/config/.env
-echo "✅ Backend environment configured" 
+# Ensure the staging environment file is in place (don't copy to itself)
+echo "Using config/.env.staging for backend configuration"
+
+# Create an environment loader script for the backend
+cat > "$APP_DIR/backend/load_env.py" << EOF
+"""Load environment variables from .env.staging file."""
+import os
+import re
+from pathlib import Path
+
+def load_dotenv(env_file):
+    """Load environment variables from a file."""
+    if not os.path.exists(env_file):
+        print(f"Warning: {env_file} not found")
+        return False
+    
+    with open(env_file) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            
+            # Extract key and value with proper handling of quotes
+            match = re.match(r'^([A-Za-z0-9_]+)=(?:"([^"]*)"|(.*))$', line)
+            if match:
+                key = match.group(1)
+                value = match.group(2) if match.group(2) is not None else match.group(3)
+                os.environ[key] = value
+    
+    return True
+
+# Load from the staging environment file
+env_file = Path(__file__).parent.parent / "config" / ".env.staging"
+load_dotenv(str(env_file))
+print(f"Loaded environment from {env_file}")
+EOF
+
+# Make sure permissions are correct
+sudo chown $USER:$USER "$APP_DIR/backend/load_env.py"
+
+# Modify the main app to load environment variables early
+if ! grep -q "import load_env" "$APP_DIR/backend/app.py"; then
+    # Add import at the top of the file
+    sed -i '1s/^/import backend.load_env\n/' "$APP_DIR/backend/app.py"
+    echo "✅ Added environment loader to backend/app.py"
+fi
+
+echo "✅ Backend environment configured to use config/.env.staging" 
 
 # --- Redis Setup for Staging (after .env.staging is in place) ---
 echo "Configuring Redis with authentication for staging..."
