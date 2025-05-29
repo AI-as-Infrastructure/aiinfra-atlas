@@ -71,10 +71,20 @@ def initialize_telemetry() -> bool:
         os.environ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] = f"{phoenix_endpoint}/v1/traces"
         os.environ["OTEL_EXPORTER_OTLP_HEADERS"] = phoenix_client_headers
         os.environ["OTEL_EXPORTER_OTLP_PROTOCOL"] = "http/protobuf"
-        os.environ["OTEL_RESOURCE_ATTRIBUTES"] = f"project.name={_project_name}"
-        
+        # Append or update project.name in OTEL_RESOURCE_ATTRIBUTES without overwriting other attributes
+        existing_attrs = os.environ.get("OTEL_RESOURCE_ATTRIBUTES", "")
+        attrs = {}
+        if existing_attrs:
+            for pair in existing_attrs.split(","):
+                if pair.strip():
+                    k, _, v = pair.partition("=")
+                    attrs[k.strip()] = v.strip()
+        attrs["project.name"] = _project_name
+        os.environ["OTEL_RESOURCE_ATTRIBUTES"] = ",".join(f"{k}={v}" for k, v in attrs.items())
+        logger.info(f"OTEL_RESOURCE_ATTRIBUTES set to: {os.environ['OTEL_RESOURCE_ATTRIBUTES']}")
+
         logger.info(f"Setting OTEL_EXPORTER_OTLP_HEADERS for Phoenix Arize Cloud authentication")
-        
+
         # Use standard OpenTelemetry setup
         from opentelemetry import trace as otel_trace
         from opentelemetry.sdk.trace import TracerProvider
@@ -88,13 +98,13 @@ def initialize_telemetry() -> bool:
             "service.version": "1.0.0",
             "project.name": _project_name,
         })
-        
+
         # Create tracer provider
         tracer_provider = TracerProvider(resource=resource)
-        
+
         # Create OTLP exporter - it will use the environment variables we set
         otlp_exporter = OTLPSpanExporter()
-        
+
         # Add debug wrapper to verify spans are being exported
         original_export = otlp_exporter.export
         def debug_export(spans):
@@ -108,7 +118,7 @@ def initialize_telemetry() -> bool:
                 logger.error(f"Error exporting spans: {e}")
                 raise
         otlp_exporter.export = debug_export
-        
+
         # Add standard batch processor for spans
         # Using default settings (5-second delay) for more responsive feedback
         span_processor = BatchSpanProcessor(
@@ -117,23 +127,23 @@ def initialize_telemetry() -> bool:
             # max_export_batch_size=512 (using default)
         )
         tracer_provider.add_span_processor(span_processor)
-        
-        logger.info("✅ Configured BatchSpanProcessor with 45-second delay for feedback association")
-        
+
+        logger.info(" Configured BatchSpanProcessor with 5-second delay for feedback association")
+
         # Set as global tracer provider
         otel_trace.set_tracer_provider(tracer_provider)
-        
+
         # Get tracer instance
         _tracer = tracer_provider.get_tracer("atlas.telemetry")
         _phoenix_session = True
-        
-        logger.info(f"✅ Phoenix Arize online tracing initialized")
-        logger.info(f"📊 Project: {_project_name}")
-        logger.info(f"🔗 Endpoint: {phoenix_endpoint}")
+
+        logger.info(f" Phoenix Arize online tracing initialized")
+        logger.info(f" Project: {_project_name}")
+        logger.info(f" Endpoint: {phoenix_endpoint}")
         _telemetry_initialized = True
         return True
     except Exception as e:
-        logger.error(f"❌ Failed to initialize Phoenix telemetry: {e}")
+        logger.error(f" Failed to initialize Phoenix telemetry: {e}")
         import traceback
         traceback.print_exc()
         raise RuntimeError(f"Failed to initialize Phoenix telemetry: {e}")
