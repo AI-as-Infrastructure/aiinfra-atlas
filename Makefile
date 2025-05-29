@@ -192,12 +192,17 @@ dslf: ## Full cleanup of local staging deployment
 sr: ## Deploy to remote staging environment 
 	@echo "Deploying to remote staging environment..."
 	@chmod +x deploy/staging/staging_remote.sh
+	# Load staging environment variables
+	@echo "Loading environment variables from config/.env.staging"
+	@$(eval include config/.env.staging)
+	@$(eval export $(shell sed 's/=.*//' config/.env.staging))
 	# Use the correct SSH private key for all remote commands
 	# Use the correct SSH private key for all remote commands and force only this key
 	# Enable SSH debug output for troubleshooting
-	@scp -v -i ~/.ssh/atlas_deploy_key -o IdentitiesOnly=yes deploy/staging/staging_remote.sh atlas_deploy@192.168.20.17:/tmp/staging_remote.sh
-	@scp -v -i ~/.ssh/atlas_deploy_key -o IdentitiesOnly=yes config/.env.staging atlas_deploy@192.168.20.17:/tmp/.env.staging
-	@ssh -v -i ~/.ssh/atlas_deploy_key -o IdentitiesOnly=yes -t atlas_deploy@192.168.20.17 'chmod +x /tmp/staging_remote.sh && /tmp/staging_remote.sh'
+	@echo "Connecting to $${STAGING_HOST} as $${STAGING_USER}"
+	@scp -v -i ~/.ssh/atlas_deploy_key -o IdentitiesOnly=yes deploy/staging/staging_remote.sh $${STAGING_USER}@$${STAGING_HOST}:/tmp/staging_remote.sh
+	@scp -v -i ~/.ssh/atlas_deploy_key -o IdentitiesOnly=yes config/.env.staging $${STAGING_USER}@$${STAGING_HOST}:/tmp/.env.staging
+	@ssh -v -i ~/.ssh/atlas_deploy_key -o IdentitiesOnly=yes -t $${STAGING_USER}@$${STAGING_HOST} 'chmod +x /tmp/staging_remote.sh && export ENVIRONMENT="staging" && /tmp/staging_remote.sh'
 
 # Basic cleanup of remote staging deployment (without removing code)
 dsr: ## Basic cleanup of remote staging deployment 

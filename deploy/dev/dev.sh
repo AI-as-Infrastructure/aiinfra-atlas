@@ -80,9 +80,15 @@ fi
 # Set default Python version if not specified
 PYTHON_VERSION=${PYTHON_VERSION:-3.10}
 
-# Generate frontend environment files using the centralized script
-export ATLAS_ENV="development"
-echo "[INFO] Setting ATLAS_ENV=$ATLAS_ENV for frontend environment generation"
+# The ENVIRONMENT variable should be set from .env.development
+# No fallback - must be explicitly set
+if [ -z "$ENVIRONMENT" ]; then
+    echo "[ERROR] ENVIRONMENT variable is not set in .env.development"
+    echo "[ERROR] Please add ENVIRONMENT=development to your .env.development file"
+    exit 1
+else
+    echo "[INFO] Using ENVIRONMENT=$ENVIRONMENT from .env.development"
+fi
 
 if [ -f config/generate_vue_files.sh ]; then
     echo "[INFO] Generating frontend environment variables and templates..."

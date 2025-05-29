@@ -12,11 +12,34 @@
 #
 # PARAMETERS:
 #   STAGING_IP - IP address of the staging server (required)
-#   SSH_USER   - SSH username for the staging server (default: ubuntu)
-#   DOMAIN     - Domain name for SSL certificate (default: staging.example.com)
+#   SSH_USER   - SSH username for the staging server (default: atlas_deploy)
+#   DOMAIN     - Domain name for SSL certificate 
+
+# Load environment variables from staging file as early as possible
+if [ -f "/tmp/.env.staging" ]; then
+    echo "Loading environment from /tmp/.env.staging"
+    # More robust way to load environment variables with special characters
+    set -a
+    source /tmp/.env.staging
+    set +a
+    
+    # The ENVIRONMENT variable must be set in .env.staging
+    # No fallback - must be explicitly set
+    if [ -z "$ENVIRONMENT" ]; then
+        echo "ERROR: ENVIRONMENT variable is not set in .env.staging"
+        echo "Please add ENVIRONMENT=staging to your .env.staging file"
+        exit 1
+    else
+        echo "Using ENVIRONMENT=$ENVIRONMENT from .env.staging"
+    fi
+else
+    # Fallback just in case
+    echo "WARNING: /tmp/.env.staging not found, setting environment manually"
+    export ENVIRONMENT="staging"
+fi
 # 
 # EXAMPLE:
-#   ./deploy/staging/staging.sh 203.0.113.10 ubuntu staging.example.com
+#   ./deploy/staging/staging.sh 203.0.113.10 atlas_deploy staging.example.com
 # 
 # REQUIREMENTS:
 #   - SSH access to the staging server
@@ -33,17 +56,43 @@
 
 set -e
 
+# Set default environment values (important for scripts that check for either variable)
+export ENVIRONMENT="staging"
+export ATLAS_ENV="staging"  # For backward compatibility with existing scripts
+
+# Load environment variables from staging file as early as possible
+if [ -f "/tmp/.env.staging" ]; then
+    echo "Loading environment from /tmp/.env.staging"
+    # Only set specific variables we need rather than trying to export everything
+    # This avoids issues with spaces and special characters in values
+    export ENVIRONMENT="staging"
+    export ATLAS_ENV="staging"
+    export STAGING_HOST=$(grep "^STAGING_HOST=" /tmp/.env.staging | cut -d= -f2)
+    export STAGING_USER=$(grep "^STAGING_USER=" /tmp/.env.staging | cut -d= -f2)
+    # Add any other specific variables needed here
+fi
+
 # ---- CONFIGURATION SECTION ----
 # App settings
 APP_NAME="atlas"                    # Name of the application
 APP_DIR="/opt/$APP_NAME"            # Installation directory on server
 
-# Server settings (production remote)
-STAGING_HOST="192.168.20.17"       # Remote staging server IP address (production)
-STAGING_USER="atlas_deploy"        # SSH username for remote deployment (production)
+# Server settings (read from environment when possible)
+STAGING_HOST=${STAGING_HOST:-"192.168.20.17"}  # Remote staging server IP address
+STAGING_USER=${STAGING_USER:-"atlas_deploy"}   # SSH username for remote deployment
 
 # Domain/SSL settings
-DOMAIN=${3:-"staging.example.com"}           # Domain for SSL certificate
+# Extract domain from VITE_API_URL - must be explicitly set
+if [ -z "$VITE_API_URL" ]; then
+    echo "ERROR: VITE_API_URL variable is not set in .env.staging"
+    echo "Please add VITE_API_URL=https://your-domain to your .env.staging file"
+    exit 1
+fi
+
+# Extract domain from URL (remove https:// prefix if present)
+DOMAIN=$(echo "$VITE_API_URL" | sed -E 's|^https?://||')
+echo "Using domain from VITE_API_URL: $DOMAIN"
+
 CERT_DIR="/etc/letsencrypt/live/$DOMAIN"     # Where SSL certificates are stored
 
 # ---- END CONFIGURATION ----
@@ -209,14 +258,18 @@ if [ ! -f "config/.env.staging" ]; then
     exit 1
 fi
 
-# Make sure ATLAS_ENV is exported to child processes
-export ATLAS_ENV="staging"
-
 # Ensure script is executable
 chmod +x config/generate_vue_files.sh
 
-# Run the script with explicit path to environment file
-cd $APP_DIR && ATLAS_ENV="staging" ./config/generate_vue_files.sh
+# Run the script with environment already sourced from .env.staging
+./config/generate_vue_files.sh
+
+# Check result of script execution
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to generate frontend environment files"
+    exit 1
+fi
+
 echo "✅ Frontend environment configured"
 
 # 8. Build frontend
@@ -224,7 +277,7 @@ echo "Building frontend..."
 cd $APP_DIR/frontend
 npm install && npm run build
 
-# 8. Set up Nginx and Gunicorn
+# 9. Set up Nginx and Gunicorn
 echo "Setting up Nginx and Gunicorn..."
 sudo mkdir -p /var/log/$APP_NAME
 
@@ -252,10 +305,14 @@ WantedBy=multi-user.target
 EOL
 
 # Create Nginx config with improved security headers
+# Use SERVER_NAME based on the domain extracted from VITE_API_URL
+export SERVER_NAME="$DOMAIN"
+echo "Setting up Nginx with SERVER_NAME=$SERVER_NAME"
+
 cat > /tmp/nginx.conf << EOL
 server {
     listen 80;
-    server_name _;
+    server_name $SERVER_NAME;
     
     # Redirect HTTP to HTTPS
     return 301 https://\$host\$request_uri;
@@ -263,7 +320,7 @@ server {
 
 server {
     listen 443 ssl;
-    server_name _;
+    server_name $SERVER_NAME;
     
     # SSL configuration
     ssl_certificate $CERT_DIR/fullchain.pem;
