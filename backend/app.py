@@ -20,11 +20,11 @@ logger = logging.getLogger(__name__)
 # Load environment variables with strict mode - fail if environment file is missing
 project_root = os.path.dirname(os.path.dirname(__file__))
 
-# Get environment from ATLAS_ENV (set by deployment scripts)
-atlas_environment = os.getenv("ATLAS_ENV")
+# Get environment from ENVIRONMENT (set by deployment scripts)
+atlas_environment = os.getenv("ENVIRONMENT")
 if not atlas_environment:
-    logger.error("ATLAS_ENV environment variable is not set. Cannot determine which configuration to use.")
-    raise EnvironmentError("ATLAS_ENV must be set (e.g., 'development', 'staging', 'production') in your deployment script")
+    logger.error("ENVIRONMENT variable is not set. Cannot determine which configuration to use.")
+    raise EnvironmentError("ENVIRONMENT must be set (e.g., 'development', 'staging', 'production') in your .env file")
     
 env_file_name = f".env.{atlas_environment.lower()}"
 env_path = os.path.join(project_root, "config", env_file_name)
@@ -774,13 +774,24 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
 # --- Security middleware for HTTPS support ---
 
 # Allow requests only from specific hosts (prevents host header attacks)
+# Get allowed hosts from CORS_ORIGINS environment variable
+cors_origins = os.getenv("CORS_ORIGINS", "localhost,127.0.0.1")
+allowed_hosts = [host.strip() for host in cors_origins.split(",")]
+
+# Extract domains from URLs (remove http:// or https:// prefix if present)
+allowed_hosts = [host.replace("https://", "").replace("http://", "") for host in allowed_hosts]
+
+# Add localhost and 127.0.0.1 if not already included
+if "localhost" not in allowed_hosts:
+    allowed_hosts.append("localhost")
+if "127.0.0.1" not in allowed_hosts:
+    allowed_hosts.append("127.0.0.1")
+
+print(f"TrustedHostMiddleware: Allowing hosts {allowed_hosts}")
+
 app.add_middleware(
     TrustedHostMiddleware, 
-    allowed_hosts=[
-        "localhost",           # Development hostname
-        "staging.example.com"  # Add your staging hostname here
-        # Add production hostnames when deploying to production
-    ]
+    allowed_hosts=allowed_hosts
 )
 
 # Make FastAPI correctly detect HTTPS when behind Nginx proxy

@@ -1,14 +1,13 @@
 #!/bin/bash
 
-# Get environment from ATLAS_ENV - no fallback, must be explicitly set
-if [ -z "$ATLAS_ENV" ]; then
-    echo "ERROR: ATLAS_ENV environment variable is not set"
-    echo "Please set ATLAS_ENV to 'development', 'staging', or 'production' in your deployment script"
+# Get environment directly - no fallback, must be explicitly set
+if [ -z "$ENVIRONMENT" ]; then
+    echo "ERROR: ENVIRONMENT variable is not set"
+    echo "Please set ENVIRONMENT to 'development', 'staging', or 'production' in your .env(development, staging, production) file"
     exit 1
 fi
 
-ENVIRONMENT=$ATLAS_ENV
-echo "Using environment: $ENVIRONMENT (from ATLAS_ENV)"
+echo "Using environment: $ENVIRONMENT"
 
 # Get the script's directory to use as base for relative paths
 SCRIPT_DIR=$(dirname "$(realpath "$0")")

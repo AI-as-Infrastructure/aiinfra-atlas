@@ -1,7 +1,7 @@
 # Full template for Nginx configuration in staging.sh
 server {
     listen 80;
-    server_name staging.example.com;  # Replace with your domain or server IP
+    server_name $SERVER_NAME;  # Using environment variable
     
     location / {
         return 301 https://$host$request_uri;
@@ -10,7 +10,7 @@ server {
 
 server {
     listen 443 ssl;
-    server_name staging.example.com;  # Replace with your domain or server IP
+    server_name $SERVER_NAME;  # Using environment variable
     
     ssl_certificate $CERT_DIR/$APP_NAME.crt;
     ssl_certificate_key $CERT_DIR/$APP_NAME.key;
