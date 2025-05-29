@@ -236,11 +236,10 @@ Environment="PATH=$APP_DIR/.venv/bin"
 Environment="PYTHONPATH=$APP_DIR"
 Environment="ENVIRONMENT=staging"
 
-# Source all environment from .env.staging file
+# Environment settings come from .env.staging
 EnvironmentFile=$APP_DIR/config/.env.staging
 
-# Redis configuration comes from the .env.staging file
-# Use full path to Python executable in the venv with multiple workers for better concurrency
+# Start Gunicorn directly
 ExecStart=$APP_DIR/.venv/bin/python -m gunicorn backend.app:app -k uvicorn.workers.UvicornWorker -w 4 -b 127.0.0.1:8000 --access-logfile ${LOGS_ABS_PATH}/gunicorn-access.log --error-logfile ${LOGS_ABS_PATH}/gunicorn-error.log
 Restart=on-failure
 
@@ -266,12 +265,13 @@ Environment="PHOENIX_CLIENT_HEADERS=$(grep PHOENIX_CLIENT_HEADERS $APP_DIR/confi
 Environment="PHOENIX_PROJECT_NAME=$(grep PHOENIX_PROJECT_NAME $APP_DIR/config/.env.staging | cut -d'=' -f2-)"
 Environment="ENVIRONMENT=staging"
 
-# Source all environment from .env.staging file
+# Environment settings come from .env.staging
 EnvironmentFile=$APP_DIR/config/.env.staging
 
 # Worker-specific variables
 Environment="WORKER_ID=staging-worker-1"
-# Run the LLM worker
+
+# Start worker directly
 ExecStart=$APP_DIR/.venv/bin/python $APP_DIR/backend/services/worker.py
 Restart=on-failure
 RestartSec=5

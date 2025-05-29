@@ -282,7 +282,8 @@ sudo mkdir -p /var/log/$APP_NAME
 # Create local logs directory
 mkdir -p deploy/staging/logs
 
-# Create Gunicorn service file with logging
+# Create standard systemd service file
+echo "Creating systemd service..."
 cat > /tmp/gunicorn.service << EOL
 [Unit]
 Description=Gunicorn instance for $APP_NAME
@@ -292,15 +293,14 @@ After=network.target
 User=$USER
 Group=$USER
 WorkingDirectory=$APP_DIR
+
 # Basic environment settings
 Environment="PATH=$APP_DIR/.venv/bin"
 Environment="PYTHONPATH=$APP_DIR"
+EnvironmentFile=$APP_DIR/config/.env.staging
 
-# Source the environment file directly in the ExecStart command
-# This properly loads all variables from .env.staging without duplication
-
-# Source the environment file and start Gunicorn
-ExecStart=/bin/bash -c 'set -a && source $APP_DIR/config/.env.staging && set +a && $APP_DIR/.venv/bin/python -m gunicorn backend.app:app -k uvicorn.workers.UvicornWorker -w 4 -b 127.0.0.1:8000 --access-logfile /var/log/$APP_NAME/gunicorn-access.log --error-logfile /var/log/$APP_NAME/gunicorn-error.log'
+# Start Gunicorn directly
+ExecStart=$APP_DIR/.venv/bin/python -m gunicorn backend.app:app -k uvicorn.workers.UvicornWorker -w 4 -b 127.0.0.1:8000 --access-logfile /var/log/$APP_NAME/gunicorn-access.log --error-logfile /var/log/$APP_NAME/gunicorn-error.log
 Restart=on-failure
 
 [Install]
