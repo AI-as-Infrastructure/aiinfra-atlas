@@ -91,14 +91,16 @@ Resources:
           node -v
           npm -v
           
-          # Create app directory
+          # Create app directory and log directory
           mkdir -p /opt/atlas
+          mkdir -p /var/log/atlas
           
           # Create atlas_deploy user for deployment
           useradd -m -s /bin/bash atlas_deploy
           mkdir -p /home/atlas_deploy/.ssh
           
           # Copy the authorized keys from ubuntu user to atlas_deploy
+          # No need for sudo as this is running as root in UserData
           cp /home/ubuntu/.ssh/authorized_keys /home/atlas_deploy/.ssh/
           
           # Set proper ownership and permissions
@@ -106,34 +108,66 @@ Resources:
           chmod 700 /home/atlas_deploy/.ssh
           chmod 600 /home/atlas_deploy/.ssh/authorized_keys
           
+          # Verify the setup
+          echo "Verifying atlas_deploy SSH setup:"
+          ls -la /home/atlas_deploy/.ssh/
+          
+          # Verify SSH setup for atlas_deploy user
+          echo "Verifying SSH setup for atlas_deploy user:"
+          ls -la /home/atlas_deploy/.ssh/
+          cat /home/atlas_deploy/.ssh/authorized_keys
+          
           # Give atlas_deploy user sudo access without password
           echo "atlas_deploy ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/atlas_deploy
           
-          # Give atlas_deploy ownership of the application directory
+          # Create application and log directories with proper permissions
+          mkdir -p /opt/atlas
+          mkdir -p /var/log/atlas
+          
+          # Give atlas_deploy ownership of the application and log directories
           chown -R atlas_deploy:atlas_deploy /opt/atlas
+          chmod -R 755 /opt/atlas
+          chown -R atlas_deploy:atlas_deploy /var/log/atlas
+          chmod -R 755 /var/log/atlas
+          
+          # Verify directory permissions
+          echo "Verifying directory permissions:"
+          ls -la /opt/atlas
+          ls -la /var/log/atlas
           
           # Set hostname
           hostnamectl set-hostname atlas-prod
           
           # Create a script to run certbot after DNS propagation
-          cat > /opt/setup-ssl.sh << 'EOF'
+          cat > /opt/setup-ssl.sh << EOF
           #!/bin/bash
           # Wait for DNS propagation (5 minutes)
           echo "Waiting for DNS propagation before setting up SSL..."
           sleep 300
 
           # Check if domain resolves to this instance
-          PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
-          RESOLVED_IP=$(dig +short ${DomainName})
+          PUBLIC_IP=\$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
+          RESOLVED_IP=\$(dig +short ${DomainName})
 
-          if [ "$PUBLIC_IP" = "$RESOLVED_IP" ]; then
+          if [ "\$PUBLIC_IP" = "\$RESOLVED_IP" ]; then
             echo "DNS propagated successfully. Setting up SSL certificate..."
             # Run certbot non-interactively
             certbot --nginx -d ${DomainName} --non-interactive --agree-tos --email admin@${DomainName}
             echo "SSL certificate installed successfully!"
           else
-            echo "DNS not yet propagated. Public IP: $PUBLIC_IP, Resolved IP: $RESOLVED_IP"
-            echo "Please run 'sudo certbot --nginx -d ${DomainName}' manually after DNS propagation."
+            echo "DNS not yet propagated. Public IP: \$PUBLIC_IP, Resolved IP: \$RESOLVED_IP"
+            echo "Will retry in 5 minutes..."
+            sleep 300
+            # Retry the DNS check and certificate setup
+            PUBLIC_IP=\$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
+            RESOLVED_IP=\$(dig +short ${DomainName})
+            if [ "\$PUBLIC_IP" = "\$RESOLVED_IP" ]; then
+              echo "DNS propagated successfully on retry. Setting up SSL certificate..."
+              certbot --nginx -d ${DomainName} --non-interactive --agree-tos --email admin@${DomainName}
+              echo "SSL certificate installed successfully!"
+            else
+              echo "DNS still not propagated after retry. Please run 'sudo certbot --nginx -d ${DomainName}' manually after DNS propagation."
+            fi
           fi
           EOF
 
@@ -142,6 +176,11 @@ Resources:
           
           # Set up a cron job to run the script after system startup
           echo "@reboot root /opt/setup-ssl.sh >> /var/log/ssl-setup.log 2>&1" > /etc/cron.d/setup-ssl
+          
+          # Set up automatic certificate renewal
+          echo "Setting up automatic certificate renewal..."
+          echo "0 3 * * * root certbot renew --quiet --no-self-upgrade --post-hook 'systemctl reload nginx'" > /etc/cron.d/certbot-renew
+          chmod 644 /etc/cron.d/certbot-renew
           
           # Start the script in the background
           nohup /opt/setup-ssl.sh > /var/log/ssl-setup.log 2>&1 &
