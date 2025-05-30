@@ -130,6 +130,10 @@ if [ -f "/tmp/.env.production" ]; then
     source /tmp/.env.production
     set +a
     
+    # Explicitly export ENVIRONMENT for scripts that need it
+    export ENVIRONMENT
+    echo "Exported ENVIRONMENT=$ENVIRONMENT for Vue files generation"
+    
     # Validate critical variables again on the server
     for var in ENVIRONMENT PRODUCTION_USER REDIS_PASSWORD VITE_API_URL; do
         if [ -z "\${!var}" ]; then
