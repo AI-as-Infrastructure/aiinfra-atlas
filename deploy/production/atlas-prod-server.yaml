@@ -25,6 +25,7 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Security group for ATLAS production server
+      VpcId: vpc-0798c1258bad039e8
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 22
@@ -51,8 +52,8 @@ Resources:
     Type: AWS::EC2::Instance
     Properties:
       InstanceType: m5.large
-      SecurityGroups:
-        - !Ref AtlasSecurityGroup
+      SecurityGroupIds:
+        - !GetAtt AtlasSecurityGroup.GroupId
       KeyName: !Ref KeyName
       ImageId: ami-0d50e5e845c552faf  # Ubuntu 22.04 LTS in us-west-1 (N. California)
       BlockDeviceMappings:
@@ -84,6 +85,24 @@ Resources:
           
           # Create app directory
           mkdir -p /opt/atlas
+          
+          # Create atlas_deploy user for deployment
+          useradd -m -s /bin/bash atlas_deploy
+          mkdir -p /home/atlas_deploy/.ssh
+          
+          # Copy the authorized keys from ubuntu user to atlas_deploy
+          cp /home/ubuntu/.ssh/authorized_keys /home/atlas_deploy/.ssh/
+          
+          # Set proper ownership and permissions
+          chown -R atlas_deploy:atlas_deploy /home/atlas_deploy/.ssh
+          chmod 700 /home/atlas_deploy/.ssh
+          chmod 600 /home/atlas_deploy/.ssh/authorized_keys
+          
+          # Give atlas_deploy user sudo access without password
+          echo "atlas_deploy ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/atlas_deploy
+          
+          # Give atlas_deploy ownership of the application directory
+          chown -R atlas_deploy:atlas_deploy /opt/atlas
           
           # Set hostname
           hostnamectl set-hostname atlas-prod
@@ -126,15 +145,28 @@ Resources:
         - Key: Project
           Value: ATLAS
 
-  DNSRecord:
-    Type: AWS::Route53::RecordSet
+  # DNS Record is managed elsewhere
+  # Removed DNS record creation as it already exists
+
+  # Elastic IP for stable addressing
+  AtlasElasticIP:
+    Type: AWS::EC2::EIP
     Properties:
-      HostedZoneName: !Sub '${DomainName}.'
-      Name: !Ref DomainName
-      Type: A
-      TTL: 300
-      ResourceRecords:
-        - !GetAtt AtlasEC2Instance.PublicIp
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: atlas-prod-eip
+        - Key: Environment
+          Value: production
+        - Key: Project
+          Value: ATLAS
+
+  # Associate Elastic IP with the EC2 instance
+  AtlasEIPAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt AtlasElasticIP.AllocationId
+      InstanceId: !Ref AtlasEC2Instance
 
 Outputs:
   InstanceId:
@@ -142,8 +174,8 @@ Outputs:
     Value: !Ref AtlasEC2Instance
 
   PublicIP:
-    Description: Public IP address of the EC2 instance
-    Value: !GetAtt AtlasEC2Instance.PublicIp
+    Description: Elastic IP address of the EC2 instance
+    Value: !Ref AtlasElasticIP
 
   PublicDNS:
     Description: Public DNS name of the EC2 instance
