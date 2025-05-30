@@ -64,11 +64,28 @@ Resources:
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
-          # Update system packages
+          # Log all output for debugging
+          exec > >(tee /var/log/user-data.log)
+          exec 2>&1
+          
+          # Exit on error
+          set -e
+          
+          echo "Starting ATLAS server setup at $(date)"
+          
+          # Configure non-interactive apt to avoid prompts
+          export DEBIAN_FRONTEND=noninteractive
+          
+          # Update system packages with automatic handling of prompts
+          echo "Updating system packages..."
           apt-get update
-          apt-get upgrade -y
+          apt-get upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold"
+          apt-get dist-upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold"
+          apt-get autoremove -y
+          apt-get autoclean
           
           # Install UFW and configure firewall
+          echo "Configuring firewall..."
           apt-get install -y ufw
           ufw default deny incoming
           ufw default allow outgoing
@@ -78,12 +95,15 @@ Resources:
           echo "y" | ufw enable
           
           # Install Let's Encrypt (certbot)
+          echo "Installing Let's Encrypt..."
           apt-get install -y certbot python3-certbot-nginx
           
           # Install other required packages
+          echo "Installing required packages..."
           apt-get install -y nginx python3-pip python3-venv python3.10 python3.10-venv python3.10-dev git git-lfs redis-server
           
           # Install Node.js 22 (to match .nvmrc)
+          echo "Installing Node.js 22..."
           curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
           apt-get install -y nodejs
           
@@ -91,16 +111,20 @@ Resources:
           node -v
           npm -v
           
-          # Create app directory and log directory
-          mkdir -p /opt/atlas
-          mkdir -p /var/log/atlas
-          
           # Create atlas_deploy user for deployment
+          echo "Creating atlas_deploy user..."
           useradd -m -s /bin/bash atlas_deploy
           mkdir -p /home/atlas_deploy/.ssh
           
           # Copy the authorized keys from ubuntu user to atlas_deploy
-          # No need for sudo as this is running as root in UserData
+          # Wait for cloud-init to finish setting up ubuntu user's SSH keys
+          echo "Waiting for cloud-init to complete SSH key setup..."
+          while [ ! -f /home/ubuntu/.ssh/authorized_keys ]; do
+            echo "Waiting for /home/ubuntu/.ssh/authorized_keys to be created..."
+            sleep 5
+          done
+          
+          # Copy SSH keys to atlas_deploy user
           cp /home/ubuntu/.ssh/authorized_keys /home/atlas_deploy/.ssh/
           
           # Set proper ownership and permissions
@@ -112,15 +136,20 @@ Resources:
           echo "Verifying atlas_deploy SSH setup:"
           ls -la /home/atlas_deploy/.ssh/
           
-          # Verify SSH setup for atlas_deploy user
-          echo "Verifying SSH setup for atlas_deploy user:"
-          ls -la /home/atlas_deploy/.ssh/
-          cat /home/atlas_deploy/.ssh/authorized_keys
-          
           # Give atlas_deploy user sudo access without password
           echo "atlas_deploy ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/atlas_deploy
+          chmod 0440 /etc/sudoers.d/atlas_deploy
           
           # Create application and log directories with proper permissions
+          echo "Setting up application directories..."
+          
+          # Clean up /opt/atlas if it exists to ensure fresh start
+          if [ -d /opt/atlas ]; then
+            echo "Removing existing /opt/atlas directory..."
+            rm -rf /opt/atlas
+          fi
+          
+          # Create fresh directories
           mkdir -p /opt/atlas
           mkdir -p /var/log/atlas
           
@@ -147,12 +176,12 @@ Resources:
 
           # Check if domain resolves to this instance
           PUBLIC_IP=\$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
-          RESOLVED_IP=\$(dig +short ${DomainName})
+          RESOLVED_IP=\$(dig +short ${DomainName} | head -n1)
 
           if [ "\$PUBLIC_IP" = "\$RESOLVED_IP" ]; then
             echo "DNS propagated successfully. Setting up SSL certificate..."
             # Run certbot non-interactively
-            certbot --nginx -d ${DomainName} --non-interactive --agree-tos --email admin@${DomainName}
+            certbot --nginx -d ${DomainName} --non-interactive --agree-tos --email admin@${DomainName} --redirect
             echo "SSL certificate installed successfully!"
           else
             echo "DNS not yet propagated. Public IP: \$PUBLIC_IP, Resolved IP: \$RESOLVED_IP"
@@ -160,10 +189,10 @@ Resources:
             sleep 300
             # Retry the DNS check and certificate setup
             PUBLIC_IP=\$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
-            RESOLVED_IP=\$(dig +short ${DomainName})
+            RESOLVED_IP=\$(dig +short ${DomainName} | head -n1)
             if [ "\$PUBLIC_IP" = "\$RESOLVED_IP" ]; then
               echo "DNS propagated successfully on retry. Setting up SSL certificate..."
-              certbot --nginx -d ${DomainName} --non-interactive --agree-tos --email admin@${DomainName}
+              certbot --nginx -d ${DomainName} --non-interactive --agree-tos --email admin@${DomainName} --redirect
               echo "SSL certificate installed successfully!"
             else
               echo "DNS still not propagated after retry. Please run 'sudo certbot --nginx -d ${DomainName}' manually after DNS propagation."
@@ -182,8 +211,71 @@ Resources:
           echo "0 3 * * * root certbot renew --quiet --no-self-upgrade --post-hook 'systemctl reload nginx'" > /etc/cron.d/certbot-renew
           chmod 644 /etc/cron.d/certbot-renew
           
-          # Start the script in the background
+          # Start the SSL setup script in the background
           nohup /opt/setup-ssl.sh > /var/log/ssl-setup.log 2>&1 &
+          
+          # Install required Python packages for DNS resolution
+          apt-get install -y dnsutils
+          
+          # Create a startup script to handle post-boot tasks
+          cat > /opt/atlas-startup.sh << 'STARTUP_EOF'
+          #!/bin/bash
+          # This script runs on every boot to ensure the system is ready
+          
+          # Log output
+          exec > >(tee -a /var/log/atlas-startup.log)
+          exec 2>&1
+          
+          echo "Running ATLAS startup script at $(date)"
+          
+          # Ensure /opt/atlas is clean and ready for deployment
+          if [ -d /opt/atlas ] && [ ! -d /opt/atlas/.git ]; then
+            # Directory exists but is not a git repo
+            if [ "$(ls -A /opt/atlas)" ]; then
+              echo "WARNING: /opt/atlas is not empty and not a git repository. Backing up and cleaning..."
+              mv /opt/atlas /opt/atlas.backup.$(date +%Y%m%d_%H%M%S)
+              mkdir -p /opt/atlas
+            fi
+          fi
+          
+          # Ensure proper ownership
+          chown -R atlas_deploy:atlas_deploy /opt/atlas
+          chmod -R 755 /opt/atlas
+          
+          echo "ATLAS startup script completed at $(date)"
+          STARTUP_EOF
+          
+          chmod +x /opt/atlas-startup.sh
+          
+          # Create systemd service to run startup script
+          cat > /etc/systemd/system/atlas-startup.service << 'SERVICE_EOF'
+          [Unit]
+          Description=ATLAS Startup Script
+          After=network.target
+          
+          [Service]
+          Type=oneshot
+          ExecStart=/opt/atlas-startup.sh
+          RemainAfterExit=yes
+          
+          [Install]
+          WantedBy=multi-user.target
+          SERVICE_EOF
+          
+          # Enable the startup service
+          systemctl daemon-reload
+          systemctl enable atlas-startup.service
+          systemctl start atlas-startup.service
+          
+          # Schedule a reboot if required (but not immediately to allow initial setup)
+          if [ -f /var/run/reboot-required ]; then
+            echo "System reboot required. Scheduling reboot in 2 minutes..."
+            shutdown -r +2 "System reboot required after updates"
+          fi
+          
+          echo "ATLAS server setup completed at $(date)"
+          echo "Server is ready for application deployment!"
+          
       Tags:
         - Key: Name
           Value: atlas-prod-server
