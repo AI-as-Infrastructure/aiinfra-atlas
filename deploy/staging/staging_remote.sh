@@ -56,6 +56,12 @@ fi
 
 set -e
 
+# GitHub repository URL for cloning
+GITHUB_REPO="https://github.com/AI-as-Infrastructure/aiinfra-atlas.git"
+
+# Git branch to use for deployment
+GIT_BRANCH="main"
+
 # Set default environment values (important for scripts that check for either variable)
 export ENVIRONMENT="staging"
 export ATLAS_ENV="staging"  # For backward compatibility with existing scripts
@@ -197,13 +203,13 @@ sudo mkdir -p $APP_DIR && sudo chown -R $USER:$USER $APP_DIR
 
 # 4. Clone or update the repository
 echo "Checking for existing repository..."
-# --- Use 0.1.0-staging branch for remote production deployment ---
+# Use the configured Git branch for deployment
 if [ -d "$APP_DIR/.git" ]; then
-    echo "Updating existing repository..."
-    cd $APP_DIR && git fetch --all && git reset --hard origin/0.1.0-staging && git lfs pull
+    echo "Updating existing repository from branch $GIT_BRANCH..."
+    cd $APP_DIR && git fetch --all && git reset --hard origin/$GIT_BRANCH && git lfs pull
 else
-    echo "Cloning fresh repository..."
-    git clone --branch 0.1.0-staging https://github.com/AI-as-Infrastructure/aiinfra-atlas.git $APP_DIR && cd $APP_DIR && git lfs pull
+    echo "Cloning fresh repository from branch $GIT_BRANCH..."
+    git clone --branch $GIT_BRANCH $GITHUB_REPO $APP_DIR && cd $APP_DIR && git lfs pull
 fi
 
 # 5. Copy the environment file from /tmp to the app's config directory

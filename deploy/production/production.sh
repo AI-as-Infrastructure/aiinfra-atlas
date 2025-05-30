@@ -31,6 +31,12 @@
 
 set -e
 
+# GitHub repository URL for cloning
+GITHUB_REPO="https://github.com/AI-as-Infrastructure/aiinfra-atlas.git"
+
+# Git branch to use for deployment
+GIT_BRANCH="0.1.1-production"
+
 # Load all environment variables from production file
 if [ -f "config/.env.production" ]; then
     echo "Loading environment from config/.env.production"
@@ -55,7 +61,7 @@ DOMAIN="atlas-hansard.org"            # Production domain name
 CERT_DIR="/etc/letsencrypt/live/$DOMAIN"  # Where SSL certificates are stored
 
 # SSH key settings
-SSH_KEY="$HOME/atlas-prod-key.pem"    # Path to the SSH key
+SSH_KEY="$HOME/atlas-prod-key-west1.pem"    # Path to the SSH key for us-west-1 region
 
 # ---- END CONFIGURATION ----
 
@@ -74,11 +80,9 @@ if [ ! -f "$SSH_KEY" ]; then
     exit 1
 fi
 
-# Copy the application files to the server
-echo "Copying application files to the server..."
-rsync -avz --exclude 'node_modules' --exclude '.git' --exclude '.venv' \
-    -e "ssh -i $SSH_KEY -o StrictHostKeyChecking=no" \
-    ./ $SSH_USER@$PRODUCTION_IP:$APP_DIR/
+# SSH into the server to set up the application
+echo "Setting up application on the server..."
+ssh -i $SSH_KEY -o StrictHostKeyChecking=no $SSH_USER@$PRODUCTION_IP "mkdir -p $APP_DIR"
 
 # Copy the environment file to /tmp first (matching staging workflow)
 echo "Copying environment file..."
@@ -115,6 +119,17 @@ cd /opt/atlas
 # Make sure config directory exists and copy the environment file to its final location
 mkdir -p /opt/atlas/config
 cp /tmp/.env.production /opt/atlas/config/.env.production
+
+# Clone or update the repository
+echo "Checking for existing repository..."
+# Use the configured Git branch for deployment
+if [ -d "$APP_DIR/.git" ]; then
+    echo "Updating existing repository from branch $GIT_BRANCH..."
+    cd $APP_DIR && git fetch --all && git reset --hard origin/$GIT_BRANCH && git lfs pull
+else
+    echo "Cloning fresh repository from branch $GIT_BRANCH..."
+    git clone --branch $GIT_BRANCH $GITHUB_REPO $APP_DIR && cd $APP_DIR && git lfs pull
+fi
 
 # Set up Python environment
 echo "Setting up Python environment..."

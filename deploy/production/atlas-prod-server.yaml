@@ -54,7 +54,7 @@ Resources:
       SecurityGroups:
         - !Ref AtlasSecurityGroup
       KeyName: !Ref KeyName
-      ImageId: ami-03f65b8614a860c29  # Ubuntu 22.04 LTS in us-west-2 (Oregon)
+      ImageId: ami-0d50e5e845c552faf  # Ubuntu 22.04 LTS in us-west-1 (N. California)
       BlockDeviceMappings:
         - DeviceName: /dev/sda1
           Ebs:

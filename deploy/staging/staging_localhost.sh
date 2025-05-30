@@ -27,6 +27,12 @@
 
 set -e
 
+# GitHub repository URL for cloning
+GITHUB_REPO="https://github.com/AI-as-Infrastructure/aiinfra-atlas.git"
+
+# Git branch to use for deployment
+GIT_BRANCH="main"
+
 # Set the environment for app.py
 export ENVIRONMENT=staging
 
@@ -169,11 +175,11 @@ sudo mkdir -p $APP_DIR && sudo chown -R $CURRENT_USER:$CURRENT_USER $APP_DIR
 # 4. Clone or update the repository
 echo "Checking for existing repository..."
 if [ -d "$APP_DIR/.git" ]; then
-    echo "Updating existing repository..."
-    cd $APP_DIR && git fetch && git reset --hard origin/0.1.0-staging && git clean -fd && git lfs pull
+    echo "Updating existing repository from branch $GIT_BRANCH..."
+    cd $APP_DIR && git fetch && git reset --hard origin/$GIT_BRANCH && git clean -fd && git lfs pull
 else
-    echo "Cloning fresh repository..."
-    git clone -b 0.1.0-staging https://github.com/AI-as-Infrastructure/aiinfra-atlas.git $APP_DIR && cd $APP_DIR && git lfs pull
+    echo "Cloning fresh repository from branch $GIT_BRANCH..."
+    git clone -b $GIT_BRANCH $GITHUB_REPO $APP_DIR && cd $APP_DIR && git lfs pull
 fi
 
 # 5. Copy environment file
