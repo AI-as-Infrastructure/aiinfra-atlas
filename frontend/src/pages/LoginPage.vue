@@ -4,8 +4,7 @@
       
       <div class="login-content">
         <p>
-          ATLAS: Analysis and Testing of Language Models for Archival Systems is a specialized platform for exploring historical documents using AI.
-          This system is an output of the AI as Infrastructure (AIINFRA) research project.
+          ATLAS: Analysis and Testing of Language Models for Archival Systems is a prototype test harness for the evaluation of AI in historical research. The system is an output of the AI as Infrastructure (AIINFRA) project.
         </p>
         
         <div class="login-actions">
