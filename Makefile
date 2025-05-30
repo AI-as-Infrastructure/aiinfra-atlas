@@ -21,18 +21,18 @@ prod-server: ## Deploy to production AWS environment
 			DomainName=atlas-hansard.org \
 		--capabilities CAPABILITY_IAM \
 		--profile ANU-Account-Admin-825765404490 \
-		--region us-west-2
+		--region us-west-1
 	@echo "Deployment initiated. Checking stack status..."
 	@/usr/local/bin/aws cloudformation describe-stacks \
 		--stack-name atlas-production \
 		--query "Stacks[0].StackStatus" \
 		--output text \
 		--profile ANU-Account-Admin-825765404490 \
-		--region us-west-2
+		--region us-west-1
 	@echo "\nTo monitor deployment progress, run:"
-	@echo "/usr/local/bin/aws cloudformation describe-stacks --stack-name atlas-production --profile ANU-Account-Admin-825765404490 --region us-west-2"
+	@echo "/usr/local/bin/aws cloudformation describe-stacks --stack-name atlas-production --profile ANU-Account-Admin-825765404490 --region us-west-1"
 	@echo "\nOnce deployment is complete, you can get the instance details with:"
-	@echo "/usr/local/bin/aws cloudformation describe-stacks --stack-name atlas-production --query 'Stacks[0].Outputs' --profile ANU-Account-Admin-825765404490 --region us-west-2"
+	@echo "/usr/local/bin/aws cloudformation describe-stacks --stack-name atlas-production --query 'Stacks[0].Outputs' --profile ANU-Account-Admin-825765404490 --region us-west-1"
 
 # Delete the production CloudFormation stack
 dprod-server: ## Delete the production environment
@@ -43,9 +43,9 @@ dprod-server: ## Delete the production environment
 	@/usr/local/bin/aws cloudformation delete-stack \
 		--stack-name atlas-production \
 		--profile ANU-Account-Admin-825765404490 \
-		--region us-west-2
+		--region us-west-1
 	@echo "Deletion initiated. To check status:"
-	@echo "/usr/local/bin/aws cloudformation describe-stacks --stack-name atlas-production --profile ANU-Account-Admin-825765404490 --region us-west-2"
+	@echo "/usr/local/bin/aws cloudformation describe-stacks --stack-name atlas-production --profile ANU-Account-Admin-825765404490 --region us-west-1"
 
 # Deploy application code to the production server
 prod: ## Deploy application code to the production server
@@ -57,7 +57,7 @@ prod: ## Deploy application code to the production server
 		exit 1; \
 	}
 	@echo "Getting EC2 instance public IP..."
-	@PROD_IP=$$(aws cloudformation describe-stacks --stack-name atlas-production --query "Stacks[0].Outputs[?OutputKey=='PublicIP'].OutputValue" --output text --profile ANU-Account-Admin-825765404490 --region us-west-2) && \
+	@PROD_IP=$$(aws cloudformation describe-stacks --stack-name atlas-production --query "Stacks[0].Outputs[?OutputKey=='PublicIP'].OutputValue" --output text --profile ANU-Account-Admin-825765404490 --region us-west-1) && \
 	if [ -z "$$PROD_IP" ]; then \
 		echo "Error: Could not get production server IP. Make sure the CloudFormation stack is deployed."; \
 		echo "Run 'make prod-server' first to deploy the infrastructure."; \
