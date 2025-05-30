@@ -56,6 +56,10 @@ if [ -f "config/.env.production" ]; then
         fi
     done
     echo "✅ All required environment variables validated"
+else
+    echo "ERROR: config/.env.production not found!"
+    echo "This file is required for deployment."
+    exit 1
 fi
 
 # ---- CONFIGURATION SECTION ----
@@ -72,8 +76,9 @@ if [ -n "$VITE_API_URL" ]; then
     DOMAIN=$(echo "$VITE_API_URL" | sed -E 's|^https?://||')
     echo "Using domain from VITE_API_URL: $DOMAIN"
 else
-    DOMAIN="atlas-hansard.org"  # fallback to default
-    echo "Using default domain: $DOMAIN"
+    echo "ERROR: VITE_API_URL is not set or empty"
+    echo "Cannot determine domain for deployment"
+    exit 1
 fi
 CERT_DIR="/etc/letsencrypt/live/$DOMAIN"  # Where SSL certificates are stored
 
@@ -140,19 +145,17 @@ fi
 
 # Set up application directory with proper permissions
 echo "Setting up application directory..."
-sudo mkdir -p \$APP_DIR
-sudo chown -R \$DEPLOY_USER:\$DEPLOY_USER \$APP_DIR
+sudo mkdir -p \$APP_DIR && sudo chown -R \$DEPLOY_USER:\$DEPLOY_USER \$APP_DIR
 
-# Clone or update the repository (do this BEFORE copying env file to config)
+# Clone or update the repository
 echo "Checking for existing repository..."
-cd \$APP_DIR
+# Use the configured Git branch for deployment
 if [ -d "\$APP_DIR/.git" ]; then
     echo "Updating existing repository from branch \$GIT_BRANCH..."
-    git fetch --all && git reset --hard origin/\$GIT_BRANCH && git lfs pull
+    cd \$APP_DIR && git fetch --all && git reset --hard origin/\$GIT_BRANCH && git lfs pull
 else
     echo "Cloning fresh repository from branch \$GIT_BRANCH..."
     git clone --branch \$GIT_BRANCH \$GIT_REPO \$APP_DIR && cd \$APP_DIR && git lfs pull
-    echo "✅ Repository cloned successfully"
 fi
 
 # NOW copy the environment file from /tmp to the app's config directory
@@ -186,15 +189,15 @@ python3.10 -m venv \$APP_DIR/.venv
 source \$APP_DIR/.venv/bin/activate
 pip install --upgrade pip
 
-# Install requirements
+# Install requirements - MUST exist
 if [ -f "\$APP_DIR/requirements.txt" ]; then
     pip install -r \$APP_DIR/requirements.txt
 elif [ -f "\$APP_DIR/config/requirements.txt" ]; then
     pip install -r \$APP_DIR/config/requirements.txt
 else
-    # Install basic requirements
-    pip install fastapi uvicorn gunicorn python-dotenv
-    echo "WARNING: No requirements.txt found, installed basic packages"
+    echo "ERROR: No requirements.txt found in \$APP_DIR or \$APP_DIR/config"
+    echo "This file is required for deployment"
+    exit 1
 fi
 
 # Set up Python package structure
@@ -215,7 +218,7 @@ if [ ! -f "config/.env.production" ]; then
     exit 1
 fi
 
-# Run the Vue files generation script if it exists
+# Run the Vue files generation script - MUST exist
 if [ -f "\$APP_DIR/config/generate_vue_files.sh" ]; then
     chmod +x \$APP_DIR/config/generate_vue_files.sh
     \$APP_DIR/config/generate_vue_files.sh
@@ -227,10 +230,12 @@ if [ -f "\$APP_DIR/config/generate_vue_files.sh" ]; then
     fi
     echo "✅ Frontend environment configured"
 else
-    echo "Vue files generation script not found, skipping"
+    echo "ERROR: config/generate_vue_files.sh not found in \$APP_DIR"
+    echo "This script is required for frontend configuration"
+    exit 1
 fi
 
-# Build frontend
+# Build frontend - directory MUST exist
 if [ -d "\$APP_DIR/frontend" ]; then
     echo "Building frontend..."
     cd \$APP_DIR/frontend
@@ -266,14 +271,17 @@ if [ -d "\$APP_DIR/frontend" ]; then
     # Install and build
     npm install && npm run build
     
-    # Check if build succeeded
+    # Check if build succeeded - dist directory MUST exist
     if [ -d "\$APP_DIR/frontend/dist" ]; then
         echo "✅ Frontend built successfully"
     else
-        echo "WARNING: Frontend build may have failed, dist directory not found"
+        echo "ERROR: Frontend build failed, dist directory not found"
+        exit 1
     fi
 else
-    echo "WARNING: frontend directory not found, skipping frontend build"
+    echo "ERROR: frontend directory not found in \$APP_DIR"
+    echo "This directory is required for deployment"
+    exit 1
 fi
 
 # Verify SSL certificates exist before nginx configuration
@@ -323,83 +331,23 @@ Restart=on-failure
 WantedBy=multi-user.target
 EOL
 
-# Create Nginx config from template
+# Create Nginx config from template - template MUST exist
 echo "Setting up Nginx from template..."
 
-# Ensure the nginx template exists and use it
-if [ -f "\$APP_DIR/deploy/production/nginx.conf.template" ]; then
-    echo "Using nginx.conf.template..."
-    
-    # Set variables for the template
-    export SERVER_NAME="\$DOMAIN"
-    export APP_DIR="\$APP_DIR"
-    
-    # Process the template and create the final config
-    envsubst '\$SERVER_NAME \$APP_DIR' < \$APP_DIR/deploy/production/nginx.conf.template > /tmp/nginx.conf
-    echo "✅ Nginx configuration generated from template"
-else
+# Nginx template MUST exist
+if [ ! -f "\$APP_DIR/deploy/production/nginx.conf.template" ]; then
     echo "ERROR: nginx.conf.template not found at \$APP_DIR/deploy/production/"
-    echo "Creating basic nginx configuration as fallback..."
-    
-    cat > /tmp/nginx.conf << EOL
-server {
-    listen 80;
-    server_name \$DOMAIN;
-    
-    # Redirect HTTP to HTTPS
-    return 301 https://\\\$host\\\$request_uri;
-}
-
-server {
-    listen 443 ssl;
-    server_name \$DOMAIN;
-    
-    # SSL configuration
-    ssl_certificate \$CERT_DIR/fullchain.pem;
-    ssl_certificate_key \$CERT_DIR/privkey.pem;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_prefer_server_ciphers on;
-    ssl_ciphers 'EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH';
-    ssl_session_timeout 1d;
-    ssl_session_cache shared:SSL:50m;
-    
-    # Security headers
-    add_header Strict-Transport-Security "max-age=63072000" always;
-    add_header X-Content-Type-Options "nosniff";
-    add_header X-Frame-Options "SAMEORIGIN";
-    add_header X-XSS-Protection "1; mode=block";
-    
-    # Frontend static files
-    location / {
-        root \$APP_DIR/frontend/dist;
-        try_files \\\$uri \\\$uri/ /index.html;
-    }
-    
-    # API proxy
-    location /api {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host \\\$host;
-        proxy_set_header X-Real-IP \\\$remote_addr;
-        proxy_set_header X-Forwarded-For \\\$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \\\$scheme;
-    }
-    
-    # WebSocket proxy configuration
-    location /ws {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \\\$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host \\\$host;
-        proxy_set_header X-Real-IP \\\$remote_addr;
-        proxy_set_header X-Forwarded-For \\\$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \\\$scheme;
-        proxy_read_timeout 300s;
-        proxy_send_timeout 300s;
-    }
-}
-EOL
+    echo "This template is required for nginx configuration"
+    exit 1
 fi
+
+# Set variables for the template
+export SERVER_NAME="\$DOMAIN"
+export APP_DIR="\$APP_DIR"
+
+# Process the template and create the final config
+envsubst '\$SERVER_NAME \$APP_DIR' < \$APP_DIR/deploy/production/nginx.conf.template > /tmp/nginx.conf
+echo "✅ Nginx configuration generated from template"
 
 # Copy config files to server
 sudo mv /tmp/gunicorn.service /etc/systemd/system/
@@ -414,6 +362,10 @@ sudo systemctl daemon-reload
 sudo systemctl enable gunicorn
 sudo systemctl restart gunicorn
 sudo nginx -t
+if [ \$? -ne 0 ]; then
+    echo "ERROR: Nginx configuration test failed"
+    exit 1
+fi
 sudo systemctl restart nginx
 
 # Create proper environment files
@@ -458,6 +410,13 @@ EOF
 # Make sure permissions are correct
 chmod 644 "\$APP_DIR/backend/load_env.py"
 
+# Check if app.py exists before trying to modify it
+if [ ! -f "\$APP_DIR/backend/app.py" ]; then
+    echo "ERROR: backend/app.py not found in \$APP_DIR"
+    echo "This file is required for the application to run"
+    exit 1
+fi
+
 # Modify the main app to load environment variables early
 if ! grep -q "import load_env" "\$APP_DIR/backend/app.py"; then
     # Add import at the top of the file
@@ -481,6 +440,10 @@ sudo bash -c "echo 'requirepass \$REDIS_PASSWORD' >> /etc/redis/redis.conf"
 sudo systemctl enable redis-server
 sudo systemctl restart redis-server
 sudo systemctl status redis-server --no-pager
+if [ \$? -ne 0 ]; then
+    echo "ERROR: Redis failed to start"
+    exit 1
+fi
 
 echo "✅ Deployment complete!"
 echo "✅ Application deployed to \$APP_DIR"
