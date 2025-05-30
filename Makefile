@@ -38,7 +38,7 @@ prod-server: ## Deploy to production AWS environment
 dprod-server: ## Delete the production environment
 	@echo "WARNING: This will delete the entire production environment!"
 	@echo "Are you sure you want to continue? (y/n)"
-	@read -p "" confirm && [[ $$confirm == [yY] || $$confirm == [yY][eE][sS] ]] || exit 1
+	@bash -c 'read -p "" confirm && [[ "$$confirm" == [yY] || "$$confirm" == [yY][eE][sS] ]] || exit 1'
 	@echo "Deleting production CloudFormation stack..."
 	@/usr/local/bin/aws cloudformation delete-stack \
 		--stack-name atlas-production \
