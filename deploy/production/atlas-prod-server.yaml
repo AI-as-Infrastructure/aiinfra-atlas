@@ -81,7 +81,15 @@ Resources:
           apt-get install -y certbot python3-certbot-nginx
           
           # Install other required packages
-          apt-get install -y nginx python3-pip python3-venv git git-lfs redis-server
+          apt-get install -y nginx python3-pip python3-venv python3.10 python3.10-venv python3.10-dev git git-lfs redis-server
+          
+          # Install Node.js 22 (to match .nvmrc)
+          curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+          apt-get install -y nodejs
+          
+          # Verify Node.js installation
+          node -v
+          npm -v
           
           # Create app directory
           mkdir -p /opt/atlas
