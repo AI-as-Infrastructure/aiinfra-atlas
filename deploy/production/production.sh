@@ -61,7 +61,7 @@ DOMAIN="atlas-hansard.org"            # Production domain name
 CERT_DIR="/etc/letsencrypt/live/$DOMAIN"  # Where SSL certificates are stored
 
 # SSH key settings
-SSH_KEY="$HOME/atlas-prod-key.pem"    # Path to the SSH key
+SSH_KEY="$HOME/atlas-prod-key-west1.pem"    # Path to the SSH key
 
 # ---- END CONFIGURATION ----
 
