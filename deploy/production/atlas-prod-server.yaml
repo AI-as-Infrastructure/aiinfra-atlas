@@ -167,22 +167,33 @@ Resources:
           # Create a script to run certbot after DNS propagation
           cat > /opt/setup-ssl.sh << EOF
           #!/bin/bash
-          # Simple SSL setup script without DNS waiting
-          echo "SSL setup script for manual certificate generation"
-          echo "To generate certificates, run:"
-          echo "  sudo certbot --nginx -d ${DomainName} --non-interactive --agree-tos --email admin@${DomainName} --redirect"
-          echo ""
-          echo "This can be run once DNS is properly configured."
+          # SSL certificate setup script
+          echo "Setting up SSL certificates for ${DomainName}..."
+          
+          # Run certbot to generate certificates
+          certbot --nginx -d ${DomainName} --non-interactive --agree-tos --email admin@${DomainName} --redirect
+          
+          if [ \$? -eq 0 ]; then
+            echo "SSL certificate installed successfully!"
+          else
+            echo "SSL certificate generation failed. This is normal if DNS is not yet configured."
+            echo "To retry manually, run: sudo certbot --nginx -d ${DomainName}"
+          fi
           EOF
 
           # Make the script executable
           chmod +x /opt/setup-ssl.sh
           
-          # Remove the auto-run of SSL setup since DNS is managed separately
-          # Just set up automatic certificate renewal for when certs are eventually created
+          # Set up a cron job to run the script after system startup
+          echo "@reboot root /opt/setup-ssl.sh >> /var/log/ssl-setup.log 2>&1" > /etc/cron.d/setup-ssl
+          
+          # Set up automatic certificate renewal
           echo "Setting up automatic certificate renewal..."
           echo "0 3 * * * root certbot renew --quiet --no-self-upgrade --post-hook 'systemctl reload nginx'" > /etc/cron.d/certbot-renew
           chmod 644 /etc/cron.d/certbot-renew
+          
+          # Start the SSL setup script in the background
+          nohup /opt/setup-ssl.sh > /var/log/ssl-setup.log 2>&1 &
           
           # Install required Python packages for DNS resolution
           apt-get install -y dnsutils
