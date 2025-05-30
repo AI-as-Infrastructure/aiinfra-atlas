@@ -113,7 +113,7 @@ echo "Setting up the application on the server..."
 ssh -i $SSH_KEY -o StrictHostKeyChecking=no $SSH_USER@$PRODUCTION_IP << ENDSSH
 # Set variables from the local script
 APP_DIR="$APP_DIR"
-GIT_REPO="$GIT_REPO"
+GITHUB_REPO="$GITHUB_REPO"
 GIT_BRANCH="$GIT_BRANCH"
 APP_NAME="$APP_NAME"
 DOMAIN="$DOMAIN"
@@ -155,7 +155,7 @@ if [ -d "\$APP_DIR/.git" ]; then
     cd \$APP_DIR && git fetch --all && git reset --hard origin/\$GIT_BRANCH && git lfs pull
 else
     echo "Cloning fresh repository from branch \$GIT_BRANCH..."
-    git clone --branch \$GIT_BRANCH \$GIT_REPO \$APP_DIR && cd \$APP_DIR && git lfs pull
+    git clone --branch \$GIT_BRANCH \$GITHUB_REPO \$APP_DIR && cd \$APP_DIR && git lfs pull
 fi
 
 # NOW copy the environment file from /tmp to the app's config directory
