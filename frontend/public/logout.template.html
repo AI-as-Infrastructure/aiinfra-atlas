@@ -5,23 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Logging Out</title>
     <script>
-        // Handle token cleanup and Cognito logout
+        // Simple logout - just clear tokens and redirect home
         window.onload = function() {
-            // Check if we're coming back from Cognito logout (has logout parameter)
-            const urlParams = new URLSearchParams(window.location.search);
-            const isReturningFromCognito = urlParams.has('logout') || urlParams.has('state');
-            
-            if (isReturningFromCognito) {
-                // We're returning from Cognito logout, final cleanup and redirect to home
-                console.log('Returning from Cognito logout, redirecting to home');
-                setTimeout(function() {
-                    const redirectUrl = "__VITE_API_URL__" || '/';
-                    window.location.href = redirectUrl;
-                }, 1000);
-                return;
-            }
-            
-            // First visit - clear local tokens and redirect to Cognito logout
             console.log('Starting logout process...');
             
             // Clear OIDC and Cognito tokens from localStorage
@@ -41,22 +26,12 @@
                 document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
             });
             
-            // Redirect to Cognito logout endpoint
+            // Simple redirect to home after clearing tokens
             setTimeout(function() {
-                const cognitoLogoutUrl = "__VITE_COGNITO_LOGOUT_ENDPOINT__";
-                const clientId = "__VITE_COGNITO_CLIENT_ID__";
-                const logoutUri = "__VITE_COGNITO_LOGOUT_REDIRECT_URI__";
-                
-                if (cognitoLogoutUrl && clientId && logoutUri) {
-                    const logoutUrl = `${cognitoLogoutUrl}?client_id=${clientId}&logout_uri=${encodeURIComponent(logoutUri)}`;
-                    console.log('Redirecting to Cognito logout:', logoutUrl);
-                    window.location.href = logoutUrl;
-                } else {
-                    console.log('Cognito logout URL not configured, redirecting to home');
-                    const redirectUrl = "__VITE_API_URL__" || '/';
-                    window.location.href = redirectUrl;
-                }
-            }, 500);
+                console.log('Tokens cleared, redirecting to home');
+                const redirectUrl = "__VITE_API_URL__" || '/';
+                window.location.href = redirectUrl;
+            }, 1500);
         }
     </script>
     <style>
@@ -78,7 +53,7 @@
 <body>
     <div class="logout-container">
         <h1>Logging Out...</h1>
-        <p>Clearing session data and logging out from authentication provider.</p>
+        <p>Clearing session data and redirecting...</p>
     </div>
 </body>
 </html> 
