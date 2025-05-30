@@ -32,7 +32,7 @@
 set -e
 
 # GitHub repository URL for cloning
-GITHUB_REPO="https://github.com/AI-as-Infrastructure/aiinfra-atlas.git"
+GIT_REPO="https://github.com/AI-as-Infrastructure/aiinfra-atlas.git"
 
 # Git branch to use for deployment
 GIT_BRANCH="0.1.1-production"
@@ -80,17 +80,21 @@ if [ ! -f "$SSH_KEY" ]; then
     exit 1
 fi
 
-# SSH into the server to set up the application
-echo "Setting up application on the server..."
-ssh -i $SSH_KEY -o StrictHostKeyChecking=no $SSH_USER@$PRODUCTION_IP "mkdir -p $APP_DIR"
-
-# Copy the environment file to /tmp first (matching staging workflow)
+# 1. Copy the environment file to /tmp (as in staging)
 echo "Copying environment file..."
 scp -i $SSH_KEY config/.env.production $SSH_USER@$PRODUCTION_IP:/tmp/.env.production
 
-# Execute remote setup commands
+# 2. Now run the remote setup script (which will let git clone create $APP_DIR if needed)
 echo "Setting up the application on the server..."
-ssh -i $SSH_KEY -o StrictHostKeyChecking=no $SSH_USER@$PRODUCTION_IP << 'ENDSSH'
+ssh -i $SSH_KEY -o StrictHostKeyChecking=no $SSH_USER@$PRODUCTION_IP << ENDSSH
+# Set variables from the local script
+APP_DIR="$APP_DIR"
+GIT_REPO="$GIT_REPO"
+GIT_BRANCH="$GIT_BRANCH"
+APP_NAME="$APP_NAME"
+
+# Ensure we use sudo where needed and set proper ownership
+export DEPLOY_USER=\$(whoami)
 # Load environment variables from production file as early as possible
 if [ -f "/tmp/.env.production" ]; then
     echo "Loading environment from /tmp/.env.production"
@@ -109,73 +113,97 @@ if [ -f "/tmp/.env.production" ]; then
         echo "Using ENVIRONMENT=$ENVIRONMENT from .env.production"
     fi
 else
-    # Fallback just in case
-    echo "WARNING: /tmp/.env.production not found, setting environment manually"
-    export ENVIRONMENT="production"
-fi
-
-cd /opt/atlas
-
-# Make sure config directory exists and copy the environment file to its final location
-mkdir -p /opt/atlas/config
-cp /tmp/.env.production /opt/atlas/config/.env.production
-
-# Set up application directory with proper permissions
-echo "Setting up application directory..."
-sudo mkdir -p $APP_DIR && sudo chown -R $USER:$USER $APP_DIR
-
-# Clone or update the repository
-echo "Checking for existing repository..."
-# Define Git repository URL and branch explicitly
-GIT_REPO="https://github.com/AI-as-Infrastructure/aiinfra-atlas.git"
-GIT_BRANCH="0.1.1-production"
-
-# Use the configured Git branch for deployment
-if [ -d "$APP_DIR/.git" ]; then
-    echo "Updating existing repository from branch $GIT_BRANCH..."
-    cd $APP_DIR && git fetch --all && git reset --hard origin/$GIT_BRANCH && git lfs pull
-else
-    echo "Cloning fresh repository from branch $GIT_BRANCH..."
-    git clone --branch $GIT_BRANCH $GIT_REPO $APP_DIR && cd $APP_DIR && git lfs pull
-fi
-
-# Copy the environment file from /tmp to the app's config directory
-echo "Copying environment file from /tmp to app directory..."
-if [ -f "/tmp/.env.production" ]; then
-    mkdir -p "$APP_DIR/config"
-    mv /tmp/.env.production "$APP_DIR/config/.env.production"
-    chmod 644 "$APP_DIR/config/.env.production"
-    echo "✅ Environment file copied successfully"
-    
-    # Clean up any remaining temporary files
-    echo "Cleaning up temporary files..."
-    rm -f /tmp/.env.production 2>/dev/null || true
-else
-    echo "ERROR: /tmp/.env.production not found! Please transfer it before running this script."
+    echo "ERROR: /tmp/.env.production not found! Deployment cannot continue."
     exit 1
 fi
 
+# Set up application directory with proper permissions
+echo "Setting up application directory..."
+sudo mkdir -p $APP_DIR
+if [ -z "$PRODUCTION_USER" ]; then
+    echo "ERROR: PRODUCTION_USER is not set in .env.production. Please set PRODUCTION_USER=atlas_user."
+    exit 1
+fi
+sudo chown -R $PRODUCTION_USER:$PRODUCTION_USER $APP_DIR
+
+# Make sure config directory exists and copy the environment file to its final location
+mkdir -p $APP_DIR/config
+cp /tmp/.env.production $APP_DIR/config/.env.production
+
+# Change to the application directory for all subsequent commands
+cd $APP_DIR
+
+# Clone or update the repository (robust logic from staging)
+echo "Checking for existing repository..."
+if [ -d "$APP_DIR/.git" ]; then
+    echo "Updating existing repository from branch $GIT_BRANCH..."
+    git fetch --all && git reset --hard origin/$GIT_BRANCH && git lfs pull
+elif [ "$(ls -A $APP_DIR)" ]; then
+    echo "ERROR: $APP_DIR exists and is not empty, but is not a git repository."
+    echo "Please clear the directory or ensure it is a valid git repo."
+    exit 1
+else
+    echo "Cloning fresh repository from branch $GIT_BRANCH..."
+    git clone --branch $GIT_BRANCH $GIT_REPO $APP_DIR && cd $APP_DIR && git lfs pull
+    echo "✅ Repository cloned successfully"
+fi
+
+# Copy the environment file from /tmp to app directory...
+# Environment file already copied above, just ensure proper permissions
+sudo chmod 644 "$APP_DIR/config/.env.production"
+echo "✅ Environment file set up successfully"
+
+# Clean up any remaining temporary files
+echo "Cleaning up temporary files..."
+rm -f /tmp/.env.production 2>/dev/null || true
+
+
 # Set up Python environment with explicit Python 3.10
 echo "Setting up Python environment..."
-cd $APP_DIR && python3.10 -m venv .venv && . .venv/bin/activate && pip install --upgrade pip && pip install -r config/requirements.txt gunicorn
+cd $APP_DIR
+sudo apt-get update
+sudo apt-get install -y python3.10-venv
 
-# Ensure Python can find the application modules
+# Create the virtual environment with correct permissions
+sudo python3.10 -m venv $APP_DIR/.venv
+sudo chown -R $DEPLOY_USER:$DEPLOY_USER $APP_DIR/.venv
+source $APP_DIR/.venv/bin/activate
+pip install --upgrade pip
+
+# Install requirements
+if [ -f "$APP_DIR/requirements.txt" ]; then
+    pip install -r $APP_DIR/requirements.txt
+elif [ -f "$APP_DIR/config/requirements.txt" ]; then
+    pip install -r $APP_DIR/config/requirements.txt
+else
+    # Install basic requirements
+    pip install fastapi uvicorn gunicorn python-dotenv
+    echo "WARNING: No requirements.txt found, installed basic packages"
+fi
+
+# Set up Python package structure
 echo "Setting up Python package structure..."
-mkdir -p $APP_DIR/backend
+sudo mkdir -p $APP_DIR/backend
 touch $APP_DIR/backend/__init__.py
-echo '$APP_DIR' > $APP_DIR/.venv/lib/python3.10/site-packages/atlas.pth
-chmod 644 $APP_DIR/.venv/lib/python3.10/site-packages/atlas.pth
+echo "$APP_DIR" > $APP_DIR/.venv/lib/python3.10/site-packages/atlas.pth
+sudo chmod 644 $APP_DIR/.venv/lib/python3.10/site-packages/atlas.pth
 
 # Set up frontend environment
 echo "Setting up frontend environment..."
-cd /opt/atlas
-chmod +x config/generate_vue_files.sh
-./config/generate_vue_files.sh
+cd $APP_DIR
+
+# Run the Vue files generation script if it exists
+if [ -f "$APP_DIR/config/generate_vue_files.sh" ]; then
+    sudo chmod +x $APP_DIR/config/generate_vue_files.sh
+    $APP_DIR/config/generate_vue_files.sh
+else
+    echo "Vue files generation script not found, skipping"
+fi
 
 # Build frontend
-if [ -d "/opt/atlas/frontend" ]; then
+if [ -d "$APP_DIR/frontend" ]; then
     echo "Building frontend..."
-    cd /opt/atlas/frontend
+    cd $APP_DIR/frontend
     
     # Check for .nvmrc file and use the specified Node.js version if available
     if [ -f ".nvmrc" ]; then
@@ -206,7 +234,7 @@ if [ -d "/opt/atlas/frontend" ]; then
     NODE_OPTIONS=--max_old_space_size=4096 npm install && NODE_OPTIONS=--max_old_space_size=4096 npm run build
     
     # Check if build succeeded
-    if [ -d "/opt/atlas/frontend/dist" ]; then
+    if [ -d "$APP_DIR/frontend/dist" ]; then
         echo "✅ Frontend built successfully"
     else
         echo "WARNING: Frontend build may have failed, dist directory not found"
@@ -243,15 +271,64 @@ EOL
 # Create Nginx config from template
 echo "Setting up Nginx from template..."
 
-# Copy the template to the server
-cp /opt/atlas/deploy/production/nginx.conf.template /tmp/nginx.conf.template
+# Check if the template exists
+if [ -f "$APP_DIR/deploy/production/nginx.conf.template" ]; then
+    # Copy the template to the server
+    cp $APP_DIR/deploy/production/nginx.conf.template /tmp/nginx.conf.template
+    
+    # Set variables for the template
+    export SERVER_NAME="atlas-hansard.org"
+    export APP_DIR="/opt/atlas"
+    
+    # Process the template and create the final config
+    envsubst '\$SERVER_NAME \$APP_DIR' < /tmp/nginx.conf.template > /tmp/nginx.conf
+else
+    # Create a basic Nginx config directly
+    echo "Nginx template not found, creating basic configuration"
+    
+    cat > /tmp/nginx.conf << EOL
+server {
+    listen 80;
+    server_name atlas-hansard.org;
+    
+    # Redirect HTTP to HTTPS
+    return 301 https://\$host\$request_uri;
+}
 
-# Set variables for the template
-export SERVER_NAME="atlas-hansard.org"
-export APP_DIR="/opt/atlas"
-
-# Process the template and create the final config
-envsubst '\$SERVER_NAME \$APP_DIR' < /tmp/nginx.conf.template > /tmp/nginx.conf
+server {
+    listen 443 ssl;
+    server_name atlas-hansard.org;
+    
+    # SSL configuration
+    ssl_certificate /etc/letsencrypt/live/atlas-hansard.org/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/atlas-hansard.org/privkey.pem;
+    
+    # Frontend static files
+    location / {
+        root $APP_DIR/frontend/dist;
+        try_files \$uri \$uri/ /index.html;
+    }
+    
+    # API proxy
+    location /api {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+    
+    # WebSocket proxy configuration
+    location /ws {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+    }
+}
+EOL
+fi
 
 # Copy config files to server
 sudo mv /tmp/gunicorn.service /etc/systemd/system/
@@ -261,7 +338,7 @@ sudo rm -f /etc/nginx/sites-enabled/default
 
 # Set permissions and restart services
 echo "Setting permissions and restarting services..."
-sudo chown -R www-data:www-data /opt/atlas /var/log/atlas
+sudo sudo chown -R www-data:www-data $APP_DIR /var/log/$APP_NAME
 sudo systemctl daemon-reload
 sudo systemctl enable gunicorn
 sudo systemctl restart gunicorn
@@ -270,7 +347,11 @@ sudo systemctl restart nginx
 
 # Create proper environment files
 echo "Setting up backend environment..."
-cat > "/opt/atlas/backend/load_env.py" << EOF
+
+# Ensure backend directory exists
+sudo mkdir -p $APP_DIR/backend
+
+sudo tee "$APP_DIR/backend/load_env.py" > /dev/null << EOF
 """Load environment variables from .env.production file."""
 import os
 import re
@@ -304,20 +385,20 @@ print(f"Loaded environment from {env_file}")
 EOF
 
 # Make sure permissions are correct
-sudo chown www-data:www-data "/opt/atlas/backend/load_env.py"
+sudo sudo chown www-data:www-data "$APP_DIR/backend/load_env.py"
 
 # Modify the main app to load environment variables early
-if ! grep -q "import load_env" "/opt/atlas/backend/app.py"; then
+if ! grep -q "import load_env" "$APP_DIR/backend/app.py"; then
     # Add import at the top of the file
-    sed -i '1s/^/import backend.load_env\n/' "/opt/atlas/backend/app.py"
+    sed -i '1s/^/import backend.load_env\n/' "$APP_DIR/backend/app.py"
     echo "Added environment loader to backend/app.py"
 fi
 
 # Set up Redis with authentication
 echo "Configuring Redis with authentication..."
-REDIS_PASSWORD=$(grep '^REDIS_PASSWORD' "/opt/atlas/config/.env.production" | cut -d'=' -f2 | tr -d '"')
+REDIS_PASSWORD=$(grep '^REDIS_PASSWORD' "$APP_DIR/config/.env.production" | cut -d'=' -f2 | tr -d '"')
 if [ -z "$REDIS_PASSWORD" ]; then
-    echo "ERROR: REDIS_PASSWORD not set in /opt/atlas/config/.env.production"
+    echo "ERROR: REDIS_PASSWORD not set in $APP_DIR/config/.env.production"
     exit 1
 fi
 
