@@ -84,8 +84,8 @@ APP_NAME="atlas"                    # Name of the application
 APP_DIR="/opt/$APP_NAME"            # Installation directory on server
 
 # Server settings (read from environment when possible)
-STAGING_HOST=${STAGING_HOST:-"192.168.20.17"}  # Remote staging server IP address
-STAGING_USER=${STAGING_USER:-"atlas_deploy"}   # SSH username for remote deployment
+STAGING_HOST=${STAGING_HOST}  # Remote staging server IP address
+STAGING_USER=${STAGING_USER}   # SSH username for remote deployment
 
 # Domain/SSL settings
 # Extract domain from VITE_API_URL - must be explicitly set

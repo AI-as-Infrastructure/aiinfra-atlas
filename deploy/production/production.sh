@@ -120,35 +120,51 @@ cd /opt/atlas
 mkdir -p /opt/atlas/config
 cp /tmp/.env.production /opt/atlas/config/.env.production
 
+# Set up application directory with proper permissions
+echo "Setting up application directory..."
+sudo mkdir -p $APP_DIR && sudo chown -R $USER:$USER $APP_DIR
+
 # Clone or update the repository
 echo "Checking for existing repository..."
+# Define Git repository URL and branch explicitly
+GIT_REPO="https://github.com/AI-as-Infrastructure/aiinfra-atlas.git"
+GIT_BRANCH="0.1.1-production"
+
 # Use the configured Git branch for deployment
 if [ -d "$APP_DIR/.git" ]; then
     echo "Updating existing repository from branch $GIT_BRANCH..."
     cd $APP_DIR && git fetch --all && git reset --hard origin/$GIT_BRANCH && git lfs pull
 else
     echo "Cloning fresh repository from branch $GIT_BRANCH..."
-    git clone --branch $GIT_BRANCH $GITHUB_REPO $APP_DIR && cd $APP_DIR && git lfs pull
+    git clone --branch $GIT_BRANCH $GIT_REPO $APP_DIR && cd $APP_DIR && git lfs pull
 fi
 
-# Set up Python environment
-echo "Setting up Python environment..."
-# Use the Python version specified in .env.production
-PYTHON_VERSION=${PYTHON_VERSION:-"3.10"}
-echo "Using Python version: $PYTHON_VERSION"
+# Copy the environment file from /tmp to the app's config directory
+echo "Copying environment file from /tmp to app directory..."
+if [ -f "/tmp/.env.production" ]; then
+    mkdir -p "$APP_DIR/config"
+    mv /tmp/.env.production "$APP_DIR/config/.env.production"
+    chmod 644 "$APP_DIR/config/.env.production"
+    echo "✅ Environment file copied successfully"
+    
+    # Clean up any remaining temporary files
+    echo "Cleaning up temporary files..."
+    rm -f /tmp/.env.production 2>/dev/null || true
+else
+    echo "ERROR: /tmp/.env.production not found! Please transfer it before running this script."
+    exit 1
+fi
 
-# Create virtual environment with the specified Python version
-python3.$PYTHON_VERSION -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-pip install -r config/requirements.txt gunicorn
+# Set up Python environment with explicit Python 3.10
+echo "Setting up Python environment..."
+cd $APP_DIR && python3.10 -m venv .venv && . .venv/bin/activate && pip install --upgrade pip && pip install -r config/requirements.txt gunicorn
 
 # Ensure Python can find the application modules
 echo "Setting up Python package structure..."
-mkdir -p /opt/atlas/backend
-touch /opt/atlas/backend/__init__.py
-echo '/opt/atlas' > /opt/atlas/.venv/lib/python3.10/site-packages/atlas.pth
-chmod 644 /opt/atlas/.venv/lib/python3.10/site-packages/atlas.pth
+mkdir -p $APP_DIR/backend
+touch $APP_DIR/backend/__init__.py
+echo '$APP_DIR' > $APP_DIR/.venv/lib/python3.10/site-packages/atlas.pth
+chmod 644 $APP_DIR/.venv/lib/python3.10/site-packages/atlas.pth
 
 # Set up frontend environment
 echo "Setting up frontend environment..."
