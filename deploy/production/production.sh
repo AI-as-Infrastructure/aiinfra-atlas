@@ -61,7 +61,7 @@ DOMAIN="atlas-hansard.org"            # Production domain name
 CERT_DIR="/etc/letsencrypt/live/$DOMAIN"  # Where SSL certificates are stored
 
 # SSH key settings
-SSH_KEY="$HOME/atlas-prod-key-west1.pem"    # Path to the SSH key for us-west-1 region
+SSH_KEY="$HOME/atlas-prod-key.pem"    # Path to the SSH key
 
 # ---- END CONFIGURATION ----
 
@@ -88,15 +88,6 @@ ssh -i $SSH_KEY -o StrictHostKeyChecking=no $SSH_USER@$PRODUCTION_IP "mkdir -p $
 echo "Copying environment file..."
 scp -i $SSH_KEY config/.env.production $SSH_USER@$PRODUCTION_IP:/tmp/.env.production
 
-# Create a temporary file with Git variables
-cat > /tmp/git_vars.sh << EOF
-GITHUB_REPO="$GITHUB_REPO"
-GIT_BRANCH="$GIT_BRANCH"
-EOF
-
-# Copy Git variables to the server
-scp -i $SSH_KEY /tmp/git_vars.sh $SSH_USER@$PRODUCTION_IP:/tmp/git_vars.sh
-
 # Execute remote setup commands
 echo "Setting up the application on the server..."
 ssh -i $SSH_KEY -o StrictHostKeyChecking=no $SSH_USER@$PRODUCTION_IP << 'ENDSSH'
@@ -107,16 +98,6 @@ if [ -f "/tmp/.env.production" ]; then
     set -a
     source /tmp/.env.production
     set +a
-
-    # Load Git variables
-    if [ -f "/tmp/git_vars.sh" ]; then
-        echo "Loading Git variables from /tmp/git_vars.sh"
-        source /tmp/git_vars.sh
-        echo "Using Git branch: $GIT_BRANCH"
-        echo "Using Git repo: $GITHUB_REPO"
-    else
-        echo "WARNING: Git variables file not found"
-    fi
     
     # The ENVIRONMENT variable must be set in .env.production
     # No fallback - must be explicitly set
