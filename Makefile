@@ -17,7 +17,7 @@ prod-server: ## Deploy to production AWS environment
 		--stack-name atlas-production \
 		--template-file deploy/production/atlas-prod-server.yaml \
 		--parameter-overrides \
-			KeyName=atlas-prod-key \
+			KeyName=atlas-prod-key-west1 \
 			DomainName=atlas-hansard.org \
 		--capabilities CAPABILITY_IAM \
 		--profile ANU-Account-Admin-825765404490 \
