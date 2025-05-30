@@ -149,19 +149,16 @@ Resources:
             rm -rf /opt/atlas
           fi
           
-          # Create fresh directories
-          mkdir -p /opt/atlas
+          # Don't create /opt/atlas here - let the deployment script handle it
+          # Just create the log directory
           mkdir -p /var/log/atlas
           
-          # Give atlas_deploy ownership of the application and log directories
-          chown -R atlas_deploy:atlas_deploy /opt/atlas
-          chmod -R 755 /opt/atlas
+          # Give atlas_deploy ownership of the log directory
           chown -R atlas_deploy:atlas_deploy /var/log/atlas
           chmod -R 755 /var/log/atlas
           
           # Verify directory permissions
           echo "Verifying directory permissions:"
-          ls -la /opt/atlas
           ls -la /var/log/atlas
           
           # Set hostname
@@ -228,19 +225,29 @@ Resources:
           
           echo "Running ATLAS startup script at $(date)"
           
-          # Ensure /opt/atlas is clean and ready for deployment
-          if [ -d /opt/atlas ] && [ ! -d /opt/atlas/.git ]; then
-            # Directory exists but is not a git repo
-            if [ "$(ls -A /opt/atlas)" ]; then
-              echo "WARNING: /opt/atlas is not empty and not a git repository. Backing up and cleaning..."
-              mv /opt/atlas /opt/atlas.backup.$(date +%Y%m%d_%H%M%S)
-              mkdir -p /opt/atlas
+          # Only process /opt/atlas if it exists
+          if [ -d /opt/atlas ]; then
+            # Ensure /opt/atlas is clean and ready for deployment
+            if [ ! -d /opt/atlas/.git ]; then
+              # Directory exists but is not a git repo
+              if [ "$(ls -A /opt/atlas)" ]; then
+                echo "WARNING: /opt/atlas is not empty and not a git repository. Backing up and cleaning..."
+                mv /opt/atlas /opt/atlas.backup.$(date +%Y%m%d_%H%M%S)
+                mkdir -p /opt/atlas
+              fi
             fi
+            
+            # Ensure proper ownership
+            chown -R atlas_deploy:atlas_deploy /opt/atlas
+            chmod -R 755 /opt/atlas
+          else
+            echo "INFO: /opt/atlas does not exist yet. It will be created during deployment."
           fi
           
-          # Ensure proper ownership
-          chown -R atlas_deploy:atlas_deploy /opt/atlas
-          chmod -R 755 /opt/atlas
+          # Always ensure log directory exists with proper permissions
+          mkdir -p /var/log/atlas
+          chown -R atlas_deploy:atlas_deploy /var/log/atlas
+          chmod -R 755 /var/log/atlas
           
           echo "ATLAS startup script completed at $(date)"
           STARTUP_EOF
@@ -283,9 +290,6 @@ Resources:
           Value: production
         - Key: Project
           Value: ATLAS
-
-  # DNS Record is managed elsewhere
-  # Removed DNS record creation as it already exists
 
   # Elastic IP for stable addressing
   AtlasElasticIP:
