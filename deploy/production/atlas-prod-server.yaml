@@ -167,49 +167,22 @@ Resources:
           # Create a script to run certbot after DNS propagation
           cat > /opt/setup-ssl.sh << EOF
           #!/bin/bash
-          # Wait for DNS propagation (5 minutes)
-          echo "Waiting for DNS propagation before setting up SSL..."
-          sleep 300
-
-          # Check if domain resolves to this instance
-          PUBLIC_IP=\$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
-          RESOLVED_IP=\$(dig +short ${DomainName} | head -n1)
-
-          if [ "\$PUBLIC_IP" = "\$RESOLVED_IP" ]; then
-            echo "DNS propagated successfully. Setting up SSL certificate..."
-            # Run certbot non-interactively
-            certbot --nginx -d ${DomainName} --non-interactive --agree-tos --email admin@${DomainName} --redirect
-            echo "SSL certificate installed successfully!"
-          else
-            echo "DNS not yet propagated. Public IP: \$PUBLIC_IP, Resolved IP: \$RESOLVED_IP"
-            echo "Will retry in 5 minutes..."
-            sleep 300
-            # Retry the DNS check and certificate setup
-            PUBLIC_IP=\$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
-            RESOLVED_IP=\$(dig +short ${DomainName} | head -n1)
-            if [ "\$PUBLIC_IP" = "\$RESOLVED_IP" ]; then
-              echo "DNS propagated successfully on retry. Setting up SSL certificate..."
-              certbot --nginx -d ${DomainName} --non-interactive --agree-tos --email admin@${DomainName} --redirect
-              echo "SSL certificate installed successfully!"
-            else
-              echo "DNS still not propagated after retry. Please run 'sudo certbot --nginx -d ${DomainName}' manually after DNS propagation."
-            fi
-          fi
+          # Simple SSL setup script without DNS waiting
+          echo "SSL setup script for manual certificate generation"
+          echo "To generate certificates, run:"
+          echo "  sudo certbot --nginx -d ${DomainName} --non-interactive --agree-tos --email admin@${DomainName} --redirect"
+          echo ""
+          echo "This can be run once DNS is properly configured."
           EOF
 
           # Make the script executable
           chmod +x /opt/setup-ssl.sh
           
-          # Set up a cron job to run the script after system startup
-          echo "@reboot root /opt/setup-ssl.sh >> /var/log/ssl-setup.log 2>&1" > /etc/cron.d/setup-ssl
-          
-          # Set up automatic certificate renewal
+          # Remove the auto-run of SSL setup since DNS is managed separately
+          # Just set up automatic certificate renewal for when certs are eventually created
           echo "Setting up automatic certificate renewal..."
           echo "0 3 * * * root certbot renew --quiet --no-self-upgrade --post-hook 'systemctl reload nginx'" > /etc/cron.d/certbot-renew
           chmod 644 /etc/cron.d/certbot-renew
-          
-          # Start the SSL setup script in the background
-          nohup /opt/setup-ssl.sh > /var/log/ssl-setup.log 2>&1 &
           
           # Install required Python packages for DNS resolution
           apt-get install -y dnsutils
