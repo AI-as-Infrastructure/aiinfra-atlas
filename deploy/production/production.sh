@@ -323,8 +323,8 @@ Group=\$DEPLOY_USER
 WorkingDirectory=\$APP_DIR
 Environment="PATH=\$APP_DIR/.venv/bin"
 Environment="PYTHONPATH=\$APP_DIR"
-EnvironmentFile=$APP_DIR/config/.env.production
-ExecStart=\$APP_DIR/.venv/bin/python -m gunicorn backend.app:app -k uvicorn.workers.UvicornWorker -w 4 -b 127.0.0.1:8000 --access-logfile /var/log/\$APP_NAME/gunicorn-access.log --error-logfile /var/log/\$APP_NAME/gunicorn-error.log
+EnvironmentFile=\$APP_DIR/config/.env.productionn
+ExecStart=\$APP_DIR/.venv/bin/python -m gunicorn backend.app:app -k uvicorn.workers.UvicornWorker -w 6 -b 127.0.0.1:8000 --access-logfile /var/log/\$APP_NAME/gunicorn-access.log --error-logfile /var/log/\$APP_NAME/gunicorn-error.log
 Restart=on-failure
 
 [Install]
@@ -367,6 +367,62 @@ if [ \$? -ne 0 ]; then
     exit 1
 fi
 sudo systemctl restart nginx
+
+# Create proper environment files
+echo "Setting up backend environment..."
+
+# Ensure backend directory exists
+mkdir -p \$APP_DIR/backend
+
+cat > "\$APP_DIR/backend/load_env.py" << EOF
+"""Load environment variables from .env.production file."""
+import os
+import re
+from pathlib import Path
+
+def load_dotenv(env_file):
+    """Load environment variables from a file."""
+    if not os.path.exists(env_file):
+        print(f"Warning: {env_file} not found")
+        return False
+    
+    with open(env_file) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            
+            # Extract key and value with proper handling of quotes
+            match = re.match(r'^([A-Za-z0-9_]+)=(?:"([^"]*)"|(.*))$', line)
+            if match:
+                key = match.group(1)
+                value = match.group(2) if match.group(2) is not None else match.group(3)
+                os.environ[key] = value
+    
+    return True
+
+# Load from the production environment file
+env_file = Path(__file__).parent.parent / "config" / ".env.production"
+load_dotenv(str(env_file))
+print(f"Loaded environment from {env_file}")
+EOF
+
+# Make sure permissions are correct
+chmod 644 "\$APP_DIR/backend/load_env.py"
+
+# Check if app.py exists before trying to modify it
+if [ ! -f "\$APP_DIR/backend/app.py" ]; then
+    echo "ERROR: backend/app.py not found in \$APP_DIR"
+    echo "This file is required for the application to run"
+    exit 1
+fi
+
+# Modify the main app to load environment variables early
+if ! grep -q "import load_env" "\$APP_DIR/backend/app.py"; then
+    # Add import at the top of the file
+    sed -i '1s/^/import backend.load_env\n/' "\$APP_DIR/backend/app.py"
+    echo "✅ Added environment loader to backend/app.py"
+fi
 
 # Set up Redis with authentication
 echo "Configuring Redis with authentication..."
