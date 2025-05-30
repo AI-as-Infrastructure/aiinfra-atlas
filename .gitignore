@@ -7,6 +7,7 @@ letsencrypt/
 var/lib/letsencrypt/
 telemetry_span_registry.db
 *.db
+deploy/production/.atlas-deploy-config.json
 frontend/.env
 frontend/package-lock.json
 frontend/node_modules

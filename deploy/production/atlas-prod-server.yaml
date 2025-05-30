@@ -1,0 +1,154 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'ATLAS Production Deployment - EC2 instance with UFW, Let''s Encrypt, and Route 53 configuration'
+
+Parameters:
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: atlas-prod-key
+    ConstraintDescription: Must be the name of an existing EC2 KeyPair
+
+  DomainName:
+    Description: Domain name for the ATLAS application
+    Type: String
+    Default: atlas-hansard.org
+
+  SSHLocation:
+    Description: The IP address range that can SSH to the EC2 instance
+    Type: String
+    Default: 0.0.0.0/0
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: Must be a valid IP CIDR range of the form x.x.x.x/x
+
+Resources:
+  AtlasSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for ATLAS production server
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref SSHLocation
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: 0
+          ToPort: 0
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: atlas-prod-sg
+
+  AtlasEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: m5.large
+      SecurityGroups:
+        - !Ref AtlasSecurityGroup
+      KeyName: !Ref KeyName
+      ImageId: ami-03f65b8614a860c29  # Ubuntu 22.04 LTS in us-west-2 (Oregon)
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: 50
+            VolumeType: gp3
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          # Update system packages
+          apt-get update
+          apt-get upgrade -y
+          
+          # Install UFW and configure firewall
+          apt-get install -y ufw
+          ufw default deny incoming
+          ufw default allow outgoing
+          ufw allow 22/tcp
+          ufw allow 80/tcp
+          ufw allow 443/tcp
+          echo "y" | ufw enable
+          
+          # Install Let's Encrypt (certbot)
+          apt-get install -y certbot python3-certbot-nginx
+          
+          # Install other required packages
+          apt-get install -y nginx python3-pip python3-venv git git-lfs redis-server
+          
+          # Create app directory
+          mkdir -p /opt/atlas
+          
+          # Set hostname
+          hostnamectl set-hostname atlas-prod
+          
+          # Create a script to run certbot after DNS propagation
+          cat > /opt/setup-ssl.sh << 'EOF'
+          #!/bin/bash
+          # Wait for DNS propagation (5 minutes)
+          echo "Waiting for DNS propagation before setting up SSL..."
+          sleep 300
+
+          # Check if domain resolves to this instance
+          PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
+          RESOLVED_IP=$(dig +short ${DomainName})
+
+          if [ "$PUBLIC_IP" = "$RESOLVED_IP" ]; then
+            echo "DNS propagated successfully. Setting up SSL certificate..."
+            # Run certbot non-interactively
+            certbot --nginx -d ${DomainName} --non-interactive --agree-tos --email admin@${DomainName}
+            echo "SSL certificate installed successfully!"
+          else
+            echo "DNS not yet propagated. Public IP: $PUBLIC_IP, Resolved IP: $RESOLVED_IP"
+            echo "Please run 'sudo certbot --nginx -d ${DomainName}' manually after DNS propagation."
+          fi
+          EOF
+
+          # Make the script executable
+          chmod +x /opt/setup-ssl.sh
+          
+          # Set up a cron job to run the script after system startup
+          echo "@reboot root /opt/setup-ssl.sh >> /var/log/ssl-setup.log 2>&1" > /etc/cron.d/setup-ssl
+          
+          # Start the script in the background
+          nohup /opt/setup-ssl.sh > /var/log/ssl-setup.log 2>&1 &
+      Tags:
+        - Key: Name
+          Value: atlas-prod-server
+        - Key: Environment
+          Value: production
+        - Key: Project
+          Value: ATLAS
+
+  DNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneName: !Sub '${DomainName}.'
+      Name: !Ref DomainName
+      Type: A
+      TTL: 300
+      ResourceRecords:
+        - !GetAtt AtlasEC2Instance.PublicIp
+
+Outputs:
+  InstanceId:
+    Description: ID of the EC2 instance
+    Value: !Ref AtlasEC2Instance
+
+  PublicIP:
+    Description: Public IP address of the EC2 instance
+    Value: !GetAtt AtlasEC2Instance.PublicIp
+
+  PublicDNS:
+    Description: Public DNS name of the EC2 instance
+    Value: !GetAtt AtlasEC2Instance.PublicDnsName
+
+  WebsiteURL:
+    Description: URL for the ATLAS application
+    Value: !Sub 'https://${DomainName}'
