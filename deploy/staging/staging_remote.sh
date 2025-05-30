@@ -242,7 +242,7 @@ echo "✅ Environment file updated with domain: $DOMAIN"
 
 # 6. Setup Python environment with explicit Python 3.10
 echo "Setting up Python environment..."
-cd $APP_DIR && python3.10 -m venv .venv && . .venv/bin/activate && pip install --upgrade pip && pip install -r config/requirements.txt gunicorn
+cd $APP_DIR && python3.10 -m venv .venv && . .venv/bin/activate && pip install --upgrade pip && pip install -r config/requirements.txt 
 
 # Ensure Python can find the application modules
 echo "Setting up Python package structure..."
@@ -416,59 +416,6 @@ echo "mkdir -p deploy/staging/logs && cp /var/log/$APP_NAME/*.log deploy/staging
 echo "Performing final cleanup..."
 rm -f /tmp/staging_remote.sh 2>/dev/null || true
 echo "✅ Temporary files removed from /tmp"
-
-# Frontend environment is already set up before the build
-
-# Create proper environment files instead of symlinks
-echo "Setting up backend environment..."
-# Ensure the staging environment file is in place (don't copy to itself)
-echo "Using config/.env.staging for backend configuration"
-
-# Create an environment loader script for the backend
-cat > "$APP_DIR/backend/load_env.py" << EOF
-"""Load environment variables from .env.staging file."""
-import os
-import re
-from pathlib import Path
-
-def load_dotenv(env_file):
-    """Load environment variables from a file."""
-    if not os.path.exists(env_file):
-        print(f"Warning: {env_file} not found")
-        return False
-    
-    with open(env_file) as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
-            
-            # Extract key and value with proper handling of quotes
-            match = re.match(r'^([A-Za-z0-9_]+)=(?:"([^"]*)"|(.*))$', line)
-            if match:
-                key = match.group(1)
-                value = match.group(2) if match.group(2) is not None else match.group(3)
-                os.environ[key] = value
-    
-    return True
-
-# Load from the staging environment file
-env_file = Path(__file__).parent.parent / "config" / ".env.staging"
-load_dotenv(str(env_file))
-print(f"Loaded environment from {env_file}")
-EOF
-
-# Make sure permissions are correct
-sudo chown $USER:$USER "$APP_DIR/backend/load_env.py"
-
-# Modify the main app to load environment variables early
-if ! grep -q "import load_env" "$APP_DIR/backend/app.py"; then
-    # Add import at the top of the file
-    sed -i '1s/^/import backend.load_env\n/' "$APP_DIR/backend/app.py"
-    echo "✅ Added environment loader to backend/app.py"
-fi
-
-echo "✅ Backend environment configured to use config/.env.staging" 
 
 # --- Redis Setup for Staging (after .env.staging is in place) ---
 echo "Configuring Redis with authentication for staging..."

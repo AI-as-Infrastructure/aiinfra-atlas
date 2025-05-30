@@ -41,15 +41,27 @@ load_dotenv(dotenv_path=env_path, override=True)
 
 # Initialize telemetry after environment variables are loaded
 from backend.telemetry.core import initialize_telemetry
-try:
-    telemetry_success = initialize_telemetry()
-    if telemetry_success:
-        logger.info("✅ Telemetry initialized successfully")
-    else:
-        logger.warning("⚠️ Telemetry initialization returned False (may be disabled)")
-except Exception as e:
-    logger.error(f"❌ Failed to initialize telemetry: {e}")
-    raise RuntimeError(f"Telemetry initialization failed: {e}")
+
+# Get environment for telemetry behavior
+environment = os.getenv("ENVIRONMENT", "development").lower()
+telemetry_enabled = os.getenv("TELEMETRY_ENABLED", "true").lower() in ["true", "1", "yes"]
+
+if not telemetry_enabled:
+    logger.info("📝 Telemetry disabled via TELEMETRY_ENABLED=false")
+    telemetry_success = False
+else:
+    try:
+        telemetry_success = initialize_telemetry()
+        if telemetry_success:
+            logger.info("✅ Telemetry initialized successfully")
+        else:
+            # When telemetry is enabled, it MUST work in ALL environments
+            logger.error(f"❌ CRITICAL: Telemetry initialization failed in {environment}")
+            raise RuntimeError(f"Telemetry is enabled but initialization returned False")
+    except Exception as e:
+        # When telemetry is enabled, failures are fatal in ALL environments
+        logger.error(f"❌ CRITICAL: Telemetry initialization failed in {environment}: {e}")
+        raise RuntimeError(f"Telemetry initialization failed: {e}")
 
 # Import core modules and telemetry utilities
 from backend.telemetry import (
@@ -91,16 +103,31 @@ from backend.modules.auth import get_current_user, optional_user
 from backend.telemetry.config_attrs import get_test_target_attributes
 
 # Import async queue management
-try:
-    from backend.services.queue_manager import get_queue_manager
-    async_queue_available = True
-    logger.info("✅ Async queue manager imported successfully")
-except ImportError as e:
-    logger.warning(f"⚠️ Async queue manager not available: {e}")
-    async_queue_available = False
+if environment in ["production", "staging"]:
+    # In production/staging, Redis async queue is REQUIRED
+    try:
+        from backend.services.queue_manager import get_queue_manager
+        async_queue_available = True
+        logger.info("✅ Async queue manager imported successfully")
+    except ImportError as e:
+        logger.error(f"❌ CRITICAL: Async queue manager not available in {environment}: {e}")
+        raise RuntimeError(f"Redis queue manager is required in {environment} but not available: {e}")
+else:
+    # Development environment - async queue is optional
+    try:
+        from backend.services.queue_manager import get_queue_manager
+        async_queue_available = True
+        logger.info("✅ Async queue manager imported successfully (development)")
+    except ImportError as e:
+        logger.warning(f"⚠️ Async queue manager not available in development: {e}")
+        logger.info("📝 Development mode: continuing without Redis async queue")
+        async_queue_available = False
 
 if not telemetry_initialized:
-    raise RuntimeError("Telemetry is not initialized. The app cannot start without telemetry.")
+    if not telemetry_enabled:
+        logger.info("📝 Telemetry not initialized (explicitly disabled)")
+    else:
+        raise RuntimeError(f"Telemetry is enabled but not initialized. The app cannot start without telemetry.")
 
 # Initialize FastAPI app
 app = FastAPI(title="ATLAS")
