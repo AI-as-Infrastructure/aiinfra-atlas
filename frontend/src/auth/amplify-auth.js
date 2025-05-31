@@ -37,9 +37,9 @@ export const configureAmplify = () => {
         expires: 365,
         // Always use secure cookies in production
         secure: import.meta.env.PROD || window.location.protocol === 'https:',
-        // Enable cross-domain cookies with SameSite=None
-        // Note: SameSite=None requires Secure to be true
-        sameSite: import.meta.env.PROD ? 'None' : 'Lax'
+        // Enable cross-domain cookies with SameSite=none (lowercase required by Amplify)
+        // Note: SameSite=none requires Secure to be true
+        sameSite: import.meta.env.PROD ? 'none' : 'lax'
       },
       // Synchronize session across tabs
       mandatorySignIn: false
