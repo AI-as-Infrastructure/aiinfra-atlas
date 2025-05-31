@@ -3,89 +3,103 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Logging Out</title>
+    <title>ATLAS - Logging Out</title>
     <script>
         // Constants for Cognito logout (will be replaced with environment values)
         const COGNITO_LOGOUT_ENDPOINT = "__VITE_COGNITO_LOGOUT_ENDPOINT__";
         const COGNITO_CLIENT_ID = "__VITE_COGNITO_CLIENT_ID__";
         const COGNITO_LOGOUT_REDIRECT_URI = "__VITE_COGNITO_LOGOUT_REDIRECT_URI__";
-        // Current URL and detection of development environment
-        const currentUrl = window.location.href;
-        const isDevelopment = currentUrl.includes('localhost') || currentUrl.includes('127.0.0.1');
         const USE_COGNITO_AUTH = "__VITE_USE_COGNITO_AUTH__" === "true";
+        const API_URL = "__VITE_API_URL__" || '/';
         
         // Logout function - handles both Cognito and local storage clearing
         window.onload = function() {
             console.log('Starting logout process...');
             
-            // Clear OIDC and Cognito tokens from localStorage
+            // Parse URL to check if we're already in the logout flow
+            const urlParams = new URLSearchParams(window.location.search);
+            const logoutState = urlParams.get('state');
+            
+            // Always clear browser storage regardless of flow
+            clearBrowserStorage();
+            
+            // Determine next action based on the logout state
+            if (logoutState === 'complete') {
+                // If we've completed the Cognito logout and returned here, redirect to home
+                console.log('Cognito logout complete, redirecting to application home');
+                redirectToHome();
+            } else if (canUseCognitoLogout()) {
+                // First phase - redirect to Cognito for session invalidation
+                // Add a parameter to our redirect URI to track the logout state
+                let logoutRedirectUri = COGNITO_LOGOUT_REDIRECT_URI;
+                
+                // Make sure it's using the proper protocol
+                if (window.location.protocol === 'https:' && logoutRedirectUri.startsWith('http:')) {
+                    logoutRedirectUri = logoutRedirectUri.replace('http:', 'https:');
+                    console.log('Updated redirect URI protocol to HTTPS:', logoutRedirectUri);
+                }
+                
+                // Add state parameter to track that we've been to Cognito
+                const redirectUriWithState = new URL(logoutRedirectUri);
+                redirectUriWithState.searchParams.set('state', 'complete');
+                
+                const logoutUrl = `${COGNITO_LOGOUT_ENDPOINT}?client_id=${COGNITO_CLIENT_ID}&logout_uri=${encodeURIComponent(redirectUriWithState.toString())}`;
+                console.log('Redirecting to Cognito logout URL:', logoutUrl);
+                window.location.replace(logoutUrl);
+            } else {
+                // Simple logout for development or when Cognito isn't configured
+                console.log('Using direct logout (no Cognito), redirecting to home');
+                redirectToHome();
+            }
+        };
+        
+        // Helper function to check if we can use Cognito logout
+        function canUseCognitoLogout() {
+            const hasCognitoConfig = COGNITO_LOGOUT_ENDPOINT && 
+                                  COGNITO_CLIENT_ID && 
+                                  COGNITO_LOGOUT_REDIRECT_URI;
+                                  
+            return USE_COGNITO_AUTH && hasCognitoConfig;
+        }
+        
+        // Helper function to clear browser storage
+        function clearBrowserStorage() {
+            // Clear localStorage auth-related keys
+            console.log('Clearing localStorage tokens...');
             Object.keys(localStorage).forEach(function(key) {
                 if (key.indexOf("oidc.user:") === 0 || 
                     key.indexOf("CognitoIdentityServiceProvider") === 0 ||
-                    key.indexOf("amplify-signin-with-hostedUI") === 0) {
+                    key.indexOf("amplify-signin-with-hostedUI") === 0 ||
+                    key.indexOf("auth") === 0) {
+                    console.log('Removing localStorage key:', key);
                     localStorage.removeItem(key);
                 }
             });
             
-            // Clear sessionStorage
+            // Clear session storage
+            console.log('Clearing sessionStorage...');
             sessionStorage.clear();
             
-            // Clear any authentication cookies
+            // Clear cookies
+            console.log('Clearing cookies...');
             document.cookie.split(";").forEach(function(c) {
                 document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
             });
+        }
+        
+        // Helper function to redirect to home
+        function redirectToHome() {
+            // Get the redirect URL from environment variable
+            let redirectUrl = API_URL || '/';
             
-            // Check if we should use Cognito logout
-            // Only use Cognito logout if:
-            // 1. Cognito auth is enabled
-            // 2. We're not in development OR we are but not already in a redirect loop
-            // 3. All required Cognito parameters are available
-            const isAlreadyInRedirectLoop = currentUrl.includes('logout.html') && isDevelopment;
-            const shouldUseCognitoLogout = USE_COGNITO_AUTH && 
-                                         !isAlreadyInRedirectLoop &&
-                                         COGNITO_LOGOUT_ENDPOINT && 
-                                         COGNITO_CLIENT_ID && 
-                                         COGNITO_LOGOUT_REDIRECT_URI;
-            
-            if (shouldUseCognitoLogout) {
-                console.log('Using Cognito logout endpoint for complete session termination');
-                
-                // Make sure the redirect URI uses the right protocol (HTTP/HTTPS)
-                let logoutRedirectUri = COGNITO_LOGOUT_REDIRECT_URI;
-                const currentProtocol = window.location.protocol; // Will be 'http:' or 'https:'
-                
-                // Only enforce HTTPS if we're currently on HTTPS and the redirect is HTTP
-                if (currentProtocol === 'https:' && logoutRedirectUri.startsWith('http:')) {
-                    logoutRedirectUri = logoutRedirectUri.replace('http:', 'https:');
-                    console.log('Matched redirect URI protocol to current (HTTPS):', logoutRedirectUri);
-                }
-                
-                // Construct the proper Cognito logout URL with parameters
-                const logoutUrl = `${COGNITO_LOGOUT_ENDPOINT}?client_id=${COGNITO_CLIENT_ID}&logout_uri=${encodeURIComponent(logoutRedirectUri)}`;
-                console.log('Redirecting to Cognito logout URL:', logoutUrl);
-                
-                // Use replace instead of href to prevent back-navigation to the logged-in state
-                window.location.replace(logoutUrl);
-            } else {
-                // Fallback for development environments without Cognito
-                setTimeout(function() {
-                    console.log('Tokens cleared, redirecting to home (fallback method)');
-                    
-                    // Get the configured redirect URL
-                    let redirectUrl = "__VITE_API_URL__" || '/';
-                    
-                    // Check if we need protocol matching (only modify if needed)
-                    const currentProtocol = window.location.protocol;
-                    
-                    // Only enforce HTTPS if we're currently on HTTPS and the redirect is HTTP
-                    if (currentProtocol === 'https:' && redirectUrl.startsWith('http:')) {
-                        redirectUrl = redirectUrl.replace('http:', 'https:');
-                        console.log('Matched redirect protocol to current (HTTPS):', redirectUrl);
-                    }
-                    
-                    window.location.href = redirectUrl;
-                }, 1500);
+            // Match protocol if needed (enforce HTTPS if we're on HTTPS)
+            if (window.location.protocol === 'https:' && redirectUrl.startsWith('http:')) {
+                redirectUrl = redirectUrl.replace('http:', 'https:');
+                console.log('Matched redirect protocol to current (HTTPS):', redirectUrl);
             }
+            
+            console.log('Redirecting to home:', redirectUrl);
+            window.location.replace(redirectUrl);
         }
     </script>
     <style>
