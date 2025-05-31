@@ -31,10 +31,15 @@ export const configureAmplify = () => {
       },
       // Add cookie storage configuration to help with session management
       cookieStorage: {
-        domain: window.location.hostname,
+        // Use a more flexible domain configuration for cross-domain scenarios
+        domain: import.meta.env.VITE_COOKIE_DOMAIN || window.location.hostname,
         path: '/',
         expires: 365,
-        secure: window.location.protocol === 'https:'
+        // Always use secure cookies in production
+        secure: import.meta.env.PROD || window.location.protocol === 'https:',
+        // Enable cross-domain cookies with SameSite=None
+        // Note: SameSite=None requires Secure to be true
+        sameSite: import.meta.env.PROD ? 'None' : 'Lax'
       },
       // Synchronize session across tabs
       mandatorySignIn: false
@@ -328,7 +333,7 @@ export const logout = async () => {
     
     // Force a direct approach for logout using Cognito's well-defined structure
     const logoutEndpoint = `https://${config.domain}/logout`;
-    const logoutRedirectUri = `${window.location.origin}/login`;
+    const logoutRedirectUri = config.logoutRedirectUri || `${window.location.origin}/logout.html`;
     
     // Construct the Cognito logout URL manually to ensure it's correct
     const logoutUrl = new URL(logoutEndpoint);
