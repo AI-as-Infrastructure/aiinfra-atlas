@@ -29,7 +29,19 @@
             // Simple redirect to home after clearing tokens
             setTimeout(function() {
                 console.log('Tokens cleared, redirecting to home');
-                const redirectUrl = "__VITE_API_URL__" || '/';
+                
+                // Get the configured redirect URL
+                let redirectUrl = "__VITE_API_URL__" || '/';
+                
+                // Check if we need protocol matching (only modify if needed)
+                const currentProtocol = window.location.protocol; // Will be 'http:' or 'https:'
+                
+                // Only enforce HTTPS if we're currently on HTTPS and the redirect is HTTP
+                if (currentProtocol === 'https:' && redirectUrl.startsWith('http:')) {
+                    redirectUrl = redirectUrl.replace('http:', 'https:');
+                    console.log('Matched redirect protocol to current (HTTPS):', redirectUrl);
+                }
+                
                 window.location.href = redirectUrl;
             }, 1500);
         }
