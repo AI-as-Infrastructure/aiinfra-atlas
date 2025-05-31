@@ -16,6 +16,16 @@
         window.onload = function() {
             console.log('Starting logout process...');
             
+            // Debug information about environment
+            console.log('Debug Info:');
+            console.log('- Current URL:', window.location.href);
+            console.log('- Referrer:', document.referrer);
+            console.log('- Protocol:', window.location.protocol);
+            console.log('- Cognito Auth Enabled:', USE_COGNITO_AUTH);
+            console.log('- Cognito Endpoint:', COGNITO_LOGOUT_ENDPOINT);
+            console.log('- Cognito Client ID:', COGNITO_CLIENT_ID ? '[CONFIGURED]' : '[NOT CONFIGURED]');
+            console.log('- Redirect URI:', COGNITO_LOGOUT_REDIRECT_URI);
+            
             // Parse URL to check if we're already in the logout flow
             const urlParams = new URLSearchParams(window.location.search);
             const logoutState = urlParams.get('state');
@@ -39,13 +49,39 @@
                     console.log('Updated redirect URI protocol to HTTPS:', logoutRedirectUri);
                 }
                 
-                // Add state parameter to track that we've been to Cognito
-                const redirectUriWithState = new URL(logoutRedirectUri);
-                redirectUriWithState.searchParams.set('state', 'complete');
-                
-                const logoutUrl = `${COGNITO_LOGOUT_ENDPOINT}?client_id=${COGNITO_CLIENT_ID}&logout_uri=${encodeURIComponent(redirectUriWithState.toString())}`;
-                console.log('Redirecting to Cognito logout URL:', logoutUrl);
-                window.location.replace(logoutUrl);
+                try {
+                    // Use the exact AWS Cognito logout URL format according to documentation
+                    // We know we need to use the domain with the /logout endpoint path
+                    
+                    // 1. Ensure our redirect URI has a state parameter to track completion
+                    let redirectUriWithState = logoutRedirectUri;
+                    // Add state parameter safely
+                    if (redirectUriWithState.includes('?')) {
+                        redirectUriWithState += '&state=complete';
+                    } else {
+                        redirectUriWithState += '?state=complete';
+                    }
+                    
+                    // 2. Fix the Cognito endpoint URL to use /logout endpoint
+                    // Extract domain from provided endpoint
+                    const urlParts = COGNITO_LOGOUT_ENDPOINT.split('/');
+                    const domainWithProtocol = urlParts.slice(0, 3).join('/'); // Get https://domain.com
+                    
+                    // 3. Construct the correct logout URL according to AWS specs
+                    // Format: https://domain.com/logout?client_id=xxx&logout_uri=xxx
+                    const cognitoLogoutUrl = `${domainWithProtocol}/logout?client_id=${COGNITO_CLIENT_ID}&logout_uri=${encodeURIComponent(redirectUriWithState)}`;
+                    
+                    // Log the final URL for debugging
+                    console.log('Redirecting to Cognito logout URL:', cognitoLogoutUrl);
+                    
+                    // Redirect to Cognito logout endpoint
+                    window.location.replace(cognitoLogoutUrl);
+                } catch (error) {
+                    // Catch any unexpected errors and fall back to direct redirect
+                    console.error('Error during Cognito logout URL construction:', error);
+                    console.log('Falling back to direct home redirect due to error');
+                    redirectToHome();
+                }
             } else {
                 // Simple logout for development or when Cognito isn't configured
                 console.log('Using direct logout (no Cognito), redirecting to home');
