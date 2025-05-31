@@ -332,7 +332,7 @@ export const logout = async () => {
     };
     
     // Force a direct approach for logout using Cognito's well-defined structure
-    const logoutEndpoint = `https://${config.domain}/logout`;
+    const logoutEndpoint = config.logoutEndpoint || `https://${config.domain}/logout`;
     const logoutRedirectUri = config.logoutRedirectUri || `${window.location.origin}/logout.html`;
     
     // Construct the Cognito logout URL manually to ensure it's correct
