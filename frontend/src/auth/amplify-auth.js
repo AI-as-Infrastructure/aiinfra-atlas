@@ -305,7 +305,22 @@ export const logout = async () => {
     
     // First try to use Amplify's signOut method with global option to clear all sessions
     // This is critical for proper logout behavior
-    await Auth.signOut({ global: true });
+    try {
+      await Auth.signOut({ global: true });
+      console.log('Global signout successful');
+    } catch (signOutError) {
+      // If global signout fails due to scope issues, try local signout
+      if (signOutError.code === 'NotAuthorizedException' || signOutError.message?.includes('required scopes')) {
+        console.log('Global signout failed due to scope limitations, performing local signout');
+        try {
+          await Auth.signOut(); // Local signout without global flag
+        } catch (localSignOutError) {
+          console.error('Local signout also failed:', localSignOutError);
+        }
+      } else {
+        console.error('Signout error:', signOutError);
+      }
+    }
     
     // Clear all Cognito-related items from local storage
     Object.keys(localStorage)
