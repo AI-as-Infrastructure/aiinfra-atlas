@@ -2,7 +2,7 @@
 
 # LLM Configuration
 LLM_PROVIDER=ANTHROPIC
-LLM_MODEL=claude-3-5-sonnet-20240620
+LLM_MODEL=claude-opus-4
 
 # Search-K (fetch-k) controls the number of document chunks sent to the LLM for analysis
 SEARCH_K=15
