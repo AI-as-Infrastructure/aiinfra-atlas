@@ -28,16 +28,40 @@
             
             // Parse URL to check if we're already in the logout flow
             const urlParams = new URLSearchParams(window.location.search);
-            const logoutState = urlParams.get('state');
+            const fromCognito = urlParams.get('from_cognito');
             
-            // Always clear browser storage regardless of flow
+            // Also check hash for compatibility
+            const hashFromCognito = window.location.hash === '#from_cognito';
+            
+            // Clear browser storage first
             clearBrowserStorage();
             
-            // Always clear browser storage regardless of flow
-            clearBrowserStorage();
-            console.log('logout.html loaded. State param:', logoutState);
-            // Always redirect to home after clearing storage
-            redirectToHome();
+            // If we're coming back from Cognito logout, redirect to login
+            if (fromCognito === 'true' || hashFromCognito) {
+                console.log('Logout complete, redirecting to login...');
+                window.location.replace('/login');
+                return;
+            }
+            
+            // If Cognito is enabled and configured, redirect to Cognito logout
+            if (canUseCognitoLogout()) {
+                console.log('Redirecting to Cognito logout endpoint...');
+                
+                // Build the Cognito logout URL
+                const logoutUrl = new URL(COGNITO_LOGOUT_ENDPOINT);
+                logoutUrl.searchParams.append('client_id', COGNITO_CLIENT_ID);
+                // After Cognito logout, come back to this page with a hash fragment (Cognito ignores these)
+                logoutUrl.searchParams.append('logout_uri', window.location.origin + '/logout.html#from_cognito');
+                
+                console.log('Cognito logout URL:', logoutUrl.toString());
+                
+                // Redirect to Cognito to clear server-side session
+                window.location.replace(logoutUrl.toString());
+            } else {
+                // If Cognito is not configured, just redirect to login
+                console.log('Cognito not configured, redirecting to login...');
+                window.location.replace('/login');
+            }
         };
         
         // Helper function to check if we can use Cognito logout
