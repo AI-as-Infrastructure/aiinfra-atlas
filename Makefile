@@ -299,3 +299,105 @@ dslf: ## Full cleanup of local staging deployment
 	@rm -rf $$HOME/.vite || true
 	@rm -rf $$HOME/.cache/vite || true
 	@echo "✅ Full cleanup completed (including removal of /opt/atlas and npm/node caches)"
+
+# === STAGING REMOTE SERVER DEPLOYMENT TARGETS ===
+.PHONY: sr dsr dsrf
+
+# Deploy to remote staging server
+sr: ## Deploy staging to remote server
+	@echo "Deploying to remote staging server..."
+	@if [ -z "$(STAGING_IP)" ]; then \
+		echo "Error: STAGING_IP environment variable not set"; \
+		echo "Usage: STAGING_IP=your.staging.server.ip make sr"; \
+		exit 1; \
+	fi
+	@if [ -z "$(STAGING_USER)" ]; then \
+		echo "Using default staging user: ubuntu"; \
+		STAGING_USER=ubuntu; \
+	else \
+		STAGING_USER=$(STAGING_USER); \
+	fi
+	@echo "Deploying to staging server at $(STAGING_IP) as user $$STAGING_USER"
+	@chmod +x deploy/staging/staging_remote.sh
+	@./deploy/staging/staging_remote.sh $(STAGING_IP) $$STAGING_USER
+
+# Basic destroy of remote staging deployment (leaves code intact)
+dsr: ## Basic cleanup of remote staging deployment
+	@echo "Performing basic cleanup of remote staging deployment..."
+	@if [ -z "$(STAGING_IP)" ]; then \
+		echo "Error: STAGING_IP environment variable not set"; \
+		echo "Usage: STAGING_IP=your.staging.server.ip make dsr"; \
+		exit 1; \
+	fi
+	@if [ -z "$(STAGING_USER)" ]; then \
+		STAGING_USER=ubuntu; \
+	else \
+		STAGING_USER=$(STAGING_USER); \
+	fi
+	@echo "Connecting to staging server at $(STAGING_IP) as user $$STAGING_USER"
+	@ssh -o StrictHostKeyChecking=no $$STAGING_USER@$(STAGING_IP) \
+		'set -e && \
+		echo "🧹 Starting basic staging cleanup..." && \
+		echo "Stopping and disabling gunicorn service..." && \
+		sudo systemctl stop gunicorn 2>/dev/null || echo "Gunicorn service not running" && \
+		sudo systemctl disable gunicorn 2>/dev/null || echo "Gunicorn service not enabled" && \
+		echo "Removing systemd service file..." && \
+		sudo rm -f /etc/systemd/system/gunicorn.service && \
+		sudo systemctl daemon-reload && \
+		echo "Removing nginx site configuration..." && \
+		sudo rm -f /etc/nginx/sites-available/atlas && \
+		sudo rm -f /etc/nginx/sites-enabled/atlas && \
+		echo "Restoring default nginx site..." && \
+		sudo ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default 2>/dev/null || true && \
+		sudo nginx -t && sudo systemctl reload nginx || echo "Nginx reload failed - check configuration" && \
+		echo "✅ Basic cleanup completed (code at /opt/atlas is preserved)"'
+
+# Full destroy of remote staging deployment (including code removal)
+dsrf: ## Full cleanup of remote staging deployment
+	@echo "WARNING: This will completely remove the staging deployment including all code!"
+	@echo "Are you sure you want to continue? (y/n)"
+	@bash -c 'read -p "" confirm && [[ "$$confirm" == [yY] || "$$confirm" == [yY][eE][sS] ]] || exit 1'
+	@if [ -z "$(STAGING_IP)" ]; then \
+		echo "Error: STAGING_IP environment variable not set"; \
+		echo "Usage: STAGING_IP=your.staging.server.ip make dsrf"; \
+		exit 1; \
+	fi
+	@if [ -z "$(STAGING_USER)" ]; then \
+		STAGING_USER=ubuntu; \
+	else \
+		STAGING_USER=$(STAGING_USER); \
+	fi
+	@echo "Connecting to staging server at $(STAGING_IP) as user $$STAGING_USER"
+	@ssh -o StrictHostKeyChecking=no $$STAGING_USER@$(STAGING_IP) \
+		'set -e && \
+		echo "🧹 Starting full staging cleanup..." && \
+		echo "Stopping and disabling gunicorn service..." && \
+		sudo systemctl stop gunicorn 2>/dev/null || echo "Gunicorn service not running" && \
+		sudo systemctl disable gunicorn 2>/dev/null || echo "Gunicorn service not enabled" && \
+		echo "Removing systemd service file..." && \
+		sudo rm -f /etc/systemd/system/gunicorn.service && \
+		sudo systemctl daemon-reload && \
+		echo "Removing nginx site configuration..." && \
+		sudo rm -f /etc/nginx/sites-available/atlas && \
+		sudo rm -f /etc/nginx/sites-enabled/atlas && \
+		echo "Restoring default nginx site..." && \
+		sudo ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default 2>/dev/null || true && \
+		sudo nginx -t && sudo systemctl reload nginx || echo "Nginx reload failed - check configuration" && \
+		echo "Removing application directory /opt/atlas..." && \
+		sudo rm -rf /opt/atlas && \
+		echo "Removing application log files..." && \
+		sudo rm -rf /var/log/atlas && \
+		echo "Resetting Redis configuration (if present)..." && \
+		if [ -f /etc/redis/redis.conf ]; then \
+			sudo sed -i "/^requirepass/d" /etc/redis/redis.conf && \
+			sudo systemctl restart redis-server 2>/dev/null || echo "Redis service not available"; \
+		elif [ -f /etc/redis.conf ]; then \
+			sudo sed -i "/^requirepass/d" /etc/redis.conf && \
+			sudo systemctl restart redis 2>/dev/null || echo "Redis service not available"; \
+		else \
+			echo "Redis configuration file not found - skipping Redis reset"; \
+		fi && \
+		echo "Cleaning up temporary files..." && \
+		sudo rm -f /tmp/.env.staging /tmp/gunicorn.service /tmp/nginx.conf && \
+		echo "✅ Full cleanup completed!" && \
+		echo "✅ All staging deployment files have been removed"'
