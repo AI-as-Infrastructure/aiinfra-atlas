@@ -25,6 +25,7 @@ class UserFeedback(BaseModel):
     source_quality: Optional[int] = None
     clarity: Optional[int] = None
     question_rating: Optional[int] = None
+    user_category: Optional[str] = None  # New field for user category
     tags: Optional[List[str]] = []
     feedback_text: Optional[str] = None
     model_answer: Optional[str] = None
@@ -87,6 +88,16 @@ def get_question_rating_description(score: int) -> str:
         5: "5/5: Very difficult - Highly challenging question for the LLM"
     }
     return descriptions.get(score, f"Question difficulty score: {score}/5")
+
+def get_user_category_description(category: str) -> str:
+    """Return a description for a user category"""
+    descriptions = {
+        "General User": "General User - Broad interest in the content",
+        "Hansard Expert": "Hansard Expert - Specialist in parliamentary records and procedures",
+        "Digital HASS Researcher": "Digital HASS Researcher - Humanities and Social Sciences researcher using digital methods", 
+        "GLAM Practitioner": "GLAM Practitioner - Gallery, Library, Archive, or Museum professional"
+    }
+    return descriptions.get(category, f"User Category: {category}")
 
 def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None) -> bool:
     """
@@ -303,6 +314,32 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
             "metadata": {"qa_id": qa_id} if qa_id else {}
         })
         
+    # Add user category annotation if present
+    if "user_category" in feedback_data and feedback_data["user_category"]:
+        user_category = feedback_data["user_category"]
+        
+        # Assign numeric scores to categories for Phoenix compatibility
+        category_scores = {
+            "General User": 1,
+            "Hansard Expert": 2,
+            "Digital HASS Researcher": 3,
+            "GLAM Practitioner": 4
+        }
+        category_score = category_scores.get(user_category, 1)  # Default to 1
+        
+        annotation_data.append({
+            "id": f"{annotation_id}_user_category",
+            "name": "User Category",  # Required field by Phoenix API
+            "span_id": formatted_span_id,
+            "annotator_kind": "HUMAN",  # Required field by Phoenix API
+            "result": {  # Nest these fields inside result as expected by Phoenix
+                "label": "user_category",
+                "score": category_score,  # Use numeric score for Phoenix compatibility
+                "explanation": get_user_category_description(user_category)  # Add detailed explanation for Phoenix UI
+            },
+            "metadata": {"qa_id": qa_id, "user_category": user_category} if qa_id else {"user_category": user_category}
+        })
+    
     # Add tags as separate annotations if present
     if "tags" in feedback_data and feedback_data["tags"]:
         for i, tag in enumerate(feedback_data["tags"]):
