@@ -24,6 +24,7 @@ class UserFeedback(BaseModel):
     factual_accuracy: Optional[bool] = None
     source_quality: Optional[int] = None
     clarity: Optional[int] = None
+    question_rating: Optional[int] = None
     tags: Optional[List[str]] = []
     feedback_text: Optional[str] = None
     
@@ -74,6 +75,17 @@ def get_source_quality_description(score: int) -> str:
         5: "5/5: Excellent sources - Authoritative and perfectly matched"
     }
     return descriptions.get(score, f"Source quality score: {score}/5")
+
+def get_question_rating_description(score: int) -> str:
+    """Return a description for a question difficulty/challenge rating score"""
+    descriptions = {
+        1: "1/5: Very easy - Straightforward question requiring minimal context",
+        2: "2/5: Easy - Simple question with clear answer path",
+        3: "3/5: Moderate - Requires some reasoning or specific knowledge",
+        4: "4/5: Difficult - Complex question requiring deep analysis",
+        5: "5/5: Very difficult - Highly challenging question for the LLM"
+    }
+    return descriptions.get(score, f"Question difficulty score: {score}/5")
 
 def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None) -> bool:
     """
@@ -255,6 +267,22 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
                 "label": "source_quality",
                 "score": source_quality_score,
                 "explanation": get_source_quality_description(source_quality_score)  # Add detailed explanation for Phoenix UI
+            },
+            "metadata": {"qa_id": qa_id} if qa_id else {}
+        })
+        
+    # Add question rating annotation if present
+    if "question_rating" in feedback_data and feedback_data["question_rating"] is not None:
+        question_rating_score = feedback_data["question_rating"]
+        annotation_data.append({
+            "id": f"{annotation_id}_question_rating",
+            "name": "Question Difficulty",  # Required field by Phoenix API
+            "span_id": formatted_span_id,
+            "annotator_kind": "HUMAN",  # Required field by Phoenix API
+            "result": {  # Nest these fields inside result as expected by Phoenix
+                "label": "question_difficulty",
+                "score": question_rating_score,
+                "explanation": get_question_rating_description(question_rating_score)  # Add detailed explanation for Phoenix UI
             },
             "metadata": {"qa_id": qa_id} if qa_id else {}
         })
