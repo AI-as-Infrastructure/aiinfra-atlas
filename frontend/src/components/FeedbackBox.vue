@@ -53,6 +53,18 @@
               </div>
             </div>
             <div class="field">
+              <label class="label">Question Difficulty (1–5):</label>
+              <div class="control">
+                <select v-model="questionRating" class="input">
+                  <option :value="1">1 - Very easy</option>
+                  <option :value="2">2 - Easy</option>
+                  <option :value="3">3 - Moderate</option>
+                  <option :value="4">4 - Difficult</option>
+                  <option :value="5">5 - Very difficult</option>
+                </select>
+              </div>
+            </div>
+            <div class="field">
               <label class="label">Tags:</label>
               <div class="control">
                 <label><input type="checkbox" value="hallucination" v-model="tags"> Hallucination</label>
@@ -125,6 +137,7 @@ const relevance = ref(3)
 const factualAccuracy = ref('true')
 const sourceQuality = ref(3)
 const clarity = ref(3)
+const questionRating = ref(3)
 const tags = ref([])
 const feedbackText = ref('')
 const configData = ref(null)
@@ -163,6 +176,7 @@ function resetForm() {
   factualAccuracy.value = 'true';
   sourceQuality.value = 3;
   clarity.value = 3;
+  questionRating.value = 3;
   tags.value = [];
   feedbackText.value = '';
 }
@@ -195,6 +209,7 @@ async function submitFeedback() {
       factual_accuracy: factualAccuracy.value === 'true',
       source_quality: Number(sourceQuality.value),
       clarity: Number(clarity.value),
+      question_rating: Number(questionRating.value),
       tags: tags.value,
       feedback_text: feedbackText.value,
       test_target: configData.value || {},
