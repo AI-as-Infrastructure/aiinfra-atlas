@@ -17,6 +17,7 @@ from langchain_core.vectorstores import VectorStore
 
 from backend.telemetry import create_span, SpanAttributes, SpanNames, OpenInferenceSpanKind, set_span_outputs
 from opentelemetry.trace import SpanKind
+from opentelemetry.trace import SpanKind
 from backend.modules.corpus_filtering import apply_corpus_filter, filter_documents_with_telemetry
 from backend.modules.config import get_search_k, get_citation_limit, get_large_retrieval_size
 
@@ -168,6 +169,7 @@ def retrieve_documents(
             
             # Span categorization
             "openinference.span.kind": OpenInferenceSpanKind.RETRIEVER,
+            "otel_kind": SpanKind.INTERNAL,
             "openinference.retriever.type": retriever_type,
         },
         session_id=session_id,  # Critical for session association
@@ -371,6 +373,7 @@ def retrieve_documents_with_telemetry(
                 
                 # Span categorization
                 "openinference.span.kind": OpenInferenceSpanKind.RETRIEVER,
+                "otel_kind": SpanKind.INTERNAL,
                 "openinference.retriever.type": retriever_name
             },
             session_id=session_id
