@@ -152,26 +152,22 @@ False - The answer contains factual errors</div>
                 <textarea class="textarea" v-model="modelAnswer"></textarea>
               </div>
             </div>
-            <div class="field is-grouped">
-              <div class="control">
-                <button 
-                  class="button is-success" 
-                  type="submit" 
-                  :class="{ 'is-loading': isSubmitting }"
-                  :disabled="isSubmitting"
-                >
-                  Submit
-                </button>
-              </div>
-              <div class="control">
-                <button 
-                  class="button" 
-                  @click="closeForm" 
-                  :disabled="false"
-                >
-                  Cancel
-                </button>
-              </div>
+            <div class="action-buttons">
+              <button 
+                class="small-button submit-button" 
+                type="submit" 
+                :class="{ 'is-loading': isSubmitting }"
+                :disabled="isSubmitting"
+              >
+                Submit
+              </button>
+              <button 
+                class="small-button cancel-button" 
+                @click="closeForm" 
+                type="button"
+              >
+                Cancel
+              </button>
             </div>
           </form>
         </div>
@@ -475,6 +471,43 @@ async function submitFeedback() {
 
 .tooltip-container:hover .tooltip-text {
   display: block;
+}
+
+.action-buttons {
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  margin-top: 1rem;
+}
+
+.small-button {
+  height: 1.8rem;
+  padding: 0 0.75rem;
+  font-size: 0.85rem;
+  border-radius: 4px;
+  cursor: pointer;
+  border: none;
+  font-weight: 500;
+}
+
+.submit-button {
+  background-color: #23d160;
+  color: white;
+}
+
+.submit-button:disabled {
+  background-color: #23d160;
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.cancel-button {
+  background-color: #f5f5f5;
+  color: #363636;
+}
+
+.cancel-button:hover {
+  background-color: #e8e8e8;
 }
 
 .feedback-form .label {
