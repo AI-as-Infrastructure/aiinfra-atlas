@@ -380,6 +380,69 @@ def create_human_query_span(
         
         yield span
 
+@contextmanager
+def create_guardrail_span(
+    guardrail_type: str,
+    input_text: str,
+    session_id: str,
+    qa_id: str,
+    enabled: bool = True,
+    attributes: Dict[str, Any] = None
+):
+    """
+    Create a span for a guardrail check.
+    
+    This span represents a guardrail/safety check in the RAG pipeline.
+    
+    Args:
+        guardrail_type: Type of guardrail (e.g., "sensitivity", "toxicity", "pii")
+        input_text: Text being checked
+        session_id: Session identifier
+        qa_id: Question-answer identifier
+        enabled: Whether the guardrail is actively enforcing (vs just monitoring)
+        attributes: Additional attributes (optional)
+        
+    Returns:
+        Context manager for the guardrail span
+    """
+    if attributes is None:
+        attributes = {}
+    
+    # Add required OpenInference attributes for guardrails
+    span_attributes = {
+        **attributes,
+        # Session identifiers
+        SpanAttributes.SESSION_ID: session_id,
+        SpanAttributes.QA_ID: qa_id,
+        
+        # Input text
+        SpanAttributes.INPUT_VALUE: input_text,
+        "query_length": len(input_text),
+        
+        # Guardrail metadata
+        "guardrail.type": guardrail_type,
+        "guardrail.enabled": enabled,
+        
+        # Span classification
+        "openinference.span.kind": OpenInferenceSpanKind.GUARDRAIL,
+        
+        # Timestamp
+        "timestamp": datetime.now().isoformat()
+    }
+    
+    # Create span with proper kind
+    with trace_operation(
+        f"com.atlas.guardrails.{guardrail_type}",
+        attributes=span_attributes,
+        session_id=session_id,
+        qa_id=qa_id,
+        openinference_kind=OpenInferenceSpanKind.GUARDRAIL,
+        input_data=input_text,
+        kind=SpanKind.INTERNAL,
+        link_to_current=True  # Link to current context as it's part of the pipeline
+    ) as span:
+        yield span
+
 # Import the span registry
 from .registry import span_registry
 
