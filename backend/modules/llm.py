@@ -799,20 +799,8 @@ def generate_response_with_telemetry(
 
 def _set_span_output_attributes(span, content: str, error: str = None):
     """Helper function to set output attributes on a span consistently"""
-    # Primary content field - most important for Phoenix display
+    # Set only the Phoenix-recognized content field
     span.set_attribute("content", content)
-    
-    # Set using the output method if available
-    if hasattr(span, "set_output"):
-        span.set_output(content)
-    
-    # Also set standard output attributes for maximum compatibility
-    span.set_attribute("output", content)
-    span.set_attribute("output.value", content)
-    span.set_attribute(SpanAttributes.OUTPUT, content)
-    span.set_attribute("openinference.llm.output", content)
-    span.set_attribute("llm.output", content)
-    
     if error:
         span.set_attribute("error", error)
 
