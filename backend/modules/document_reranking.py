@@ -93,7 +93,8 @@ def trace_document_reranking(
             "openinference.span.kind": OpenInferenceSpanKind.RERANKER,
         },
         session_id=session_id,  # Critical for session association
-        kind=SpanKind.INTERNAL
+        kind=OpenInferenceSpanKind.RERANKER,
+        otel_kind=SpanKind.INTERNAL
     ) as span:
         try:
             # Record start time

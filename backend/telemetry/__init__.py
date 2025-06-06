@@ -85,8 +85,100 @@ __all__ = [
     
     # OpenTelemetry utilities
     "Status",
-    "StatusCode"
+    "StatusCode",
+    
+    # Trace wrapper functions
+    "trace_document_retrieval",
+    "trace_llm_generation",
+    "trace_document_filtering",
+    "trace_citation_formatting",
+    "OpenInferenceOpenInferenceSpanKind"
 ]
 
 # Initialize telemetry system
 initialize_telemetry()
+
+# Create trace wrapper functions for backward compatibility
+from contextlib import contextmanager
+from typing import Dict, Any, Optional
+
+@contextmanager
+def trace_document_retrieval(session_id: str = None, qa_id: str = None, **kwargs):
+    """Create a document retrieval span with proper span kind"""
+    attributes = {
+        SpanAttributes.SESSION_ID: session_id,
+        SpanAttributes.QA_ID: qa_id,
+        "span.kind": "RETRIEVER",  # Explicit span kind for Phoenix
+        "openinference.span.kind": OpenInferenceSpanKind.RETRIEVER,
+        **kwargs
+    }
+    with create_span(
+        SpanNames.CONTEXT_RETRIEVAL,
+        attributes=attributes,
+        session_id=session_id,
+        kind=OpenInferenceSpanKind.RETRIEVER,
+        otel_kind=SpanKind.INTERNAL
+    ) as span:
+        yield span
+
+@contextmanager
+def trace_llm_generation(query: str, model_name: str, session_id: str = None, qa_id: str = None, **kwargs):
+    """Create an LLM generation span with proper span kind"""
+    attributes = {
+        SpanAttributes.SESSION_ID: session_id,
+        SpanAttributes.QA_ID: qa_id,
+        SpanAttributes.INPUT_VALUE: query,
+        SpanAttributes.LLM_MODEL: model_name,
+        "span.kind": "LLM",  # Explicit span kind for Phoenix
+        "openinference.span.kind": OpenInferenceSpanKind.LLM,
+        **kwargs
+    }
+    with create_span(
+        SpanNames.LLM_GENERATION,
+        attributes=attributes,
+        session_id=session_id,
+        kind=OpenInferenceSpanKind.LLM,
+        otel_kind=SpanKind.INTERNAL
+    ) as span:
+        yield span
+
+@contextmanager
+def trace_document_filtering(session_id: str = None, qa_id: str = None, **kwargs):
+    """Create a document filtering span with proper span kind"""
+    attributes = {
+        SpanAttributes.SESSION_ID: session_id,
+        SpanAttributes.QA_ID: qa_id,
+        "span.kind": "PROCESSOR",  # Explicit span kind for Phoenix
+        "openinference.span.kind": OpenInferenceSpanKind.PROCESSOR,
+        **kwargs
+    }
+    with create_span(
+        SpanNames.DOCUMENT_FILTERING,
+        attributes=attributes,
+        session_id=session_id,
+        kind=OpenInferenceSpanKind.PROCESSOR,
+        otel_kind=SpanKind.INTERNAL
+    ) as span:
+        yield span
+
+@contextmanager
+def trace_citation_formatting(session_id: str = None, qa_id: str = None, **kwargs):
+    """Create a citation formatting span with proper span kind"""
+    attributes = {
+        SpanAttributes.SESSION_ID: session_id,
+        SpanAttributes.QA_ID: qa_id,
+        "span.kind": "REFERENCES",  # Explicit span kind for Phoenix
+        "openinference.span.kind": OpenInferenceSpanKind.REFERENCES,
+        **kwargs
+    }
+    with create_span(
+        SpanNames.DOCUMENT_REFERENCES,
+        attributes=attributes,
+        session_id=session_id,
+        kind=OpenInferenceSpanKind.REFERENCES,
+        otel_kind=SpanKind.INTERNAL
+    ) as span:
+        yield span
+
+# Alias for backward compatibility
+OpenInferenceOpenInferenceSpanKind = OpenInferenceSpanKind

@@ -244,6 +244,7 @@ def create_span(name: str, attributes: Dict[str, Any] = None,
     # Add OpenInference span kind
     if kind:
         span_attributes[SpanAttributes.OPENINFERENCE_SPAN_KIND] = kind
+        span_attributes["span.kind"] = kind  # Also set direct span.kind for Phoenix UI
     
     if not PHOENIX_AVAILABLE or not _phoenix_session:
         raise RuntimeError("Phoenix telemetry is not available. Ensure Phoenix is configured and initialized.")

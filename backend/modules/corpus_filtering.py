@@ -29,9 +29,11 @@ def get_corpus_distribution(documents: List[Document]) -> Dict[str, int]:
         "get_corpus_distribution",
         attributes={
             "document_count": len(documents),
-            "openinference.span.kind": "FILTERING"
-        }
-    , otel_kind=SpanKind.INTERNAL) as span:
+            "openinference.span.kind": OpenInferenceSpanKind.PROCESSOR
+        },
+        kind=OpenInferenceSpanKind.PROCESSOR,
+        otel_kind=SpanKind.INTERNAL
+    ) as span:
         distribution = Counter()
         for doc in documents:
             corpus = doc.metadata.get('corpus', 'unknown')
@@ -58,9 +60,11 @@ def verify_corpus_distribution(distribution: Dict[str, int], corpus_filter: Opti
         "verify_corpus_distribution",
         attributes={
             "corpus_filter": corpus_filter or "all",
-            "openinference.span.kind": "FILTERING"
-        }
-    , otel_kind=SpanKind.INTERNAL) as span:
+            "openinference.span.kind": OpenInferenceSpanKind.PROCESSOR
+        },
+        kind=OpenInferenceSpanKind.PROCESSOR,
+        otel_kind=SpanKind.INTERNAL
+    ) as span:
         # If no filter or 'all', any distribution is valid
         if not corpus_filter or corpus_filter.lower() == 'all':
             span.set_attribute("filter_verified", True)
@@ -130,9 +134,12 @@ def filter_documents_with_telemetry(
             SpanAttributes.QA_ID: qa_id,
             SpanAttributes.DOCUMENT_COUNT: len(documents),
             "corpus_filter": corpus_filter or "all",
-            "openinference.span.kind": "FILTERING"
-        }
-    , otel_kind=SpanKind.INTERNAL) as span:
+            "openinference.span.kind": OpenInferenceSpanKind.PROCESSOR
+        },
+        session_id=session_id,
+        kind=OpenInferenceSpanKind.PROCESSOR,
+        otel_kind=SpanKind.INTERNAL
+    ) as span:
         # Fix: Don't pass span as a positional argument
         filtered_docs = apply_corpus_filter(documents, corpus_filter)
         

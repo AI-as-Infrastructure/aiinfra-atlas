@@ -117,7 +117,7 @@ async def call_model(
             session_id=session_id
         ) as parent_span:
             # Get test target attributes from the unified configuration
-            from backend.telemetry.rag import get_test_target_attributes
+            from backend.telemetry.config_attrs import get_test_target_attributes
             test_target_attrs = get_test_target_attributes()
             # Attach the full session configuration as attributes to the root span
             for key, value in test_target_attrs.items():

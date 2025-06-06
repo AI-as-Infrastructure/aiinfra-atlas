@@ -603,7 +603,9 @@ def generate_response_with_telemetry(
                 "corpus_filter": corpus_filter or "all",
                 SpanAttributes.DOCUMENT_COUNT: len(documents)
             },
-            kind=SpanKind.INTERNAL
+            session_id=session_id,
+            kind=OpenInferenceSpanKind.LLM,  # Pass the OpenInference kind here
+            otel_kind=SpanKind.INTERNAL  # Pass the OpenTelemetry kind as otel_kind
         ) as llm_span:
             try:
                 # Register the main LLM span - critical for feedback association
@@ -745,15 +747,18 @@ def generate_response_with_telemetry(
                                 SpanAttributes.SESSION_ID: session_id,
                                 SpanAttributes.QA_ID: qa_id,
                                 "description": "LLM Generation Error",
-                                "kind": "LLM",  # Direct kind attribute
-                                "span.kind": "LLM",  # Alternative format
+                                "kind": "LLM",
+                                "span.kind": "LLM",
                                 "openinference.span.kind": OpenInferenceSpanKind.LLM,
                                 "content": str(generation_error),
                                 "output": str(generation_error),
                                 "error_message": str(generation_error),
                                 "partial_response": full_response,
                                 "error_type": generation_error.__class__.__name__,
-                            }
+                            },
+                            session_id=session_id,
+                            kind=OpenInferenceSpanKind.LLM,
+                            otel_kind=SpanKind.INTERNAL
                         ) as error_span:
                             # Set the error using the method for double insurance
                             if hasattr(error_span, "set_output"):
@@ -815,12 +820,14 @@ def _create_error_span(session_id: str, qa_id: str, error: Exception, partial_re
             "description": "LLM Generation Error",
             "kind": "LLM",
             "span.kind": "LLM",
-            "openinference.span.kind": "LLM",
+            "openinference.span.kind": OpenInferenceSpanKind.LLM,
             "content": str(error),
             "output": str(error),
             "error_message": str(error),
             "partial_response": partial_response,
             "error_type": error.__class__.__name__,
         },
-        kind="LLM", otel_kind=SpanKind.INTERNAL
+        session_id=session_id,
+        kind=OpenInferenceSpanKind.LLM,
+        otel_kind=SpanKind.INTERNAL
     )

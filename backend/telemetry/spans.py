@@ -69,6 +69,7 @@ def trace_operation(
     
     # Add OpenInference attributes for Phoenix - ensure the structure matches Phoenix format
     attributes["openinference.span.kind"] = openinference_kind
+    attributes["span.kind"] = openinference_kind  # Also set the direct span.kind for Phoenix UI
     
     # Add timestamp
     attributes["timestamp"] = datetime.now().isoformat()
@@ -96,7 +97,8 @@ def trace_operation(
         name=operation_name,
         attributes=attributes,
         session_id=session_id,
-        kind=openinference_kind
+        kind=openinference_kind,
+        otel_kind=kind
     ) as span:
         yield span
 
