@@ -20,6 +20,7 @@ except ImportError as e:
     raise ImportError("Phoenix telemetry is required but the 'phoenix' package is not installed.") from e
 
 from .constants import SpanAttributes, SpanNames, OpenInferenceSpanKind
+from opentelemetry.trace import SpanKind
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -197,9 +198,11 @@ def is_telemetry_enabled() -> bool:
         return True
     return value.lower() in ("true", "1", "yes", "on")
 
+from opentelemetry.trace import SpanKind
+
 @contextmanager
 def create_span(name: str, attributes: Dict[str, Any] = None, 
-               session_id: str = None, kind: Any = None) -> ContextManager:
+               session_id: str = None, kind: Any = None, otel_kind: Any = None) -> ContextManager:
     """
     Create a telemetry span using Phoenix native tracing for proper feedback support
     
@@ -207,7 +210,8 @@ def create_span(name: str, attributes: Dict[str, Any] = None,
         name: Span operation name
         attributes: Span attributes
         session_id: Session identifier
-        kind: OpenInference span kind string
+        kind: OpenInference span kind string (for Phoenix logical kind)
+        otel_kind: OpenTelemetry protocol span kind (e.g., SpanKind.INTERNAL, SpanKind.SERVER, etc.)
     """
     # Check if telemetry is enabled
     if not is_telemetry_enabled():
@@ -246,7 +250,9 @@ def create_span(name: str, attributes: Dict[str, Any] = None,
     
     # Use OpenTelemetry with Phoenix OTLP exporter
     tracer = get_tracer()
-    with tracer.start_as_current_span(name, attributes=span_attributes) as span:
+    # Set OpenTelemetry protocol span kind if provided, else default to INTERNAL
+    protocol_kind = otel_kind if otel_kind is not None else SpanKind.INTERNAL
+    with tracer.start_as_current_span(name, attributes=span_attributes, kind=protocol_kind) as span:
         yield span
 
 def create_rag_pipeline_span(session_id: str, qa_id: str, query: str, **kwargs):

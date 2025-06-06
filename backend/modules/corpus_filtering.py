@@ -11,6 +11,7 @@ from collections import Counter
 from langchain_core.documents.base import Document
 
 from backend.telemetry import create_span, SpanAttributes, SpanNames, OpenInferenceSpanKind
+from opentelemetry.trace import SpanKind
 
 logger = logging.getLogger(__name__)
 
@@ -27,9 +28,10 @@ def get_corpus_distribution(documents: List[Document]) -> Dict[str, int]:
     with create_span(
         "get_corpus_distribution",
         attributes={
-            "document_count": len(documents)
+            "document_count": len(documents),
+            "openinference.span.kind": "FILTERING"
         }
-    ) as span:
+    , otel_kind=SpanKind.INTERNAL) as span:
         distribution = Counter()
         for doc in documents:
             corpus = doc.metadata.get('corpus', 'unknown')
@@ -55,9 +57,10 @@ def verify_corpus_distribution(distribution: Dict[str, int], corpus_filter: Opti
     with create_span(
         "verify_corpus_distribution",
         attributes={
-            "corpus_filter": corpus_filter or "all"
+            "corpus_filter": corpus_filter or "all",
+            "openinference.span.kind": "FILTERING"
         }
-    ) as span:
+    , otel_kind=SpanKind.INTERNAL) as span:
         # If no filter or 'all', any distribution is valid
         if not corpus_filter or corpus_filter.lower() == 'all':
             span.set_attribute("filter_verified", True)
@@ -127,9 +130,9 @@ def filter_documents_with_telemetry(
             SpanAttributes.QA_ID: qa_id,
             SpanAttributes.DOCUMENT_COUNT: len(documents),
             "corpus_filter": corpus_filter or "all",
-            "openinference.span.kind": OpenInferenceSpanKind.PROCESSOR
+            "openinference.span.kind": "FILTERING"
         }
-    ) as span:
+    , otel_kind=SpanKind.INTERNAL) as span:
         # Fix: Don't pass span as a positional argument
         filtered_docs = apply_corpus_filter(documents, corpus_filter)
         

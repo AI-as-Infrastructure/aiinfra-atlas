@@ -24,6 +24,7 @@ from langchain_core.runnables import RunnablePassthrough
 from langchain_core.language_models.chat_models import BaseChatModel
 
 from backend.telemetry import create_span, SpanAttributes, SpanNames, OpenInferenceSpanKind, set_span_outputs
+from opentelemetry.trace import SpanKind
 from opentelemetry.trace import SpanKind, Status, StatusCode
 from backend.modules.config import get_system_prompt, get_llm_config
 from backend.modules.system_prompts import get_qa_prompt_template, system_prompt
@@ -814,11 +815,12 @@ def _create_error_span(session_id: str, qa_id: str, error: Exception, partial_re
             "description": "LLM Generation Error",
             "kind": "LLM",
             "span.kind": "LLM",
-            "openinference.span.kind": OpenInferenceSpanKind.LLM,
+            "openinference.span.kind": "LLM",
             "content": str(error),
             "output": str(error),
             "error_message": str(error),
             "partial_response": partial_response,
             "error_type": error.__class__.__name__,
-        }
+        },
+        kind="LLM", otel_kind=SpanKind.INTERNAL
     )
