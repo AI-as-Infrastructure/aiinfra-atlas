@@ -24,6 +24,7 @@ try:
     from backend.modules.document_reranking import rerank_documents_with_telemetry
     from backend.modules.llm import generate_response_with_telemetry
     from backend.modules.config import get_retriever
+    from backend.modules.sensitive_contexts import detect_sensitive_contexts
     print("✅ Successfully imported LLM processing modules")
 except ImportError as e:
     print(f"⚠️ Could not import LLM processing functions: {e}")
@@ -55,6 +56,18 @@ def process_query_sync(query_data: Dict[str, Any]) -> Dict[str, Any]:
             }
         
         print(f"🔄 Processing query: {question[:50]}...")
+        
+        # Guardrail check: Detect sensitive contexts
+        sensitive_contexts = detect_sensitive_contexts(
+            query=question,
+            session_id=session_id,
+            qa_id=qa_id
+        )
+        
+        # Log if any sensitive contexts were detected (for future use)
+        if sensitive_contexts:
+            print(f"⚠️ Detected sensitive contexts: {sensitive_contexts}")
+            # In the future, this could trigger special handling or warnings
         
         # Step 1: Retrieve documents
         documents, qa_id = retrieve_documents_with_telemetry(

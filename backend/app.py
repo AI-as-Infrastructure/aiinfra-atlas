@@ -100,6 +100,7 @@ from backend.modules.streaming import (
 from backend.modules.llm import generate_response_with_telemetry
 from backend.telemetry.feedback import UserFeedback, FeedbackResponse
 from backend.modules.auth import get_current_user, optional_user
+from backend.modules.sensitive_contexts import detect_sensitive_contexts
 from backend.telemetry.config_attrs import get_test_target_attributes
 
 # Import async queue management
@@ -493,6 +494,18 @@ async def ask_stream(data: dict = Body(...)):
             session_id=session_id
         ) as parent_span:
             try:
+                # Guardrail check: Detect sensitive contexts early in the pipeline
+                sensitive_contexts = detect_sensitive_contexts(
+                    query=question,
+                    session_id=session_id,
+                    qa_id=qa_id
+                )
+                
+                # Log if any sensitive contexts were detected
+                if sensitive_contexts:
+                    logger.warning(f"Detected sensitive contexts for session {session_id}: {sensitive_contexts}")
+                    # In the future, this could trigger special handling, warnings, or filtering
+                
                 # Retrieve documents using our utility
                 documents, qa_id = retrieve_documents_with_telemetry(
                     query=question,

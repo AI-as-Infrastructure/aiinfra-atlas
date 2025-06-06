@@ -21,7 +21,7 @@ from .core import (
     log_user_feedback,
     create_rag_pipeline_span,
     create_retrieval_span,
-    create_llm_span,
+    create_llm_span as create_llm_span_core,
     create_feedback_span,
     set_span_outputs
 )
@@ -53,6 +53,20 @@ from .api import router as telemetry_router
 # OpenTelemetry status and utilities
 from opentelemetry.trace.status import Status, StatusCode
 
+# Specialized span creation
+from .spans import (
+    trace_operation,
+    create_llm_span,
+    create_retriever_span,
+    create_human_query_span,
+    create_guardrail_span,
+    register_span,
+    find_qa_span_id,
+    find_session_root_span_id,
+    find_span_by_trace_id,
+    register_session_root_span
+)
+
 # Export all public components
 __all__ = [
     # Core functionality
@@ -83,16 +97,29 @@ __all__ = [
     # API router
     "telemetry_router",
     
-    # OpenTelemetry utilities
+    # Specialized span operations
+    "trace_operation",
+    "create_llm_span",
+    "create_retriever_span",
+    "create_human_query_span",
+    "create_guardrail_span",
+    
+    # Span registry functions
+    "register_span",
+    "find_qa_span_id",
+    "find_session_root_span_id", 
+    "find_span_by_trace_id",
+    "register_session_root_span",
+    
+    # Status types
     "Status",
     "StatusCode",
     
-    # Trace wrapper functions
+    # Trace functions from module
     "trace_document_retrieval",
     "trace_llm_generation",
     "trace_document_filtering",
     "trace_citation_formatting",
-    "OpenInferenceOpenInferenceSpanKind"
 ]
 
 # Initialize telemetry system
