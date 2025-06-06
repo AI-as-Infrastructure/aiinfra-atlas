@@ -21,7 +21,7 @@ class UserFeedback(BaseModel):
     session_id: str
     qa_id: str
     relevance: Optional[int] = None
-    factual_accuracy: Optional[bool] = None
+    factual_accuracy: Optional[str] = None  # Changed from bool to str to support "mixed"
     source_quality: Optional[int] = None
     clarity: Optional[int] = None
     question_rating: Optional[int] = None
@@ -224,8 +224,23 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
     
     # Add factual accuracy annotation
     if "factual_accuracy" in feedback_data:
-        accuracy_value = bool(feedback_data["factual_accuracy"])
-        explanation = "Response is factually accurate" if accuracy_value else "Response contains factual errors"
+        # Handle the three possible values: "true", "false", "mixed"
+        accuracy_value = feedback_data["factual_accuracy"]
+        
+        if accuracy_value == "true":
+            score = 1
+            explanation = "Response is factually accurate"
+        elif accuracy_value == "false":
+            score = 0
+            explanation = "Response contains factual errors"
+        elif accuracy_value == "mixed":
+            score = 0.5  # Use 0.5 to represent mixed accuracy
+            explanation = "Response contains both accurate and inaccurate information"
+        else:
+            # Default case
+            score = 0
+            explanation = "Factual accuracy unclear"
+            
         annotation_data.append({
             "id": f"{annotation_id}_factual",
             "name": "Factual Accuracy",  # Required field by Phoenix API
@@ -233,7 +248,7 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
             "annotator_kind": "HUMAN",  # Required field by Phoenix API
             "result": {  # Nest these fields inside result as expected by Phoenix
                 "label": "factual_accuracy",
-                "score": int(accuracy_value),
+                "score": score,
                 "explanation": explanation  # Add explanation for Phoenix UI
             },
             "metadata": {"qa_id": qa_id} if qa_id else {}

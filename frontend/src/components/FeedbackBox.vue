@@ -10,6 +10,14 @@
         <div v-else class="feedback-form">
           <form @submit.prevent="submitFeedback">
             <div class="field">
+              <label class="label">Factual Accuracy:</label>
+              <div class="control checkbox-group">
+                <label class="checkbox-label"><input type="checkbox" :checked="factualAccuracy === 'true'" @change="factualAccuracy = $event.target.checked ? 'true' : (factualAccuracy === 'mixed' ? 'mixed' : 'false')"> True</label> 
+                <label class="checkbox-label"><input type="checkbox" :checked="factualAccuracy === 'mixed'" @change="factualAccuracy = $event.target.checked ? 'mixed' : (factualAccuracy === 'true' ? 'true' : 'false')"> Mixed</label> 
+                <label class="checkbox-label"><input type="checkbox" :checked="factualAccuracy === 'false'" @change="factualAccuracy = $event.target.checked ? 'false' : (factualAccuracy === 'mixed' ? 'mixed' : 'true')"> False</label>
+              </div>
+            </div>
+            <div class="field">
               <label class="label">Relevance (1–5):</label>
               <div class="control">
                 <select v-model="relevance" class="input">
@@ -19,13 +27,6 @@
                   <option :value="4">4 - Very relevant</option>
                   <option :value="5">5 - Perfectly relevant</option>
                 </select>
-              </div>
-            </div>
-            <div class="field">
-              <label class="label">Factual Accuracy:</label>
-              <div class="control">
-                <label><input type="radio" value="true" v-model="factualAccuracy"> True</label>
-                <label><input type="radio" value="false" v-model="factualAccuracy"> False</label>
               </div>
             </div>
             <div class="field">
@@ -66,12 +67,12 @@
             </div>
             <div class="field">
               <label class="label">Tags:</label>
-              <div class="control">
-                <label><input type="checkbox" value="hallucination" v-model="tags"> Hallucination</label>
-                <label><input type="checkbox" value="anachronism" v-model="tags"> Anachronism</label>
-                <label><input type="checkbox" value="biased" v-model="tags"> Biased</label>
-                <label><input type="checkbox" value="off-topic" v-model="tags"> Off-topic</label>
-                <label><input type="checkbox" value="well-sourced" v-model="tags"> Well-sourced</label>
+              <div class="control checkbox-group">
+                <label class="checkbox-label"><input type="checkbox" value="hallucination" v-model="tags"> Hallucination</label> 
+                <label class="checkbox-label"><input type="checkbox" value="anachronism" v-model="tags"> Anachronism</label> 
+                <label class="checkbox-label"><input type="checkbox" value="biased" v-model="tags"> Biased</label> 
+                <label class="checkbox-label"><input type="checkbox" value="off-topic" v-model="tags"> Off-topic</label> 
+                <label class="checkbox-label"><input type="checkbox" value="well-sourced" v-model="tags"> Well-sourced</label>
               </div>
             </div>
             <div class="field">
@@ -206,7 +207,7 @@ async function submitFeedback() {
       qa_id: qaId.value,
       trace_id: traceId.value,  // Include trace_id for telemetry correlation
       relevance: Number(relevance.value),
-      factual_accuracy: factualAccuracy.value === 'true',
+      factual_accuracy: factualAccuracy.value,  // Now passing the string value directly: 'true', 'false', or 'mixed'
       source_quality: Number(sourceQuality.value),
       clarity: Number(clarity.value),
       question_rating: Number(questionRating.value),
@@ -347,7 +348,19 @@ async function submitFeedback() {
 }
 
 .feedback-form .field {
-  margin-bottom: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.checkbox-label {
+  margin-right: 1.5rem;
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 0.5rem;
 }
 
 .feedback-form .label {
@@ -367,6 +380,17 @@ async function submitFeedback() {
 /* Make dropdown arrow black */
 .feedback-form .select::after {
   border-color: #000 !important;
+}
+
+/* Improve checkbox styling */
+.feedback-form input[type="checkbox"] {
+  margin-right: 0.25rem;
+  cursor: pointer;
+}
+
+.feedback-form label {
+  cursor: pointer;
+  user-select: none;
 }
 
 .notification {
