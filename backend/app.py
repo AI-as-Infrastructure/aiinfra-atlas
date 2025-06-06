@@ -399,14 +399,8 @@ def ask(data: dict = Body(...)):
         qa_id=qa_id
     )
     
-    # Apply document reranking to improve relevance
-    from backend.modules.document_reranking import rerank_documents_with_telemetry
-    documents = rerank_documents_with_telemetry(
-        documents=documents,
-        query=question,
-        session_id=session_id,
-        qa_id=qa_id
-    )
+    # Note: Document reranking is now handled directly in the HansardRetriever
+    # No need for redundant reranking here
     
     # Generate response
     response_generator, qa_id = generate_response_with_telemetry(
@@ -537,14 +531,8 @@ async def ask_stream(data: dict = Body(...)):
                         qa_id=qa_id
                     )
                 
-                # Apply document reranking to improve relevance
-                from backend.modules.document_reranking import rerank_documents_with_telemetry
-                documents = rerank_documents_with_telemetry(
-                    documents=documents,
-                    query=question,
-                    session_id=session_id,
-                    qa_id=qa_id
-                )
+                # Note: Document reranking is now handled directly in the HansardRetriever
+                # No need for redundant reranking here
                 
                 # Generate and stream the response
                 response_generator, qa_id = generate_response_with_telemetry(
