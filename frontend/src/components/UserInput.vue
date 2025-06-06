@@ -662,21 +662,41 @@ input.input::placeholder {
   margin-bottom: 0.5rem;
 }
 
-/* Ensure the button is black even when disabled */
-.send-button:disabled {
+/* Button styling */
+.send-button {
   background: #000 !important;
   color: #fff !important;
-  cursor: not-allowed !important;
-}
-
-/* Icon styling */
-.send-button {
-  font-size: 1.2rem !important;
+  border: none !important;
+  border-radius: 2px !important;
+  height: 2.2rem !important;
+  width: 2.2rem !important;
+  font-size: 1rem !important;
   line-height: 1 !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  padding-top: 0.3rem !important;
-  padding-bottom: 0.3rem !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+  position: relative !important;
+}
+
+/* Ensure the button is black even when disabled */
+.send-button:disabled {
+  background: #000 !important;
+  color: #fff !important;
+  opacity: 0.7 !important;
+  cursor: not-allowed !important;
+}
+
+/* Fix for Firefox rendering issues */
+.send-button:before {
+  content: '' !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  background: transparent !important;
 }
 </style>
