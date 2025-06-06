@@ -59,6 +59,7 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
             "question_rating": feedback.question_rating,
             "tags": feedback.tags,
             "feedback_text": feedback.feedback_text,
+            "model_answer": feedback.model_answer,
             "timestamp": datetime.now().isoformat(),
             "client_ip": client_ip,
             "trace_id": feedback.trace_id  # Include trace_id for span correlation

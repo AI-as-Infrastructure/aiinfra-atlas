@@ -27,6 +27,7 @@ class UserFeedback(BaseModel):
     question_rating: Optional[int] = None
     tags: Optional[List[str]] = []
     feedback_text: Optional[str] = None
+    model_answer: Optional[str] = None
     
     # Additional rich data from frontend
     test_target: Optional[Dict[str, Any]] = None
@@ -317,6 +318,23 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
                 },
                 "metadata": {"qa_id": qa_id, "tag": tag} if qa_id else {"tag": tag}
             })
+    
+    # Note: We don't need to add feedback_text here as it's already handled above as user_comment
+        
+    # Add model answer if provided
+    if "model_answer" in feedback_data and feedback_data["model_answer"]:
+        annotation_data.append({
+            "id": f"{annotation_id}_model_answer",
+            "name": "Model Answer",
+            "span_id": formatted_span_id,
+            "annotator_kind": "HUMAN",
+            "result": {
+                "label": "model_answer",
+                "score": None,
+                "explanation": feedback_data["model_answer"]
+            },
+            "metadata": {"qa_id": qa_id} if qa_id else {}
+        })
     
     # Skip if no annotation data was created
     if not annotation_data:

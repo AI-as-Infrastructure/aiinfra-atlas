@@ -10,7 +10,16 @@
         <div v-else class="feedback-form">
           <form @submit.prevent="submitFeedback">
             <div class="field">
-              <label class="label">Factual Accuracy:</label>
+              <div class="field-label-with-info">
+                <label class="label">Factual Accuracy</label>
+                <div class="tooltip-container">
+                  <span class="info-icon">ⓘ</span>
+                  <div class="tooltip-text">Rate the factual accuracy of the answer:
+True - The answer is factually accurate
+Mixed - The answer contains both accurate and inaccurate information
+False - The answer contains factual errors</div>
+                </div>
+              </div>
               <div class="control checkbox-group">
                 <label class="checkbox-label"><input type="checkbox" :checked="factualAccuracy === 'true'" @change="factualAccuracy = $event.target.checked ? 'true' : (factualAccuracy === 'mixed' ? 'mixed' : 'false')"> True</label> 
                 <label class="checkbox-label"><input type="checkbox" :checked="factualAccuracy === 'mixed'" @change="factualAccuracy = $event.target.checked ? 'mixed' : (factualAccuracy === 'true' ? 'true' : 'false')"> Mixed</label> 
@@ -18,50 +27,94 @@
               </div>
             </div>
             <div class="field">
-              <label class="label">Relevance (1–5):</label>
+              <div class="field-label-with-info">
+                <label class="label">Relevance</label>
+                <div class="tooltip-container">
+                  <span class="info-icon">ⓘ</span>
+                  <div class="tooltip-text">Rate how relevant the answer is to the question (1-5):
+1 - Not relevant
+2 - Somewhat relevant
+3 - Moderately relevant
+4 - Very relevant
+5 - Perfectly relevant</div>
+                </div>
+              </div>
               <div class="control">
                 <select v-model="relevance" class="input">
-                  <option :value="1">1 - Not relevant</option>
-                  <option :value="2">2 - Somewhat relevant</option>
-                  <option :value="3">3 - Moderately relevant</option>
-                  <option :value="4">4 - Very relevant</option>
-                  <option :value="5">5 - Perfectly relevant</option>
+                  <option :value="1">1</option>
+                  <option :value="2">2</option>
+                  <option :value="3">3</option>
+                  <option :value="4">4</option>
+                  <option :value="5">5</option>
                 </select>
               </div>
             </div>
             <div class="field">
-              <label class="label">Source Quality (1–5):</label>
+              <div class="field-label-with-info">
+                <label class="label">Source Quality</label>
+                <div class="tooltip-container">
+                  <span class="info-icon">ⓘ</span>
+                  <div class="tooltip-text">Rate the quality of sources used (1-5):
+1 - Poor sources
+2 - Fair sources
+3 - Good sources
+4 - Very good sources
+5 - Excellent sources</div>
+                </div>
+              </div>
               <div class="control">
                 <select v-model="sourceQuality" class="input">
-                  <option :value="1">1 - Poor sources</option>
-                  <option :value="2">2 - Fair sources</option>
-                  <option :value="3">3 - Good sources</option>
-                  <option :value="4">4 - Very good sources</option>
-                  <option :value="5">5 - Excellent sources</option>
+                  <option :value="1">1</option>
+                  <option :value="2">2</option>
+                  <option :value="3">3</option>
+                  <option :value="4">4</option>
+                  <option :value="5">5</option>
                 </select>
               </div>
             </div>
             <div class="field">
-              <label class="label">Clarity (1–5):</label>
+              <div class="field-label-with-info">
+                <label class="label">Clarity</label>
+                <div class="tooltip-container">
+                  <span class="info-icon">ⓘ</span>
+                  <div class="tooltip-text">Rate how clear the answer is (1-5):
+1 - Very unclear
+2 - Somewhat unclear
+3 - Moderately clear
+4 - Very clear
+5 - Perfectly clear</div>
+                </div>
+              </div>
               <div class="control">
                 <select v-model="clarity" class="input">
-                  <option :value="1">1 - Very unclear</option>
-                  <option :value="2">2 - Somewhat unclear</option>
-                  <option :value="3">3 - Moderately clear</option>
-                  <option :value="4">4 - Very clear</option>
-                  <option :value="5">5 - Perfectly clear</option>
+                  <option :value="1">1</option>
+                  <option :value="2">2</option>
+                  <option :value="3">3</option>
+                  <option :value="4">4</option>
+                  <option :value="5">5</option>
                 </select>
               </div>
             </div>
             <div class="field">
-              <label class="label">Question Difficulty (1–5):</label>
+              <div class="field-label-with-info">
+                <label class="label">Question Difficulty</label>
+                <div class="tooltip-container">
+                  <span class="info-icon">ⓘ</span>
+                  <div class="tooltip-text">Rate how difficult the question is for the LLM (1-5):
+1 - Very easy
+2 - Easy
+3 - Moderate
+4 - Difficult
+5 - Very difficult</div>
+                </div>
+              </div>
               <div class="control">
                 <select v-model="questionRating" class="input">
-                  <option :value="1">1 - Very easy</option>
-                  <option :value="2">2 - Easy</option>
-                  <option :value="3">3 - Moderate</option>
-                  <option :value="4">4 - Difficult</option>
-                  <option :value="5">5 - Very difficult</option>
+                  <option :value="1">1</option>
+                  <option :value="2">2</option>
+                  <option :value="3">3</option>
+                  <option :value="4">4</option>
+                  <option :value="5">5</option>
                 </select>
               </div>
             </div>
@@ -76,9 +129,27 @@
               </div>
             </div>
             <div class="field">
-              <label class="label">Comments (Optional)</label>
+              <div class="field-label-with-info">
+                <label class="label">Comments</label>
+                <div class="tooltip-container">
+                  <span class="info-icon">ⓘ</span>
+                  <div class="tooltip-text">Optionally, provide free text comments</div>
+                </div>
+              </div>
               <div class="control">
                 <textarea class="textarea" v-model="feedbackText"></textarea>
+              </div>
+            </div>
+            <div class="field">
+              <div class="field-label-with-info">
+                <label class="label">Model Answer</label>
+                <div class="tooltip-container">
+                  <span class="info-icon">ⓘ</span>
+                  <div class="tooltip-text">Optionally, provide a model answer</div>
+                </div>
+              </div>
+              <div class="control">
+                <textarea class="textarea" v-model="modelAnswer"></textarea>
               </div>
             </div>
             <div class="field is-grouped">
@@ -141,6 +212,7 @@ const clarity = ref(3)
 const questionRating = ref(3)
 const tags = ref([])
 const feedbackText = ref('')
+const modelAnswer = ref('')
 const configData = ref(null)
 
 // Fetch config data on component mount
@@ -180,6 +252,7 @@ function resetForm() {
   questionRating.value = 3;
   tags.value = [];
   feedbackText.value = '';
+  modelAnswer.value = '';
 }
 
 function closeForm() {
@@ -213,6 +286,7 @@ async function submitFeedback() {
       question_rating: Number(questionRating.value),
       tags: tags.value,
       feedback_text: feedbackText.value,
+      model_answer: modelAnswer.value,
       test_target: configData.value || {},
       question: currentQuestion,
       answer: currentAnswer,
@@ -361,6 +435,46 @@ async function submitFeedback() {
   display: inline-flex;
   align-items: center;
   margin-bottom: 0.5rem;
+}
+
+.field-label-with-info {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 0.25rem;
+}
+
+.tooltip-container {
+  display: inline-block;
+  margin-left: 4px;
+  position: relative;
+  vertical-align: middle;
+}
+
+.info-icon {
+  cursor: pointer;
+  color: #777;
+  font-size: 0.9em;
+}
+
+.tooltip-text {
+  display: none;
+  position: absolute;
+  left: 20px;
+  top: -5px;
+  background: #333;
+  color: #fff;
+  padding: 0.5em;
+  border-radius: 4px;
+  white-space: pre-line;
+  z-index: 10;
+  width: 250px;
+  font-size: 0.9em;
+  line-height: 1.4;
+}
+
+.tooltip-container:hover .tooltip-text {
+  display: block;
 }
 
 .feedback-form .label {
