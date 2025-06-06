@@ -57,6 +57,7 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
             "source_quality": feedback.source_quality,
             "clarity": feedback.clarity,
             "question_rating": feedback.question_rating,
+            "user_category": feedback.user_category,
             "tags": feedback.tags,
             "feedback_text": feedback.feedback_text,
             "model_answer": feedback.model_answer,

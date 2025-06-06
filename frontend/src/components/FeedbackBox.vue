@@ -11,6 +11,27 @@
           <form @submit.prevent="submitFeedback">
             <div class="field">
               <div class="field-label-with-info">
+                <label class="label">User Category</label>
+                <div class="tooltip-container">
+                  <span class="info-icon">ⓘ</span>
+                  <div class="tooltip-text">Select your user category to help us understand feedback context:
+General User - Broad interest in the content
+Hansard Expert - Parliamentary records specialist
+Digital HASS Researcher - Digital humanities researcher
+GLAM Practitioner - Gallery/Library/Archive/Museum professional</div>
+                </div>
+              </div>
+              <div class="control">
+                <select v-model="userCategory" class="input">
+                  <option value="General User">General User</option>
+                  <option value="Hansard Expert">Hansard Expert</option>
+                  <option value="Digital HASS Researcher">Digital HASS Researcher</option>
+                  <option value="GLAM Practitioner">GLAM Practitioner</option>
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <div class="field-label-with-info">
                 <label class="label">Factual Accuracy</label>
                 <div class="tooltip-container">
                   <span class="info-icon">ⓘ</span>
@@ -206,6 +227,7 @@ const factualAccuracy = ref('true')
 const sourceQuality = ref(3)
 const clarity = ref(3)
 const questionRating = ref(3)
+const userCategory = ref('General User')
 const tags = ref([])
 const feedbackText = ref('')
 const modelAnswer = ref('')
@@ -246,6 +268,7 @@ function resetForm() {
   sourceQuality.value = 3;
   clarity.value = 3;
   questionRating.value = 3;
+  userCategory.value = 'General User';
   tags.value = [];
   feedbackText.value = '';
   modelAnswer.value = '';
@@ -259,7 +282,6 @@ async function submitFeedback() {
   if (isSubmitting.value || !qaId.value) return
   
   isSubmitting.value = true
-  console.log('Submitting Phoenix-compatible feedback for qa_id:', qaId.value)
   
   try {
     // Get the current question and answer from the chat history
@@ -280,6 +302,7 @@ async function submitFeedback() {
       source_quality: Number(sourceQuality.value),
       clarity: Number(clarity.value),
       question_rating: Number(questionRating.value),
+      user_category: userCategory.value,
       tags: tags.value,
       feedback_text: feedbackText.value,
       model_answer: modelAnswer.value,
