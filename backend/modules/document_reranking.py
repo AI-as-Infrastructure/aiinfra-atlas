@@ -386,28 +386,32 @@ def rerank_documents_with_telemetry(
     Returns:
         Reranked documents
     """
-    # Use the modern telemetry system with create_span
     from backend.telemetry import create_span, SpanAttributes, SpanNames, OpenInferenceSpanKind, set_span_outputs
-    from opentelemetry.trace import Status, StatusCode
+    from opentelemetry.trace import SpanKind, Status, StatusCode
+    import traceback
     
-    # Create reranking span using the modern telemetry system
+    # Only use input.value for the query
+    span_attributes = {
+        SpanAttributes.INPUT_VALUE: query,
+        SpanAttributes.DOCUMENTS_BEFORE: [d.page_content for d in documents],
+    }
+    if session_id:
+        span_attributes[SpanAttributes.SESSION_ID] = session_id
+    if qa_id:
+        span_attributes[SpanAttributes.QA_ID] = qa_id
+    
     with create_span(
         SpanNames.DOCUMENT_RERANKING,
-        attributes={
-            SpanAttributes.SESSION_ID: session_id,
-            SpanAttributes.QA_ID: qa_id,
-            SpanAttributes.INPUT_VALUE: query,
-            "max_docs": max_docs,
-            "reranker_type": "bm25",
-            "input_document_count": len(documents),
-            "openinference.span.kind": OpenInferenceSpanKind.RERANKER
-        },
+        attributes=span_attributes,
         session_id=session_id,
         kind=OpenInferenceSpanKind.RERANKER
     ) as span:
         try:
             # Perform actual reranking logic
             reranked_docs, scores = _rerank_documents_internal(documents, query, max_docs)
+            
+            # Set documents.after_processing for Phoenix
+            span.set_attribute(SpanAttributes.DOCUMENTS_AFTER, [d.page_content for d in reranked_docs])
             
             # Add score information as attributes
             if scores and len(scores) > 0:

@@ -473,36 +473,20 @@ def set_span_outputs(span, summary: str = None, details: Dict[str, Any] = None,
                 logger.debug("Skipping attribute setting on invalid span context")
                 return
     except Exception:
-        # If we can't determine span state, proceed cautiously
         pass
-    
     try:
         if summary:
             span.set_attribute("summary", summary)
-        
         if details:
-            import json
-            try:
-                span.set_attribute("details", json.dumps(details))
-                # Add key metrics as direct attributes for filtering
-                for key in ["document_count", "citation_count", "response_time", "error"]:
-                    if key in details:
-                        span.set_attribute(key, details[key])
-            except:
-                span.set_attribute("details", str(details))
-        
+            span.set_attribute("details", details)
         if output:
-            span.set_attribute("output.value", output)
-            span.set_attribute("content", output)  # Phoenix UI displays this
-        
+            span.set_attribute("content", output)  # Only use Phoenix-recognized key
         if error:
             span.set_attribute("error", True)
             span.set_attribute("error.message", str(error))
             span.set_attribute("error.type", error.__class__.__name__)
             span.record_exception(error)
-            
     except Exception as e:
-        # Log the error but don't fail the operation
         logger.debug(f"Error setting span attributes: {e}")
         pass
 
