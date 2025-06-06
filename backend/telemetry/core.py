@@ -82,9 +82,6 @@ def initialize_telemetry() -> bool:
                     attrs[k.strip()] = v.strip()
         attrs["project.name"] = _project_name
         os.environ["OTEL_RESOURCE_ATTRIBUTES"] = ",".join(f"{k}={v}" for k, v in attrs.items())
-        logger.info(f"OTEL_RESOURCE_ATTRIBUTES set to: {os.environ['OTEL_RESOURCE_ATTRIBUTES']}")
-
-        logger.info(f"Setting OTEL_EXPORTER_OTLP_HEADERS for Phoenix Arize Cloud authentication")
 
         # Use standard OpenTelemetry setup
         from opentelemetry import trace as otel_trace
@@ -106,20 +103,6 @@ def initialize_telemetry() -> bool:
         # Create OTLP exporter - it will use the environment variables we set
         otlp_exporter = OTLPSpanExporter()
 
-        # Add debug wrapper to verify spans are being exported
-        original_export = otlp_exporter.export
-        def debug_export(spans):
-            span_ids = [str(span.context.span_id) for span in spans]
-            logger.info(f"Exporting {len(spans)} spans to Phoenix: {span_ids[:5]}{'...' if len(span_ids) > 5 else ''}")
-            try:
-                result = original_export(spans)
-                logger.info(f"Export result: {result}")
-                return result
-            except Exception as e:
-                logger.error(f"Error exporting spans: {e}")
-                raise
-        otlp_exporter.export = debug_export
-
         # Add standard batch processor for spans
         # Using default settings (5-second delay) for more responsive feedback
         span_processor = BatchSpanProcessor(
@@ -129,7 +112,7 @@ def initialize_telemetry() -> bool:
         )
         tracer_provider.add_span_processor(span_processor)
 
-        logger.info(" Configured BatchSpanProcessor with 5-second delay for feedback association")
+        logger.info("✅ Configured BatchSpanProcessor with 5-second delay for feedback association")
 
         # Set as global tracer provider
         otel_trace.set_tracer_provider(tracer_provider)
@@ -288,7 +271,6 @@ def create_rag_pipeline_span(session_id: str, qa_id: str, query: str, **kwargs):
         # Also register as the root span for the session - this is crucial for feedback association
         register_session_root_span(session_id, span_id)
         
-        logger.info(f"Registered RAG pipeline as root span: session={session_id}, qa_id={qa_id}, span_id={span_id}")
         return span
     
     # Wrap the context manager to register the span
@@ -358,7 +340,6 @@ def create_llm_span(session_id: str, qa_id: str, model: str, **kwargs):
         # Register as the main response span for feedback
         # Note: We only register with the response key to avoid duplicate registrations
         register_span(session_id, f"{qa_id}_response", span_id)
-        logger.info(f"Registered LLM response span: session={session_id}, qa_id={qa_id}, span_id={span_id}")
         return span
     
     @contextmanager
@@ -470,14 +451,12 @@ def set_span_outputs(span, summary: str = None, details: Dict[str, Any] = None,
     try:
         # Try to check if span is ended (this works for OpenTelemetry spans)
         if hasattr(span, 'is_recording') and not span.is_recording():
-            logger.debug("Skipping attribute setting on ended span")
             return
         
         # For Phoenix spans, check if span context is valid
         if hasattr(span, 'get_span_context'):
             context = span.get_span_context()
             if hasattr(context, 'is_valid') and not context.is_valid():
-                logger.debug("Skipping attribute setting on invalid span context")
                 return
     except Exception:
         pass
@@ -494,7 +473,6 @@ def set_span_outputs(span, summary: str = None, details: Dict[str, Any] = None,
             span.set_attribute("error.type", error.__class__.__name__)
             span.record_exception(error)
     except Exception as e:
-        logger.debug(f"Error setting span attributes: {e}")
         pass
 
 def is_telemetry_initialized() -> bool:
