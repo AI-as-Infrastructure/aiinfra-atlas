@@ -169,11 +169,11 @@ def retrieve_documents(
             
             # Span categorization
             "openinference.span.kind": OpenInferenceSpanKind.RETRIEVER,
-            "otel_kind": SpanKind.INTERNAL,
             "openinference.retriever.type": retriever_type,
         },
         session_id=session_id,  # Critical for session association
-        kind=SpanKind.INTERNAL,
+        kind=OpenInferenceSpanKind.RETRIEVER,  # Pass the OpenInference kind here
+        otel_kind=SpanKind.INTERNAL,  # Pass the OpenTelemetry kind as otel_kind
         link_to_current=True
     ) as retrieval_span:
         # Use default search_k if not provided

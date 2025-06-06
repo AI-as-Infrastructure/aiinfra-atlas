@@ -175,7 +175,8 @@ async def stream_response_chunks(
             "openinference.span.kind": OpenInferenceSpanKind.PROCESSOR,
         },
         session_id=session_id,  # Critical for session association
-        kind=SpanKind.INTERNAL,
+        kind=OpenInferenceSpanKind.PROCESSOR,  # Pass the OpenInference kind here
+        otel_kind=SpanKind.INTERNAL,  # Pass the OpenTelemetry kind as otel_kind
         link_to_current=True
     ) as streaming_span:
         chunk_count = 0
