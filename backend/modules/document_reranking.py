@@ -387,32 +387,47 @@ def rerank_documents_with_telemetry(
     Returns:
         Reranked documents
     """
-    from backend.telemetry import create_span, SpanAttributes, SpanNames, OpenInferenceSpanKind, set_span_outputs
-    from opentelemetry.trace import SpanKind, Status, StatusCode
-    import traceback
+    # Use trace_operation for consistent span creation (like other functions)
+    from backend.telemetry.spans import trace_operation
+    from opentelemetry.trace import Status, StatusCode
     
-    # Only use input.value for the query
-    span_attributes = {
-        SpanAttributes.INPUT_VALUE: query,
-        SpanAttributes.DOCUMENTS_BEFORE: [d.page_content for d in documents],
-    }
-    if session_id:
-        span_attributes[SpanAttributes.SESSION_ID] = session_id
-    if qa_id:
-        span_attributes[SpanAttributes.QA_ID] = qa_id
-    
-    with create_span(
+    with trace_operation(
         SpanNames.DOCUMENT_RERANKING,
-        attributes=span_attributes,
+        attributes={
+            # Core identification attributes
+            SpanAttributes.INPUT_VALUE: query,
+            SpanAttributes.DOCUMENT_COUNT: len(documents),
+            
+            # OpenInference standard reranker attributes
+            "reranker.query": query,
+            "reranker.input_documents": [
+                {
+                    "document.content": doc.page_content,
+                    "document.metadata": getattr(doc, 'metadata', {})
+                } for doc in documents
+            ],
+        },
         session_id=session_id,
-        kind=OpenInferenceSpanKind.RERANKER
+        qa_id=qa_id,
+        openinference_kind=OpenInferenceSpanKind.RERANKER,
+        input_data=query
     ) as span:
         try:
-            # Perform actual reranking logic
+            # Perform actual reranking logic directly (no nested span creation)
             reranked_docs, scores = _rerank_documents_internal(documents, query, max_docs)
             
-            # Set documents.after_processing for Phoenix
-            span.set_attribute(SpanAttributes.DOCUMENTS_AFTER, [d.page_content for d in reranked_docs])
+            # Add OpenInference standard output documents
+            span.set_attribute("reranker.output_documents", [
+                {
+                    "document.content": doc.page_content,
+                    "document.metadata": getattr(doc, 'metadata', {}),
+                    "document.score": scores[i] if i < len(scores) else 0.0
+                } for i, doc in enumerate(reranked_docs)
+            ])
+            
+            # Add reranker parameters
+            span.set_attribute("reranker.top_k", max_docs)
+            span.set_attribute("reranker.model_name", "bm25_custom")  # Our internal scoring algorithm
             
             # Add score information as attributes
             if scores and len(scores) > 0:
@@ -440,32 +455,24 @@ def rerank_documents_with_telemetry(
                             # Ensure value is a string
                             span.set_attribute(f"doc_{i}_{key}", str(value))
             
-            # Set span outputs for Phoenix UI display
-            summary = f"Reranked {len(reranked_docs)} documents using BM25 algorithm"
-            details = {
-                "reranker_type": "bm25",
-                "input_document_count": len(documents),
-                "output_document_count": len(reranked_docs),
-                "max_docs": max_docs
-            }
-            
-            if scores:
-                details.update({
-                    "min_score": min(scores),
-                    "max_score": max(scores),
-                    "avg_score": sum(scores) / len(scores)
-                })
-            
-            set_span_outputs(span, summary=summary, details=details)
+            # Set standard outputs using direct span attributes (consistent with other functions)
+            summary = f"Reranked {len(documents)} → {len(reranked_docs)} documents"
+            span.set_attribute("summary", summary)
+            span.set_attribute("output", summary)
+            span.set_attribute("input_document_count", len(documents))
+            span.set_attribute("output_document_count", len(reranked_docs))
+            span.set_attribute("max_docs", max_docs)
             
             return reranked_docs
             
         except Exception as e:
             logger.error(f"Error in document reranking: {e}", exc_info=True)
             
-            # Set error information on span
+            # Set error information on span using direct attributes (consistent with other functions)
             error_summary = f"Error in document reranking: {str(e)}"
-            set_span_outputs(span, summary=error_summary, error=e)
+            span.set_attribute("summary", error_summary)
+            span.set_attribute("output", error_summary)
+            span.set_attribute("error", str(e))
             span.set_status(Status(StatusCode.ERROR, str(e)))
             
             # Return original documents as fallback

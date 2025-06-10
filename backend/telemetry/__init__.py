@@ -122,8 +122,14 @@ __all__ = [
     "trace_citation_formatting",
 ]
 
-# Initialize telemetry system
-initialize_telemetry()
+# Initialize telemetry system gracefully
+try:
+    initialize_telemetry()
+except Exception as e:
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Telemetry initialization failed, running in disabled mode: {e}")
+    # Continue with telemetry disabled - functions will return no-ops
 
 # Create trace wrapper functions for backward compatibility
 from contextlib import contextmanager

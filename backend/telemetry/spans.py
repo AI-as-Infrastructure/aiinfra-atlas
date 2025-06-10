@@ -79,9 +79,8 @@ def trace_operation(
     if qa_id:
         attributes[SpanAttributes.QA_ID] = qa_id
     
-    # Add OpenInference attributes for Phoenix - ensure the structure matches Phoenix format
+    # Add OpenInference attributes for Phoenix - use official standard only
     attributes["openinference.span.kind"] = openinference_kind
-    attributes["span.kind"] = openinference_kind  # Also set the direct span.kind for Phoenix UI
     
     # Add timestamp - using high precision for proper ordering
     attributes["timestamp"] = datetime.now().isoformat()
@@ -161,9 +160,8 @@ def add_test_target_attributes(span, include_all=True):
         import importlib
         target_module = importlib.import_module(f"backend.targets.{test_target}")
         
-        # Add basic attributes with flattened structure
+        # Add basic attributes with consolidated naming (remove duplication)
         if hasattr(target_module, 'TARGET_ID'):
-            span.set_attribute(f"{SpanAttributes.TEST_TARGET_PREFIX}id", target_module.TARGET_ID)
             span.set_attribute("test_target.id", target_module.TARGET_ID)
         
         if hasattr(target_module, 'MODEL'):
@@ -173,27 +171,21 @@ def add_test_target_attributes(span, include_all=True):
         # Add detailed configuration if requested
         if include_all:
             if hasattr(target_module, 'EMBEDDING_MODEL'):
-                span.set_attribute(SpanAttributes.EMBEDDING_MODEL, target_module.EMBEDDING_MODEL)
                 span.set_attribute("test_target.embedding_model", target_module.EMBEDDING_MODEL)
             
             if hasattr(target_module, 'SEARCH_TYPE'):
-                span.set_attribute(SpanAttributes.RETRIEVAL_SEARCH_TYPE, target_module.SEARCH_TYPE)
                 span.set_attribute("test_target.search_type", target_module.SEARCH_TYPE)
             
             if hasattr(target_module, 'SEARCH_K'):
-                span.set_attribute(SpanAttributes.RETRIEVAL_K, target_module.SEARCH_K)
                 span.set_attribute("test_target.search_k", target_module.SEARCH_K)
             
             if hasattr(target_module, 'FETCH_K'):
-                span.set_attribute(SpanAttributes.RETRIEVAL_FETCH_K, target_module.FETCH_K)
                 span.set_attribute("test_target.fetch_k", target_module.FETCH_K)
             
             if hasattr(target_module, 'CITATION_LIMIT'):
-                span.set_attribute(SpanAttributes.CITATION_LIMIT, target_module.CITATION_LIMIT)
                 span.set_attribute("test_target.citation_limit", target_module.CITATION_LIMIT)
             
             if hasattr(target_module, 'SYSTEM_PROMPT'):
-                span.set_attribute(SpanAttributes.SYSTEM_PROMPT, target_module.SYSTEM_PROMPT)
                 span.set_attribute("test_target.system_prompt", target_module.SYSTEM_PROMPT)
             
             # Add any other target attributes that might be useful
