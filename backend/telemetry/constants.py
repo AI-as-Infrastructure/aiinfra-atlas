@@ -20,9 +20,9 @@ class OpenInferenceSpanKind:
     GUARDRAIL = "GUARDRAIL"   # Guardrail checks
     EVALUATOR = "EVALUATOR"   # Evaluation operations
     HUMAN = "HUMAN"           # Human interactions (queries, feedback)
-    PROCESSOR = "PROCESSOR"   # Data processing operations
+    PROCESSOR = "CHAIN"       # Data processing operations -> use CHAIN (general logic)
     UNKNOWN = "UNKNOWN"       # Default/unknown operations
-    REFERENCES = "REFERENCES" # Document references/citations
+    REFERENCES = "CHAIN"      # Document references/citations -> use CHAIN (general logic)
 
 # Span attribute constants
 class SpanAttributes:

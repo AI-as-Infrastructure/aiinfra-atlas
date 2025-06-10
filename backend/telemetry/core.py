@@ -224,10 +224,15 @@ def create_span(name: str, attributes: Dict[str, Any] = None,
     if session_id:
         span_attributes[SpanAttributes.SESSION_ID] = session_id
     
-    # Add OpenInference span kind
+    # Add OpenInference span kind - only if not already provided
     if kind:
-        span_attributes[SpanAttributes.OPENINFERENCE_SPAN_KIND] = kind
-        span_attributes["span.kind"] = kind  # Also set direct span.kind for Phoenix UI
+        # Only set if not already provided in attributes to avoid overwriting trace_operation settings
+        if SpanAttributes.OPENINFERENCE_SPAN_KIND not in span_attributes:
+            span_attributes[SpanAttributes.OPENINFERENCE_SPAN_KIND] = kind
+        if "span.kind" not in span_attributes:
+            span_attributes["span.kind"] = kind  # Direct span.kind for Phoenix UI
+        if "openinference.span.kind" not in span_attributes:
+            span_attributes["openinference.span.kind"] = kind  # Ensure both formats are covered
     
     if not PHOENIX_AVAILABLE or not _phoenix_session:
         raise RuntimeError("Phoenix telemetry is not available. Ensure Phoenix is configured and initialized.")
