@@ -104,15 +104,16 @@ def initialize_telemetry() -> bool:
         otlp_exporter = OTLPSpanExporter()
 
         # Add standard batch processor for spans
-        # Using default settings (5-second delay) for more responsive feedback
+        # Using very short delay (100ms) for proper chronological span ordering
         span_processor = BatchSpanProcessor(
             otlp_exporter,
-            # Use default delay (5 seconds) for more responsive span export
-            # max_export_batch_size=512 (using default)
+            schedule_delay_millis=100,    # Export every 100ms for proper ordering
+            max_export_batch_size=50,     # Smaller batches for faster export
+            export_timeout_millis=2000    # 2 second timeout
         )
         tracer_provider.add_span_processor(span_processor)
 
-        logger.info("✅ Configured BatchSpanProcessor with 5-second delay for feedback association")
+        logger.info("✅ Configured BatchSpanProcessor with 100ms delay for proper span ordering")
 
         # Set as global tracer provider
         otel_trace.set_tracer_provider(tracer_provider)
@@ -185,7 +186,8 @@ from opentelemetry.trace import SpanKind
 
 @contextmanager
 def create_span(name: str, attributes: Dict[str, Any] = None, 
-               session_id: str = None, kind: Any = None, otel_kind: Any = None) -> ContextManager:
+               session_id: str = None, kind: Any = None, otel_kind: Any = None,
+               parent_context = None) -> ContextManager:
     """
     Create a telemetry span using Phoenix native tracing for proper feedback support
     
@@ -195,6 +197,7 @@ def create_span(name: str, attributes: Dict[str, Any] = None,
         session_id: Session identifier
         kind: OpenInference span kind string (for Phoenix logical kind)
         otel_kind: OpenTelemetry protocol span kind (e.g., SpanKind.INTERNAL, SpanKind.SERVER, etc.)
+        parent_context: Optional parent context for explicit span hierarchy
     """
     # Check if telemetry is enabled
     if not is_telemetry_enabled():
@@ -241,8 +244,14 @@ def create_span(name: str, attributes: Dict[str, Any] = None,
     tracer = get_tracer()
     # Set OpenTelemetry protocol span kind if provided, else default to INTERNAL
     protocol_kind = otel_kind if otel_kind is not None else SpanKind.INTERNAL
-    with tracer.start_as_current_span(name, attributes=span_attributes, kind=protocol_kind) as span:
-        yield span
+    
+    # Use parent_context if provided for proper span hierarchy
+    if parent_context:
+        with tracer.start_as_current_span(name, context=parent_context, attributes=span_attributes, kind=protocol_kind) as span:
+            yield span
+    else:
+        with tracer.start_as_current_span(name, attributes=span_attributes, kind=protocol_kind) as span:
+            yield span
 
 def create_rag_pipeline_span(session_id: str, qa_id: str, query: str, **kwargs):
     """Create a RAG pipeline span directly without span factory"""
