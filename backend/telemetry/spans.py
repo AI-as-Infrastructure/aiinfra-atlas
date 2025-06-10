@@ -9,10 +9,12 @@ import logging
 from datetime import datetime
 from typing import Dict, Any, Optional, ContextManager
 from contextlib import contextmanager
+import time
 
 from opentelemetry import trace
 from opentelemetry.trace import SpanKind
 from opentelemetry.trace import format_span_id as otel_format_span_id
+from opentelemetry.context import get_current
 
 from .core import create_span, tracer
 from .constants import SpanAttributes, OpenInferenceSpanKind, SpanNames
@@ -23,9 +25,19 @@ logger = logging.getLogger(__name__)
 try:
     from openinference.instrumentation.langchain import get_current_span
 except ImportError:
-    # Fallback to OpenTelemetry's get_current_span
+    # Fallback to OpenTelemetry's get_current_span with proper context handling
     def get_current_span():
-        return trace.get_current_span()
+        # Get current context first
+        current_context = get_current()
+        
+        # Try to get span from current context
+        current_span = trace.get_current_span(current_context)
+        
+        # If no span in current context, try the global tracer
+        if not current_span or not current_span.is_recording():
+            current_span = trace.get_current_span()
+            
+        return current_span if current_span and current_span.is_recording() else None
 
 
 @contextmanager
@@ -71,8 +83,32 @@ def trace_operation(
     attributes["openinference.span.kind"] = openinference_kind
     attributes["span.kind"] = openinference_kind  # Also set the direct span.kind for Phoenix UI
     
-    # Add timestamp
+    # Add timestamp - using high precision for proper ordering
     attributes["timestamp"] = datetime.now().isoformat()
+    attributes["start_time"] = time.time()  # High precision start time for ordering
+    
+    # Add explicit sequence number for reliable ordering within each query
+    if session_id and qa_id:
+        # QA-specific sequence counter for this specific query
+        counter_key = f"_sequence_counter_{session_id}_{qa_id}"
+        if not hasattr(trace_operation, counter_key):
+            setattr(trace_operation, counter_key, 0)
+        current_count = getattr(trace_operation, counter_key) + 1
+        setattr(trace_operation, counter_key, current_count)
+        attributes["span.sequence"] = current_count
+        attributes["span.order"] = current_count  # Alternative name for Phoenix
+        
+        # Clean up old counters to prevent memory leaks (keep only recent ones)
+        if current_count == 1:  # First span in this QA, cleanup old ones
+            attrs_to_remove = [attr for attr in dir(trace_operation) 
+                             if attr.startswith("_sequence_counter_") and attr != counter_key]
+            # Remove oldest counters, keep only most recent 50
+            if len(attrs_to_remove) > 50:
+                for attr in attrs_to_remove[:-50]:  # Remove all but last 50
+                    try:
+                        delattr(trace_operation, attr)
+                    except AttributeError:
+                        pass
     
     # Add input data if provided
     if input_data is not None:
@@ -87,10 +123,12 @@ def trace_operation(
     # try to get the current span as parent
     if link_to_current and parent_context is None:
         current_span = get_current_span()
+        
         if current_span and hasattr(current_span, 'get_span_context'):
             current_context = current_span.get_span_context()
             if hasattr(current_context, 'is_valid') and current_context.is_valid:
-                parent_context = trace.set_span_in_context(current_span)
+                # Use the current context more robustly
+                parent_context = trace.set_span_in_context(current_span, get_current())
     
     # Create and yield the span
     with create_span(
@@ -98,7 +136,8 @@ def trace_operation(
         attributes=attributes,
         session_id=session_id,
         kind=openinference_kind,
-        otel_kind=kind
+        otel_kind=kind,
+        parent_context=parent_context
     ) as span:
         yield span
 
@@ -387,7 +426,8 @@ def create_guardrail_span(
     session_id: str,
     qa_id: str,
     enabled: bool = True,
-    attributes: Dict[str, Any] = None
+    attributes: Dict[str, Any] = None,
+    parent_context = None
 ):
     """
     Create a span for a guardrail check.
@@ -401,6 +441,7 @@ def create_guardrail_span(
         qa_id: Question-answer identifier
         enabled: Whether the guardrail is actively enforcing (vs just monitoring)
         attributes: Additional attributes (optional)
+        parent_context: Optional parent context for explicit hierarchy
         
     Returns:
         Context manager for the guardrail span
@@ -430,7 +471,7 @@ def create_guardrail_span(
         "timestamp": datetime.now().isoformat()
     }
     
-    # Create span with proper kind
+    # Create span with proper kind and explicit parent context if provided
     with trace_operation(
         f"com.atlas.guardrails.{guardrail_type}",
         attributes=span_attributes,
@@ -439,7 +480,8 @@ def create_guardrail_span(
         openinference_kind=OpenInferenceSpanKind.GUARDRAIL,
         input_data=input_text,
         kind=SpanKind.INTERNAL,
-        link_to_current=True  # Link to current context as it's part of the pipeline
+        parent_context=parent_context,  # Use explicit parent context
+        link_to_current=False if parent_context else True  # Only link to current if no explicit parent
     ) as span:
         yield span
 

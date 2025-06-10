@@ -23,7 +23,7 @@ GEOGRAPHIC_CONTEXTS = {
     'geographic': ['au', 'nz', 'uk'],
 }
 
-def detect_sensitive_contexts(query: str, session_id: Optional[str] = None, qa_id: Optional[str] = None) -> list:
+def detect_sensitive_contexts(query: str, session_id: Optional[str] = None, qa_id: Optional[str] = None, parent_span=None) -> list:
     """
     Detect sensitive contexts in a query with confidence scoring.
     Currently returns an empty list as sensitivity detection is disabled.
@@ -34,17 +34,26 @@ def detect_sensitive_contexts(query: str, session_id: Optional[str] = None, qa_i
         query: The user query string
         session_id: Optional session ID for telemetry
         qa_id: Optional QA ID for telemetry
+        parent_span: Optional parent span for explicit hierarchy
         
     Returns:
         Empty list (for now) - will later return [(context_code, confidence_score)]
     """
     # Create a guardrail span to track sensitivity detection
+    # Use explicit parent context if provided
+    parent_context = None
+    if parent_span:
+        from opentelemetry import trace
+        from opentelemetry.context import get_current
+        parent_context = trace.set_span_in_context(parent_span, get_current())
+    
     with create_guardrail_span(
         guardrail_type="sensitivity",
         input_text=query,
         session_id=session_id,
         qa_id=qa_id,
-        enabled=False  # Currently disabled
+        enabled=False,  # Currently disabled
+        parent_context=parent_context
     ) as span:
         start_time = time.time()
         

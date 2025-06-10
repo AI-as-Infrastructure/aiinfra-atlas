@@ -492,8 +492,13 @@ async def ask_stream(data: dict = Body(...)):
                 sensitive_contexts = detect_sensitive_contexts(
                     query=question,
                     session_id=session_id,
-                    qa_id=qa_id
+                    qa_id=qa_id,
+                    parent_span=parent_span  # Pass the RAG pipeline span as parent
                 )
+                
+                # Ensure guardrail span completes before starting retrieval
+                # This ensures proper span ID ordering in Phoenix UI
+                await asyncio.sleep(0.001)  # 1ms delay to ensure span completion
                 
                 # Log if any sensitive contexts were detected
                 if sensitive_contexts:
