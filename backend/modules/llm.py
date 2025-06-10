@@ -702,7 +702,11 @@ def generate_response_with_telemetry(
                                 SpanAttributes.SESSION_ID: session_id,
                                 SpanAttributes.QA_ID: qa_id,
                                 
-                                # Response content - use standard output attribute
+                                # OpenInference standard attributes for Info field display
+                                "input.value": question,
+                                "output.value": f"Generated response ({len(full_response.split())} words, {generation_time:.2f}s)",
+                                
+                                # Full response content for Phoenix UI
                                 "output": full_response,
                                 
                                 # Metadata with flat names
