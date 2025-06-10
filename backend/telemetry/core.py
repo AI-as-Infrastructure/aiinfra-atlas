@@ -32,6 +32,24 @@ _tracer = None
 _project_name = None
 _telemetry_enabled = True  # Track if telemetry is actually enabled
 
+@contextmanager  
+def no_op_span():
+    """Return a no-op context manager when telemetry is disabled"""
+    class NoOpSpan:
+        def set_attribute(self, key, value):
+            pass
+        def set_status(self, status):
+            pass
+        def record_exception(self, exception):
+            pass
+        def get_span_context(self):
+            class NoOpContext:
+                span_id = 0
+                def is_valid(self):
+                    return False
+            return NoOpContext()
+    yield NoOpSpan()
+
 def initialize_telemetry() -> bool:
     """
     Initialize the Phoenix native telemetry system for proper feedback association
@@ -61,10 +79,14 @@ def initialize_telemetry() -> bool:
     phoenix_client_headers = os.getenv("PHOENIX_CLIENT_HEADERS")
     
     if not phoenix_endpoint:
-        raise RuntimeError("PHOENIX_COLLECTOR_ENDPOINT environment variable is required for Phoenix telemetry.")
+        logger.warning("PHOENIX_COLLECTOR_ENDPOINT not configured - telemetry will be disabled")
+        _telemetry_initialized = True  # Mark as initialized but disabled
+        return False
     
     if not phoenix_client_headers:
-        raise RuntimeError("PHOENIX_CLIENT_HEADERS environment variable is required for Phoenix Arize Cloud.")
+        logger.warning("PHOENIX_CLIENT_HEADERS not configured - telemetry will be disabled")
+        _telemetry_initialized = True  # Mark as initialized but disabled
+        return False
 
     try:
         # Set OTEL environment variables for Phoenix Arize Cloud
@@ -129,9 +151,9 @@ def initialize_telemetry() -> bool:
         return True
     except Exception as e:
         logger.error(f" Failed to initialize Phoenix telemetry: {e}")
-        import traceback
-        traceback.print_exc()
-        raise RuntimeError(f"Failed to initialize Phoenix telemetry: {e}")
+        logger.warning("Phoenix telemetry initialization failed - telemetry will be disabled")
+        _telemetry_initialized = True  # Mark as initialized but disabled
+        return False
 
 def get_tracer():
     """Get the tracer instance (Phoenix only, fails if not initialized)"""
@@ -150,7 +172,22 @@ def using_session(session_id: str = None, metadata: Dict[str, Any] = None):
     if not session_id:
         session_id = str(uuid.uuid4())
     if not PHOENIX_AVAILABLE or not _phoenix_session:
-        raise RuntimeError("Phoenix telemetry session is not available. Ensure Phoenix is configured and initialized.")
+        # If Phoenix isn't available, yield a no-op span
+        class NoOpSpan:
+            def set_attribute(self, key, value):
+                pass
+            def set_status(self, status):
+                pass
+            def record_exception(self, exception):
+                pass
+            def get_span_context(self):
+                class NoOpContext:
+                    span_id = 0
+                    def is_valid(self):
+                        return False
+                return NoOpContext()
+        yield NoOpSpan()
+        return
     with using_project(_project_name):
         yield session_id
 
@@ -201,24 +238,22 @@ def create_span(name: str, attributes: Dict[str, Any] = None,
     """
     # Check if telemetry is enabled
     if not is_telemetry_enabled():
-        # Return a no-op context manager when telemetry is disabled
-        @contextmanager
-        def no_op_span():
-            class NoOpSpan:
-                def set_attribute(self, key, value):
-                    pass
-                def set_status(self, status):
-                    pass
-                def record_exception(self, exception):
-                    pass
-                def get_span_context(self):
-                    class NoOpContext:
-                        span_id = 0
-                        def is_valid(self):
-                            return False
-                    return NoOpContext()
-            yield NoOpSpan()
-        return no_op_span()
+        # Yield a no-op span when telemetry is disabled
+        class NoOpSpan:
+            def set_attribute(self, key, value):
+                pass
+            def set_status(self, status):
+                pass
+            def record_exception(self, exception):
+                pass
+            def get_span_context(self):
+                class NoOpContext:
+                    span_id = 0
+                    def is_valid(self):
+                        return False
+                return NoOpContext()
+        yield NoOpSpan()
+        return
     
     # Prepare attributes
     span_attributes = attributes or {}
@@ -232,13 +267,27 @@ def create_span(name: str, attributes: Dict[str, Any] = None,
         # Only set if not already provided in attributes to avoid overwriting trace_operation settings
         if SpanAttributes.OPENINFERENCE_SPAN_KIND not in span_attributes:
             span_attributes[SpanAttributes.OPENINFERENCE_SPAN_KIND] = kind
-        if "span.kind" not in span_attributes:
-            span_attributes["span.kind"] = kind  # Direct span.kind for Phoenix UI
         if "openinference.span.kind" not in span_attributes:
-            span_attributes["openinference.span.kind"] = kind  # Ensure both formats are covered
+            span_attributes["openinference.span.kind"] = kind  # Use OpenInference standard only
     
-    if not PHOENIX_AVAILABLE or not _phoenix_session:
-        raise RuntimeError("Phoenix telemetry is not available. Ensure Phoenix is configured and initialized.")
+    # Check if Phoenix is available and initialized
+    if not PHOENIX_AVAILABLE or not _phoenix_session or not _tracer:
+        # If Phoenix isn't available or disabled, yield a no-op span
+        class NoOpSpan:
+            def set_attribute(self, key, value):
+                pass
+            def set_status(self, status):
+                pass
+            def record_exception(self, exception):
+                pass
+            def get_span_context(self):
+                class NoOpContext:
+                    span_id = 0
+                    def is_valid(self):
+                        return False
+                return NoOpContext()
+        yield NoOpSpan()
+        return
     
     # Use OpenTelemetry with Phoenix OTLP exporter
     tracer = get_tracer()
@@ -262,7 +311,7 @@ def create_rag_pipeline_span(session_id: str, qa_id: str, query: str, **kwargs):
             SpanAttributes.QA_ID: qa_id,
             SpanAttributes.INPUT_VALUE: query,
             "span.kind": "CHAIN",  # Explicit span kind for Phoenix
-            "openinference.span.kind": OpenInferenceSpanKind.CHAIN,  # OpenInference span kind
+            "openinference.span.kind": OpenInferenceSpanKind.CHAIN,  # OpenInference standard only
             **kwargs
         },
         session_id=session_id,
@@ -475,12 +524,13 @@ def set_span_outputs(span, summary: str = None, details: Dict[str, Any] = None,
     except Exception:
         pass
     try:
+        # Use Phoenix-standard output attributes only
         if summary:
             span.set_attribute("summary", summary)
         if details:
             span.set_attribute("details", details)
         if output:
-            span.set_attribute("content", output)  # Only use Phoenix-recognized key
+            span.set_attribute("output", output)  # Primary Phoenix output field
         if error:
             span.set_attribute("error", True)
             span.set_attribute("error.message", str(error))

@@ -24,6 +24,7 @@ from langchain_core.runnables import RunnablePassthrough
 from langchain_core.language_models.chat_models import BaseChatModel
 
 from backend.telemetry import create_span, SpanAttributes, SpanNames, OpenInferenceSpanKind, set_span_outputs
+from backend.telemetry.spans import register_span
 from opentelemetry.trace import SpanKind
 from opentelemetry.trace import SpanKind, Status, StatusCode
 from backend.modules.config import get_system_prompt, get_llm_config
@@ -470,12 +471,19 @@ def generate_response(
                     llm_span.set_attribute("final_chunk_count", chunk_count)
                     llm_span.set_attribute("final_response_length", len(full_response))
                     
-                    # Add a truncated output preview for review
-                    if full_response:
-                        preview_length = min(500, len(full_response))
-                        preview = full_response[:preview_length] + ("..." if len(full_response) > preview_length else "")
-                        llm_span.set_attribute("response_preview", preview)
+                    # Set output attributes efficiently using Phoenix standards only
+                    llm_span.set_attribute("output", full_response)  # Primary Phoenix UI field
+                    llm_span.set_attribute("openinference.llm.output", full_response)  # OpenInference standard
                     
+                    # Set response metrics
+                    llm_span.set_attribute(SpanAttributes.RESPONSE_LENGTH, len(full_response))
+                    
+                    # Set response preview for quick viewing
+                    sentences = full_response.split('. ')
+                    preview = '. '.join(sentences[:3]) + ('...' if len(sentences) > 3 else '')
+                    llm_span.set_attribute("response_preview", preview)
+                    
+
                 except Exception as e:
                     # Handle streaming errors
                     logger.error(f"Error during streaming: {e}", exc_info=True)
@@ -489,11 +497,17 @@ def generate_response(
                     llm_span.set_attribute("final_chunk_count", chunk_count)
                     llm_span.set_attribute("final_response_length", len(full_response))
                     
-                    # Add a truncated output preview for review
-                    if full_response:
-                        preview_length = min(500, len(full_response))
-                        preview = full_response[:preview_length] + ("..." if len(full_response) > preview_length else "")
-                        llm_span.set_attribute("response_preview", preview)
+                    # Set output attributes efficiently using Phoenix standards only
+                    llm_span.set_attribute("output", full_response)  # Primary Phoenix UI field
+                    llm_span.set_attribute("openinference.llm.output", full_response)  # OpenInference standard
+                    
+                    # Set response metrics
+                    llm_span.set_attribute(SpanAttributes.RESPONSE_LENGTH, len(full_response))
+                    
+                    # Set response preview for quick viewing
+                    sentences = full_response.split('. ')
+                    preview = '. '.join(sentences[:3]) + ('...' if len(sentences) > 3 else '')
+                    llm_span.set_attribute("response_preview", preview)
                     
                 # Yield the final response
                 yield full_response
@@ -511,11 +525,17 @@ def generate_response(
                 llm_span.set_attribute("final_chunk_count", chunk_count)
                 llm_span.set_attribute("final_response_length", len(full_response))
                 
-                # Add a truncated output preview for review
-                if full_response:
-                    preview_length = min(500, len(full_response))
-                    preview = full_response[:preview_length] + ("..." if len(full_response) > preview_length else "")
-                    llm_span.set_attribute("response_preview", preview)
+                # Set output attributes efficiently using Phoenix standards only
+                llm_span.set_attribute("output", full_response)  # Primary Phoenix UI field
+                llm_span.set_attribute("openinference.llm.output", full_response)  # OpenInference standard
+                
+                # Set response metrics
+                llm_span.set_attribute(SpanAttributes.RESPONSE_LENGTH, len(full_response))
+                
+                # Set response preview for quick viewing
+                sentences = full_response.split('. ')
+                preview = '. '.join(sentences[:3]) + ('...' if len(sentences) > 3 else '')
+                llm_span.set_attribute("response_preview", preview)
                 
                 # Yield the final response
                 yield full_response
@@ -659,25 +679,17 @@ def generate_response_with_telemetry(
                         summary = f"Generated {len(full_response.split())} words in {generation_time:.2f} seconds"
                         llm_span.set_attribute("generation_summary", summary)
                         
-                        # Add summary of first few sentences for quick reference
+                        # Set output attributes efficiently using Phoenix standards only
+                        llm_span.set_attribute("output", full_response)  # Primary Phoenix UI field
+                        llm_span.set_attribute("openinference.llm.output", full_response)  # OpenInference standard
+                        
+                        # Set response metrics
+                        llm_span.set_attribute(SpanAttributes.RESPONSE_LENGTH, len(full_response))
+                        
+                        # Set response preview for quick viewing
                         sentences = full_response.split('. ')
                         preview = '. '.join(sentences[:3]) + ('...' if len(sentences) > 3 else '')
                         llm_span.set_attribute("response_preview", preview)
-                        
-                        # Set all output attributes directly on the LLM span for Phoenix UI
-                        # Primary content field - most important for Phoenix display
-                        llm_span.set_attribute("content", full_response)
-                        
-                        # Set using the output method if available
-                        if hasattr(llm_span, "set_output"):
-                            llm_span.set_output(full_response)
-                        
-                        # Also set standard output attributes for maximum compatibility
-                        llm_span.set_attribute("output", full_response)
-                        llm_span.set_attribute("output.value", full_response)
-                        llm_span.set_attribute(SpanAttributes.OUTPUT, full_response)
-                        llm_span.set_attribute("openinference.llm.output", full_response)
-                        llm_span.set_attribute("llm.output", full_response)
                         
                         # Create a specific response output span for feedback association
                         response_span_name = f"{SpanNames.LLM_GENERATION}.response"
@@ -690,31 +702,26 @@ def generate_response_with_telemetry(
                                 SpanAttributes.SESSION_ID: session_id,
                                 SpanAttributes.QA_ID: qa_id,
                                 
-                                # Response content - use standard output.value attribute
-                                "output.value": full_response,
+                                # Response content - use standard output attribute
+                                "output": full_response,
                                 
-                                # Metadata with flat names (no info. prefix)
+                                # Metadata with flat names
                                 "response_length": len(full_response),
                                 "word_count": len(full_response.split()),
                                 "generation_time_seconds": generation_time,
                                 "description": "LLM Response Output",
                                 
                                 # Span categorization
-                                "kind": "LLM",
-                                "span.kind": "LLM",
                                 "openinference.span.kind": OpenInferenceSpanKind.LLM,
-                            }
-                        ) as output_span:
-                            # Register the output span with a predictable key for feedback association
-                            # This is the key pattern that log_user_feedback will look for
+                            },
+                            session_id=session_id,
+                            kind=OpenInferenceSpanKind.LLM
+                        ) as response_span:
+                            # Register the response span with a predictable key for feedback association
                             response_key = f"{qa_id}_response"
-                            response_span_id = str(output_span.get_span_context().span_id)
+                            response_span_id = str(response_span.get_span_context().span_id)
                             register_span(session_id, response_key, response_span_id)
                             logger.info(f"Registered response span with session_id={session_id}, key={response_key}, span_id={response_span_id}")
-                            
-                            # Set the output using the method for double insurance
-                            if hasattr(output_span, "set_output"):
-                                output_span.set_output(full_response)
                         
                     except Exception as generation_error:
                         # Record error in telemetry
@@ -723,23 +730,18 @@ def generate_response_with_telemetry(
                         llm_span.set_attribute("generation_complete", False)
                         logger.error(f"Error generating response: {generation_error}")
                         
-                        # Set partial output directly on main span if available
-                        if full_response:
-                            # Primary content field - most important for Phoenix display
-                            llm_span.set_attribute("content", full_response)
-                            
-                            # Set using the output method if available
-                            if hasattr(llm_span, "set_output"):
-                                llm_span.set_output(full_response)
-                            
-                            # Also set standard output attributes for maximum compatibility
-                            llm_span.set_attribute("output", full_response)
-                            llm_span.set_attribute("output.value", full_response)
-                            llm_span.set_attribute(SpanAttributes.OUTPUT, full_response)
-                            llm_span.set_attribute("openinference.llm.output", full_response)
-                            llm_span.set_attribute("llm.output", full_response)
-                            llm_span.set_attribute("error", str(generation_error))
-                            
+                        # Set output attributes efficiently using Phoenix standards only
+                        llm_span.set_attribute("output", full_response)  # Primary Phoenix UI field
+                        llm_span.set_attribute("openinference.llm.output", full_response)  # OpenInference standard
+                        
+                        # Set response metrics
+                        llm_span.set_attribute(SpanAttributes.RESPONSE_LENGTH, len(full_response))
+                        
+                        # Set response preview for quick viewing
+                        sentences = full_response.split('. ')
+                        preview = '. '.join(sentences[:3]) + ('...' if len(sentences) > 3 else '')
+                        llm_span.set_attribute("response_preview", preview)
+                        
                         # Create a specific error output span for Phoenix compatibility
                         with create_span(
                             SpanNames.LLM_GENERATION + ".error",  # Use error name to distinguish
