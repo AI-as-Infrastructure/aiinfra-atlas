@@ -315,12 +315,29 @@ def stream_documents_as_references(
                 "citations": citations
             }
             
-            # Set reference information on span for telemetry
+            # Set OpenInference standard attributes for Info field display
+            ref_span.set_attribute("input.value", f"Formatting {len(documents)} documents as references")
+            ref_span.set_attribute("output.value", f"Generated {len(citations)} citations from {len(documents)} documents")
+            
+            # Set additional telemetry attributes (these will appear in Attributes section)
             ref_span.set_attribute("description", "Citations and references for the RAG response")
+            ref_span.set_attribute("citation_count", len(citations))
+            ref_span.set_attribute("total_documents", len(documents))
+            ref_span.set_attribute("citation_limit", citation_limit)
+            
+            # Add full citation content for complete reference data
             ref_span.set_attribute("citations", json.dumps(citations))
             ref_span.set_attribute("all_citations", json.dumps(all_citations))
             ref_span.set_attribute("references", json.dumps(references))
-            ref_span.set_attribute("citation_count", len(citations))
+            
+            # Add citation previews (first 3) as individual attributes for quick viewing
+            for i, citation in enumerate(citations[:3]):
+                if 'title' in citation:
+                    ref_span.set_attribute(f"citation_{i}_title", citation['title'])
+                if 'source' in citation:
+                    ref_span.set_attribute(f"citation_{i}_source", str(citation['source']))
+                if 'date' in citation:
+                    ref_span.set_attribute(f"citation_{i}_date", str(citation['date']))
             
             # Create the SSE response
             ref_message = {
