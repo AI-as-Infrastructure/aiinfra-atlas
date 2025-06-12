@@ -47,6 +47,7 @@ class RetrieverConfig(TypedDict):
     algorithm: Optional[str]
     chunk_size: Optional[int]
     chunk_overlap: Optional[int]
+    pooling: Optional[str]
 
 
 class LLMConfig(TypedDict):
@@ -99,7 +100,7 @@ def _get_default_config() -> Dict[str, Any]:
             "algorithm": "hnsw",
             "chunk_size": 1000,
             "chunk_overlap": 200,
-
+            "pooling": os.getenv("POOLING", "mean"),
             "target_id": "default",
             "target_version": "1.0"
         }
@@ -115,7 +116,8 @@ def _load_environment_variables(config: Dict[str, Any]) -> None:
         "EMBEDDING_MODEL": ["retriever_config", "embedding_model"],
         "LARGE_RETRIEVAL_SIZE": ["retriever_config", "large_retrieval_size"],
         "TEST_TARGET": ["retriever_config", "target_id"],
-        "INDEX_NAME": ["retriever_config", "index_name"]
+        "INDEX_NAME": ["retriever_config", "index_name"],
+        "POOLING": ["retriever_config", "pooling"]
     }
     
     # Type conversions
@@ -172,7 +174,8 @@ def _load_target_config(config: Dict[str, Any], target_id: str) -> None:
         "ALGORITHM": ["retriever_config", "algorithm"],
         "CHUNK_SIZE": ["retriever_config", "chunk_size"],
         "CHUNK_OVERLAP": ["retriever_config", "chunk_overlap"],
-        "INDEX_NAME": ["retriever_config", "index_name"]
+        "INDEX_NAME": ["retriever_config", "index_name"],
+        "POOLING": ["retriever_config", "pooling"]
     }
     
     # Type conversions
@@ -393,4 +396,9 @@ def get_search_k() -> int:
 def get_search_score_threshold() -> float:
     """Get the search score threshold parameter."""
     retriever_config = get_retriever_config()
-    return retriever_config.get("search_score_threshold", 0.0) 
+    return retriever_config.get("search_score_threshold", 0.0)
+
+def get_pooling() -> str:
+    """Get the pooling parameter."""
+    retriever_config = get_retriever_config()
+    return retriever_config.get("pooling", "mean") 

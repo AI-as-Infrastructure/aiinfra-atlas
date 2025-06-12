@@ -3,17 +3,15 @@
 # hansard_blert_chroma_store.py
 # Creates a Chroma vector store with corpus as a metadata field for filtering.
 
-import os
-import re
-import torch
-import json
-import nltk
-import time
-import subprocess
-import numpy as np
-import shutil
-import sys
+# Ensure project root on path *before* any local package imports
+import sys, os
 from pathlib import Path
+repo_root = Path(__file__).resolve().parents[2]
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
+
+# Standard libs
+import re, torch, json, nltk, time, subprocess, numpy as np, shutil
 from dotenv import load_dotenv
 from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModel
@@ -25,12 +23,30 @@ from langchain.schema import Document
 from typing import Dict, List, Any
 from collections import defaultdict
 from datetime import datetime
+from create.prepare_embedding_model import ensure_st_model
 
-# Load environment variables from .env file
-project_root = Path(__file__).parent.parent
-env_path = project_root / 'config' / '.env'
-print(f"Loading environment variables from: {env_path}")
-load_dotenv(dotenv_path=env_path)
+# Fine-tuning utilities
+from sentence_transformers import SentenceTransformer, losses, InputExample
+from torch.utils.data import DataLoader
+
+# -------------------------------------------------------------
+# Load environment variables (development, staging, production)
+# -------------------------------------------------------------
+
+repo_root = Path(__file__).resolve().parents[2]  # project root
+env_candidates = [
+    repo_root / "config" / ".env.development",
+    repo_root / "config" / ".env.staging",
+    repo_root / "config" / ".env.production",
+]
+
+for _env in env_candidates:
+    if _env.exists():
+        print(f"Loading environment variables from: {_env}")
+        load_dotenv(dotenv_path=_env, override=False)
+        break
+else:
+    print("[WARN] No .env.* file found under config/. Proceeding with current environment.")
 
 # Download NLTK data
 try:
@@ -39,16 +55,17 @@ try:
 except Exception as e:
     print(f"Warning: NLTK download failed: {e}")
 
-VECTOR_SOURCES_BASE = "../../vector_sources"
+VECTOR_SOURCES_BASE = "../../../vector_sources"
 
+# Helper to resolve relative paths based on this script's directory
 def resolve_path(relative_path):
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.normpath(os.path.join(script_dir, relative_path))
+    script_dir = Path(__file__).resolve().parent
+    return str((script_dir / relative_path).resolve())
 
 corpora = {
     resolve_path(f"{VECTOR_SOURCES_BASE}/1901/au/hofreps/txt"): "1901_au",
     resolve_path(f"{VECTOR_SOURCES_BASE}/1901/nz/hofreps/txt"): "1901_nz",
-    resolve_path(f"{VECTOR_SOURCES_BASE}/1901/uk/hofcoms/txt"): "1901_uk"
+    resolve_path(f"{VECTOR_SOURCES_BASE}/1901/uk/hofcoms/txt"): "1901_uk",
 }
 CORPUS_IDS = ["1901_au", "1901_nz", "1901_uk"]
 corpus_file_counts = {corpus_id: 0 for corpus_id in CORPUS_IDS}
@@ -59,11 +76,23 @@ total_chunks_processed = 0
 
 # Chroma configuration
 COLLECTION_NAME = os.environ.get("CHROMA_COLLECTION_NAME", "blert_1000")
-EMBEDDING_MODEL = "Livingwithmachines/bert_1890_1900"
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "Livingwithmachines/bert_1890_1900")
 TEXT_SPLITTER_TYPE = "RecursiveCharacterTextSplitter"
 CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 100
 BATCH_SIZE = 100
+
+# -------------------------------------------------------------
+# Pooling strategy
+#   Controlled via the POOLING environment variable so that
+#   the same setting can be used during both index time and
+#   query time.
+#   Supported values:
+#       mean       – arithmetic mean of all token vectors (default)
+#       cls        – [CLS] token only
+#       mean+max   – concatenation of mean & max vectors (doubles dim)
+# -------------------------------------------------------------
+POOLING = os.getenv("POOLING", "mean").lower()
 
 # Define output directories
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
@@ -120,12 +149,24 @@ def compute_embedding(text, tokenizer, model):
         inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
         inputs = {k: v.to(device) for k, v in inputs.items()}
         
-        # Compute embedding
+        # Forward pass
         with torch.no_grad():
             outputs = model(**inputs)
-            
+
+        hidden = outputs.last_hidden_state  # (batch, seq_len, dim)
+
+        # Pool according to POOLING strategy
+        if POOLING == "cls":
+            pooled = hidden[:, 0, :]  # first token
+        elif POOLING == "mean+max":
+            mean_vec = hidden.mean(dim=1)
+            max_vec = hidden.max(dim=1).values
+            pooled = torch.cat([mean_vec, max_vec], dim=1)  # (batch, 2*dim)
+        else:  # default to mean pooling
+            pooled = hidden.mean(dim=1)
+
         # Move result back to CPU for numpy conversion
-        embedding = outputs.last_hidden_state.mean(dim=1).squeeze().cpu().numpy()
+        embedding = pooled.squeeze().cpu().numpy()
         return embedding
     except Exception as e:
         print(f"Error computing embedding for text: {text[:50]}... - {str(e)}")
@@ -167,10 +208,8 @@ def process_corpus(directory, metadata, vector_store, tokenizer, model):
     
     text_splitter = get_text_splitter(TEXT_SPLITTER_TYPE, CHUNK_SIZE, CHUNK_OVERLAP)
     global corpus_file_counts, chunk_counts_per_corpus, chars_per_corpus, words_per_corpus, total_chunks_processed
-    corpus_file_counts[metadata] = 0
-    chunk_counts_per_corpus[metadata] = 0
-    chars_per_corpus[metadata] = 0
-    words_per_corpus[metadata] = 0
+    # Counters are already initialised globally; do not reset here to avoid wiping
+    # results when the same corpus directory is processed multiple times.
     texts, metadatas, embeddings = [], [], []
     chunk_counter = 0
     skipped_chunks = 0
@@ -299,6 +338,12 @@ def process_corpus(directory, metadata, vector_store, tokenizer, model):
                                 texts.append(chunk)
                                 metadatas.append(metadata_dict)
                                 embeddings.append(embedding.tolist())
+
+                                # Update corpus-level statistics for this chunk
+                                chunk_counts_per_corpus[metadata] += 1
+                                total_chunks_processed += 1
+                                chars_per_corpus[metadata] += len(chunk)
+                                words_per_corpus[metadata] += len(chunk.split())
                             else:
                                 print(f"Skipping chunk with invalid embedding (contains NaN/inf)")
                                 skipped_chunks += 1
@@ -368,6 +413,12 @@ def process_corpus(directory, metadata, vector_store, tokenizer, model):
                                             texts.append(chunk)
                                             metadatas.append(metadata_dict)
                                             embeddings.append(embedding.tolist())
+
+                                            # Update corpus-level statistics for this chunk
+                                            chunk_counts_per_corpus[metadata] += 1
+                                            total_chunks_processed += 1
+                                            chars_per_corpus[metadata] += len(chunk)
+                                            words_per_corpus[metadata] += len(chunk.split())
                                         else:
                                             print(f"Skipping chunk with invalid embedding (contains NaN/inf)")
                                             skipped_chunks += 1
@@ -445,8 +496,23 @@ def generate_vector_store_stats(chroma_dir=None, output_file=None, processing_ti
         stats["tokens_per_corpus"][corpus_id] = tokens_estimate
         stats["total_tokens"] += tokens_estimate
         
-    # Format the output content
-    content = f"# {collection_name} Vector Store Statistics\n\n"
+    # Create content for the statistics file (reset content for final manifest)
+    content = f"# Vector Store Statistics: {COLLECTION_NAME}\n"
+    content += f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+
+    # Configuration in KEY = VALUE form so the retriever generator can parse it
+    content += "## Configuration\n"
+    content += f"INDEX_NAME = \"{collection_name}\"\n"
+    content += f"EMBEDDING_MODEL = \"{EMBEDDING_MODEL}\"\n"
+    content += f"ALGORITHM = \"HNSW\"\n"
+    content += f"CHUNK_SIZE = {CHUNK_SIZE}\n"
+    content += f"CHUNK_OVERLAP = {CHUNK_OVERLAP}\n"
+
+    # Additional processing information (human-readable)
+    content += "\n## Processing Information\n"
+    content += f"Text Splitter: {TEXT_SPLITTER_TYPE}\n"
+    content += f"Chunk Size: {CHUNK_SIZE}\n"
+    content += f"Chunk Overlap: {CHUNK_OVERLAP}\n"
     
     # Creation metadata section
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -456,6 +522,8 @@ def generate_vector_store_stats(chroma_dir=None, output_file=None, processing_ti
     if stats["total_time"] > 0:
         hours, remainder = divmod(stats["total_time"], 3600)
         minutes, seconds = divmod(remainder, 60)
+        # Store a human-friendly duration string for later reuse
+        stats["total_time_human"] = f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d} (HH:MM:SS)"
         content += f"Total Processing Time: {int(hours):02d}:{int(minutes):02d}:{int(seconds):02d} (HH:MM:SS)\n"
     
     # Processing times per corpus if available
@@ -464,17 +532,6 @@ def generate_vector_store_stats(chroma_dir=None, output_file=None, processing_ti
         for corpus_id, time_seconds in stats["processing_times"].items():
             minutes, seconds = divmod(time_seconds, 60)
             content += f"- {corpus_id}: {int(minutes):02d}:{int(seconds):02d} (MM:SS)\n"
-    
-    # Configuration section
-    content += "\n## Configuration\n"
-    content += f"INDEX_NAME: \"{collection_name}\"\n"
-    content += f"EMBEDDING_MODEL: \"{EMBEDDING_MODEL}\"\n"
-    content += f"TEXT_SPLITTER_TYPE: \"RecursiveCharacterTextSplitter\"\n"
-    content += f"ALGORITHM: \"HNSW\"\n"
-    content += f"SEARCH_TYPE: \"mmr\"\n"
-    content += f"CHUNK_SIZE: {CHUNK_SIZE}\n"
-    content += f"CHUNK_OVERLAP: {CHUNK_OVERLAP}\n"
-    content += f"BATCH_SIZE: {BATCH_SIZE}\n"
     
     # Overall statistics section
     content += "\n## Overall Statistics\n"
@@ -487,6 +544,9 @@ def generate_vector_store_stats(chroma_dir=None, output_file=None, processing_ti
         content += f"Total Words (est.): {stats['total_words']:,}\n"
     if stats["total_tokens"] > 0:
         content += f"Total Tokens (est.): {stats['total_tokens']:,}\n"
+    
+    if stats["total_time"] > 0:
+        content += f"Total Processing Time: {stats['total_time_human']}\n"
     
     if stats["chroma_size_mb"] > 0:
         content += f"Database Size: {stats['chroma_size_mb']:.2f} MB\n"
@@ -529,88 +589,6 @@ def generate_vector_store_stats(chroma_dir=None, output_file=None, processing_ti
     content += f"Model: {EMBEDDING_MODEL}\n"
     if "bert_1890_1900" in EMBEDDING_MODEL:
         content += "This model was trained on historical texts from 1890-1900.\n"
-    
-    # Create content for the statistics file
-    content = f"# Vector Store Statistics: {COLLECTION_NAME}\n"
-    content += f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-    
-    # Processing information
-    content += "## Processing Information\n"
-    content += f"Embedding Model: {EMBEDDING_MODEL}\n"
-    content += f"Text Splitter: {TEXT_SPLITTER_TYPE}\n"
-    content += f"Chunk Size: {CHUNK_SIZE}\n"
-    content += f"Chunk Overlap: {CHUNK_OVERLAP}\n"
-    
-    if processing_times:
-        content += "\n### Processing Times\n"
-        for corpus_id, duration in processing_times.items():
-            content += f"{corpus_id}: {duration:.2f} seconds\n"
-    
-    # Overall statistics section
-    content += "\n## Overall Statistics\n"
-    content += f"Total Chunks: {stats['total_chunks']:,}\n"
-    content += f"Total Files Processed: {stats['total_files']:,}\n"
-    
-    if stats["total_chars"] > 0:
-        content += f"Total Characters: {stats['total_chars']:,}\n"
-    if stats["total_words"] > 0:
-        content += f"Total Words (est.): {stats['total_words']:,}\n"
-    if stats["total_tokens"] > 0:
-        content += f"Total Tokens (est.): {stats['total_tokens']:,}\n"
-    
-    if stats["chroma_size_mb"] > 0:
-        content += f"Database Size: {stats['chroma_size_mb']:.2f} MB\n"
-    
-    # Corpus distribution metrics
-    content += "\n## Corpus Distribution\n"
-    content += f"Number of Corpora: {len(CORPUS_IDS)}\n"
-    content += f"Corpora: {', '.join(CORPUS_IDS)}\n"
-    
-    # Calculate and show corpus distribution percentages
-    if stats["total_chunks"] > 0:
-        content += "\n### Distribution by Chunk Count\n"
-        for corpus_id in CORPUS_IDS:
-            chunks = stats["chunks_per_corpus"][corpus_id]
-            if chunks > 0:
-                percentage = (chunks / stats["total_chunks"]) * 100
-                content += f"{corpus_id}: {chunks:,} chunks ({percentage:.1f}%)\n"
-    
-    # Detailed corpus statistics
-    content += "\n## Detailed Corpus Statistics\n"
-    for corpus_id in CORPUS_IDS:
-        chunks = stats["chunks_per_corpus"][corpus_id]
-        if chunks > 0:
-            content += f"\n### {corpus_id}\n"
-            content += f"Chunks: {chunks:,}\n"
-            if stats["files_per_corpus"][corpus_id] > 0:
-                content += f"Files Processed: {stats['files_per_corpus'][corpus_id]}\n"
-            if stats["chars_per_corpus"][corpus_id] > 0:
-                content += f"Characters: {stats['chars_per_corpus'][corpus_id]:,}\n"
-            if stats["words_per_corpus"][corpus_id] > 0:
-                content += f"Words (est.): {stats['words_per_corpus'][corpus_id]:,}\n"
-            if stats["tokens_per_corpus"][corpus_id] > 0:
-                content += f"Tokens (est.): {stats['tokens_per_corpus'][corpus_id]:,}\n"
-            if stats["files_per_corpus"][corpus_id] > 0:
-                avg_chunks = chunks / stats["files_per_corpus"][corpus_id]
-                content += f"Average Chunks per File: {avg_chunks:.2f}\n"
-    
-    # Database files information
-    content += "\n## Database Files\n"
-    content += f"Chroma Directory: {chroma_dir}\n"
-    content += f"Statistics File: {output_file}\n"
-    
-    # Chroma schema documentation
-    content += "\n## Chroma Schema\n"
-    content += "The vector store uses the following metadata schema:\n"
-    content += "- id: Unique identifier for each chunk\n"
-    content += "- text: The text content of the chunk\n"
-    content += "- date: Publication date of the document\n"
-    content += "- url: URL reference to the original source\n"
-    content += "- page: Page number within the original document\n"
-    content += "- loc: JSON-encoded location information for the chunk within the document\n"
-    content += "- corpus: Field containing the corpus identifier (e.g., '1901_au', '1901_nz', '1901_uk')\n\n"
-    content += "The corpus field can be used for filtering with Chroma's where clause:\n"
-    content += "chroma_db.similarity_search(query, filter={\"corpus\": \"corpus-id\"})\n"
     
     # Write the statistics file
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
@@ -713,29 +691,58 @@ def main():
     else:
         print("No GPU detected. Using CPU for processing (this may be slower)")
     
-    # Initialize embedding model (GPU support will be handled in our compute_embedding function)
-    print(f"Loading embedding model: {EMBEDDING_MODEL} on {device}")
-    embeddings = HuggingFaceEmbeddings(
-        model_name=EMBEDDING_MODEL
-    )
-    
-    # Create Chroma vector store
-    print(f"Creating Chroma vector store in {chroma_dir}")
-    vector_store = Chroma(
-        collection_name=COLLECTION_NAME,
-        embedding_function=embeddings,
-        persist_directory=chroma_dir
-    )
-    
-    # Initialize tokenizer and model for embeddings with GPU support
-    print("Initializing tokenizer and model...")
-    tokenizer = AutoTokenizer.from_pretrained(EMBEDDING_MODEL)
-    model = AutoModel.from_pretrained(EMBEDDING_MODEL)
+    # Determine where the Sentence-Transformer model actually lives
+    # 1. If EMBEDDING_MODEL is already a local directory containing modules.json,
+    #    use it directly so we don't append another "_st".
+    # 2. Otherwise store (or convert) the wrapper under models/<name>_st
+    print(f"EMBEDDING_MODEL env-var: {EMBEDDING_MODEL}")
+    embed_path = Path(EMBEDDING_MODEL).expanduser()
+
+    print(f"Resolved embed_path: {embed_path}")
+
+    # If EMBEDDING_MODEL already points to a prepared ST directory with
+    # modules.json, use it directly.
+    if embed_path.is_dir() and (embed_path / "modules.json").exists():
+        local_model_path = embed_path
+    else:
+        # Derive destination folder under ./models while *avoiding*
+        # appending a second "_st" when the user has already supplied a
+        # wrapper or fine-tuned model name such as *_st* or *_st_ft*.
+        base_name = embed_path.name
+        if base_name.endswith("_st") or base_name.endswith("_st_ft"):
+            local_model_path = Path("models") / base_name
+        else:
+            local_model_path = Path("models") / f"{base_name}_st"
+
+    print(f"local_model_path selected: {local_model_path}")
+
+    ensure_st_model(EMBEDDING_MODEL, local_model_path)
+
+    print(f"Loading embedding model: {local_model_path} on {device}")
+    model_root = local_model_path
+    # If the path is a Sentence-Transformer folder, the underlying HF
+    # model lives in 0_Transformer; use that for tokenizer/encoder.
+    if (local_model_path / "0_Transformer").exists():
+        model_root = local_model_path / "0_Transformer"
+
+    tokenizer = AutoTokenizer.from_pretrained(str(model_root))
+    model = AutoModel.from_pretrained(str(model_root))
     
     # Move model to GPU if available
     if device == "cuda":
         model = model.to(device)
         print("Model successfully moved to GPU")
+    
+    # Create Chroma vector store
+    print(f"Creating Chroma vector store in {chroma_dir}")
+    vector_store = Chroma(
+        collection_name=COLLECTION_NAME,
+        embedding_function=HuggingFaceEmbeddings(model_name=str(model_root)),
+        persist_directory=chroma_dir
+    )
+    
+    # Initialize tokenizer and model for embeddings with GPU support
+    print("Initializing tokenizer and model…")
     
     # Process each corpus
     start_time = time.time()
@@ -770,8 +777,13 @@ def main():
     verification_results = verify_corpus_documents(vector_store)
     
     # Final summary
+    def _fmt_dur(secs):
+        h, r = divmod(int(secs), 3600)
+        m, s = divmod(r, 60)
+        return f"{h}h {m}m {s}s" if h else f"{m}m {s}s"
+
     print("\n=== Vector Store Creation Summary ===")
-    print(f"Total processing time: {total_time:.2f} seconds")
+    print(f"Total processing time: {_fmt_dur(total_time)} ({total_time:.2f} seconds)")
     print(f"Total documents processed: {sum(corpus_file_counts.values())}")
     print(f"Total chunks processed: {sum(chunk_counts_per_corpus.values())}")
     print(f"Corpus distribution:")

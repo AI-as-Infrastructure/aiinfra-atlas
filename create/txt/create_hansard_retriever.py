@@ -13,13 +13,15 @@ or as a standalone script for querying the Hansard vector store.
 import os
 import re
 import sys
+from pathlib import Path
 import argparse
 from datetime import datetime
-from typing import Dict, List, Any, Optional, Tuple
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores import Chroma
-from langchain_core.documents.base import Document
-from backend.retrievers.base_retriever import BaseRetriever
+
+# Ensure project root is on sys.path so `import backend` works no matter where
+# this script is executed from (Makefile may invoke it from a sub-shell).
+repo_root = Path(__file__).resolve().parents[2]
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
 
 def parse_manifest_file(manifest_path):
     config = {}
@@ -51,11 +53,11 @@ def parse_manifest_file(manifest_path):
 
 def generate_atlas_retriever(config, output_path):
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    code = f'''#!/usr/bin/env python3
+    template = '''#!/usr/bin/env python3
 """
-Auto-generated ATLAS Retriever for {config['INDEX_NAME']} (HNSW)
+Auto-generated ATLAS Retriever for {INDEX_NAME} (HNSW)
 Generated: {now}
-Manifest creation: {config.get('CREATED','Unknown')}
+Manifest creation: {CREATED}
 """
 import os
 import logging
@@ -83,44 +85,35 @@ class HansardRetriever(BaseRetriever):
         
         config["CORPUS_OPTIONS"] = CORPUS_OPTIONS
         super().__init__(config)
-        self.redis_database = "{config['INDEX_NAME']}"
-        self.index_name = "{config['INDEX_NAME']}"
-        self.algorithm = "{config['ALGORITHM']}"
-        self.chunk_size = "{config['CHUNK_SIZE']}"
-        self.chunk_overlap = "{config['CHUNK_OVERLAP']}"
-        self.embedding_model = "{config['EMBEDDING_MODEL']}"
+        self.index_name = "{INDEX_NAME}"
+        self.chunk_size = "{CHUNK_SIZE}"
+        self.chunk_overlap = "{CHUNK_OVERLAP}"
+        self.embedding_model = "{EMBEDDING_MODEL}"
         self._supports_corpus_filtering = True
-        self.redis_password = os.getenv("REDIS_PASSWORD", "")
-        self.redis_host = os.getenv("REDIS_HOST", "localhost")
-        self.redis_port = os.getenv("REDIS_PORT", "6379")
-        if self.redis_password:
-            self.redis_url = f"redis://default:{{self.redis_password}}@{{self.redis_host}}:{{self.redis_port}}"
-        else:
-            self.redis_url = f"redis://{{self.redis_host}}:{{self.redis_port}}"
+
+        # Location of the persisted Chroma DB
+        self.persist_directory = os.getenv("CHROMA_PERSIST_DIRECTORY", "./create/txt/output/chroma_db")
         self._initialize_vector_store()
 
     def _initialize_vector_store(self):
         self.embeddings = HuggingFaceEmbeddings(model_name=self.embedding_model)
-        self.vector_store = Redis(
-            redis_url=self.redis_url,
-            index_name=self.index_name,
-            embedding=self.embeddings,
-            vector_schema={{"algorithm": self.algorithm}},
-            index_schema=get_default_index_schema(),
+        self.vector_store = Chroma(
+            collection_name=self.index_name,
+            embedding_function=self.embeddings,
+            persist_directory=self.persist_directory,
         )
-        self._retriever = self.vector_store.as_retriever(search_type="similarity", search_kwargs={{"k": 10}})
+        self._retriever = self.vector_store.as_retriever(search_type="similarity", search_kwargs={{\"k\": 10}})
 
     def get_retriever(self):
         return self._retriever
 
     def get_config(self) -> Dict[str, Any]:
         return {{
-            "redis_database": self.redis_database,
             "index_name": self.index_name,
-            "algorithm": self.algorithm,
             "chunk_size": self.chunk_size,
             "chunk_overlap": self.chunk_overlap,
             "embedding_model": self.embedding_model,
+            "persist_directory": self.persist_directory,
             "supports_corpus_filtering": self._supports_corpus_filtering,
         }}
 
@@ -176,21 +169,26 @@ class HansardRetriever(BaseRetriever):
         """Asynchronous invoke method required by LangChain."""
         return await self._get_relevant_documents(input, config, **kwargs)
 '''
+    cfg = config.copy()
+    cfg['now'] = now
     with open(output_path, 'w') as f:
-        f.write(code)
+        f.write(template.format(**cfg))
     os.chmod(output_path, 0o755)
     print(f"Generated ATLAS retriever: {output_path}")
+
 def main():
     parser = argparse.ArgumentParser(description='Generate an ATLAS-compatible Hansard HNSW Retriever script')
     parser.add_argument('--manifest', required=False, help='Path to the vector store manifest file (.txt)')
     parser.add_argument('--output', required=False, help='Path for the output retriever script (.py)')
     args = parser.parse_args()
     if not args.manifest:
-        default_manifest_dir = './output/'
+        # Default to the script's own output/ directory rather than CWD
+        script_dir = Path(__file__).resolve().parent
+        default_manifest_dir = script_dir / 'output'
         if os.path.exists(default_manifest_dir):
             txt_files = [f for f in os.listdir(default_manifest_dir) if f.endswith('.txt')]
             if txt_files:
-                args.manifest = os.path.join(default_manifest_dir, txt_files[0])
+                args.manifest = str(Path(default_manifest_dir) / txt_files[0])
                 print(f"Using manifest file: {args.manifest}")
             else:
                 print("No .txt manifest files found in ./output/")
@@ -203,7 +201,7 @@ def main():
         sys.exit(1)
     config = parse_manifest_file(args.manifest)
     # Always output to ./output directory, regardless of manifest location
-    output_dir = os.path.abspath('./output')
+    output_dir = str(script_dir / 'output')
     os.makedirs(output_dir, exist_ok=True)
     index_name = config['INDEX_NAME']
     output_path = os.path.join(output_dir, f"{index_name}_retriever.py")

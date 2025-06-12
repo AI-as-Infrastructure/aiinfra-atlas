@@ -346,6 +346,7 @@ def get_config_endpoint():
         "search_type": retriever_config.get("search_type"),
         "search_k": retriever_config.get("search_k"),
         "search_score_threshold": retriever_config.get("search_score_threshold"),
+        "pooling": retriever_config.get("pooling"),
         "citation_limit": retriever_config.get("citation_limit"),
         "large_retrieval_size": retriever_config.get("large_retrieval_size"),
         "algorithm": retriever_config.get("algorithm"),

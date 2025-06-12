@@ -19,6 +19,7 @@ const configDescriptions = {
   search_score_threshold: "The minimum similarity score required for document retrieval.",
   chunk_size: "The size of each text chunk stored in the vector index.",
   chunk_overlap: "The overlap between text chunks for better context.",
+  pooling: "The pooling strategy used to aggregate token embeddings (cls, mean, mean+max).",
   llm_provider: "The provider of the language model.",
   llm_model: "The language model used to generate answers.",
   MULTI_CORPUS_VECTORSTORE: "If true, enables the corpus selector dropdown and multi-corpus vectorstore features."
