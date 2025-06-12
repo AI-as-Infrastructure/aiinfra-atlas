@@ -28,8 +28,13 @@ Other dependencies include: Python virtual environments (`venv`), NVM, Sentence 
 ## Quick Start
 
 1. Clone the repository.
-2. Rename .env.template to .env.development and update the settings.
-3. Start the development server (dependencies will be installed automatically):
+2. Install Git LFS and pull the default vector store:
+   ```bash
+   git lfs install
+   git lfs pull
+   ```
+3. Rename .env.template to .env.development and update the settings.
+4. Start the development server (dependencies will be installed automatically):
 
    ```bash
    # Terminal 1 - Backend (FastAPI + ChromaDB)
@@ -38,11 +43,34 @@ Other dependencies include: Python virtual environments (`venv`), NVM, Sentence 
    # Terminal 2 - Frontend (Vue + Vite)
    make df
    ```
-3. Access the frontend via http://localhost:5173
-4. (Optional) To clean and reset your environment:
+5. Access the frontend via http://localhost:5173
+6. (Optional) To clean and reset your environment:
    ```bash
    make dd
    ```
+
+### Default Vector Store Setup
+
+ATLAS requires a vector store for semantic search. You have two options:
+
+1. **Use Mean Pooling (Default)**
+   - No additional setup required
+   - Uses a simple but effective embedding strategy
+   - Suitable for basic testing and development
+
+2. **Generate Custom Vector Store**
+   - Recommended for production use
+   - Provides better semantic search capabilities
+   - Run the following command:
+   ```bash
+   make store
+   ```
+   This will:
+   - Generate embeddings using the BERT model
+   - Create a vector store in `backend/targets/chroma_db/`
+   - May take several minutes depending on your system
+
+Note: The vector store generation process is optional but recommended for optimal performance. The default vector store included in the repository has been pre-generated using the create store process and includes fine-tuned embeddings. However, to use these fine-tuned embeddings, you'll need the corresponding fine-tuned model files in your models directory. If you don't have these files, the system will fall back to using mean pooling for embeddings.
 
 ### Vector Store & Retriever Generation Workflow
 
