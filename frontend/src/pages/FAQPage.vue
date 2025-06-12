@@ -212,6 +212,19 @@ const faqs = [
       <p>
         If corpus filtering is not supported, the UI will automatically hide the selector and search across all available sources.
       </p>
+
+      <h4 style="color: black; font-size: 1.25rem; font-weight: 600; margin-top: 2rem; margin-bottom: 1.2rem;">Document Counts and Semantic Similarity</h4>
+      <p>
+        When using corpus filters, you may notice differences in the number of documents retrieved:
+      </p>
+      <ul>
+        <li><strong>Unfiltered Searches:</strong> Will return the maximum number of documents (e.g., 40) from across all corpora, showing the most semantically similar matches regardless of source</li>
+        <li><strong>Filtered Searches:</strong> May return fewer documents because the system maintains the same semantic similarity threshold within each corpus</li>
+        <li><strong>Quality Over Quantity:</strong> The system prioritizes semantic relevance over reaching the maximum document count, ensuring that only truly relevant documents are included</li>
+      </ul>
+      <p>
+        This behavior ensures that your search results maintain high quality and relevance, even when filtering to specific parliamentary archives.
+      </p>
     `
   },
   {
@@ -231,7 +244,7 @@ const faqs = [
         ATLAS's Test Target configuration controls multiple search parameters that directly impact LLM output quality:
       </p>
       <ul>
-        <li><strong>Search K Value:</strong> Determines how many documents are retrieved from the vector store (e.g., k=15). Higher values provide more context but can introduce noise</li>
+        <li><strong>Search K Value:</strong> A configurable parameter that determines how many documents are retrieved from the vector store. Higher values can significantly improve recall, especially for smaller corpora, but must be balanced against potential noise. This value can be adjusted in the Test Target configuration to optimize for different use cases</li>
         <li><strong>Score Threshold:</strong> Sets a minimum similarity score for retrieved documents, ensuring only relevant context is used</li>
         <li><strong>Large Retrieval Size:</strong> For initial retrieval before re-ranking, typically 200+ documents to ensure good candidates are considered</li>
         <li><strong>Citation Limit:</strong> Caps the number of citations shown to users, typically 10-15 sources for readability</li>
@@ -248,20 +261,69 @@ const faqs = [
         <li>Formats documents with metadata for the LLM to use as context</li>
       </ol>
       <p>
-        This process ensures that the LLM receives high-quality, relevant context that directly influences answer accuracy, specificity, and factual grounding.
+        This pipeline ensures that the LLM receives the most relevant and diverse set of documents while maintaining reasonable computational costs.
+      </p>
+    `
+  },
+  {
+    question: "How does fine-tuning improve search quality?",
+    answer: `
+      <p>
+        ATLAS uses fine-tuned embeddings to improve search quality for historical parliamentary records:
       </p>
       
-      <h4 style="color: black; font-size: 1.25rem; font-weight: 600; margin-top: 2rem; margin-bottom: 1.2rem;">Interaction with LLM Selection</h4>
-      <p>
-        The chosen LLM (configured via <code>LLM_PROVIDER</code> and <code>LLM_MODEL</code> in the Test Target) also impacts how effectively retrieved documents are used:
-      </p>
+      <h4 style="color: black; font-size: 1.25rem; font-weight: 600; margin-top: 2rem; margin-bottom: 1.2rem;">Fine-tuning Process</h4>
       <ul>
-        <li><strong>Context Window Size:</strong> Larger models can process more retrieved documents</li>
-        <li><strong>Context Integration:</strong> More advanced models (e.g., Claude 3.5 Sonnet) can better synthesize information across multiple documents</li>
-        <li><strong>Instruction Following:</strong> Better models more faithfully cite the actual retrieved documents rather than hallucinating</li>
+        <li><strong>Base Model:</strong> Starts with a BERT model pre-trained on general text</li>
+        <li><strong>Domain Adaptation:</strong> Fine-tunes the model on parliamentary records to better understand historical language and context</li>
+        <li><strong>Two-Epoch Training:</strong> Uses a two-epoch fine-tuning process to balance between general language understanding and domain-specific knowledge</li>
       </ul>
+
+      <h4 style="color: black; font-size: 1.25rem; font-weight: 600; margin-top: 2rem; margin-bottom: 1.2rem;">Vector Store and Model Files</h4>
+      <ul>
+        <li><strong>Default Vector Store:</strong> The repository includes a pre-generated vector store with fine-tuned embeddings</li>
+        <li><strong>Model Files:</strong> The fine-tuned model files are stored in the models directory and are required for optimal search performance</li>
+        <li><strong>Fallback Option:</strong> If the fine-tuned model files are not available, the system will use mean pooling as a fallback strategy</li>
+      </ul>
+
+      <h4 style="color: black; font-size: 1.25rem; font-weight: 600; margin-top: 2rem; margin-bottom: 1.2rem;">Benefits of Fine-tuning</h4>
+      <ul>
+        <li><strong>Better Semantic Understanding:</strong> Improved ability to understand historical language and parliamentary terminology</li>
+        <li><strong>Enhanced Recall:</strong> Better at finding relevant documents, especially for complex or historical queries</li>
+        <li><strong>Consistent Performance:</strong> More reliable search results across different types of parliamentary records</li>
+      </ul>
+    `
+  },
+  {
+    question: "How can I get the best search results?",
+    answer: `
       <p>
-        The combination of optimized vector search and appropriate LLM selection creates ATLAS's reliable retrieval-augmented generation capabilities.
+        To get the most relevant and comprehensive search results in ATLAS:
+      </p>
+      
+      <h4 style="color: black; font-size: 1.25rem; font-weight: 600; margin-top: 2rem; margin-bottom: 1.2rem;">Query Formulation</h4>
+      <ul>
+        <li><strong>Be Specific:</strong> Use clear, focused queries that target specific aspects of parliamentary debates</li>
+        <li><strong>Use Historical Context:</strong> Include relevant time periods or historical events in your queries</li>
+        <li><strong>Consider Terminology:</strong> Use period-appropriate language when possible, as the system is fine-tuned on historical text</li>
+      </ul>
+
+      <h4 style="color: black; font-size: 1.25rem; font-weight: 600; margin-top: 2rem; margin-bottom: 1.2rem;">Using Corpus Filters</h4>
+      <ul>
+        <li><strong>Start Broad:</strong> Begin with unfiltered searches to get a comprehensive view across all sources</li>
+        <li><strong>Filter Strategically:</strong> Use corpus filters to focus on specific parliamentary records when needed</li>
+        <li><strong>Understand Results:</strong> Remember that filtered searches may return fewer documents while maintaining high relevance</li>
+      </ul>
+
+      <h4 style="color: black; font-size: 1.25rem; font-weight: 600; margin-top: 2rem; margin-bottom: 1.2rem;">Interpreting Results</h4>
+      <ul>
+        <li><strong>Check Citations:</strong> Review the provided citations to verify the source and context of information</li>
+        <li><strong>Consider Time Period:</strong> Note the dates of retrieved documents to understand historical context</li>
+        <li><strong>Look for Patterns:</strong> Identify common themes or recurring issues across multiple documents</li>
+      </ul>
+
+      <p>
+        Remember that ATLAS is designed to provide historically grounded responses. The system prioritizes accuracy and relevance over quantity of results, ensuring that you get the most meaningful information for your research.
       </p>
     `
   },
@@ -297,6 +359,47 @@ const faqs = [
       </ul>
       <p>
         After each answer, you can rate its quality on a scale of 1-5 and provide optional written feedback. This data is anonymized and used purely for research and system improvement purposes.
+      </p>
+    `
+  },
+  {
+    question: "How do embeddings and pooling work in ATLAS?",
+    answer: `
+      <p>
+        ATLAS uses word embeddings and pooling techniques to convert text into numerical vectors that capture semantic meaning:
+      </p>
+      
+      <h4 style="color: black; font-size: 1.25rem; font-weight: 600; margin-top: 2rem; margin-bottom: 1.2rem;">Word Embeddings</h4>
+      <ul>
+        <li><strong>Living with Machines Model:</strong> ATLAS defaults to using a BERT model pre-trained on 19th-century text, providing a strong foundation for historical language understanding. You can use a different model by changing the <code>EMBEDDING_MODEL</code> in the Test Target configuration.</li>
+        <li><strong>Vector Representation:</strong> Each word or token is converted into a high-dimensional vector that captures its meaning and relationships with other words</li>
+        <li><strong>Contextual Understanding:</strong> The model considers the surrounding words to generate context-aware embeddings</li>
+      </ul>
+
+      <h4 style="color: black; font-size: 1.25rem; font-weight: 600; margin-top: 2rem; margin-bottom: 1.2rem;">Pooling Strategies</h4>
+      <ul>
+        <li><strong>Mean Pooling:</strong> The default strategy that averages all word embeddings in a document to create a single document vector</li>
+        <li><strong>Fine-tuned Pooling:</strong> An enhanced approach where the model is fine-tuned on parliamentary records to better capture domain-specific language patterns</li>
+        <li><strong>Fallback Mechanism:</strong> If fine-tuned model files aren't available, the system automatically uses mean pooling</li>
+      </ul>
+
+      <h4 style="color: black; font-size: 1.25rem; font-weight: 600; margin-top: 2rem; margin-bottom: 1.2rem;">Role in RAG Chain</h4>
+      <ul>
+        <li><strong>Document Indexing:</strong> All parliamentary records are converted into embeddings and stored in the vector database</li>
+        <li><strong>Query Processing:</strong> User queries are converted into embeddings using the same model</li>
+        <li><strong>Semantic Search:</strong> The system finds documents with similar embeddings to the query</li>
+        <li><strong>Context Retrieval:</strong> The most semantically similar documents are retrieved and passed to the LLM</li>
+      </ul>
+
+      <h4 style="color: black; font-size: 1.25rem; font-weight: 600; margin-top: 2rem; margin-bottom: 1.2rem;">Fine-tuning Benefits</h4>
+      <ul>
+        <li><strong>Historical Language:</strong> Better understanding of 19th and early 20th-century parliamentary terminology</li>
+        <li><strong>Domain Adaptation:</strong> Improved ability to capture the specific context of parliamentary debates</li>
+        <li><strong>Enhanced Retrieval:</strong> More accurate matching of queries to relevant historical documents</li>
+      </ul>
+
+      <p>
+        The combination of historical language models, effective pooling strategies, and fine-tuning creates a robust foundation for semantic search in ATLAS, enabling accurate retrieval of relevant parliamentary records.
       </p>
     `
   }
