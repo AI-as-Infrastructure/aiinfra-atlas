@@ -21,6 +21,7 @@ deploy/staging/logs/**
 *.pem
 deploy/docker/
 create/output/*
+models/**
 
 # Chroma database directories (except reference database)
 backend/chroma_db/
