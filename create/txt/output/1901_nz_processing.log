@@ -1,0 +1,483 @@
+=== Processing Log for 1901_nz Corpus ===
+Started at: 2025-06-12 21:09:10
+
+Loaded 62 documents from 1901_nz
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 100 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 200 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 300 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 400 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 500 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 600 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 700 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 800 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 900 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 1000 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 1100 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 1200 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 1300 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 1400 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 1500 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 1600 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 1700 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 1800 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 1900 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 2000 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 2100 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 2200 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 2300 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 2400 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 2500 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 2600 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 2700 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 2800 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 2900 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 3000 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 3100 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 3200 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 3300 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 3400 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 3500 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 3600 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 3700 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 3800 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 3900 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 4000 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 4100 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 4200 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 4300 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 4400 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 4500 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 4600 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 4700 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 4800 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 4900 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 5000 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 5100 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 5200 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 5300 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 5400 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 5500 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 5600 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 5700 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 5800 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 5900 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 6000 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 6100 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 6200 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 6300 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 6400 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 6500 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 6600 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 6700 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 6800 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 6900 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 7000 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 7100 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 7200 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 7300 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 7400 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 7500 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 7600 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 7700 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 7800 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 7900 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 8000 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 8100 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 8200 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 8300 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 8400 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 8500 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 8600 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 8700 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 8800 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 8900 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 9000 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 9100 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 9200 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 9300 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 9400 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 9500 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 9600 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 9700 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 9800 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 9900 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 10000 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 10100 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 10200 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 10300 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 10400 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 10500 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 10600 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 10700 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 10800 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 10900 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 11000 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 11100 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 11200 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 11300 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 11400 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 11500 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 11600 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 11700 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 11800 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 11900 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 12000 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 12100 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 12200 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 12300 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 12400 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 12500 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 12600 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 12700 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 12800 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 12900 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 13000 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 13100 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 13200 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 13300 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 13400 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 13500 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 13600 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 13700 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 13800 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 13900 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 14000 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 14100 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 14200 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 14300 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 14400 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 14500 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 14600 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 14700 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 14800 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 14900 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 15000 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 15100 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 15200 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 15300 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 15400 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 15500 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 15600 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 15700 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 15800 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 15900 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 16000 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 16100 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 16200 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 16300 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 16400 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 16500 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 16600 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 16700 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 16800 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 16900 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 17000 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 17100 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 17200 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 17300 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 17400 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 17500 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 17600 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 17700 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 17800 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 17900 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 18000 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 18100 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 18200 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 18300 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 18400 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 18500 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 18600 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 18700 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 18800 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 18900 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 19000 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 19100 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 19200 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 19300 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 19400 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 19500 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 19600 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 19700 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 19800 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 19900 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 20000 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 20100 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 20200 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 20300 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 20400 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 20500 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 20600 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 20700 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 20800 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 20900 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 21000 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 21100 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 21200 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 21300 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 21400 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 21500 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 21600 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 21700 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 21800 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 21900 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 22000 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 22100 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 22200 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 22300 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 22400 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 22500 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 22600 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 22700 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 22800 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 22900 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 23000 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 23100 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 23200 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 23300 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 23400 (Skipped: 0)
+Adding batch with 100 valid entries
+Added batch to vector store. Total: 23500 (Skipped: 0)
+
+Processing complete for corpus: 1901_nz
+Files processed: 62
+Chunks processed: 23503
+Successful batches: 235
+Skipped chunks: 0
+Characters processed: 22033368
+Words processed: 4019262
+Completed at: 2025-06-12 21:12:19

@@ -1,0 +1,17 @@
+{
+  "1901_au": {
+    "status": "SUCCESS",
+    "count": 5,
+    "sample": "Mr TUDOR..."
+  },
+  "1901_nz": {
+    "status": "SUCCESS",
+    "count": 5,
+    "sample": "INDEX..."
+  },
+  "1901_uk": {
+    "status": "SUCCESS",
+    "count": 5,
+    "sample": "LICENSING LAWS...."
+  }
+}

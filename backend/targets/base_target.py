@@ -39,7 +39,7 @@ class TargetConfig:
             "ATLAS_VERSION", "target_version", "target_id", "llm_provider", "llm_model",
             "vector_database", "chroma_collection", "composite_target", "embedding_model", "large_retrieval_size",
             "algorithm", "search_type", "search_k", "search_score_threshold", "chunk_size",
-            "chunk_overlap", "citation_limit", "system_prompt"
+            "chunk_overlap", "citation_limit", "system_prompt", "pooling"
         ]
         full_cfg = self.get_full_config()
         export_cfg = {k: full_cfg.get(k) for k in export_fields if k in full_cfg}
@@ -197,6 +197,7 @@ class TargetConfig:
             "chunk_overlap": self.chroma_config["CHUNK_OVERLAP"],
             "embedding_model": self.chroma_config["EMBEDDING_MODEL"],
             "large_retrieval_size": int(self.target_config.get("LARGE_RETRIEVAL_SIZE", 500)),
+            "pooling": os.getenv("POOLING", "mean"),
             # LLM config
             "llm_provider": self.target_config.get("LLM_PROVIDER", self.env.get("LLM_PROVIDER")),
             "llm_model": self.target_config.get("LLM_MODEL", self.env.get("LLM_MODEL")),

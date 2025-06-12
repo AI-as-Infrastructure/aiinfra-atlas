@@ -36,6 +36,7 @@ def get_test_target_attributes() -> Dict[str, Any]:
         result["search_type"] = config.get("search_type", "")
         result["search_k"] = config.get("search_k", 0)
         result["search_score_threshold"] = config.get("search_score_threshold", 0)
+        result["pooling"] = config.get("pooling", "mean")
         result["large_retrieval_size"] = config.get("large_retrieval_size", 0)
         result["algorithm"] = config.get("algorithm", "")
         result["chunk_size"] = config.get("chunk_size", "")

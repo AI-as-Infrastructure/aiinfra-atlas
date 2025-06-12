@@ -167,6 +167,8 @@ dd:
 	@rm -rf frontend/node_modules frontend/package-lock.json
 	@rm -rf frontend/dist
 	@echo "Removed frontend/dist directory"
+	@echo "Removing telemetry database..."
+	@rm -f telemetry_span_registry.db
 	@echo "FastAPI dev environment destroyed."
 
 #------------------------------------------------------------------------------
@@ -223,10 +225,16 @@ check-env:
 # Data Management Commands
 #------------------------------------------------------------------------------
 
-# Create the Chroma vector store using the script in create/
+# ---------------------------------------------------------------------------
+# Build TXT Hansard vector store, convert embedding model to Sentence-Transformers
+# format (if necessary), and generate the matching retriever.
+# Uses EMBEDDING_MODEL env var or falls back to historical model.
+# ---------------------------------------------------------------------------
+
 .PHONY: store
+
 store:
-	@echo "Creating Chroma vector store..."
+	@echo "Building Hansard TXT Chroma vector store only"
 	@if [ ! -d ".venv" ]; then \
 		echo "Creating virtual environment..."; \
 		python3 -m venv .venv; \
@@ -235,15 +243,8 @@ store:
 		. .venv/bin/activate && \
 		pip install --upgrade pip && \
 		pip install -r config/requirements.lock && \
-		python create/create_hansard_retriever.py'
-	@echo "\nChroma vector store created in backend/targets/chroma_db"
-	@echo "\nTo distribute this database:"
-	@echo "1. Copy the database and statistics file to backend/targets/:"
-	@echo "   mkdir -p backend/targets/chroma_db"
-	@echo "   cp -r create/output/chroma_db/* backend/targets/chroma_db/"
-	@echo "   cp create/output/blert_1000.txt backend/targets/"
-	@echo "2. Commit and push with Git LFS"
-	@echo "\nNote: The database will be used from the location specified by CHROMA_PERSIST_DIRECTORY in config/.env.development"
+		python create/txt/create_hansard_store.py'
+	@echo "✅ Vector store built at $$CHROMA_PERSIST_DIRECTORY"
 
 # Generate the retriever: ensure venv, install deps, run script
 retriever:
@@ -251,7 +252,25 @@ retriever:
 		. .venv/bin/activate && \
 		pip install --upgrade pip && \
 		pip install -r config/requirements.lock && \
-		python create/create_hansard_retriever.py'
+		python create/txt/create_hansard_retriever.py'
+
+# Create the XML-based Hansard vector store (AU, UK, NZ)
+.PHONY: xml-store
+xml-store:
+	@echo "Creating XML Hansard Chroma vector store..."
+	@if [ ! -d ".venv" ]; then \
+		echo "Creating virtual environment..."; \
+		python3 -m venv .venv; \
+	fi
+	@bash -c 'set -e && \
+		. .venv/bin/activate && \
+		pip install --upgrade pip && \
+		pip install -r config/requirements.lock && \
+		python create/xml/create_hansard_xml_store.py && \
+		python create/xml/create_hansard_xml_retriever.py'
+	@echo "\nXML Chroma vector store created in backend/targets/chroma_db_xml"
+	@echo "Retriever generated at backend/retrievers/hansard_xml_retriever.py"
+	@echo "Commit database directory and retriever file with Git LFS if you wish to share it"
 
 # === STAGING DEPLOYMENT TARGETS ===
 .PHONY: sl dsl dslf
