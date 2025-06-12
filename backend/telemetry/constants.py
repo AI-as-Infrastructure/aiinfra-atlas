@@ -36,6 +36,11 @@ class SpanAttributes:
     # Model and configuration
     LLM_MODEL = "llm_model"
     EMBEDDING_MODEL = "embedding.model"
+    
+    # Token count attributes (OpenInference standard for Phoenix UI)
+    LLM_TOKEN_COUNT_PROMPT = "llm.token_count.prompt"
+    LLM_TOKEN_COUNT_COMPLETION = "llm.token_count.completion"
+    LLM_TOKEN_COUNT_TOTAL = "llm.token_count.total"
     RETRIEVAL_SEARCH_TYPE = "retrieval.search_type"
     RETRIEVAL_ALGORITHM = "retrieval.algorithm"
     RETRIEVAL_K = "retrieval.k"
