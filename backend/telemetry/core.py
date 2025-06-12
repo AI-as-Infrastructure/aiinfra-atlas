@@ -331,8 +331,15 @@ def create_rag_pipeline_span(session_id: str, qa_id: str, query: str, **kwargs):
         # Register as the main pipeline span
         register_span(session_id, qa_id, span_id)
         
-        # Also register as the root span for the session - this is crucial for feedback association
-        register_session_root_span(session_id, span_id)
+        # Register as the session root ONLY if one hasn't been registered yet (to avoid multiple roots per session)
+        try:
+            from backend.telemetry.spans import find_session_root_span_id
+            current_root = find_session_root_span_id(session_id)
+            if not current_root:
+                register_session_root_span(session_id, span_id)
+        except Exception:
+            # If any lookup fails, fallback to registering (previous behaviour)
+            register_session_root_span(session_id, span_id)
         
         return span
     
