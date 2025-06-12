@@ -454,7 +454,7 @@ async def ask_stream(data: dict = Body(...)):
         
         # Create a parent span for the entire RAG pipeline
         # This allows us to track the complete operation from retrieval to generation
-        from backend.telemetry import create_span
+        from backend.telemetry import create_rag_pipeline_span
         
         # Get test target configuration for telemetry
         test_target_attrs = get_test_target_attributes()
@@ -482,10 +482,14 @@ async def ask_stream(data: dict = Body(...)):
             flat_key = key.replace(".", "_")
             pipeline_attributes[flat_key] = value
         
-        with create_span(
-            SpanNames.RAG_PIPELINE,
-            attributes=pipeline_attributes,
-            session_id=session_id
+        # Remove keys that would clash with explicit parameters in create_rag_pipeline_span
+        safe_attributes = {k: v for k, v in pipeline_attributes.items() if k not in {SpanAttributes.QA_ID, "query"}}
+
+        with create_rag_pipeline_span(
+            session_id=session_id,
+            qa_id=qa_id,
+            query=question,
+            **safe_attributes
         ) as parent_span:
             try:
                 # Guardrail check: Detect sensitive contexts early in the pipeline

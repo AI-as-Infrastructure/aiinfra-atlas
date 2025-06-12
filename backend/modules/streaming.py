@@ -221,6 +221,7 @@ async def stream_response_chunks(
             # Set standard outputs using direct span attributes
             streaming_span.set_attribute("summary", summary)
             streaming_span.set_attribute("output", summary)
+            streaming_span.set_attribute("output.value", summary[:500])
             for key, value in details.items():
                 streaming_span.set_attribute(key, value)
             
@@ -232,6 +233,7 @@ async def stream_response_chunks(
             error_summary = f"Error streaming response: {str(e)}"
             streaming_span.set_attribute("summary", error_summary)
             streaming_span.set_attribute("output", error_summary)
+            streaming_span.set_attribute("output.value", error_summary[:500])
             streaming_span.set_attribute("error", str(e))
             streaming_span.set_attribute("chunk_count", chunk_count)
             streaming_span.set_attribute("total_characters", total_chars)
@@ -355,6 +357,7 @@ def stream_documents_as_references(
             error_summary = f"Error formatting references: {str(e)}"
             ref_span.set_attribute("summary", error_summary)
             ref_span.set_attribute("output", error_summary)
+            ref_span.set_attribute("output.value", error_summary[:500])
             ref_span.set_attribute("error", str(e))
             ref_span.set_status(Status(StatusCode.ERROR, str(e)))
             

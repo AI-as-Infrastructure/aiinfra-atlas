@@ -486,6 +486,26 @@ def generate_response(
                     # Add output.value for Phoenix high-level overview
                     llm_span.set_attribute("output.value", preview)
 
+                    # NEW: propagate preview to the parent/root RAG pipeline span so that it shows in Phoenix overview
+                    try:
+                        from backend.telemetry.spans import find_session_root_span_id, update_span_attributes
+                        root_span_id = find_session_root_span_id(session_id)
+                        # Only update if we found a distinct root span (i.e., not the same as this LLM span)
+                        if root_span_id and root_span_id != span_id:
+                            update_span_attributes(
+                                root_span_id,
+                                {
+                                    "output.value": preview,
+                                    "output": full_response,
+                                    "response_length": len(full_response),
+                                },
+                            )
+                    except Exception as root_update_error:
+                        logger.debug(
+                            f"Could not propagate output.value to root span: {root_update_error}",
+                            exc_info=True,
+                        )
+
                 except Exception as e:
                     # Handle streaming errors
                     logger.error(f"Error during streaming: {e}", exc_info=True)

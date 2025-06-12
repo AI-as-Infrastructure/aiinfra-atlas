@@ -110,6 +110,7 @@ def trace_document_reranking(
             summary = f"Reranked {len(documents)} documents by relevance"
             span.set_attribute("summary", summary)
             span.set_attribute("output", summary)
+            span.set_attribute("output.value", summary[:500])
             span.set_attribute("openinference.span.kind", OpenInferenceSpanKind.RERANKER)
             span.set_attribute("processing_time_seconds", elapsed_time)
             span.set_attribute("max_docs", max_docs)
@@ -120,6 +121,7 @@ def trace_document_reranking(
             error_summary = f"Error reranking documents: {str(e)}"
             span.set_attribute("summary", error_summary)
             span.set_attribute("output", error_summary)
+            span.set_attribute("output.value", error_summary[:500])
             span.set_attribute("openinference.span.kind", OpenInferenceSpanKind.RERANKER)
             span.set_attribute("error", str(e))
             span.set_status(Status(StatusCode.ERROR, str(e)))
@@ -286,6 +288,7 @@ def enhance_document_relevance(
                 empty_message = "No documents to rerank"
                 span.set_attribute("summary", empty_message)
                 span.set_attribute("output", empty_message)
+                span.set_attribute("output.value", empty_message[:500])
                 span.set_attribute("openinference.span.kind", OpenInferenceSpanKind.RERANKER)
                     
                 return []
@@ -298,6 +301,7 @@ def enhance_document_relevance(
                 skip_message = "Empty query, returning original documents"
                 span.set_attribute("summary", skip_message)
                 span.set_attribute("output", skip_message)
+                span.set_attribute("output.value", skip_message[:500])
                 span.set_attribute("openinference.span.kind", OpenInferenceSpanKind.RERANKER)
                 
                 return documents[:max_docs]
@@ -339,6 +343,7 @@ def enhance_document_relevance(
             # Set standard outputs using direct span attributes
             span.set_attribute("summary", summary)
             span.set_attribute("output", summary)
+            span.set_attribute("output.value", summary[:500])
             span.set_attribute("openinference.span.kind", OpenInferenceSpanKind.RERANKER)
             for key, value in details.items():
                 span.set_attribute(key, value)
@@ -360,6 +365,7 @@ def enhance_document_relevance(
             error_message = f"Reranking error: {str(e)}"
             span.set_attribute("summary", error_message)
             span.set_attribute("output", error_message)
+            span.set_attribute("output.value", error_message[:500])
             span.set_attribute("openinference.span.kind", OpenInferenceSpanKind.RERANKER)
             span.set_attribute("error", str(e))
             span.set_status(Status(StatusCode.ERROR, str(e)))
@@ -459,6 +465,7 @@ def rerank_documents_with_telemetry(
             summary = f"Reranked {len(documents)} → {len(reranked_docs)} documents"
             span.set_attribute("summary", summary)
             span.set_attribute("output", summary)
+            span.set_attribute("output.value", summary[:500])
             span.set_attribute("input_document_count", len(documents))
             span.set_attribute("output_document_count", len(reranked_docs))
             span.set_attribute("max_docs", max_docs)
@@ -472,6 +479,7 @@ def rerank_documents_with_telemetry(
             error_summary = f"Error in document reranking: {str(e)}"
             span.set_attribute("summary", error_summary)
             span.set_attribute("output", error_summary)
+            span.set_attribute("output.value", error_summary[:500])
             span.set_attribute("error", str(e))
             span.set_status(Status(StatusCode.ERROR, str(e)))
             
