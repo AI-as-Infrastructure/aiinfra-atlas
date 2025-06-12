@@ -113,3 +113,40 @@ class HansardRetriever(BaseRetriever):
     async def ainvoke(self, input: str, config: Optional[Dict] = None, **kwargs) -> List[Document]:
         """Asynchronous invoke method required by LangChain."""
         return await self._get_relevant_documents(input, config, **kwargs)
+
+# --- Compatibility helper (used by streaming.py) ---
+def format_document_for_citation(document: Document, idx: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    """Convert a Document into the citation structure expected by the frontend.
+
+    Args:
+        document: LangChain Document instance
+        idx: Optional numeric index (for fallback ID generation)
+
+    Returns:
+        Dict with citation fields or None if the document is invalid
+    """
+    if not document:
+        return None
+
+    meta = getattr(document, 'metadata', {}) or {}
+    text = getattr(document, 'page_content', str(document))
+
+    preview = text[:300] + ("..." if len(text) > 300 else "")
+    doc_id = meta.get("id") or (f"doc_{idx}" if idx is not None else "unknown")
+
+    return {
+        "id": doc_id,
+        "source_id": doc_id,
+        "title": meta.get("title", f"Document {doc_id}"),
+        "url": meta.get("url", ""),
+        "date": meta.get("date", ""),
+        "page": meta.get("page", ""),
+        "corpus": meta.get("corpus", ""),
+        "text": preview,
+        "quote": preview,
+        "content": text,
+        "full_content": text,
+        "loc": meta.get("loc", ""),
+        "weight": 1.0,
+        "has_more": len(text) > 300,
+    }
