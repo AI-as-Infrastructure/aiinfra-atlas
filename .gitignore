@@ -3,6 +3,7 @@ config/.env.development
 config/.env.staging
 config/.env.production
 config/dev_certs
+create/txt/output/*
 letsencrypt/
 var/lib/letsencrypt/
 telemetry_span_registry.db
