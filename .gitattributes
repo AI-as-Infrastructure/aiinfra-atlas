@@ -1,4 +1,4 @@
 # LFS tracking for large files
 backend/targets/chroma_db/** filter=lfs diff=lfs merge=lfs -text
-
 models/** filter=lfs diff=lfs merge=lfs -text
+*.sqlite3 filter=lfs diff=lfs merge=lfs -text
