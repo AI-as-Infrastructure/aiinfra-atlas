@@ -257,6 +257,7 @@ def retrieve_documents(
             # Set span attributes for Phoenix UI display
             retrieval_span.set_attribute("summary", summary)
             retrieval_span.set_attribute("output", summary)
+            retrieval_span.set_attribute("output.value", summary[:500])
             retrieval_span.set_attribute("openinference.span.kind", OpenInferenceSpanKind.RETRIEVER)
             for key, value in details.items():
                 retrieval_span.set_attribute(key, value)
@@ -293,6 +294,7 @@ def retrieve_documents(
                 # Update outputs with filtered information using direct span attributes
                 retrieval_span.set_attribute("summary", filter_summary)
                 retrieval_span.set_attribute("output", filter_summary)
+                retrieval_span.set_attribute("output.value", filter_summary[:500])
                 retrieval_span.set_attribute("openinference.span.kind", OpenInferenceSpanKind.RETRIEVER)
                 for key, value in filter_details.items():
                     retrieval_span.set_attribute(key, value)
@@ -304,6 +306,7 @@ def retrieve_documents(
             error_summary = f"Error retrieving documents: {str(e)}"
             retrieval_span.set_attribute("summary", error_summary)
             retrieval_span.set_attribute("output", error_summary)
+            retrieval_span.set_attribute("output.value", error_summary[:500])
             retrieval_span.set_attribute("openinference.span.kind", OpenInferenceSpanKind.RETRIEVER)
             retrieval_span.set_status(Status(StatusCode.ERROR, str(e)))
             
@@ -408,6 +411,7 @@ def retrieve_documents_with_telemetry(
             
             span.set_attribute("summary", summary)
             span.set_attribute("output", summary)
+            span.set_attribute("output.value", summary[:500])
             span.set_attribute("openinference.span.kind", OpenInferenceSpanKind.RETRIEVER)
             for key, value in details.items():
                 span.set_attribute(key, value)

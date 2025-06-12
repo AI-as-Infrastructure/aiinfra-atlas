@@ -483,6 +483,8 @@ def generate_response(
                     preview = '. '.join(sentences[:3]) + ('...' if len(sentences) > 3 else '')
                     llm_span.set_attribute("response_preview", preview)
                     
+                    # Add output.value for Phoenix high-level overview
+                    llm_span.set_attribute("output.value", preview)
 
                 except Exception as e:
                     # Handle streaming errors
@@ -508,6 +510,9 @@ def generate_response(
                     sentences = full_response.split('. ')
                     preview = '. '.join(sentences[:3]) + ('...' if len(sentences) > 3 else '')
                     llm_span.set_attribute("response_preview", preview)
+                    
+                    # Add output.value for Phoenix high-level overview
+                    llm_span.set_attribute("output.value", preview)
                     
                 # Yield the final response
                 yield full_response
@@ -536,6 +541,9 @@ def generate_response(
                 sentences = full_response.split('. ')
                 preview = '. '.join(sentences[:3]) + ('...' if len(sentences) > 3 else '')
                 llm_span.set_attribute("response_preview", preview)
+                
+                # Add output.value for Phoenix high-level overview
+                llm_span.set_attribute("output.value", preview)
                 
                 # Yield the final response
                 yield full_response
@@ -673,6 +681,9 @@ def generate_response_with_telemetry(
                     sentences = full_response.split('. ')
                     preview = '. '.join(sentences[:3]) + ('...' if len(sentences) > 3 else '')
                     llm_span.set_attribute("response_preview", preview)
+
+                    # Add output.value for Phoenix high-level overview
+                    llm_span.set_attribute("output.value", preview)
 
                     # Add token counts
                     try:
