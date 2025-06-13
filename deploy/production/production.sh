@@ -46,6 +46,15 @@ if [ -f "config/.env.production" ]; then
     set +a
     echo "Environment variables loaded successfully"
     
+    # Extract Python version from the environment file
+    PYTHON_VERSION=$(grep "^PYTHON_VERSION=" "config/.env.production" | cut -d '"' -f 2)
+    if [ -z "$PYTHON_VERSION" ]; then
+        echo "ERROR: PYTHON_VERSION not found in config/.env.production"
+        echo "Please ensure your environment file contains PYTHON_VERSION=\"x.y\""
+        exit 1
+    fi
+    echo "Using Python version $PYTHON_VERSION from environment file"
+    
     # Validate critical environment variables
     required_vars=("ENVIRONMENT" "PRODUCTION_USER" "REDIS_PASSWORD" "VITE_API_URL")
     for var in "${required_vars[@]}"; do
@@ -186,10 +195,10 @@ sed -i "s#API_BASE_URL=.*#API_BASE_URL=https://\$DOMAIN/api#" \$APP_DIR/config/.
 sed -i "s#WS_BASE_URL=.*#WS_BASE_URL=wss://\$DOMAIN/ws#" \$APP_DIR/config/.env.production
 echo "✅ Environment file updated with domain: \$DOMAIN"
 
-# Set up Python environment with explicit Python 3.10
+# Set up Python environment with version from environment file
 echo "Setting up Python environment..."
 cd \$APP_DIR
-python3.10 -m venv \$APP_DIR/.venv
+python\$PYTHON_VERSION -m venv \$APP_DIR/.venv
 source \$APP_DIR/.venv/bin/activate
 pip install --upgrade pip
 
@@ -208,8 +217,117 @@ fi
 echo "Setting up Python package structure..."
 mkdir -p \$APP_DIR/backend
 touch \$APP_DIR/backend/__init__.py
-echo "\$APP_DIR" > \$APP_DIR/.venv/lib/python3.10/site-packages/atlas.pth
-chmod 644 \$APP_DIR/.venv/lib/python3.10/site-packages/atlas.pth
+echo "\$APP_DIR" > \$APP_DIR/.venv/lib/python\$PYTHON_VERSION/site-packages/atlas.pth
+chmod 644 \$APP_DIR/.venv/lib/python\$PYTHON_VERSION/site-packages/atlas.pth
+
+# Configure Redis with authentication and in-memory settings
+echo "Configuring Redis with authentication..."
+REDIS_PASSWORD=\$(grep "^REDIS_PASSWORD=" "\$APP_DIR/config/.env.production" | cut -d '"' -f 2)
+if [ -z "\$REDIS_PASSWORD" ]; then
+    echo "ERROR: REDIS_PASSWORD not found in \$APP_DIR/config/.env.production"
+    exit 1
+fi
+
+# Configure Redis for in-memory mode with authentication
+sudo tee -a /etc/redis/redis.conf << EOF
+
+# Atlas production configuration
+requirepass \$REDIS_PASSWORD
+bind 127.0.0.1
+port 6379
+
+# In-memory configuration (no persistence)
+save ""
+appendonly no
+
+# Memory management
+maxmemory 256mb
+maxmemory-policy allkeys-lru
+EOF
+
+# Start and enable Redis
+sudo systemctl enable redis-server
+sudo systemctl restart redis-server
+
+# Test Redis connection
+echo "Testing Redis connection..."
+redis-cli -a "\$REDIS_PASSWORD" ping
+if [ \$? -eq 0 ]; then
+    echo "✅ Redis configured successfully"
+else
+    echo "❌ Redis configuration failed"
+    exit 1
+fi
+
+# Fix the Node.js version handling - MUST use 22.14.0 exactly
+echo "Setting up Node.js environment..."
+
+# Always try to load nvm first
+export NVM_DIR="\$HOME/.nvm"
+if [ -s "\$NVM_DIR/nvm.sh" ]; then
+    echo "Loading nvm..."
+    \. "\$NVM_DIR/nvm.sh"  # Load nvm
+    
+    # Check if nvm is now available
+    if command -v nvm &> /dev/null || type nvm &> /dev/null; then
+        echo "Using nvm to install Node.js 22.14.0..."
+        nvm install 22.14.0
+        nvm use 22.14.0
+        NODE_PATH=\$(which node)
+        echo "Using Node.js at: \$NODE_PATH"
+    else
+        echo "nvm failed to load, falling back to system installation"
+        # Install system-wide from NodeSource
+        echo "Installing Node.js 22.14.0 from NodeSource..."
+        curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+        sudo apt-get install -y nodejs
+        
+        # Check version after installation
+        node_version=\$(node -v)
+        if [[ "\$node_version" != "v22.14.0" ]]; then
+            echo "ERROR: Node.js version mismatch! Found \$node_version but need v22.14.0"
+            echo "Try installing nvm and running this script again"
+            exit 1
+        fi
+    fi
+else
+    echo "nvm not found, installing system-wide Node.js..."
+    # Install system-wide from NodeSource
+    echo "Installing Node.js 22.14.0 from NodeSource..."
+    curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+    sudo apt-get install -y nodejs
+    
+    # Check version after installation
+    node_version=\$(node -v)
+    if [[ "\$node_version" != "v22.14.0" ]]; then
+        echo "ERROR: Node.js version mismatch! Found \$node_version but need v22.14.0"
+        echo "Try installing nvm and running this script again"
+        exit 1
+    fi
+fi
+
+# Verify Node.js version matches exactly
+node_version=\$(node -v)
+if [[ "\$node_version" != "v22.14.0" ]]; then
+    echo "ERROR: Node.js version mismatch! Found \$node_version but need v22.14.0"
+    echo "Current PATH: \$PATH"
+    echo "Node.js location: \$(which node)"
+    exit 1
+fi
+echo "Node.js v22.14.0 confirmed"
+
+# Prepare embedding model if using default model
+echo "Checking embedding model configuration..."
+EMBEDDING_MODEL=\$(grep "^EMBEDDING_MODEL=" "\$APP_DIR/config/.env.production" | cut -d '"' -f 2)
+if [ "\$EMBEDDING_MODEL" = "Livingwithmachines/bert_1890_1900" ]; then
+    echo "Preparing default embedding model..."
+    # Ensure we're in the app directory and virtual environment is activated
+    cd \$APP_DIR
+    . .venv/bin/activate
+    python create/prepare_model.py
+else
+    echo "Skipping model preparation - using custom model: \$EMBEDDING_MODEL"
+fi
 
 # Set up frontend environment
 echo "Setting up frontend environment..."
@@ -371,27 +489,6 @@ if [ \$? -ne 0 ]; then
     exit 1
 fi
 sudo systemctl restart nginx
-
-# Set up Redis with authentication
-echo "Configuring Redis with authentication..."
-REDIS_PASSWORD=\$(grep '^REDIS_PASSWORD' "\$APP_DIR/config/.env.production" | cut -d'=' -f2 | tr -d '"')
-if [ -z "\$REDIS_PASSWORD" ]; then
-    echo "ERROR: REDIS_PASSWORD not set in \$APP_DIR/config/.env.production"
-    exit 1
-fi
-
-# Set requirepass in redis.conf (idempotent)
-sudo sed -i "/^#* *requirepass /d" /etc/redis/redis.conf
-sudo bash -c "echo 'requirepass \$REDIS_PASSWORD' >> /etc/redis/redis.conf"
-
-# Enable and restart Redis
-sudo systemctl enable redis-server
-sudo systemctl restart redis-server
-sudo systemctl status redis-server --no-pager
-if [ \$? -ne 0 ]; then
-    echo "ERROR: Redis failed to start"
-    exit 1
-fi
 
 echo "✅ Deployment complete!"
 echo "✅ Application deployed to \$APP_DIR"

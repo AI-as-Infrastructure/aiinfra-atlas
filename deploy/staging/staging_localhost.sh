@@ -219,6 +219,19 @@ fi
 echo "$APP_DIR" > $APP_DIR/.venv/lib/python$PYTHON_VERSION/site-packages/atlas.pth
 chmod 644 $APP_DIR/.venv/lib/python$PYTHON_VERSION/site-packages/atlas.pth
 
+# 7. Prepare embedding model
+echo "Checking embedding model configuration..."
+EMBEDDING_MODEL=$(grep "^EMBEDDING_MODEL=" "$APP_DIR/config/.env.staging" | cut -d '"' -f 2)
+if [ "$EMBEDDING_MODEL" = "Livingwithmachines/bert_1890_1900" ]; then
+    echo "Preparing default embedding model..."
+    # Ensure we're in the app directory and virtual environment is activated
+    cd $APP_DIR
+    . .venv/bin/activate
+    python create/prepare_model.py
+else
+    echo "Skipping model preparation - using custom model: $EMBEDDING_MODEL"
+fi
+
 # Create logs directory and configure logging - MOVED UP BEFORE GUNICORN SERVICE SETUP
 echo "Setting up logging..."
 mkdir -p "$PROJECT_ROOT/deploy/staging/logs"
@@ -360,7 +373,7 @@ server {
 }
 EOL
 
-# 7. Build frontend with troubleshooting
+# 8. Build frontend with troubleshooting
 echo "Building frontend..."
 cd $APP_DIR/frontend
 
@@ -415,7 +428,7 @@ echo "export PHOENIX_CLIENT_HEADERS=\"$(grep PHOENIX_CLIENT_HEADERS config/.env.
 echo "export PHOENIX_PROJECT_NAME=\"$(grep PHOENIX_PROJECT_NAME config/.env.staging | cut -d'=' -f2-)\"" >> .venv/bin/activate
 echo "export PHOENIX_COLLECTOR_ENDPOINT=\"$(grep PHOENIX_COLLECTOR_ENDPOINT config/.env.staging | cut -d'=' -f2-)\"" >> .venv/bin/activate
 
-# 8. Set up Nginx and Gunicorn
+# 9. Set up Nginx and Gunicorn
 echo "Setting up Nginx and Gunicorn..."
 sudo mkdir -p /var/log/$APP_NAME
 
@@ -468,7 +481,7 @@ sudo systemctl stop llm-worker || true
 sudo systemctl disable llm-worker || true
 sudo systemctl daemon-reload
 
-# 9. Set permissions and restart services
+# 10. Set permissions and restart services
 echo "Setting permissions and restarting services..."
 sudo chown -R $CURRENT_USER:$CURRENT_USER $APP_DIR
 sudo chown -R $CURRENT_USER:$CURRENT_USER /var/log/$APP_NAME

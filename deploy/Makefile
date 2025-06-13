@@ -23,20 +23,41 @@ dev: ## Start development environment
 	@bash deploy/dev/dev.sh
 
 # Production Deployment Targets
-.PHONY: p dp
+.PHONY: p dp up
 p: ## Deploy to production
 	@./deploy/production/scripts/deploy_prod.sh
 
 dp: ## Delete production environment
 	@./deploy/production/scripts/clean_prod.sh
 
-# Staging Deployment Targets
-.PHONY: s ds
-s: ## Deploy to staging
-	@./deploy/staging/scripts/deploy_staging.sh
+up: ## Upgrade production with minimal downtime
+	@./deploy/production/scripts/upgrade_prod.sh
 
-ds: ## Delete staging environment
-	@./deploy/staging/scripts/clean_staging.sh
+# Staging Deployment Targets
+.PHONY: sl sr dsl dsr usl usr
+sl: ## Deploy to local staging environment
+	@echo "Deploying to local staging environment..."
+	@bash deploy/staging/staging_localhost.sh
+
+sr: ## Deploy to remote staging environment
+	@echo "Deploying to remote staging environment..."
+	@bash deploy/staging/staging_remote.sh
+
+dsl: ## Delete local staging environment
+	@echo "Deleting local staging environment..."
+	@bash deploy/staging/staging_localhost.sh clean
+
+dsr: ## Delete remote staging environment
+	@echo "Deleting remote staging environment..."
+	@bash deploy/staging/staging_remote.sh clean
+
+usl: ## Upgrade local staging with minimal downtime
+	@echo "Upgrading local staging environment..."
+	@bash deploy/staging/scripts/upgrade_staging.sh
+
+usr: ## Upgrade remote staging with minimal downtime
+	@echo "Upgrading remote staging environment..."
+	@bash deploy/staging/scripts/upgrade_staging.sh
 
 # Utility Targets
 .PHONY: l c vs r xs
