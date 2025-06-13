@@ -348,7 +348,8 @@ def get_config_endpoint():
         "search_score_threshold": retriever_config.get("search_score_threshold"),
         "pooling": retriever_config.get("pooling"),
         "citation_limit": retriever_config.get("citation_limit"),
-        "large_retrieval_size": retriever_config.get("large_retrieval_size"),
+        "LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS": retriever_config.get("LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS"),
+        "LARGE_RETRIEVAL_SIZE_ALL_CORPUS": retriever_config.get("LARGE_RETRIEVAL_SIZE_ALL_CORPUS"),
         "algorithm": retriever_config.get("algorithm"),
         "chunk_size": retriever_config.get("chunk_size"),
         "chunk_overlap": retriever_config.get("chunk_overlap"),
@@ -644,7 +645,7 @@ async def ask_stream(data: dict = Body(...)):
                 parent_span.set_status(Status(StatusCode.ERROR, str(e)))
                 
                 # Send error message to client
-                error_msg = create_error_message("streaming_error", str(e))
+                error_msg = create_error_message("streaming_error", "An error occurred while processing your request")
                 yield format_sse_message(error_msg, event="error")
     
     # Return the streaming response with appropriate headers
@@ -663,29 +664,33 @@ def telemetry_status():
 
 # --- Diagnostic endpoint for debugging ---
 @app.get("/api/diagnostics")
-def diagnostics():
+async def diagnostics(request: Request):
     """Return diagnostic information to help debug issues."""
-    import os
+    # Check if authentication is required based on environment
+    auth_required = os.getenv("VITE_USE_COGNITO_AUTH", "false").lower() == "true"
     
-    # Check critical environment variables
-    env_vars = {
-        "TEST_TARGET": os.getenv("TEST_TARGET"),
-        "REDIS_HOST": os.getenv("REDIS_HOST"),
-        "REDIS_PORT": os.getenv("REDIS_PORT"),
-        "REDIS_PASSWORD": os.getenv("REDIS_PASSWORD", "***REDACTED***") is not None,
-        "PHOENIX_API_KEY": os.getenv("PHOENIX_API_KEY", "***REDACTED***") is not None,
-        "ANTHROPIC_API_KEY": os.getenv("ANTHROPIC_API_KEY", "***REDACTED***") is not None,
-        "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY", "***REDACTED***") is not None,
-    }
+    if auth_required:
+        # Get the authorization header
+        auth_header = request.headers.get("Authorization")
+        if not auth_header:
+            raise HTTPException(
+                status_code=401,
+                detail="Authentication required for diagnostics"
+            )
+        
+        # Verify user is authenticated
+        user = await optional_user(request)
+        if not user.get("authenticated", False):
+            raise HTTPException(
+                status_code=403,
+                detail="Unauthorized access to diagnostics"
+            )
     
-    # Get basic config info
+    # Get basic config info - only non-sensitive information
     config_info = {}
     try:
         config = get_config()
         retriever_config = config.get("retriever_config", {})
-        # Add Chroma and corpus selector config values from environment
-        config["CHROMA_COLLECTION_NAME"] = os.getenv("CHROMA_COLLECTION_NAME")
-        config["MULTI_CORPUS_VECTORSTORE"] = os.getenv("MULTI_CORPUS_VECTORSTORE")
         config_info = {
             "target_id": retriever_config.get("target_id"),
             "llm_provider": config.get("llm_provider"),
@@ -694,10 +699,20 @@ def diagnostics():
             "citation_limit": retriever_config.get("citation_limit"),
             "large_retrieval_size": retriever_config.get("large_retrieval_size"),
         }
-    except Exception as e:
-        config_info = {"error": str(e)}
+    except Exception:
+        config_info = {"error": "Configuration error occurred"}
     
-    # Return all diagnostics
+    # Check critical environment variables - only return presence, not values
+    env_vars = {
+        "TEST_TARGET": bool(os.getenv("TEST_TARGET")),
+        "REDIS_HOST": bool(os.getenv("REDIS_HOST")),
+        "REDIS_PORT": bool(os.getenv("REDIS_PORT")),
+        "REDIS_PASSWORD": bool(os.getenv("REDIS_PASSWORD")),
+        "PHOENIX_API_KEY": bool(os.getenv("PHOENIX_API_KEY")),
+        "ANTHROPIC_API_KEY": bool(os.getenv("ANTHROPIC_API_KEY")),
+        "OPENAI_API_KEY": bool(os.getenv("OPENAI_API_KEY")),
+    }
+    
     return {
         "environment": env_vars,
         "config": config_info,
@@ -985,3 +1000,19 @@ async def websocket_async_status(websocket: WebSocket, request_id: str):
     except Exception as e:
         logger.error(f"WebSocket error for async request {request_id}: {e}")
         await websocket.close(code=1011, reason="Internal server error")
+
+@app.get("/api/vector-store-info")
+async def get_vector_store_info():
+    try:
+        # Get the absolute path to the backend directory
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        file_path = os.path.join(current_dir, "targets", "blert_1000.txt")
+        
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="Vector store information file not found")
+        
+        with open(file_path, "r") as f:
+            content = f.read()
+        return {"content": content}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

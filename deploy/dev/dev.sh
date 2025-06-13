@@ -167,5 +167,7 @@ if [ ! -f "$STATS_FILE" ]; then
     echo "You may need to create it with 'make store' or pull it from Git LFS"
 fi
 
-# Start FastAPI app with Uvicorn
-uvicorn backend.app:app --reload --host 0.0.0.0 --port 8000
+echo "[INFO] Environment setup complete!"
+echo "[INFO] You can now run:"
+echo "  make b  # Start backend server"
+echo "  make f  # Start frontend server"

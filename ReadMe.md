@@ -10,6 +10,7 @@ The project is under development and makes heavy use of AI coding support.
 
 - **Python:** 3.10.x (required for backend and all scripts)
 - **Node.js:** 22.14.0 (required for frontend; enforced via .nvmrc and package.json)
+- **requirements.lock** is used at build time. The repo version could well have been generated on a Linux GPU-based system. Delete the file and run ```make l``` if necessary for your system.
 
 
 ## Core Components
@@ -38,16 +39,49 @@ Other dependencies include: Python virtual environments (`venv`), NVM, Sentence 
 
    ```bash
    # Terminal 1 - Backend (FastAPI + ChromaDB)
-   make db
+   make b
 
    # Terminal 2 - Frontend (Vue + Vite)
-   make df
+   make f
    ```
 5. Access the frontend via http://localhost:5173
 6. (Optional) To clean and reset your environment:
    ```bash
-   make dd
+   make d
    ```
+
+## Command Reference
+
+ATLAS uses a simplified command structure for common operations. Here are the main commands:
+
+### Development
+- `make b` - Start backend development server
+- `make f` - Start frontend development server
+- `make d` - Destroy development environment
+
+### Deployment
+- `make p` - Deploy to production
+- `make dp` - Delete production environment
+- `make s` - Deploy to staging
+- `make ds` - Delete staging environment
+
+### Utilities
+- `make l` - Generate requirements.lock
+- `make c` - Check Python environment
+- `make vs` - Create vector store
+- `make r` - Generate retriever
+- `make xs` - Create XML vector store
+
+For detailed help on any command, use:
+```bash
+make help-<command>
+# Example: make help-b
+```
+
+To see all available commands:
+```bash
+make help
+```
 
 ### Default Vector Store Setup
 
@@ -63,7 +97,7 @@ ATLAS requires a vector store for semantic search. You have two options:
    - Provides better semantic search capabilities
    - Run the following command:
    ```bash
-   make store
+   make vs
    ```
    This will:
    - Generate embeddings using the BERT model
@@ -81,8 +115,8 @@ ATLAS provides a workflow for building new vector stores and generating compatib
 - The following Makefile targets are available:
 
 ```bash
-make store      # Builds the vector store using create/create_hansard_store.py
-make retriever  # Generates a compatible retriever using create/create_hansard_retriever.py
+make vs      # Builds the vector store using create/create_hansard_store.py
+make r       # Generates a compatible retriever using create/create_hansard_retriever.py
 ```
 
 Both targets will:

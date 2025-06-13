@@ -1,70 +1,86 @@
-# Vector Store Statistics: blert_1000
-Generated: 2025-06-12 21:16:11
+Vector Store Creation Statistics
+=====================================
 
-## Configuration
-INDEX_NAME = "blert_1000"
-EMBEDDING_MODEL = "Livingwithmachines/bert_1890_1900"
-ALGORITHM = "HNSW"
-CHUNK_SIZE = 1000
-CHUNK_OVERLAP = 100
+Collection: blert_1000
+Created: 2025-06-13 11:17:45
 
-## Processing Information
+Model Information
+---------------
+Model: Livingwithmachines/bert_1890_1900
+Embedding Dimension: 768
+Quantized: False
+Model Hash: None
+
+Processing Configuration
+----------------------
 Text Splitter: RecursiveCharacterTextSplitter
 Chunk Size: 1000
 Chunk Overlap: 100
-## Creation Information
-Created: 2025-06-12 21:16:11
-Total Processing Time: 00:11:16 (HH:MM:SS)
+Batch Size: 100
+Number of Workers: 4
 
-### Processing Times by Corpus
-- 1901_au: 04:15 (MM:SS)
-- 1901_nz: 03:09 (MM:SS)
-- 1901_uk: 03:52 (MM:SS)
+Corpus Statistics
+---------------
 
-## Overall Statistics
+1901_au:
+  Files: 113
+  Chunks: 40,756
+  Characters: 27,954,688
+  Words: 4,679,284
+
+1901_nz:
+  Files: 62
+  Chunks: 23,503
+  Characters: 22,033,368
+  Words: 4,019,262
+
+1901_uk:
+  Files: 31
+  Chunks: 61,354
+  Characters: 47,630,676
+  Words: 8,080,308
+
+Total Corpus Statistics
+---------------------
+Total Files: 206
 Total Chunks: 125,613
-Total Files Processed: 206
 Total Characters: 97,618,732
-Total Words (est.): 16,778,854
-Total Tokens (est.): 12,584,140
-Total Processing Time: 00:11:16 (HH:MM:SS)
-Database Size: 1148.73 MB
+Total Words: 16,778,854
 
-## Corpus Distribution
-Number of Corpora: 3
-Corpora: 1901_au, 1901_nz, 1901_uk
+Corpus Composition
+-----------------
 
-### Distribution by Chunk Count
-1901_au: 40,756 chunks (32.4%)
-1901_nz: 23,503 chunks (18.7%)
-1901_uk: 61,354 chunks (48.8%)
+1901_au:
+  Files: 54.9%
+  Chunks: 32.4%
+  Characters: 28.6%
+  Words: 27.9%
 
-## Detailed Corpus Statistics
+1901_nz:
+  Files: 30.1%
+  Chunks: 18.7%
+  Characters: 22.6%
+  Words: 24.0%
 
-### 1901_au
-Chunks: 40,756
-Files Processed: 113
-Characters: 27,954,688
-Words (est.): 4,679,284
-Tokens (est.): 3,509,463
-Average Chunks per File: 360.67
+1901_uk:
+  Files: 15.0%
+  Chunks: 48.8%
+  Characters: 48.8%
+  Words: 48.2%
 
-### 1901_nz
-Chunks: 23,503
-Files Processed: 62
-Characters: 22,033,368
-Words (est.): 4,019,262
-Tokens (est.): 3,014,446
-Average Chunks per File: 379.08
+Processing Statistics
+-------------------
+Total Processing Time: 684.03 seconds
+Total Chunks: 125,613
+Total Characters: 97,618,732
+Total Words: 16,778,854
 
-### 1901_uk
-Chunks: 61,354
-Files Processed: 31
-Characters: 47,630,676
-Words (est.): 8,080,308
-Tokens (est.): 6,060,231
-Average Chunks per File: 1979.16
-
-## Model Information
-Model: Livingwithmachines/bert_1890_1900
-This model was trained on historical texts from 1890-1900.
+System Information
+----------------
+OS: Linux #202412060638~1747794801~22.04~a9982e3 SMP PREEMPT_DYNAMIC Wed M
+Python: 3.10.12
+CPU: x86_64
+CPU Cores: 32 physical, 32 logical
+RAM: 125.6 GB
+GPU: NVIDIA GeForce RTX 4070 Ti SUPER
+CUDA Version: 12.6
