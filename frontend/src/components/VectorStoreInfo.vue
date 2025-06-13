@@ -22,7 +22,6 @@
     <div class="modal-card">
       <header class="modal-card-head">
         <p class="modal-card-title">Vector Store Overview</p>
-        <button class="delete" @click="showModal = false"></button>
       </header>
       <section class="modal-card-body">
         <div class="vector-store-content">
