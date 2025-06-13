@@ -10,9 +10,36 @@ import abc
 import os
 import logging
 import sqlite3
+import time
 from typing import Optional, Dict, Any, List
+from urllib.parse import urlparse, ParseResult
 
 logger = logging.getLogger(__name__)
+
+def mask_redis_url(url: str) -> str:
+    """Mask sensitive information in a Redis URL.
+    
+    Args:
+        url: The Redis URL to mask
+        
+    Returns:
+        A masked version of the URL with sensitive information replaced with asterisks
+    """
+    try:
+        parsed = urlparse(url)
+        # Create a new ParseResult with masked password
+        masked = ParseResult(
+            scheme=parsed.scheme,
+            netloc=f"{parsed.username}:****@{parsed.hostname}:{parsed.port}" if parsed.password else parsed.netloc,
+            path=parsed.path,
+            params=parsed.params,
+            query=parsed.query,
+            fragment=parsed.fragment
+        )
+        return masked.geturl()
+    except Exception:
+        # If parsing fails, return a generic masked string
+        return "redis://****@****"
 
 class SpanRegistry(abc.ABC):
     """Abstract base class for span registry implementations"""
@@ -286,32 +313,21 @@ class RedisSpanRegistry(SpanRegistry):
     """Redis-based implementation of span registry for staging/production"""
     
     def __init__(self, redis_url=None, db=None, key_prefix="atlas:span:", key_expiry=3600):
-        self._registry = {}  # Fallback in-memory registry
-        self._trace_registry = {}  # Fallback trace registry
         self.key_prefix = key_prefix
         self.key_expiry = key_expiry
+        self._registry = {}
+        self._trace_registry = {}
+        self._pool = None
+        self._redis_available = False
         
-        # Configure Redis connection
-        redis_url = redis_url or os.getenv("REDIS_URL")
-        redis_password = os.getenv("REDIS_PASSWORD")
-        
-        # If REDIS_URL not explicitly provided but password is, construct URL
-        if not redis_url and redis_password:
-            redis_url = f"redis://:{redis_password}@localhost:6379/0"
-        
+        # Use environment variable if no URL provided
         if not redis_url:
-            redis_url = "redis://localhost:6379/0"
+            redis_url = os.getenv('REDIS_URL')
             
-        # Set specific DB if provided
-        if db is not None:
-            # Parse the Redis URL to use the specified DB
-            redis_url_parts = redis_url.rsplit('/', 1)
-            if len(redis_url_parts) > 1:
-                base_url = redis_url_parts[0]
-                redis_url = f"{base_url}/{db}"
-            else:
-                redis_url = f"{redis_url}/{db}"
-        
+        if not redis_url:
+            logger.warning("No Redis URL provided. Using in-memory fallback.")
+            return
+            
         try:
             import redis
             from redis.connection import ConnectionPool
@@ -321,7 +337,6 @@ class RedisSpanRegistry(SpanRegistry):
             # Test connection
             client = redis.Redis(connection_pool=self._pool)
             client.ping()
-            logger.info(f"Using Redis span registry at {redis_url}")
             self._redis_available = True
         except ImportError:
             logger.error("Redis package not installed. Using in-memory fallback.")

@@ -130,13 +130,16 @@ def get_qa_prompt_template(include_chat_history: bool = True) -> PromptTemplate:
     Returns:
         PromptTemplate object
     """
+    # Build the template parts separately
+    chat_history_part = "Previous conversation:\n{chat_history}\n\n" if include_chat_history else ""
+    
     template = f"""
 {system_prompt_text}
 
 Context information is below.
 {{context}}
 
-{f"Previous conversation:\n{{chat_history}}\n\n" if include_chat_history else ""}User question: {{question}}
+{chat_history_part}User question: {{question}}
 
 Answer:"""
     

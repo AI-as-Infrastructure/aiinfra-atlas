@@ -236,7 +236,7 @@ const faqs = [
       <ul>
         <li><strong>Algorithm Purpose:</strong> HNSW creates a multi-layered graph structure that enables extremely fast approximate nearest neighbor searches in high-dimensional vector spaces</li>
         <li><strong>Speed vs. Accuracy:</strong> It offers an optimal balance between search speed (logarithmic time complexity) and accuracy, making it ideal for real-time RAG systems</li>
-        <li><strong>Redis Implementation:</strong> ATLAS uses Redis as the vector database with HNSW as the primary search algorithm (configured as "ALGORITHM=FLAT" or "ALGORITHM=HNSW")</li>
+        <li><strong>Redis Implementation:</strong> ATLAS uses Chroma as the vector database with HNSW as the primary search algorithm (configured as "ALGORITHM=FLAT" or "ALGORITHM=HNSW")</li>
       </ul>
       
       <h4 style="color: black; font-size: 1.25rem; font-weight: 600; margin-top: 2rem; margin-bottom: 1.2rem;">How Search Parameters Affect LLM Output</h4>
@@ -288,7 +288,7 @@ const faqs = [
 
       <h4 style="color: black; font-size: 1.25rem; font-weight: 600; margin-top: 2rem; margin-bottom: 1.2rem;">Benefits of Fine-tuning</h4>
       <ul>
-        <li><strong>Better Semantic Understanding:</strong> Improved ability to understand historical language and parliamentary terminology</li>
+        <li><strong>Better Semantic Understanding:</strong> Improved ability to understand historical language</li>
         <li><strong>Enhanced Recall:</strong> Better at finding relevant documents, especially for complex or historical queries</li>
         <li><strong>Consistent Performance:</strong> More reliable search results across different types of parliamentary records</li>
       </ul>
@@ -358,7 +358,7 @@ const faqs = [
         <li><strong>Educational Tool:</strong> Helping users reflect on the strengths and limitations of AI assistance in historical research</li>
       </ul>
       <p>
-        After each answer, you can rate its quality on a scale of 1-5 and provide optional written feedback. This data is anonymized and used purely for research and system improvement purposes.
+        After each answer, you can rate its quality and provide optional written feedback. This data is anonymized and used purely for research and system improvement purposes.
       </p>
     `
   },
@@ -393,7 +393,7 @@ const faqs = [
 
       <h4 style="color: black; font-size: 1.25rem; font-weight: 600; margin-top: 2rem; margin-bottom: 1.2rem;">Fine-tuning Benefits</h4>
       <ul>
-        <li><strong>Historical Language:</strong> Better understanding of 19th and early 20th-century parliamentary terminology</li>
+        <li><strong>Historical Language:</strong> Better understanding of historical terminology</li>
         <li><strong>Domain Adaptation:</strong> Improved ability to capture the specific context of parliamentary debates</li>
         <li><strong>Enhanced Retrieval:</strong> More accurate matching of queries to relevant historical documents</li>
       </ul>

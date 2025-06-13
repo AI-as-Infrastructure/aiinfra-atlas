@@ -14,7 +14,7 @@
 						</div>
 						
 						<div class="content">
-							<p>{{ message.content }}</p>
+							<div v-html="renderMarkdown(message.content)"></div>
 						</div>
 						
 						<!-- Citations only show if not a clarification question -->
@@ -231,6 +231,7 @@
 import { storeToRefs } from 'pinia'
 import { useSessionStore } from '@/stores/session'
 import { ref, onMounted } from 'vue'
+import { marked } from 'marked'
 
 const sessionStore = useSessionStore()
 const { chatHistory } = storeToRefs(sessionStore)
@@ -240,6 +241,21 @@ const hoveredCitation = ref(null)
 const selectedCitation = ref(null)
 const showAllCitations = ref(false)
 const allCitations = ref([])
+
+// Configure marked options
+marked.setOptions({
+	breaks: true,  // Convert line breaks to <br>
+	gfm: true,     // Use GitHub Flavored Markdown
+	headerIds: false, // Don't add IDs to headers
+	mangle: false,  // Don't escape HTML
+	sanitize: false // Don't sanitize HTML
+})
+
+// Function to render markdown content
+function renderMarkdown(content) {
+	if (!content) return ''
+	return marked(content)
+}
 
 // Corpus configuration
 const corpusConfig = ref([])
@@ -878,5 +894,102 @@ pre {
   overflow-x: auto;
   max-height: 150px;
   white-space: pre-wrap;
+}
+
+/* Add styles for markdown content */
+.content :deep(h1),
+.content :deep(h2),
+.content :deep(h3),
+.content :deep(h4),
+.content :deep(h5),
+.content :deep(h6) {
+  margin-top: 1em;
+  margin-bottom: 0.5em;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.content :deep(p) {
+  margin-bottom: 1em;
+}
+
+.content :deep(ul),
+.content :deep(ol) {
+  margin-bottom: 1em;
+  padding-left: 2em;
+}
+
+.content :deep(li) {
+  margin-bottom: 0.5em;
+}
+
+.content :deep(strong) {
+  font-weight: 600;
+}
+
+.content :deep(em) {
+  font-style: italic;
+}
+
+.content :deep(code) {
+  background-color: #f5f5f5;
+  padding: 0.2em 0.4em;
+  border-radius: 3px;
+  font-size: 0.9em;
+}
+
+.content :deep(pre) {
+  background-color: #f5f5f5;
+  padding: 1em;
+  border-radius: 4px;
+  overflow-x: auto;
+  margin-bottom: 1em;
+}
+
+.content :deep(pre code) {
+  background-color: transparent;
+  padding: 0;
+  font-size: 0.9em;
+}
+
+.content :deep(blockquote) {
+  border-left: 4px solid #dbdbdb;
+  padding-left: 1em;
+  margin-left: 0;
+  margin-bottom: 1em;
+  color: #666;
+}
+
+.content :deep(hr) {
+  border: none;
+  border-top: 1px solid #dbdbdb;
+  margin: 1em 0;
+}
+
+.content :deep(table) {
+  border-collapse: collapse;
+  width: 100%;
+  margin-bottom: 1em;
+}
+
+.content :deep(th),
+.content :deep(td) {
+  border: 1px solid #dbdbdb;
+  padding: 0.5em;
+  text-align: left;
+}
+
+.content :deep(th) {
+  background-color: #f5f5f5;
+  font-weight: 600;
+}
+
+.content :deep(a) {
+  color: #3273dc;
+  text-decoration: none;
+}
+
+.content :deep(a:hover) {
+  text-decoration: underline;
 }
 </style>

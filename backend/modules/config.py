@@ -37,7 +37,8 @@ class RetrieverConfig(TypedDict):
     search_k: int
     search_score_threshold: float
     citation_limit: int
-    large_retrieval_size: int
+    LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS: int
+    LARGE_RETRIEVAL_SIZE_ALL_CORPUS: int
     chroma_persist_directory: Optional[str]
     chroma_collection_name: Optional[str]
     supports_corpus_filtering: bool
@@ -77,7 +78,8 @@ def _get_default_config() -> Dict[str, Any]:
             "search_k": 10,
             "search_score_threshold": 0.0,
             "citation_limit": 10,
-            "large_retrieval_size": 500,
+            "LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS": 500,
+            "LARGE_RETRIEVAL_SIZE_ALL_CORPUS": 500,
             "supports_corpus_filtering": True,
             "corpus_options": [
                 {"value": "all", "label": "All Collections"},
@@ -114,7 +116,8 @@ def _load_environment_variables(config: Dict[str, Any]) -> None:
         "CHROMA_PERSIST_DIRECTORY": ["retriever_config", "chroma_persist_directory"],
         "CHROMA_COLLECTION_NAME": ["retriever_config", "chroma_collection_name"],
         "EMBEDDING_MODEL": ["retriever_config", "embedding_model"],
-        "LARGE_RETRIEVAL_SIZE": ["retriever_config", "large_retrieval_size"],
+        "LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS": ["retriever_config", "LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS"],
+        "LARGE_RETRIEVAL_SIZE_ALL_CORPUS": ["retriever_config", "LARGE_RETRIEVAL_SIZE_ALL_CORPUS"],
         "TEST_TARGET": ["retriever_config", "target_id"],
         "INDEX_NAME": ["retriever_config", "index_name"],
         "POOLING": ["retriever_config", "pooling"]
@@ -122,7 +125,8 @@ def _load_environment_variables(config: Dict[str, Any]) -> None:
     
     # Type conversions
     type_conversions = {
-        "LARGE_RETRIEVAL_SIZE": int,
+        "LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS": int,
+        "LARGE_RETRIEVAL_SIZE_ALL_CORPUS": int,
         "SEARCH_K": int,
         "CITATION_LIMIT": int,
         "SEARCH_SCORE_THRESHOLD": float,
@@ -168,7 +172,8 @@ def _load_target_config(config: Dict[str, Any], target_id: str) -> None:
         "SEARCH_SCORE_THRESHOLD": ["retriever_config", "search_score_threshold"],
         "CITATION_LIMIT": ["retriever_config", "citation_limit"],
         "TARGET_VERSION": ["retriever_config", "target_version"],
-        "LARGE_RETRIEVAL_SIZE": ["retriever_config", "large_retrieval_size"],
+        "LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS": ["retriever_config", "LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS"],
+        "LARGE_RETRIEVAL_SIZE_ALL_CORPUS": ["retriever_config", "LARGE_RETRIEVAL_SIZE_ALL_CORPUS"],
         "LLM_PROVIDER": ["llm_provider"],
         "LLM_MODEL": ["llm_model"],
         "ALGORITHM": ["retriever_config", "algorithm"],
@@ -182,7 +187,8 @@ def _load_target_config(config: Dict[str, Any], target_id: str) -> None:
     type_conversions = {
         "SEARCH_K": int,
         "CITATION_LIMIT": int,
-        "LARGE_RETRIEVAL_SIZE": int,
+        "LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS": int,
+        "LARGE_RETRIEVAL_SIZE_ALL_CORPUS": int,
         "SEARCH_SCORE_THRESHOLD": float,
         "CHUNK_SIZE": int,
         "CHUNK_OVERLAP": int
@@ -231,7 +237,8 @@ def validate_config_schema(config: Dict[str, Any]) -> List[str]:
         return errors
     
     # Check required retriever config fields
-    required_fields = ["embedding_model", "search_type", "search_k", "citation_limit"]
+    required_fields = ["embedding_model", "search_type", "search_k", "citation_limit",
+                      "LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS", "LARGE_RETRIEVAL_SIZE_ALL_CORPUS"]
     for field in required_fields:
         if field not in retriever_config:
             errors.append(f"retriever_config missing required field: {field}")
@@ -243,8 +250,11 @@ def validate_config_schema(config: Dict[str, Any]) -> List[str]:
     if "citation_limit" in retriever_config and not isinstance(retriever_config["citation_limit"], int):
         errors.append("citation_limit must be an integer")
     
-    if "large_retrieval_size" in retriever_config and not isinstance(retriever_config["large_retrieval_size"], int):
-        errors.append("large_retrieval_size must be an integer")
+    if "LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS" in retriever_config and not isinstance(retriever_config["LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS"], int):
+        errors.append("LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS must be an integer")
+    
+    if "LARGE_RETRIEVAL_SIZE_ALL_CORPUS" in retriever_config and not isinstance(retriever_config["LARGE_RETRIEVAL_SIZE_ALL_CORPUS"], int):
+        errors.append("LARGE_RETRIEVAL_SIZE_ALL_CORPUS must be an integer")
     
     if "search_score_threshold" in retriever_config and not isinstance(retriever_config["search_score_threshold"], (int, float)):
         errors.append("search_score_threshold must be a number")
@@ -374,9 +384,14 @@ def get_corpus_options() -> List[CorpusOption]:
     return retriever_config.get("corpus_options", [])
 
 def get_large_retrieval_size() -> int:
-    """Get the large retrieval size parameter."""
-    retriever_config = get_retriever_config()
-    return retriever_config.get("large_retrieval_size", 500)
+    """Get the large retrieval size for single corpus searches."""
+    config = get_config()
+    return config["retriever_config"]["LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS"]
+
+def get_large_retrieval_size_all_corpus() -> int:
+    """Get the large retrieval size for all corpus searches."""
+    config = get_config()
+    return config["retriever_config"]["LARGE_RETRIEVAL_SIZE_ALL_CORPUS"]
 
 def get_citation_limit() -> int:
     """Get the citation limit parameter."""

@@ -212,7 +212,7 @@ else
     git clone --branch $GIT_BRANCH $GITHUB_REPO $APP_DIR && cd $APP_DIR && git lfs pull
 fi
 
-# 5. Copy the environment file from /tmp to the app's config directory
+# NOW copy the environment file from /tmp to the app's config directory
 echo "Copying environment file from /tmp to app directory..."
 if [ -f "/tmp/.env.staging" ]; then
     mkdir -p "$APP_DIR/config"
@@ -228,11 +228,8 @@ else
     exit 1
 fi
 
-# Ensure frontend directory is owned by atlas_deploy for build permissions
-sudo chown -R atlas_deploy:atlas_deploy $APP_DIR/frontend
-
 # Update URLs in the environment file to use the actual domain
-echo "Updating environment URLs for remote deployment..."
+echo "Updating environment URLs for staging deployment..."
 sed -i 's#VITE_API_URL=.*#VITE_API_URL=https://'"$DOMAIN"'#' $APP_DIR/config/.env.staging
 sed -i 's#CORS_ORIGINS=.*#CORS_ORIGINS=https://'"$DOMAIN"'#' $APP_DIR/config/.env.staging
 sed -i 's#API_BASE_URL=.*#API_BASE_URL=https://'"$DOMAIN"'/api#' $APP_DIR/config/.env.staging
@@ -433,3 +430,82 @@ sudo bash -c "echo 'requirepass $REDIS_PASSWORD' >> /etc/redis/redis.conf"
 sudo systemctl enable redis-server
 sudo systemctl restart redis-server
 sudo systemctl status redis-server --no-pager
+
+# 2. Now run the remote setup script (which will let git clone create $APP_DIR if needed)
+echo "Setting up the application on the server..."
+ssh -i $SSH_KEY -o StrictHostKeyChecking=no $SSH_USER@$STAGING_IP << ENDSSH
+# Set variables from the local script
+APP_DIR="$APP_DIR"
+GITHUB_REPO="$GITHUB_REPO"
+GIT_BRANCH="$GIT_BRANCH"
+APP_NAME="$APP_NAME"
+DOMAIN="$DOMAIN"
+CERT_DIR="$CERT_DIR"
+
+# Ensure we use sudo where needed and set proper ownership
+export DEPLOY_USER=\$(whoami)
+
+# Load environment variables from staging file as early as possible
+if [ -f "/tmp/.env.staging" ]; then
+    echo "Loading environment from /tmp/.env.staging"
+    # More robust way to load environment variables with special characters
+    set -a
+    source /tmp/.env.staging
+    set +a
+    
+    # Explicitly export ENVIRONMENT for scripts that need it
+    export ENVIRONMENT
+    echo "Exported ENVIRONMENT=$ENVIRONMENT for Vue files generation"
+    
+    # Validate critical variables again on the server
+    for var in ENVIRONMENT STAGING_USER REDIS_PASSWORD VITE_API_URL; do
+        if [ -z "\${!var}" ]; then
+            echo "ERROR: \$var is not set in .env.staging"
+            exit 1
+        fi
+    done
+    echo "✅ Environment loaded and validated"
+else
+    echo "ERROR: /tmp/.env.staging not found! Deployment cannot continue."
+    exit 1
+fi
+
+# Set up application directory with proper permissions
+echo "Setting up application directory..."
+sudo mkdir -p \$APP_DIR && sudo chown -R \$DEPLOY_USER:\$DEPLOY_USER \$APP_DIR
+
+# Clone or update the repository
+echo "Checking for existing repository..."
+# Use the configured Git branch for deployment
+if [ -d "\$APP_DIR/.git" ]; then
+    echo "Updating existing repository from branch \$GIT_BRANCH..."
+    cd \$APP_DIR && git fetch --all && git reset --hard origin/\$GIT_BRANCH && git lfs pull
+else
+    echo "Cloning fresh repository from branch \$GIT_BRANCH..."
+    git clone --branch \$GIT_BRANCH \$GITHUB_REPO \$APP_DIR && cd \$APP_DIR && git lfs pull
+fi
+
+# NOW copy the environment file from /tmp to the app's config directory
+echo "Copying environment file from /tmp to app directory..."
+if [ -f "/tmp/.env.staging" ]; then
+    mkdir -p "\$APP_DIR/config"
+    mv /tmp/.env.staging "\$APP_DIR/config/.env.staging"
+    chmod 644 "\$APP_DIR/config/.env.staging"
+    echo "✅ Environment file copied successfully"
+    
+    # Clean up any remaining temporary files
+    echo "Cleaning up temporary files..."
+    rm -f /tmp/.env.staging 2>/dev/null || true
+else
+    echo "ERROR: /tmp/.env.staging not found! Please transfer it before running this script."
+    exit 1
+fi
+
+# Update URLs in the environment file to use the actual domain
+echo "Updating environment URLs for staging deployment..."
+sed -i "s#VITE_API_URL=.*#VITE_API_URL=https://\$DOMAIN#" \$APP_DIR/config/.env.staging
+sed -i "s#CORS_ORIGINS=.*#CORS_ORIGINS=https://\$DOMAIN#" \$APP_DIR/config/.env.staging
+sed -i "s#API_BASE_URL=.*#API_BASE_URL=https://\$DOMAIN/api#" \$APP_DIR/config/.env.staging
+sed -i "s#WS_BASE_URL=.*#WS_BASE_URL=wss://\$DOMAIN/ws#" \$APP_DIR/config/.env.staging
+echo "✅ Environment file updated with domain: \$DOMAIN"
+ENDSSH

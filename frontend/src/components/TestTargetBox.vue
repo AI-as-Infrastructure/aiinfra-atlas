@@ -1,5 +1,6 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
+import VectorStoreInfo from './VectorStoreInfo.vue'
 
 const config = ref(null)
 const error = ref(false)
@@ -10,9 +11,9 @@ const truncatedSystemPrompt = ref('')
 const configDescriptions = {
   ATLAS_VERSION: "The version of the ATLAS application.",
   composite_target: "The combined identifier for the target configuration.",
-  CHROMA_COLLECTION_NAME: "The Chroma collection name used for storing and retrieving document vectors.",
   embedding_model: "The model used to create vector embeddings.",
-  large_retrieval_size: "The number of documents initially retrieved from the HNSW vector index (HNSW -K).",
+  LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS: "The number of documents initially retrieved from the HNSW vector index when searching a single corpus (HNSW -K).",
+  LARGE_RETRIEVAL_SIZE_ALL_CORPUS: "The number of documents initially retrieved from the HNSW vector index when searching across all corpora. This value is multiplied by the number of corpora to determine the total retrieval size.",
   algorithm: "The algorithm used for vector similarity search.",
   search_type: "The retrieval algorithm used for searching the vector store.",
   search_k: "The number of top documents passed to the LLM for answer generation.",
@@ -22,13 +23,15 @@ const configDescriptions = {
   pooling: "The pooling strategy used to aggregate token embeddings (cls, mean, mean+max).",
   llm_provider: "The provider of the language model.",
   llm_model: "The language model used to generate answers.",
-  MULTI_CORPUS_VECTORSTORE: "If true, enables the corpus selector dropdown and multi-corpus vectorstore features."
+  MULTI_CORPUS_VECTORSTORE: "If true, enables the corpus selector dropdown and multi-corpus vectorstore features.",
+  SYSTEM_PROMPT: "The system prompt used to guide the AI's behavior and define its capabilities."
 };
 
 // List of fields to exclude from display
 const unwantedFields = [
   'CORPUS_OPTIONS', 'FULL_SYSTEM_PROMPT', 'SYSTEM_PROMPT',
-  'target_id', 'target_version', 'citation_limit', 'index_name', 'redis_database'
+  'target_id', 'target_version', 'citation_limit', 'index_name', 'redis_database',
+  'CHROMA_COLLECTION_NAME', 'large_retrieval_size'
 ];
 
 function formatFieldName(key) {
@@ -39,13 +42,44 @@ function formatFieldName(key) {
     CHROMA_COLLECTION_NAME: 'Chroma Collection Name',
     MULTI_CORPUS_VECTORSTORE: 'Multi Corpus Vectorstore',
     composite_target: 'Composite Target',
-    ATLAS_VERSION: 'Atlas Version'
+    ATLAS_VERSION: 'Atlas Version',
+    LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS: 'Retrieval Size Single Corpus',
+    LARGE_RETRIEVAL_SIZE_ALL_CORPUS: 'Retrieval Size All Corpora'
   };
   if (exceptions[key]) return exceptions[key];
   return key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 }
 
-const filteredEntries = ref([])
+// Define the order and grouping of fields
+const fieldGroups = {
+  primary: [
+    'ATLAS_VERSION',
+    'composite_target',
+    'llm_provider',
+    'llm_model',
+    'SYSTEM_PROMPT'
+  ],
+  vectorStore: [
+    'embedding_model',
+    'algorithm',
+    'search_type',
+    'LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS',
+    'LARGE_RETRIEVAL_SIZE_ALL_CORPUS',
+    'search_k',
+    'search_score_threshold',
+    'chunk_size',
+    'chunk_overlap',
+    'pooling'
+  ],
+  other: [] // Will contain any remaining fields
+}
+
+// Initialize filteredEntries with empty arrays
+const filteredEntries = ref({
+  primary: [],
+  vectorStore: [],
+  other: []
+})
 
 async function fetchConfig() {
   try {
@@ -54,25 +88,56 @@ async function fetchConfig() {
     const data = await res.json()
     config.value = data
     
+    // Debug log to see what we're getting
+    console.log('Config data:', data)
+    
     // Extract system prompt data
     if (data.FULL_SYSTEM_PROMPT) {
-      // Store the full system prompt
       systemPrompt.value = data.FULL_SYSTEM_PROMPT
-      // Create truncated version for display
       truncatedSystemPrompt.value = data.SYSTEM_PROMPT || 
         (systemPrompt.value.length > 150 ? 
           systemPrompt.value.substring(0, 150) + '...' : 
           systemPrompt.value)
-      
-      console.log('Full system prompt loaded:', systemPrompt.value.length, 'characters')
-    } else {
-      console.warn('FULL_SYSTEM_PROMPT not found in config response')
     }
     
-    // Filter unwanted fields and keep order as in response
-    filteredEntries.value = Object.entries(data).filter(([k]) =>
-      !unwantedFields.includes(k)
-    )
+    // Filter and organize entries
+    const allEntries = Object.entries(data).filter(([k]) => !unwantedFields.includes(k))
+    
+    // Debug log to see filtered entries
+    console.log('Filtered entries:', allEntries)
+    
+    // Group entries according to fieldGroups
+    const groupedEntries = {
+      primary: [],
+      vectorStore: [],
+      other: []
+    }
+    
+    // Add system prompt to primary entries if we have it
+    if (data.FULL_SYSTEM_PROMPT) {
+      groupedEntries.primary.push(['SYSTEM_PROMPT', truncatedSystemPrompt.value])
+    }
+    
+    allEntries.forEach(([key, value]) => {
+      if (fieldGroups.primary.includes(key)) {
+        groupedEntries.primary.push([key, value])
+      } else if (fieldGroups.vectorStore.includes(key)) {
+        groupedEntries.vectorStore.push([key, value])
+      } else {
+        groupedEntries.other.push([key, value])
+      }
+    })
+    
+    // Sort each group according to the order in fieldGroups
+    groupedEntries.primary.sort((a, b) => 
+      fieldGroups.primary.indexOf(a[0]) - fieldGroups.primary.indexOf(b[0]))
+    groupedEntries.vectorStore.sort((a, b) => 
+      fieldGroups.vectorStore.indexOf(a[0]) - fieldGroups.vectorStore.indexOf(b[0]))
+    
+    // Debug log to see final grouped entries
+    console.log('Grouped entries:', groupedEntries)
+    
+    filteredEntries.value = groupedEntries
   } catch (e) {
     error.value = true
     console.error('Error fetching config:', e)
@@ -109,43 +174,100 @@ function formatProviderValue(val) {
     <div v-if="error">
       <em>Failed to load configuration. Please refresh the page or try again later.</em>
     </div>
-    <div v-else-if="filteredEntries.length">
-      <!-- System Prompt Section -->
-      <div class="config-field system-prompt-field">
-        <div class="field-label-with-info">
-          <strong>System Prompt</strong>
-          <div class="tooltip-container">
-            <span class="info-icon">ⓘ</span>
-            <div class="tooltip-text">The system prompt used to guide the AI's behavior</div>
-          </div>
-        </div>
-        <div class="field-value">
-          <div class="prompt-text">
-            {{ truncatedSystemPrompt }} 
-            <a href="#" @click.prevent="showSystemPromptModal = true" class="view-full-prompt-link">View Full Prompt</a>
-          </div>
-        </div>
-      </div>
-      
-      <!-- Other Configuration Fields -->
-      <div v-for="[key, value] in filteredEntries" :key="key" class="config-field">
-        <div class="field-label-with-info">
-          <strong>{{ formatFieldName(key) }}</strong>
-          <div class="tooltip-container">
-            <span class="info-icon">ⓘ</span>
-            <div class="tooltip-text">{{ configDescriptions[key] || 'No description available' }}</div>
-          </div>
-        </div>
-        <div class="field-value">
-          <template v-if="key === 'llm_provider'">{{ formatProviderValue(value) }}</template>
-          <template v-else-if="key === 'algorithm'">{{ value.toUpperCase() }}</template>
-          <template v-else-if="key === 'search_type'">{{ capitalizeFirst(value) }}</template>
-          <template v-else>{{ value }}</template>
-        </div>
-      </div>
-    </div>
     <div v-else>
-      <em>Loading config...</em>
+      <!-- Primary Information -->
+      <div v-if="filteredEntries.primary.length" class="config-section">
+        <div v-for="[key, value] in filteredEntries.primary" :key="key" class="config-field">
+          <template v-if="key === 'SYSTEM_PROMPT'">
+            <div class="field-label-with-info">
+              <strong>System Prompt</strong>
+              <div class="tooltip-container">
+                <span class="info-icon">ⓘ</span>
+                <div class="tooltip-text">{{ configDescriptions[key] }}</div>
+              </div>
+            </div>
+            <div class="field-value">
+              <div class="prompt-text">
+                {{ truncatedSystemPrompt }} 
+                <a href="#" @click.prevent="showSystemPromptModal = true" class="view-full-prompt-link">View Full Prompt</a>
+              </div>
+            </div>
+          </template>
+          <template v-else>
+            <div class="field-label-with-info">
+              <strong>{{ formatFieldName(key) }}</strong>
+              <div class="tooltip-container">
+                <span class="info-icon">ⓘ</span>
+                <div class="tooltip-text">{{ configDescriptions[key] || 'No description available' }}</div>
+              </div>
+            </div>
+            <div class="field-value">
+              <template v-if="key === 'llm_provider'">{{ formatProviderValue(value) }}</template>
+              <template v-else-if="key === 'algorithm'">{{ value.toUpperCase() }}</template>
+              <template v-else-if="key === 'search_type'">{{ capitalizeFirst(value) }}</template>
+              <template v-else>{{ value }}</template>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Vector Store Overview -->
+      <div class="config-section">
+        <div class="config-field">
+          <div class="field-label-with-info">
+            <strong>Vector Store Overview</strong>
+            <div class="tooltip-container">
+              <span class="info-icon">ⓘ</span>
+              <div class="tooltip-text">Details about the vector store composition, including corpus distribution, processing times, and overall statistics. This information helps understand the scope and characteristics of the searchable content.</div>
+            </div>
+          </div>
+          <div class="field-value">
+            <VectorStoreInfo />
+          </div>
+        </div>
+      </div>
+
+      <!-- Vector Store Configuration -->
+      <div v-if="filteredEntries.vectorStore.length" class="config-section">
+        <div v-for="[key, value] in filteredEntries.vectorStore" :key="key" class="config-field">
+          <div class="field-label-with-info">
+            <strong>{{ formatFieldName(key) }}</strong>
+            <div class="tooltip-container">
+              <span class="info-icon">ⓘ</span>
+              <div class="tooltip-text">{{ configDescriptions[key] || 'No description available' }}</div>
+            </div>
+          </div>
+          <div class="field-value">
+            <template v-if="key === 'llm_provider'">{{ formatProviderValue(value) }}</template>
+            <template v-else-if="key === 'algorithm'">{{ value.toUpperCase() }}</template>
+            <template v-else-if="key === 'search_type'">{{ capitalizeFirst(value) }}</template>
+            <template v-else>{{ value }}</template>
+          </div>
+        </div>
+      </div>
+
+      <!-- Other Configuration -->
+      <div v-if="filteredEntries.other.length" class="config-section">
+        <div v-for="[key, value] in filteredEntries.other" :key="key" class="config-field">
+          <div class="field-label-with-info">
+            <strong>{{ formatFieldName(key) }}</strong>
+            <div class="tooltip-container">
+              <span class="info-icon">ⓘ</span>
+              <div class="tooltip-text">{{ configDescriptions[key] || 'No description available' }}</div>
+            </div>
+          </div>
+          <div class="field-value">
+            <template v-if="key === 'llm_provider'">{{ formatProviderValue(value) }}</template>
+            <template v-else-if="key === 'algorithm'">{{ value.toUpperCase() }}</template>
+            <template v-else-if="key === 'search_type'">{{ capitalizeFirst(value) }}</template>
+            <template v-else>{{ value }}</template>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="!filteredEntries.primary.length && !filteredEntries.vectorStore.length && !filteredEntries.other.length">
+        <em>Loading config...</em>
+      </div>
     </div>
   </div>
   
@@ -170,22 +292,49 @@ function formatProviderValue(val) {
 </template>
 
 <style scoped>
-.test-target-box { padding: 1em; border: 1px solid #ddd; border-radius: 8px; background: #fff; }
-.config-field {
-  margin-bottom: 0.5em;
-  padding-bottom: 0.2em;
+.test-target-box { 
+  padding: 1em; 
+  border: 1px solid #ddd; 
+  border-radius: 8px; 
+  background: #fff; 
 }
+
+.config-section {
+  margin: 0;
+  padding: 0.5em 0;
+  border-bottom: 1px solid #eee;
+}
+
+.config-section:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.config-field {
+  margin: 0;
+  padding: 0.5em 0;
+  border-bottom: 1px solid #eee;
+}
+
+.config-field:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
 .field-label-with-info {
   display: flex;
   align-items: center;
   gap: 0;
+  margin-bottom: 0.25em;
 }
+
 .tooltip-container {
   display: inline-block;
-  margin-left: 0;
+  margin-left: 4px;
   position: relative;
   vertical-align: middle;
 }
+
 .config-field strong {
   color: #111;
   font-weight: 600;
@@ -193,20 +342,15 @@ function formatProviderValue(val) {
   margin-right: 0;
   line-height: 1.3;
 }
+
 .atlas-title {
-  margin-bottom: 1em;
+  margin: 0 0 0.5em 0;
   font-size: 1.5em;
   color: #181818;
   font-weight: 800;
   letter-spacing: -0.5px;
 }
-.tooltip-container {
-  display: inline-block;
-  margin-left: 4px;
-  position: relative;
-  vertical-align: middle;
-}
-.info-icon { cursor: pointer; }
+
 .tooltip-text {
   display: none;
   position: absolute;
@@ -220,23 +364,26 @@ function formatProviderValue(val) {
   z-index: 10;
   width: 250px;
 }
-.tooltip-container:hover .tooltip-text { display: block; }
+
+.tooltip-container:hover .tooltip-text {
+  display: block;
+}
+
 .field-value {
-  margin-top: 0;
+  margin: 0;
   color: #3a3a3a;
   font-size: 0.97em;
   line-height: 1.4;
   word-break: break-word;
   flex: 1;
 }
+
 /* System Prompt Styles */
 .system-prompt-field {
-  margin-bottom: 0.5em;
-  padding-bottom: 0.5em;
+  margin: 0;
+  padding: 0.5em 0;
   border-bottom: 1px solid #eee;
 }
-
-
 
 .prompt-text {
   color: #3a3a3a;
@@ -248,146 +395,78 @@ function formatProviderValue(val) {
   text-decoration: underline;
   color: #000;
   cursor: pointer;
-  font-size: 0.85em;
-  display: inline;
-  margin-left: 0.3em;
 }
-
-.view-full-prompt-link:hover,
-.view-full-prompt-link:focus {
-  color: #888;
-  text-decoration: underline;
-}
-
-
 
 /* Modal Styles */
-.system-prompt-modal {
+.system-prompt-modal,
+.vector-store-modal {
   display: none;
-}
-
-.system-prompt-modal.is-active {
-  display: flex;
-  align-items: center;
-  justify-content: center;
   position: fixed;
   top: 0;
   left: 0;
-  width: 100%;
-  height: 100%;
+  right: 0;
+  bottom: 0;
   z-index: 1000;
 }
 
-.system-prompt-modal .modal-background {
+.system-prompt-modal.is-active,
+.vector-store-modal.is-active {
+  display: block;
+}
+
+.modal-background {
   position: absolute;
   top: 0;
   left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(255, 255, 255, 0.9);
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
 }
 
-.system-prompt-modal .modal-card {
+.modal-card {
   position: relative;
-  width: 80%;
   max-width: 800px;
-  max-height: 80vh;
+  width: 90%;
+  margin: 2rem auto;
+  background: white;
+  border-radius: 6px;
+  box-shadow: 0 2px 3px rgba(10, 10, 10, 0.1);
+  max-height: calc(100vh - 4rem);
   display: flex;
   flex-direction: column;
-  background-color: white;
-  border-radius: 6px;
-  box-shadow: 0 2px 15px rgba(0, 0, 0, 0.1);
 }
 
-.system-prompt-modal .modal-card-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1.25rem;
+.modal-card-head {
+  padding: 1rem;
   border-bottom: 1px solid #dbdbdb;
-  background-color: white;
-  border-top-left-radius: 6px;
-  border-top-right-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
-.system-prompt-modal .modal-card-title {
-  color: black;
-  font-size: 1.5rem;
-  font-weight: 600;
-  margin: 0;
-}
-
-.system-prompt-modal .delete {
-  background-color: rgba(0, 0, 0, 0.1);
-  border: none;
-  border-radius: 50%;
-  cursor: pointer;
-  height: 20px;
-  width: 20px;
-  position: relative;
-}
-
-.system-prompt-modal .delete::before,
-.system-prompt-modal .delete::after {
-  background-color: #333;
-  content: "";
-  display: block;
-  height: 2px;
-  width: 50%;
-  position: absolute;
-  top: 50%;
-  left: 25%;
-}
-
-.system-prompt-modal .delete::before {
-  transform: rotate(45deg);
-}
-
-.system-prompt-modal .delete::after {
-  transform: rotate(-45deg);
-}
-
-.system-prompt-modal .modal-card-body {
-  flex-grow: 1;
+.modal-card-body {
+  padding: 1rem;
   overflow-y: auto;
-  padding: 1.25rem;
-  background-color: white;
+  flex: 1;
 }
 
-.system-prompt-modal .system-prompt-content {
-  color: black;
-}
-
-.system-prompt-modal .system-prompt-full {
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  font-family: inherit;
-  line-height: 1.5;
-  color: #3a3a3a;
-  font-size: 0.97em;
-}
-
-.system-prompt-modal .modal-card-foot {
+.modal-card-foot {
+  padding: 1rem;
+  border-top: 1px solid #dbdbdb;
   display: flex;
   justify-content: flex-end;
-  padding: 1.25rem;
-  background-color: white;
-  border-top: 1px solid #dbdbdb;
-  border-bottom-left-radius: 6px;
-  border-bottom-right-radius: 6px;
 }
 
-.system-prompt-modal .button {
-  background-color: #f5f5f5;
-  border: 1px solid #dbdbdb;
+.system-prompt-content,
+.vector-store-content {
+  white-space: pre-wrap;
+  font-family: monospace;
+  font-size: 0.9em;
+  line-height: 1.5;
+  padding: 1rem;
+  background: #f5f5f5;
   border-radius: 4px;
-  color: #363636;
-  cursor: pointer;
-  padding: 0.5em 1em;
-  font-size: 1rem;
-}
-
-.system-prompt-modal .button:hover {
-  background-color: #e8e8e8;
+  max-height: 60vh;
+  overflow-y: auto;
 }
 </style>
