@@ -372,64 +372,60 @@ def get_config_endpoint():
 # --- Synchronous Q&A endpoint (non-streaming) ---
 @app.post("/api/ask")
 def ask(data: dict = Body(...)):
-    """Handle a Q&A turn with telemetry."""
-    question = data.get('question')
-    chat_history = data.get('chat_history', [])
-    session_id = data.get('session_id')
-    qa_id = data.get('qa_id')
-    corpus_filter = data.get("corpus_filter", "all")
-    feedback = data.get('feedback')
-    provider = data.get('provider')  # Allow client to specify the provider
+    """
+    Process a question and return a response with citations.
+    This is the non-streaming version of the ask endpoint.
+    """
+    try:
+        # Extract question and session ID from request
+        question = data.get("question", "").strip()
+        session_id = data.get("session_id")
+        feedback = data.get("feedback")
 
-    if not question:
-        return JSONResponse(content={"error": "No 'question' provided."}, status_code=400)
+        # Validate required fields
+        if not question:
+            raise ValueError("Question is required")
+        if not session_id:
+            raise ValueError("Session ID is required")
 
-    # Retrieve documents
-    documents, qa_id = retrieve_documents_with_telemetry(
-        query=question,
-        retriever=get_retriever(),
-        session_id=session_id,
-        qa_id=qa_id,
-        corpus_filter=corpus_filter
-    )
-    
-    # Apply corpus filter
-    documents = filter_documents_with_telemetry(
-        documents=documents,
-        corpus_filter=corpus_filter,
-        session_id=session_id,
-        qa_id=qa_id
-    )
-    
-    # Note: Document reranking is now handled directly in the HansardRetriever
-    # No need for redundant reranking here
-    
-    # Generate response
-    response_generator, qa_id = generate_response_with_telemetry(
-        question=question,
-        documents=documents,
-        session_id=session_id,
-        qa_id=qa_id,
-        chat_history=chat_history,
-        corpus_filter=corpus_filter,
-        provider=provider  # Pass the provider if specified
-    )
-    
-    # Collect the entire response
-    response_text = ""
-    for chunk in response_generator:
-        response_text += chunk
-    
-    # Log user feedback if provided
-    if feedback:
-        log_user_feedback(session_id, qa_id, feedback)
+        # Get configuration
+        config = get_config()
+        if not config:
+            raise ValueError("Configuration not available")
 
-    return {
-        "result": response_text, 
-        "session_id": session_id, 
-        "qa_id": qa_id,
-        "document_count": len(documents)
-    }
+        # Process the question
+        response_text, documents, qa_id = process_question(question, session_id, config)
+
+        # Log feedback if provided
+        if feedback:
+            try:
+                log_user_feedback(session_id, qa_id, feedback)
+            except Exception as e:
+                # Log the error but don't fail the request
+                logger.error(f"Error logging feedback: {e}", exc_info=True)
+
+        return {
+            "result": response_text,
+            "session_id": session_id,
+            "qa_id": qa_id,
+            "document_count": len(documents)
+        }
+
+    except ValueError as e:
+        # Handle validation errors
+        logger.warning(f"Validation error in /api/ask: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
+    except Exception as e:
+        # Log the full error server-side
+        logger.error(f"Error in /api/ask: {e}", exc_info=True)
+        # Raise a sanitized error for the client
+        raise HTTPException(
+            status_code=500,
+            detail="An error occurred while processing your request"
+        )
 
 # --- Streaming Q&A endpoint ---
 @app.post("/api/ask/stream")
@@ -639,13 +635,19 @@ async def ask_stream(data: dict = Body(...)):
                 parent_span.set_attribute("final_chunk_count", chunk_count)
                 
             except Exception as e:
+                # Log the full error details server-side
                 logger.error(f"Error in streaming response: {e}", exc_info=True)
                 # Record error in parent span
                 parent_span.record_exception(e)
                 parent_span.set_status(Status(StatusCode.ERROR, str(e)))
                 
-                # Send error message to client
-                error_msg = create_error_message("streaming_error", "An error occurred while processing your request")
+                # Create a sanitized error message for the client
+                error_type = type(e).__name__
+                error_msg = create_error_message(
+                    "streaming_error",
+                    "An error occurred while processing your request",
+                    error_type=error_type
+                )
                 yield format_sse_message(error_msg, event="error")
     
     # Return the streaming response with appropriate headers

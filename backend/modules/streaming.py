@@ -37,23 +37,23 @@ def format_sse_message(data: Dict[str, Any], event: Optional[str] = None) -> str
         message = f"event: {event}\n{message}"
     return f"{message}\n"
 
-def create_error_message(error_type: str, detail: str) -> Dict[str, Any]:
+def create_error_message(error_type: str, detail: str, error_class: str = None) -> Dict[str, Any]:
     """
-    Create a standardized error message.
+    Create a standardized error message structure.
     
     Args:
-        error_type: The type of error
-        detail: Error details or message
-        
+        error_type: The type of error (e.g., 'streaming_error', 'validation_error')
+        detail: A user-friendly error message
+        error_class: Optional Python exception class name for client-side error handling
+    
     Returns:
-        Dictionary with error information
+        Dict containing the error message structure
     """
     return {
-        "error": {
-            "type": error_type,
-            "detail": detail,
-            "timestamp": time.time()
-        }
+        "type": error_type,
+        "detail": detail,
+        "error_class": error_class,
+        "timestamp": datetime.datetime.now().isoformat()
     }
 
 def create_complete_message(
