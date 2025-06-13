@@ -22,6 +22,7 @@ deploy/staging/logs/**
 deploy/docker/
 create/output/*
 models/**
+models/bert_1890_1900_st/
 
 # Chroma database directories (except reference database)
 backend/chroma_db/
