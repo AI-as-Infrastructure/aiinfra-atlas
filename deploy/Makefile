@@ -8,7 +8,7 @@ STACK_NAME ?= atlas-prod
 DOMAIN_NAME ?= atlas.aiinfra.org
 
 # Development Targets
-.PHONY: b f d dev
+.PHONY: b f d
 b: ## Start backend development server
 	@./deploy/dev/scripts/start_backend.sh
 
@@ -17,10 +17,6 @@ f: ## Start frontend development server
 
 d: ## Destroy development environment
 	@./deploy/dev/scripts/clean_dev.sh
-
-dev: ## Start development environment
-	@echo "🚀 Starting development environment..."
-	@bash deploy/dev/dev.sh
 
 # Production Deployment Targets
 .PHONY: p dp up
