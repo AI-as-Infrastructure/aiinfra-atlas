@@ -380,8 +380,19 @@ sudo mkdir -p /var/log/$APP_NAME
 # Create local logs directory
 mkdir -p deploy/staging/logs
 
-# Create systemd service file (like working production script)
+# Create systemd service file with explicit Phoenix environment variables
 echo "Creating systemd service..."
+
+# Extract Phoenix variables from the environment file
+PHOENIX_CLIENT_HEADERS=\$(grep "^PHOENIX_CLIENT_HEADERS=" "\$APP_DIR/config/.env.staging" | cut -d'=' -f2- | tr -d '"')
+PHOENIX_PROJECT_NAME=\$(grep "^PHOENIX_PROJECT_NAME=" "\$APP_DIR/config/.env.staging" | cut -d'=' -f2- | tr -d '"')
+PHOENIX_COLLECTOR_ENDPOINT=\$(grep "^PHOENIX_COLLECTOR_ENDPOINT=" "\$APP_DIR/config/.env.staging" | cut -d'=' -f2- | tr -d '"')
+
+echo "Phoenix variables for systemd service:"
+echo "  PHOENIX_CLIENT_HEADERS: \${PHOENIX_CLIENT_HEADERS:0:20}..."
+echo "  PHOENIX_PROJECT_NAME: \$PHOENIX_PROJECT_NAME"
+echo "  PHOENIX_COLLECTOR_ENDPOINT: \$PHOENIX_COLLECTOR_ENDPOINT"
+
 cat > /tmp/gunicorn.service << EOL
 [Unit]
 Description=Gunicorn instance for \$APP_NAME
@@ -393,6 +404,9 @@ Group=\$DEPLOY_USER
 WorkingDirectory=\$APP_DIR
 Environment="PATH=\$APP_DIR/.venv/bin"
 Environment="PYTHONPATH=\$APP_DIR"
+Environment="PHOENIX_CLIENT_HEADERS=\$PHOENIX_CLIENT_HEADERS"
+Environment="PHOENIX_PROJECT_NAME=\$PHOENIX_PROJECT_NAME"
+Environment="PHOENIX_COLLECTOR_ENDPOINT=\$PHOENIX_COLLECTOR_ENDPOINT"
 EnvironmentFile=\$APP_DIR/config/.env.staging
 ExecStart=\$APP_DIR/.venv/bin/python -m gunicorn backend.app:app -k uvicorn.workers.UvicornWorker -w 4 -b 127.0.0.1:8000 --access-logfile /var/log/\$APP_NAME/gunicorn-access.log --error-logfile /var/log/\$APP_NAME/gunicorn-error.log
 Restart=on-failure
@@ -401,7 +415,7 @@ Restart=on-failure
 WantedBy=multi-user.target
 EOL
 
-# Create Nginx config with improved security headers
+# Create Nginx config matching the working staging template
 echo "Setting up Nginx with domain: $DOMAIN"
 
 cat > /tmp/nginx.conf << EOL
@@ -409,34 +423,37 @@ server {
     listen 80;
     server_name $DOMAIN;
     
-    # Redirect HTTP to HTTPS
-    return 301 https://\\\$host\\\$request_uri;
+    location / {
+        return 301 https://\\\$host\\\$request_uri;
+    }
 }
 
 server {
     listen 443 ssl;
     server_name $DOMAIN;
     
-    # SSL configuration
     ssl_certificate $CERT_DIR/fullchain.pem;
     ssl_certificate_key $CERT_DIR/privkey.pem;
+    
+    # SSL configuration
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers on;
-    ssl_ciphers 'EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH';
-    ssl_session_timeout 1d;
-    ssl_session_cache shared:SSL:50m;
+    ssl_ciphers "EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH";
+    ssl_session_cache shared:SSL:10m;
     
-    # Security headers
-    add_header Strict-Transport-Security "max-age=63072000" always;
-    add_header X-Content-Type-Options "nosniff";
-    add_header X-Frame-Options "SAMEORIGIN";
-    add_header X-XSS-Protection "1; mode=block";
-
+    # Frontend - Vue.js static files
     location / {
         root $APP_DIR/frontend/dist;
         try_files \\\$uri \\\$uri/ /index.html;
+        
+        # Cache static assets
+        location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg)\\\$ {
+            expires 30d;
+            add_header Cache-Control "public, no-transform";
+        }
     }
-
+    
+    # Backend - FastAPI API endpoints
     location /api {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host \\\$host;
@@ -444,31 +461,19 @@ server {
         proxy_set_header X-Forwarded-For \\\$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \\\$scheme;
     }
-
-    # WebSocket proxy configuration
+    
+    # WebSockets support
     location /ws {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \\\$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host \\\$host;
-        proxy_set_header X-Real-IP \\\$remote_addr;
-        proxy_set_header X-Forwarded-For \\\$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \\\$scheme;
-        proxy_read_timeout 300s;
-        proxy_send_timeout 300s;
-    }
-
-    # Original WebSocket location (keeping for compatibility)
-    location /ws/ {
         proxy_pass http://127.0.0.1:8000/ws;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \\\$http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host \\\$host;
-        proxy_set_header X-Forwarded-For \\\$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \\\$scheme;
     }
+    
+    # Logs
+    access_log /var/log/$APP_NAME/access.log;
+    error_log /var/log/$APP_NAME/error.log;
 }
 EOL
 
