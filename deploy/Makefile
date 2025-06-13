@@ -66,37 +66,21 @@ sr: ## Deploy to remote staging environment
 
 dsl: ## Delete local staging environment
 	@echo "Deleting local staging environment..."
-	@bash deploy/staging/scripts/clean_staging_local.sh
+	@bash deploy/staging/scripts/clean_staging_localhost.sh
 
 dsr: ## Delete remote staging environment
 	@echo "Deleting remote staging environment..."
-	@if [ ! -f "config/.env.staging" ]; then \
-		echo "ERROR: config/.env.staging file not found!"; \
-		echo "Please create it from config/.env.development and modify as needed."; \
-		exit 1; \
-	fi
 	@cp config/.env.staging /tmp/.env.staging
-	@bash deploy/staging/scripts/clean_staging.sh
+	@bash deploy/staging/scripts/clean_staging_remote.sh
 	@rm -f /tmp/.env.staging
 
 usl: ## Upgrade local staging with minimal downtime
 	@echo "Upgrading local staging environment..."
-	@bash deploy/staging/scripts/upgrade_staging.sh
+	@bash deploy/staging/scripts/upgrade_localhost.sh
 
 usr: ## Upgrade remote staging with minimal downtime
 	@echo "Upgrading remote staging environment..."
-	@bash deploy/staging/scripts/upgrade_staging.sh
-
-# Configure passwordless sudo for atlas_deploy on staging
-config-sudo:
-	@echo "Configuring passwordless sudo for atlas_deploy on staging..."
-	@if [ ! -f "config/.env.staging" ]; then \
-		echo "❌ config/.env.staging not found"; \
-		exit 1; \
-	fi
-	@cp config/.env.staging /tmp/.env.staging
-	@bash deploy/staging/scripts/configure_sudo.sh
-	@rm /tmp/.env.staging
+	@bash deploy/staging/scripts/upgrade_remote.sh
 
 # Utility Targets
 .PHONY: l c vs r xs
