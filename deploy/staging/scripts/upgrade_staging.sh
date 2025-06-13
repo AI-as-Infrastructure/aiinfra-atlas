@@ -13,22 +13,50 @@ GIT_BRANCH="main"
 
 echo "🚀 Starting staging upgrade with minimal downtime..."
 
-# 1. Create new directory
+# 1. Check for environment file
+if [ ! -f "config/.env.staging" ]; then
+    echo "ERROR: config/.env.staging file not found!"
+    echo "Please create it from config/.env.development and modify as needed."
+    exit 1
+fi
+
+# 2. Extract domain from VITE_API_URL
+VITE_API_URL=$(grep "^VITE_API_URL=" "config/.env.staging" | cut -d '"' -f 2)
+if [ -z "$VITE_API_URL" ]; then
+    echo "ERROR: VITE_API_URL variable is not set in .env.staging"
+    echo "Please add VITE_API_URL=https://your-domain to your .env.staging file"
+    exit 1
+fi
+
+# Extract domain from URL (remove https:// prefix if present)
+DOMAIN=$(echo "$VITE_API_URL" | sed -E 's|^https?://||')
+echo "Using domain from VITE_API_URL: $DOMAIN"
+
+# 3. Create new directory
 echo "Setting up new application directory..."
 sudo mkdir -p $APP_DIR_NEW
 sudo chown -R $USER:$USER $APP_DIR_NEW
 
-# 2. Clone fresh repository
+# 4. Clone fresh repository
 echo "Cloning fresh repository..."
 git clone -b $GIT_BRANCH $GITHUB_REPO $APP_DIR_NEW
 cd $APP_DIR_NEW
 git lfs pull
 
-# 3. Copy environment file
+# 5. Copy environment file
 echo "Copying environment file..."
 sudo cp -r "$APP_DIR/config/.env.staging" "$APP_DIR_NEW/config/.env.staging"
 
-# 4. Set up Python environment
+# Update URLs in the environment file to use the actual domain
+echo "Updating environment URLs for staging deployment..."
+sed -i 's#VITE_API_URL=.*#VITE_API_URL=https://'"$DOMAIN"'#' $APP_DIR_NEW/config/.env.staging
+sed -i 's#CORS_ORIGINS=.*#CORS_ORIGINS=https://'"$DOMAIN"'#' $APP_DIR_NEW/config/.env.staging
+sed -i 's#API_BASE_URL=.*#API_BASE_URL=https://'"$DOMAIN"'/api#' $APP_DIR_NEW/config/.env.staging
+sed -i 's#WS_BASE_URL=.*#WS_BASE_URL=wss://'"$DOMAIN"'/ws#' $APP_DIR_NEW/config/.env.staging
+
+echo "✅ Environment file updated with domain: $DOMAIN"
+
+# 6. Set up Python environment
 echo "Setting up Python environment..."
 cd $APP_DIR_NEW
 python3.10 -m venv .venv
@@ -36,7 +64,7 @@ python3.10 -m venv .venv
 pip install --upgrade pip
 pip install -r config/requirements.txt gunicorn
 
-# 5. Prepare embedding model if needed
+# 7. Prepare embedding model if needed
 echo "Checking embedding model configuration..."
 EMBEDDING_MODEL=$(grep "^EMBEDDING_MODEL=" "$APP_DIR_NEW/config/.env.staging" | cut -d '"' -f 2)
 if [ "$EMBEDDING_MODEL" = "Livingwithmachines/bert_1890_1900" ]; then
@@ -46,14 +74,14 @@ else
     echo "Skipping model preparation - using custom model: $EMBEDDING_MODEL"
 fi
 
-# 6. Build frontend
+# 8. Build frontend
 echo "Building frontend..."
 cd $APP_DIR_NEW/frontend
 npm install
 npm run build
 cd ..
 
-# 7. Configure services (but don't start)
+# 9. Configure services (but don't start)
 echo "Configuring services..."
 # Create service files in new directory
 cat > $APP_DIR_NEW/gunicorn.service << EOL
@@ -76,7 +104,7 @@ Restart=on-failure
 WantedBy=multi-user.target
 EOL
 
-# 8. Quick switch
+# 10. Quick switch
 echo "Performing quick switch..."
 # Stop old services
 sudo systemctl stop gunicorn || true
@@ -102,4 +130,4 @@ sudo systemctl status gunicorn --no-pager
 sudo systemctl status llm-worker --no-pager
 
 echo "✅ Upgrade complete!"
-echo "Access at: https://localhost" 
+echo "Access at: https://$DOMAIN" 

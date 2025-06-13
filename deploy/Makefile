@@ -25,13 +25,27 @@ dev: ## Start development environment
 # Production Deployment Targets
 .PHONY: p dp up
 p: ## Deploy to production
-	@./deploy/production/scripts/deploy_prod.sh
+	@if [ ! -f "config/.env.production" ]; then \
+		echo "ERROR: config/.env.production file not found!"; \
+		echo "Please create it from config/.env.development and modify as needed."; \
+		exit 1; \
+	fi
+	@cp config/.env.production /tmp/.env.production
+	@bash deploy/production/production.sh
+	@rm -f /tmp/.env.production
 
 dp: ## Delete production environment
 	@./deploy/production/scripts/clean_prod.sh
 
 up: ## Upgrade production with minimal downtime
+	@if [ ! -f "config/.env.production" ]; then \
+		echo "ERROR: config/.env.production file not found!"; \
+		echo "Please create it from config/.env.development and modify as needed."; \
+		exit 1; \
+	fi
+	@cp config/.env.production /tmp/.env.production
 	@./deploy/production/scripts/upgrade_prod.sh
+	@rm -f /tmp/.env.production
 
 # Staging Deployment Targets
 .PHONY: sl sr dsl dsr usl usr
@@ -41,15 +55,29 @@ sl: ## Deploy to local staging environment
 
 sr: ## Deploy to remote staging environment
 	@echo "Deploying to remote staging environment..."
-	@bash deploy/staging/staging_remote.sh
+	@if [ ! -f "config/.env.staging" ]; then \
+		echo "ERROR: config/.env.staging file not found!"; \
+		echo "Please create it from config/.env.development and modify as needed."; \
+		exit 1; \
+	fi
+	@cp config/.env.staging /tmp/.env.staging
+	@export STAGING_USER=atlas_deploy && bash deploy/staging/staging_remote.sh
+	@rm -f /tmp/.env.staging
 
 dsl: ## Delete local staging environment
 	@echo "Deleting local staging environment..."
-	@bash deploy/staging/staging_localhost.sh clean
+	@bash deploy/staging/scripts/clean_staging_local.sh
 
 dsr: ## Delete remote staging environment
 	@echo "Deleting remote staging environment..."
-	@bash deploy/staging/staging_remote.sh clean
+	@if [ ! -f "config/.env.staging" ]; then \
+		echo "ERROR: config/.env.staging file not found!"; \
+		echo "Please create it from config/.env.development and modify as needed."; \
+		exit 1; \
+	fi
+	@cp config/.env.staging /tmp/.env.staging
+	@bash deploy/staging/scripts/clean_staging.sh
+	@rm -f /tmp/.env.staging
 
 usl: ## Upgrade local staging with minimal downtime
 	@echo "Upgrading local staging environment..."
@@ -58,6 +86,17 @@ usl: ## Upgrade local staging with minimal downtime
 usr: ## Upgrade remote staging with minimal downtime
 	@echo "Upgrading remote staging environment..."
 	@bash deploy/staging/scripts/upgrade_staging.sh
+
+# Configure passwordless sudo for atlas_deploy on staging
+config-sudo:
+	@echo "Configuring passwordless sudo for atlas_deploy on staging..."
+	@if [ ! -f "config/.env.staging" ]; then \
+		echo "❌ config/.env.staging not found"; \
+		exit 1; \
+	fi
+	@cp config/.env.staging /tmp/.env.staging
+	@bash deploy/staging/scripts/configure_sudo.sh
+	@rm /tmp/.env.staging
 
 # Utility Targets
 .PHONY: l c vs r xs

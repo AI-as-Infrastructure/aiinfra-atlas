@@ -24,11 +24,30 @@ SSH_KEY="$HOME/atlas-prod-key-west1.pem"
 
 echo "🚀 Starting production upgrade with minimal downtime..."
 
-# 1. Copy environment file to new location
+# 1. Check for environment file
+if [ ! -f "config/.env.production" ]; then
+    echo "ERROR: config/.env.production file not found!"
+    echo "Please create it from config/.env.development and modify as needed."
+    exit 1
+fi
+
+# 2. Extract domain from VITE_API_URL
+VITE_API_URL=$(grep "^VITE_API_URL=" "config/.env.production" | cut -d '"' -f 2)
+if [ -z "$VITE_API_URL" ]; then
+    echo "ERROR: VITE_API_URL variable is not set in .env.production"
+    echo "Please add VITE_API_URL=https://your-domain to your .env.production file"
+    exit 1
+fi
+
+# Extract domain from URL (remove https:// prefix if present)
+DOMAIN=$(echo "$VITE_API_URL" | sed -E 's|^https?://||')
+echo "Using domain from VITE_API_URL: $DOMAIN"
+
+# 3. Copy environment file to new location
 echo "Copying environment file..."
 scp -i $SSH_KEY config/.env.production ubuntu@${INSTANCE_IP}:/tmp/.env.production
 
-# 2. Run upgrade on remote server
+# 4. Run upgrade on remote server
 echo "Running upgrade on production server..."
 ssh -i $SSH_KEY ubuntu@${INSTANCE_IP} << 'ENDSSH'
 # Configuration
@@ -50,6 +69,15 @@ git lfs pull
 echo "Copying environment file..."
 sudo cp /tmp/.env.production $APP_DIR_NEW/config/.env.production
 sudo rm /tmp/.env.production
+
+# Update URLs in the environment file to use the actual domain
+echo "Updating environment URLs for production deployment..."
+sed -i 's#VITE_API_URL=.*#VITE_API_URL=https://'"$DOMAIN"'#' $APP_DIR_NEW/config/.env.production
+sed -i 's#CORS_ORIGINS=.*#CORS_ORIGINS=https://'"$DOMAIN"'#' $APP_DIR_NEW/config/.env.production
+sed -i 's#API_BASE_URL=.*#API_BASE_URL=https://'"$DOMAIN"'/api#' $APP_DIR_NEW/config/.env.production
+sed -i 's#WS_BASE_URL=.*#WS_BASE_URL=wss://'"$DOMAIN"'/ws#' $APP_DIR_NEW/config/.env.production
+
+echo "✅ Environment file updated with domain: $DOMAIN"
 
 echo "Setting up Python environment..."
 cd $APP_DIR_NEW
@@ -121,4 +149,4 @@ sudo systemctl status llm-worker --no-pager
 ENDSSH
 
 echo "✅ Upgrade complete!"
-echo "Access at: https://atlas.aiinfra.org" 
+echo "Access at: https://$DOMAIN" 
