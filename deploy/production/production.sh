@@ -35,7 +35,7 @@ set -e
 GITHUB_REPO="https://github.com/AI-as-Infrastructure/aiinfra-atlas.git"
 
 # Git branch to use for deployment (allow override via environment)
-GIT_BRANCH="${GIT_BRANCH:-0.1.1-production}"
+GIT_BRANCH="${GIT_BRANCH:-main}"
 
 # Load all environment variables from production file
 if [ -f "config/.env.production" ]; then
@@ -82,8 +82,8 @@ else
 fi
 CERT_DIR="/etc/letsencrypt/live/$DOMAIN"  # Where SSL certificates are stored
 
-# SSH key settings
-SSH_KEY="$HOME/atlas-prod-key-west1.pem"    # Path to the SSH key
+# SSH key settings (allow override)
+SSH_KEY="${SSH_KEY_PATH:-$HOME/atlas-prod-key-west1.pem}"    # Path to the SSH key
 
 # ---- END CONFIGURATION ----
 
@@ -145,7 +145,8 @@ fi
 
 # Set up application directory with proper permissions
 echo "Setting up application directory..."
-sudo mkdir -p \$APP_DIR && sudo chown -R \$DEPLOY_USER:\$DEPLOY_USER \$APP_DIR
+sudo mkdir -p \$APP_DIR
+sudo chown -R \$DEPLOY_USER:\$DEPLOY_USER \$APP_DIR
 
 # Clone or update the repository
 echo "Checking for existing repository..."
@@ -155,7 +156,11 @@ if [ -d "\$APP_DIR/.git" ]; then
     cd \$APP_DIR && git fetch --all && git reset --hard origin/\$GIT_BRANCH && git lfs pull
 else
     echo "Cloning fresh repository from branch \$GIT_BRANCH..."
-    git clone --branch \$GIT_BRANCH \$GITHUB_REPO \$APP_DIR && cd \$APP_DIR && git lfs pull
+    if ! git clone --branch \$GIT_BRANCH \$GITHUB_REPO \$APP_DIR; then
+        echo "ERROR: Failed to clone branch \$GIT_BRANCH from \$GITHUB_REPO"
+        exit 1
+    fi
+    cd \$APP_DIR && git lfs pull
 fi
 
 # NOW copy the environment file from /tmp to the app's config directory
@@ -229,61 +234,35 @@ if [ \$? -ne 0 ]; then
 fi
 
 # Fix the Node.js version handling - MUST use 22.14.0 exactly
-echo "Setting up Node.js environment..."
+echo "Setting up Node.js environment to match frontend/.nvmrc..."
 
-# Always try to load nvm first
+# Determine desired Node version
+TARGET_NODE="22.14.0"
+if [ -f "\$APP_DIR/frontend/.nvmrc" ]; then
+    TARGET_NODE=\$(cat "\$APP_DIR/frontend/.nvmrc" | tr -d 'v\r\n')
+fi
+echo "Target Node.js version: \$TARGET_NODE"
+
+# Ensure nvm is installed
 export NVM_DIR="\$HOME/.nvm"
-if [ -s "\$NVM_DIR/nvm.sh" ]; then
-    echo "Loading nvm..."
-    \. "\$NVM_DIR/nvm.sh"  # Load nvm
-    
-    # Check if nvm is now available
-    if command -v nvm &> /dev/null || type nvm &> /dev/null; then
-        echo "Using nvm to install Node.js 22.14.0..."
-        nvm install 22.14.0
-        nvm use 22.14.0
-        NODE_PATH=\$(which node)
-        echo "Using Node.js at: \$NODE_PATH"
-    else
-        echo "nvm failed to load, falling back to system installation"
-        # Install system-wide from NodeSource
-        echo "Installing Node.js 22.14.0 from NodeSource..."
-        curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-        sudo apt-get install -y nodejs
-        
-        # Check version after installation
-        node_version=\$(node -v)
-        if [[ "\$node_version" != "v22.14.0" ]]; then
-            echo "ERROR: Node.js version mismatch! Found \$node_version but need v22.14.0"
-            echo "Try installing nvm and running this script again"
-            exit 1
-        fi
-    fi
-else
-    echo "nvm not found, installing system-wide Node.js..."
-    # Install system-wide from NodeSource
-    echo "Installing Node.js 22.14.0 from NodeSource..."
-    curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-    sudo apt-get install -y nodejs
-    
-    # Check version after installation
-    node_version=\$(node -v)
-    if [[ "\$node_version" != "v22.14.0" ]]; then
-        echo "ERROR: Node.js version mismatch! Found \$node_version but need v22.14.0"
-        echo "Try installing nvm and running this script again"
-        exit 1
-    fi
+if [ ! -s "\$NVM_DIR/nvm.sh" ]; then
+  echo "nvm not found – installing..."
+  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
 fi
 
-# Verify Node.js version matches exactly
+# Load nvm and install/use Node
+. "\$NVM_DIR/nvm.sh"
+nvm install "\$TARGET_NODE"
+nvm alias default "\$TARGET_NODE"
+nvm use "\$TARGET_NODE"
+
+# Verify version
 node_version=\$(node -v)
-if [[ "\$node_version" != "v22.14.0" ]]; then
-    echo "ERROR: Node.js version mismatch! Found \$node_version but need v22.14.0"
-    echo "Current PATH: \$PATH"
-    echo "Node.js location: \$(which node)"
+if [[ "\$node_version" != "v\$TARGET_NODE" ]]; then
+    echo "ERROR: Node.js version mismatch! Found \$node_version but need v\$TARGET_NODE"
     exit 1
 fi
-echo "Node.js v22.14.0 confirmed"
+echo "Node.js \$node_version confirmed"
 
 # Prepare embedding model if using default model
 echo "Checking embedding model configuration..."

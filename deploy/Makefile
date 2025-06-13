@@ -44,7 +44,7 @@ up: ## Upgrade production with minimal downtime
 		exit 1; \
 	fi
 	@cp config/.env.production /tmp/.env.production
-	@./deploy/production/scripts/upgrade_prod.sh
+	@bash deploy/production/scripts/upgrade_prod.sh
 	@rm -f /tmp/.env.production
 
 # Staging Deployment Targets
