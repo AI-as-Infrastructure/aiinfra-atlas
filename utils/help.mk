@@ -1,5 +1,5 @@
 # Utility help targets
-.PHONY: help-l help-c help-vs help-r help-xs
+.PHONY: help-l help-c help-vs help-r help-xs help-pm
 
 help-l:
 	@echo "Generate requirements.lock file"
@@ -27,7 +27,7 @@ help-c:
 	@echo "2. Checks virtual environment"
 	@echo "3. Reports any compatibility issues"
 	@echo ""
-	@echo "The recommended Python version is 3.11.5"
+	@echo "The Python version is determined by PYTHON_VERSION in your environment file"
 	@echo "Other versions may work but are not tested"
 
 help-vs:
@@ -43,7 +43,7 @@ help-vs:
 	@echo "Required:"
 	@echo "- Hansard TXT files in the correct location"
 	@echo "- Sufficient disk space for the vector store"
-	@echo "- Python 3.11.5 or compatible version"
+	@echo "- Python version specified in your environment file"
 
 help-r:
 	@echo "Generate retriever"
@@ -57,7 +57,7 @@ help-r:
 	@echo ""
 	@echo "Required:"
 	@echo "- Vector store must exist"
-	@echo "- Python 3.11.5 or compatible version"
+	@echo "- Python version specified in your environment file"
 
 help-xs:
 	@echo "Create XML vector store"
@@ -72,9 +72,29 @@ help-xs:
 	@echo "Required:"
 	@echo "- Hansard XML files in the correct location"
 	@echo "- Sufficient disk space for the vector store"
-	@echo "- Python 3.11.5 or compatible version"
+	@echo "- Python version specified in your environment file"
 	@echo ""
 	@echo "After running:"
 	@echo "1. Commit the database directory with Git LFS"
 	@echo "2. Commit the retriever file with Git LFS"
-	@echo "3. Update the retriever configuration if needed" 
+	@echo "3. Update the retriever configuration if needed"
+
+help-pm:
+	@echo "Prepare embedding model for ATLAS"
+	@echo "Usage: make pm"
+	@echo ""
+	@echo "This target prepares the embedding model for use with ATLAS:"
+	@echo "1. Downloads the base model if not present"
+	@echo "2. Converts to Sentence-Transformer format"
+	@echo "3. Sets up the pooling strategy"
+	@echo "4. Saves to the models directory"
+	@echo ""
+	@echo "Required:"
+	@echo "- EMBEDDING_MODEL environment variable (default: Livingwithmachines/bert_1890_1900)"
+	@echo "- POOLING environment variable (default: mean)"
+	@echo "- Python version specified in your environment file"
+	@echo ""
+	@echo "After running:"
+	@echo "1. The model will be available in the models directory"
+	@echo "2. The model will be used automatically by the retriever"
+	@echo "3. Vector store creation will skip model preparation" 
