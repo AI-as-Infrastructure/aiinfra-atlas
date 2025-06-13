@@ -5,9 +5,9 @@ LLM_PROVIDER=ANTHROPIC
 LLM_MODEL=claude-sonnet-4-20250514
 
 # Search-K (fetch-k) controls the number of document chunks sent to the LLM for analysis
-SEARCH_K=30
+SEARCH_K=40
 # Citation limit only controls the number of citations displayed in the UI
-CITATION_LIMIT=30
+CITATION_LIMIT=40
 SEARCH_SCORE_THRESHOLD=0.0
 
 # Target Information
