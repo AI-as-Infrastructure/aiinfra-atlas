@@ -79,6 +79,24 @@ sed -i 's#WS_BASE_URL=.*#WS_BASE_URL=wss://'"$DOMAIN"'/ws#' $APP_DIR_NEW/config/
 
 echo "✅ Environment file updated with domain: $DOMAIN"
 
+# -----------------------------------------------------------------
+# Ensure Node.js version matches frontend/.nvmrc (same as deploy script)
+export NVM_DIR="$HOME/.nvm"
+if [ -s "$NVM_DIR/nvm.sh" ]; then
+    . "$NVM_DIR/nvm.sh"
+    if [ -f frontend/.nvmrc ]; then
+        TARGET_NODE=$(cat frontend/.nvmrc | tr -d 'v\r\n')
+        nvm install "$TARGET_NODE"
+        nvm use "$TARGET_NODE"
+    fi
+fi
+
+# -----------------------------------------------------------------
+# Generate frontend environment files so VITE_ variables are respected
+export ENVIRONMENT=production
+chmod +x config/generate_vue_files.sh
+./config/generate_vue_files.sh
+
 echo "Setting up Python environment..."
 cd $APP_DIR_NEW
 python3.10 -m venv .venv

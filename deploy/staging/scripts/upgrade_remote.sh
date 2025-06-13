@@ -67,6 +67,24 @@ git lfs pull
 # Move env file
 mv /tmp/.env.staging config/.env.staging
 
+# -----------------------------------------------------------------
+# Ensure Node version matches frontend/.nvmrc (same as deploy script)
+export NVM_DIR="$HOME/.nvm"
+if [ -s "$NVM_DIR/nvm.sh" ]; then
+  . "$NVM_DIR/nvm.sh"
+  if [ -f frontend/.nvmrc ]; then
+    TARGET_NODE=$(cat frontend/.nvmrc | tr -d 'v\r\n')
+    nvm install "$TARGET_NODE"
+    nvm use "$TARGET_NODE"
+  fi
+fi
+
+# -----------------------------------------------------------------
+# Generate frontend environment files
+export ENVIRONMENT=staging
+chmod +x config/generate_vue_files.sh
+./config/generate_vue_files.sh
+
 # Update URLs
 sed -i "s#VITE_API_URL=.*#VITE_API_URL=https://$DOMAIN#" config/.env.staging
 sed -i "s#CORS_ORIGINS=.*#CORS_ORIGINS=https://$DOMAIN#" config/.env.staging
@@ -118,4 +136,4 @@ sudo systemctl enable gunicorn
 sudo systemctl start gunicorn
 
 echo "✅ Remote staging upgrade complete: https://$DOMAIN"
-EOSSH 
+EOSSH
