@@ -18,16 +18,45 @@
 
 set -e
 
-# Get production instance IP
-INSTANCE_IP=$(aws ec2 describe-instances \
-    --filters "Name=tag:Name,Values=atlas-prod" "Name=instance-state-name,Values=running" \
-    --query 'Reservations[0].Instances[0].PrivateIpAddress' \
-    --output text)
-
-if [ -z "$INSTANCE_IP" ]; then
-    echo "❌ Could not find production instance IP"
-    exit 1
+# ---------------------------------------------------------------------------
+# Load environment file to allow PRODUCTION_HOST override and other vars
+if [ -f "config/.env.production" ]; then
+  # shellcheck disable=SC1091
+  set -a
+  source config/.env.production
+  set +a
 fi
+
+# Region configuration (fallback when we need AWS lookup)
+REGION="${AWS_REGION:-us-west-1}"
+
+# Determine instance IP / host
+if [ -n "$PRODUCTION_HOST" ]; then
+  INSTANCE_IP="$PRODUCTION_HOST"
+  echo "Using PRODUCTION_HOST from .env.production: $INSTANCE_IP"
+else
+  echo "PRODUCTION_HOST not set – falling back to AWS EC2 lookup"
+  PROFILE_OPTION=""
+  if [ -n "$AWS_PROFILE" ]; then
+    PROFILE_OPTION="--profile $AWS_PROFILE"
+  fi
+
+  set +e
+  INSTANCE_IP=$(aws ec2 describe-instances $PROFILE_OPTION --region "$REGION" \
+      --filters "Name=tag:Name,Values=atlas-prod-server" "Name=instance-state-name,Values=running" \
+      --query 'Reservations[0].Instances[0].PublicIpAddress' --output text 2>&1)
+  AWS_RC=$?
+  set -e
+
+  if [ $AWS_RC -ne 0 ] || [ -z "$INSTANCE_IP" ] || [ "$INSTANCE_IP" = "None" ]; then
+    echo "❌ Could not determine production instance IP (AWS lookup failed)."
+    exit 1
+  fi
+fi
+
+# SSH key path (can be overridden via SSH_KEY_PATH)
+SSH_KEY="${SSH_KEY_PATH:-$HOME/atlas-prod-key-west1.pem}"
+# ---------------------------------------------------------------------------
 
 # Confirm with user
 echo "🧹 This will completely remove the production environment at $INSTANCE_IP"
@@ -40,87 +69,39 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
 fi
 
 # Execute cleanup on remote server using AWS SSO
-aws sso login --profile atlas-prod
-aws ssm start-session --target i-$(aws ec2 describe-instances \
-    --filters "Name=tag:Name,Values=atlas-prod" "Name=instance-state-name,Values=running" \
-    --query 'Reservations[0].Instances[0].InstanceId' \
-    --output text) \
-    --document-name AWS-StartInteractiveCommand \
-    --parameters command="
-    echo 'Stopping and removing services...'
-    
-    # Stop and disable Gunicorn
-    echo 'Stopping Gunicorn...'
-    sudo systemctl stop gunicorn || true
-    sudo systemctl disable gunicorn || true
-    sudo rm -f /etc/systemd/system/gunicorn.service
-    sudo systemctl daemon-reload
-    
-    # Stop and disable Nginx
-    echo 'Stopping Nginx...'
-    sudo systemctl stop nginx || true
-    sudo systemctl disable nginx || true
-    sudo rm -f /etc/nginx/sites-enabled/$APP_NAME
-    sudo rm -f /etc/nginx/sites-available/$APP_NAME
-    sudo rm -f /etc/nginx/sites-enabled/default
-    
-    # Stop and disable Redis
-    echo 'Stopping Redis...'
-    sudo systemctl stop redis-server || true
-    sudo systemctl disable redis-server || true
-    
-    # Kill any remaining processes
-    echo 'Killing any remaining processes...'
-    sudo pkill -f gunicorn || true
-    sudo pkill -f 'python.*atlas' || true
-    
-    # Verify services are stopped
-    echo 'Verifying services are stopped...'
-    if systemctl is-active --quiet gunicorn; then
-        echo 'WARNING: Gunicorn is still running, forcing stop...'
-        sudo systemctl stop gunicorn
-    fi
-    if systemctl is-active --quiet nginx; then
-        echo 'WARNING: Nginx is still running, forcing stop...'
-        sudo systemctl stop nginx
-    fi
-    if systemctl is-active --quiet redis-server; then
-        echo 'WARNING: Redis is still running, forcing stop...'
-        sudo systemctl stop redis-server
-    fi
-    
-    echo 'Removing application files...'
-    # Force remove the application directory and all its contents
-    sudo rm -rf /opt/atlas
-    # Double check and force remove if it still exists
-    if [ -d '/opt/atlas' ]; then
-        echo 'Force removing /opt/atlas directory...'
-        sudo chattr -i /opt/atlas 2>/dev/null || true
-        sudo rm -rf /opt/atlas
-    fi
-    
-    echo 'Removing logs...'
-    sudo rm -rf /var/log/$APP_NAME
-    
-    echo 'Reloading systemd...'
-    sudo systemctl daemon-reload
-    
-    # Final verification
-    echo 'Performing final verification...'
-    if [ -d '/opt/atlas' ]; then
-        echo 'ERROR: /opt/atlas directory still exists!'
-        exit 1
-    fi
-    if systemctl is-active --quiet gunicorn; then
-        echo 'ERROR: Gunicorn service is still running!'
-        exit 1
-    fi
-    if systemctl is-active --quiet redis-server; then
-        echo 'ERROR: Redis service is still running!'
-        exit 1
-    fi
-    
-    echo '✅ Cleanup complete!'
-    " --profile atlas-prod
+echo "Connecting to $INSTANCE_IP via SSH to perform cleanup..."
+
+ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no ubuntu@"$INSTANCE_IP" bash -s << 'ENDCLEAN'
+
+set -e
+APP_NAME="atlas"
+
+echo 'Stopping and removing services...'
+# Stop and disable Gunicorn
+sudo systemctl stop gunicorn || true
+sudo systemctl disable gunicorn || true
+sudo rm -f /etc/systemd/system/gunicorn.service
+sudo systemctl daemon-reload
+
+# Stop and disable Nginx
+sudo systemctl stop nginx || true
+sudo systemctl disable nginx || true
+
+# Stop and disable Redis
+sudo systemctl stop redis-server || true
+sudo systemctl disable redis-server || true
+
+# Remove application directory
+sudo rm -rf /home/ubuntu/atlas /opt/atlas
+
+# Remove logs
+sudo rm -rf /var/log/atlas
+
+echo 'Reloading systemd...'
+sudo systemctl daemon-reload
+
+echo '✅ Remote cleanup complete'
+
+ENDCLEAN
 
 echo "✅ Production environment cleaned up successfully!" 

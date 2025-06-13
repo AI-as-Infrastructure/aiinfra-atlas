@@ -99,6 +99,15 @@ python3.10 -m venv .venv
 pip install --upgrade pip
 pip install -r config/requirements.txt gunicorn
 
+# Prepare embedding model if using default model
+EMBEDDING_MODEL=$(grep '^EMBEDDING_MODEL=' "config/.env.staging" | cut -d '=' -f 2- | tr -d '"')
+if [ "$EMBEDDING_MODEL" = "Livingwithmachines/bert_1890_1900" ]; then
+  echo "Preparing default embedding model..."
+  python create/prepare_model.py
+else
+  echo "Skipping model preparation - using custom model: $EMBEDDING_MODEL"
+fi
+
 # Build frontend
 cd frontend
 npm install

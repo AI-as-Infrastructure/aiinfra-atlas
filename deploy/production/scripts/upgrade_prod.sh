@@ -3,16 +3,58 @@
 # Production upgrade script with minimal downtime
 set -e
 
-# Get instance IP
-INSTANCE_IP=$(aws ec2 describe-instances \
-    --filters "Name=tag:Name,Values=atlas-prod" "Name=instance-state-name,Values=running" \
-    --query 'Reservations[0].Instances[0].PublicIpAddress' \
-    --output text)
+# Region configuration (override with AWS_REGION env var if set)
+REGION="${AWS_REGION:-us-west-1}"
 
-if [ -z "$INSTANCE_IP" ]; then
-    echo "Error: Could not find production instance"
-    exit 1
+# AWS profile (for SSO or named credentials)
+PROFILE_OPTION=""
+if [ -n "$AWS_PROFILE" ]; then
+  PROFILE_OPTION="--profile $AWS_PROFILE"
 fi
+
+# ---------------------------------------------------------------------
+# Load environment variables early so we can use PRODUCTION_HOST if set
+if [ -f "config/.env.production" ]; then
+  # shellcheck disable=SC1091
+  source config/.env.production
+fi
+
+if [ -z "$PRODUCTION_HOST" ]; then
+  # No PRODUCTION_HOST specified – fall back to AWS discovery
+  set +e
+  INSTANCE_IP=$(aws ec2 describe-instances $PROFILE_OPTION --region "$REGION" \
+      --filters "Name=tag:Name,Values=atlas-prod-server" "Name=instance-state-name,Values=running" \
+      --query 'Reservations[0].Instances[0].PublicIpAddress' \
+      --output text 2>&1)
+  AWS_RC=$?
+  set -e
+
+  if [ $AWS_RC -ne 0 ]; then
+    echo "ERROR: AWS CLI returned an error while trying to look up the production instance:\n$INSTANCE_IP"
+    echo "\nMost common cause: credentials not available in this shell."
+    echo "\nTo fix:"
+    echo "  0. Find your configured profiles: aws configure list-profiles"
+    echo "  1. Authenticate with AWS SSO (if you use SSO):"
+    echo "  2. Export your profile for this shell:"
+    echo "       export AWS_PROFILE=<your-profile-name>"
+    echo "  3. (Optional) export region if different):"
+    echo "       export AWS_REGION=$REGION"
+    echo "  4. Re-run make up"
+    exit 1
+  fi
+
+  # Trim possible quotes/newlines from INSTANCE_IP
+  INSTANCE_IP=$(echo "$INSTANCE_IP" | tr -d '"')
+
+  if [ -z "$INSTANCE_IP" ] || [ "$INSTANCE_IP" = "None" ]; then
+    echo "ERROR: Could not find a running EC2 instance tagged atlas-prod in region $REGION."
+    exit 1
+  fi
+else
+  INSTANCE_IP="$PRODUCTION_HOST"
+  echo "Using PRODUCTION_HOST from .env.production: $INSTANCE_IP"
+fi
+# ---------------------------------------------------------------------
 
 # Configuration
 APP_NAME="atlas"
@@ -31,16 +73,14 @@ if [ ! -f "config/.env.production" ]; then
     exit 1
 fi
 
-# 2. Extract domain from VITE_API_URL
-VITE_API_URL=$(grep "^VITE_API_URL=" "config/.env.production" | cut -d '"' -f 2)
+# 2. Validate VITE_API_URL loaded from env file and derive DOMAIN
 if [ -z "$VITE_API_URL" ]; then
-    echo "ERROR: VITE_API_URL variable is not set in .env.production"
-    echo "Please add VITE_API_URL=https://your-domain to your .env.production file"
+    echo "ERROR: VITE_API_URL is not set or empty in .env.production"
     exit 1
 fi
 
-# Extract domain from URL (remove https:// prefix if present)
-DOMAIN=$(echo "$VITE_API_URL" | sed -E 's|^https?://||')
+# Derive domain (strip protocol and trailing slash)
+DOMAIN=$(echo "$VITE_API_URL" | sed -E 's|^https?://||; s|/$||')
 echo "Using domain from VITE_API_URL: $DOMAIN"
 
 # 3. Copy environment file to new location
@@ -129,12 +169,12 @@ After=network.target
 [Service]
 User=ubuntu
 Group=ubuntu
-WorkingDirectory=$APP_DIR_NEW
-Environment="PATH=$APP_DIR_NEW/.venv/bin"
-Environment="PYTHONPATH=$APP_DIR_NEW"
-EnvironmentFile=$APP_DIR_NEW/config/.env.production
+WorkingDirectory=$APP_DIR
+Environment="PATH=$APP_DIR/.venv/bin"
+Environment="PYTHONPATH=$APP_DIR"
+EnvironmentFile=$APP_DIR/config/.env.production
 
-ExecStart=$APP_DIR_NEW/.venv/bin/python -m gunicorn backend.app:app -k uvicorn.workers.UvicornWorker -w 4 -b 127.0.0.1:8000
+ExecStart=$APP_DIR/.venv/bin/python -m gunicorn backend.app:app -k uvicorn.workers.UvicornWorker -w 4 -b 127.0.0.1:8000
 Restart=on-failure
 
 [Install]
@@ -144,7 +184,6 @@ EOL
 echo "Performing quick switch..."
 # Stop old services
 sudo systemctl stop gunicorn || true
-sudo systemctl stop llm-worker || true
 
 # Move new directory to production location
 sudo rm -rf $APP_DIR
@@ -154,16 +193,35 @@ sudo mv $APP_DIR_NEW $APP_DIR
 sudo cp $APP_DIR/gunicorn.service /etc/systemd/system/
 sudo systemctl daemon-reload
 
-# Start new services
+# Ensure Gunicorn executable exists before starting
+if [ ! -x "$APP_DIR/.venv/bin/python" ]; then
+  echo "ERROR: $APP_DIR/.venv/bin/python not found. Aborting upgrade."
+  exit 1
+fi
+
+# Optional short wait to ensure FS sync
+sleep 2
+
+# Start Gunicorn service
 sudo systemctl enable gunicorn
 sudo systemctl start gunicorn
-sudo systemctl enable llm-worker
-sudo systemctl start llm-worker
 
-# Verify services are running
-echo "Verifying services..."
-sudo systemctl status gunicorn --no-pager
-sudo systemctl status llm-worker --no-pager
+# Verify service is running
+echo "Verifying Gunicorn service..."
+if ! sudo systemctl is-active --quiet gunicorn; then
+  echo "ERROR: Gunicorn failed to start. Check journalctl -u gunicorn for details."
+  exit 1
+fi
+echo "✅ Gunicorn is running"
+
+# Restart Nginx to clear WebSocket connection state and pick up any changes
+echo "Restarting Nginx for WebSocket connections..."
+sudo systemctl restart nginx
+if ! sudo systemctl is-active --quiet nginx; then
+  echo "ERROR: Nginx failed to restart. Check journalctl -u nginx for details."
+  exit 1
+fi
+echo "✅ Nginx restarted successfully"
 ENDSSH
 
 echo "✅ Upgrade complete!"
