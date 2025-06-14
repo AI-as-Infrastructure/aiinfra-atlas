@@ -4,14 +4,8 @@
 set -euo pipefail
 trap 'echo "❌ Upgrade failed at ${BASH_SOURCE[0]}:${LINENO}"; exit 1' ERR
 
-# Region configuration (override with AWS_REGION env var if set)
-REGION="${AWS_REGION:-us-west-1}"
-
-# AWS profile (for SSO or named credentials)
-PROFILE_OPTION=""
-if [ -n "$AWS_PROFILE" ]; then
-  PROFILE_OPTION="--profile $AWS_PROFILE"
-fi
+# Direct SSH deployment – we assume PRODUCTION_HOST is defined in .env.production.
+# All AWS lookup / profile logic has been removed for simplicity.
 
 # ---------------------------------------------------------------------
 # Load environment variables early so we can use PRODUCTION_HOST if set
@@ -20,29 +14,10 @@ if [ -f "config/.env.production" ]; then
   source config/.env.production
 fi
 
+# Ensure PRODUCTION_HOST is provided
 if [ -z "$PRODUCTION_HOST" ]; then
-  # No PRODUCTION_HOST specified – fall back to AWS discovery
-  set +e
-  INSTANCE_IP=$(aws ec2 describe-instances $PROFILE_OPTION --region "$REGION" \
-      --filters "Name=tag:Name,Values=atlas-prod-server" "Name=instance-state-name,Values=running" \
-      --query 'Reservations[0].Instances[0].PublicIpAddress' \
-      --output text 2>&1)
-  AWS_RC=$?
-  set -e
-
-  if [ $AWS_RC -ne 0 ]; then
-    echo "ERROR: AWS CLI returned an error while trying to look up the production instance:\n$INSTANCE_IP"
-    echo "\nMost common cause: credentials not available in this shell."
-    echo "\nTo fix:"
-    echo "  0. Find your configured profiles: aws configure list-profiles"
-    echo "  1. Authenticate with AWS SSO (if you use SSO):"
-    echo "  2. Export your profile for this shell:"
-    echo "       export AWS_PROFILE=<your-profile-name>"
-    echo "  3. (Optional) export region if different):"
-    echo "       export AWS_REGION=$REGION"
-    echo "  4. Re-run make up"
-    exit 1
-  fi
+  echo "ERROR: PRODUCTION_HOST is not set in config/.env.production"
+  exit 1
 
   # Trim possible quotes/newlines from INSTANCE_IP
   INSTANCE_IP=$(echo "$INSTANCE_IP" | tr -d '"')
