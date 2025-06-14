@@ -77,6 +77,26 @@ def initialize_telemetry() -> bool:
     
     # For Phoenix Arize Cloud, use PHOENIX_CLIENT_HEADERS
     phoenix_client_headers = os.getenv("PHOENIX_CLIENT_HEADERS")
+
+    # ---- Sanitize and ensure correct header format ----
+    if phoenix_client_headers:
+        # Remove any surrounding quotes/newlines and whitespace
+        phoenix_client_headers = phoenix_client_headers.strip().strip('"').strip("'").strip()
+
+        # Attempt to parse JSON form (e.g. '{"api_key": "...", "project_name": "..."}') and
+        # convert it to the comma-separated format expected by OTEL_EXPORTER_OTLP_HEADERS
+        try:
+            import json
+            hdr_dict = json.loads(phoenix_client_headers)
+            if isinstance(hdr_dict, dict):
+                # Ensure the project_name field is present
+                hdr_dict.setdefault("project_name", _project_name)
+                phoenix_client_headers = ",".join(f"{k}={v}" for k, v in hdr_dict.items())
+        except json.JSONDecodeError:
+            # Header is already in comma-separated form; just ensure project_name is present
+            if "project_name=" not in phoenix_client_headers:
+                phoenix_client_headers = f"{phoenix_client_headers},project_name={_project_name}"
+    # ---------------------------------------------------
     
     if not phoenix_endpoint:
         logger.warning("PHOENIX_COLLECTOR_ENDPOINT not configured - telemetry will be disabled")
