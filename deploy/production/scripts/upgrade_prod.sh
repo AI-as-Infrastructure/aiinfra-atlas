@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # Production upgrade script with minimal downtime
-set -e
+set -euo pipefail
+trap 'echo "❌ Upgrade failed at ${BASH_SOURCE[0]}:${LINENO}"; exit 1' ERR
 
 # Region configuration (override with AWS_REGION env var if set)
 REGION="${AWS_REGION:-us-west-1}"
@@ -58,11 +59,12 @@ fi
 
 # Configuration
 APP_NAME="atlas"
-APP_DIR="/home/ubuntu/atlas"
+APP_DIR="/opt/atlas"
 APP_DIR_NEW="${APP_DIR}_new"
 GITHUB_REPO="https://github.com/AI-as-Infrastructure/aiinfra-atlas.git"
 GIT_BRANCH="main"
 SSH_KEY="$HOME/atlas-prod-key-west1.pem"
+SSH_USER="${SSH_USER:-atlas_deploy}"
 
 echo "🚀 Starting production upgrade with minimal downtime..."
 
@@ -85,21 +87,21 @@ echo "Using domain from VITE_API_URL: $DOMAIN"
 
 # 3. Copy environment file to new location
 echo "Copying environment file..."
-scp -i $SSH_KEY config/.env.production ubuntu@${INSTANCE_IP}:/tmp/.env.production
+scp -i $SSH_KEY config/.env.production ${SSH_USER}@${INSTANCE_IP}:/tmp/.env.production
 
 # 4. Run upgrade on remote server
 echo "Running upgrade on production server..."
-ssh -i $SSH_KEY ubuntu@${INSTANCE_IP} << 'ENDSSH'
+ssh -i $SSH_KEY ${SSH_USER}@${INSTANCE_IP} << 'ENDSSH'
 # Configuration
 APP_NAME="atlas"
-APP_DIR="/home/ubuntu/atlas"
+APP_DIR="/opt/atlas"
 APP_DIR_NEW="${APP_DIR}_new"
 GITHUB_REPO="https://github.com/AI-as-Infrastructure/aiinfra-atlas.git"
 GIT_BRANCH="main"
 
 echo "Setting up new application directory..."
 sudo mkdir -p $APP_DIR_NEW
-sudo chown -R ubuntu:ubuntu $APP_DIR_NEW
+sudo chown -R $(whoami):$(whoami) $APP_DIR_NEW
 
 echo "Cloning fresh repository..."
 git clone -b $GIT_BRANCH $GITHUB_REPO $APP_DIR_NEW
@@ -109,6 +111,8 @@ git lfs pull
 echo "Copying environment file..."
 sudo cp /tmp/.env.production $APP_DIR_NEW/config/.env.production
 sudo rm /tmp/.env.production
+# Derive DOMAIN from env file now that it's in place
+DOMAIN=$(grep '^VITE_API_URL=' $APP_DIR_NEW/config/.env.production | sed -E 's|^VITE_API_URL=https?://||; s|/$||')
 
 # Update URLs in the environment file to use the actual domain
 echo "Updating environment URLs for production deployment..."
@@ -120,14 +124,29 @@ sed -i 's#WS_BASE_URL=.*#WS_BASE_URL=wss://'"$DOMAIN"'/ws#' $APP_DIR_NEW/config/
 echo "✅ Environment file updated with domain: $DOMAIN"
 
 # -----------------------------------------------------------------
+# Load environment variables so they are available for subsequent steps (e.g. Redis)
+set -a
+source "$APP_DIR_NEW/config/.env.production"
+set +a
+
+
+# -----------------------------------------------------------------
 # Ensure Node.js version matches frontend/.nvmrc (same as deploy script)
 export NVM_DIR="$HOME/.nvm"
 if [ -s "$NVM_DIR/nvm.sh" ]; then
     . "$NVM_DIR/nvm.sh"
+    TARGET_NODE="22.14.0"
     if [ -f frontend/.nvmrc ]; then
         TARGET_NODE=$(cat frontend/.nvmrc | tr -d 'v\r\n')
-        nvm install "$TARGET_NODE"
-        nvm use "$TARGET_NODE"
+    fi
+    echo "Target Node.js version: $TARGET_NODE"
+    nvm install "$TARGET_NODE"
+    nvm alias default "$TARGET_NODE"
+    nvm use "$TARGET_NODE"
+    CURRENT_NODE=$(node -v)
+    if [[ "$CURRENT_NODE" != "v$TARGET_NODE" ]]; then
+        echo "ERROR: Node.js version mismatch! Found $CURRENT_NODE expected v$TARGET_NODE"
+        exit 1
     fi
 fi
 
@@ -159,6 +178,22 @@ npm install
 npm run build
 cd ..
 
+# Configure Redis with authentication
+echo "Configuring Redis..."
+if [ -n "$REDIS_PASSWORD" ]; then
+  sudo sed -i '/^#* *requirepass /d' /etc/redis/redis.conf
+  sudo bash -c "echo 'requirepass $REDIS_PASSWORD' >> /etc/redis/redis.conf"
+  sudo systemctl enable redis-server
+  sudo systemctl restart redis-server
+  if ! sudo systemctl is-active --quiet redis-server; then
+    echo "ERROR: Redis failed to start"
+    exit 1
+  fi
+  echo "✅ Redis configured and running"
+else
+  echo "WARNING: REDIS_PASSWORD not set, skipping Redis authentication setup"
+fi
+
 echo "Configuring services..."
 # Create service files in new directory
 cat > $APP_DIR_NEW/gunicorn.service << EOL
@@ -167,8 +202,8 @@ Description=Gunicorn instance for $APP_NAME
 After=network.target
 
 [Service]
-User=ubuntu
-Group=ubuntu
+User=$(whoami)
+Group=$(whoami)
 WorkingDirectory=$APP_DIR
 Environment="PATH=$APP_DIR/.venv/bin"
 Environment="PYTHONPATH=$APP_DIR"
@@ -184,10 +219,17 @@ EOL
 echo "Performing quick switch..."
 # Stop old services
 sudo systemctl stop gunicorn || true
+# wait up to 15s for full shutdown
+for i in {1..15}; do
+  sudo systemctl is-active --quiet gunicorn || break
+  sleep 1
+done
+sudo systemctl reset-failed gunicorn || true
+pkill -u "$(whoami)" -f 'gunicorn.*backend.app' || true
 
 # Move new directory to production location
-sudo rm -rf $APP_DIR
-sudo mv $APP_DIR_NEW $APP_DIR
+sudo mv "$APP_DIR" "${APP_DIR}_old_$(date +%s)" || true
+sudo mv "$APP_DIR_NEW" "$APP_DIR"
 
 # Update service files
 sudo cp $APP_DIR/gunicorn.service /etc/systemd/system/
@@ -215,6 +257,13 @@ fi
 echo "✅ Gunicorn is running"
 
 # Restart Nginx to clear WebSocket connection state and pick up any changes
+echo "Validating Nginx configuration..."
+sudo nginx -t
+if [ $? -ne 0 ]; then
+  echo "ERROR: nginx configuration test failed"
+  exit 1
+fi
+
 echo "Restarting Nginx for WebSocket connections..."
 sudo systemctl restart nginx
 if ! sudo systemctl is-active --quiet nginx; then
