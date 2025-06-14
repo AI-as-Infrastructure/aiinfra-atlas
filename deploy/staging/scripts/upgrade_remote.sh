@@ -54,6 +54,10 @@ fi
 DOMAIN=$(echo "$VITE_API_URL" | sed -E 's|^https?://||')
 echo "Using domain: $DOMAIN"
 
+# Prune old backups (keep the 2 most recent)
+echo "Pruning old backups..."
+sudo ls -1dt "${APP_DIR}_old_"* 2>/dev/null | tail -n +3 | xargs -r sudo rm -rf || true
+
 # Prepare new dir
 sudo rm -rf "$APP_DIR_NEW" || true
 sudo mkdir -p "$APP_DIR_NEW"
