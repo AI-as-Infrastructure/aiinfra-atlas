@@ -216,7 +216,10 @@ Restart=on-failure
 WantedBy=multi-user.target
 EOL
 
-echo "Performing quick switch..."
+echo "Pruning old backups..."
+sudo ls -1dt "${APP_DIR}_old_"* 2>/dev/null | tail -n +3 | xargs -r sudo rm -rf || true
+
+# Perform quick switch..."
 # Stop old services
 sudo systemctl stop gunicorn || true
 # wait up to 15s for full shutdown
