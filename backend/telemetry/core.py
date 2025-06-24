@@ -83,19 +83,25 @@ def initialize_telemetry() -> bool:
         # Remove any surrounding quotes/newlines and whitespace
         phoenix_client_headers = phoenix_client_headers.strip().strip('"').strip("'").strip()
 
-        # Attempt to parse JSON form (e.g. '{"api_key": "...", "project_name": "..."}') and
-        # convert it to the comma-separated format expected by OTEL_EXPORTER_OTLP_HEADERS
+        # Check if it's JSON format first
         try:
             import json
             hdr_dict = json.loads(phoenix_client_headers)
             if isinstance(hdr_dict, dict):
                 # Ensure the project_name field is present
-                hdr_dict.setdefault("project_name", _project_name)
+                hdr_dict["project_name"] = _project_name  # Always override with env value
                 phoenix_client_headers = ",".join(f"{k}={v}" for k, v in hdr_dict.items())
         except json.JSONDecodeError:
-            # Header is already in comma-separated form; just ensure project_name is present
-            if "project_name=" not in phoenix_client_headers:
-                phoenix_client_headers = f"{phoenix_client_headers},project_name={_project_name}"
+            # Header is already in comma-separated form; ensure project_name is present and correct
+            headers_dict = {}
+            for pair in phoenix_client_headers.split(","):
+                if "=" in pair:
+                    k, v = pair.split("=", 1)
+                    headers_dict[k.strip()] = v.strip()
+            
+            # Always set project_name from environment variable
+            headers_dict["project_name"] = _project_name
+            phoenix_client_headers = ",".join(f"{k}={v}" for k, v in headers_dict.items())
     # ---------------------------------------------------
     
     if not phoenix_endpoint:
