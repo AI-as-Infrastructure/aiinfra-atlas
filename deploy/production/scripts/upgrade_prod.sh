@@ -18,18 +18,10 @@ fi
 if [ -z "$PRODUCTION_HOST" ]; then
   echo "ERROR: PRODUCTION_HOST is not set in config/.env.production"
   exit 1
-
-  # Trim possible quotes/newlines from INSTANCE_IP
-  INSTANCE_IP=$(echo "$INSTANCE_IP" | tr -d '"')
-
-  if [ -z "$INSTANCE_IP" ] || [ "$INSTANCE_IP" = "None" ]; then
-    echo "ERROR: Could not find a running EC2 instance tagged atlas-prod in region $REGION."
-    exit 1
-  fi
-else
-  INSTANCE_IP="$PRODUCTION_HOST"
-  echo "Using PRODUCTION_HOST from .env.production: $INSTANCE_IP"
 fi
+
+INSTANCE_IP="$PRODUCTION_HOST"
+echo "Using PRODUCTION_HOST from .env.production: $INSTANCE_IP"
 # ---------------------------------------------------------------------
 
 # Configuration
@@ -60,19 +52,60 @@ fi
 DOMAIN=$(echo "$VITE_API_URL" | sed -E 's|^https?://||; s|/$||')
 echo "Using domain from VITE_API_URL: $DOMAIN"
 
-# 3. Copy environment file to new location
+# 3. Validate SSH connectivity and copy environment file
+echo "Validating SSH connection..."
+if [ ! -f "$SSH_KEY" ]; then
+    echo "ERROR: SSH key not found at $SSH_KEY"
+    exit 1
+fi
+
+# Test SSH connection
+if ! ssh -i $SSH_KEY -o ConnectTimeout=10 -o BatchMode=yes ${SSH_USER}@${INSTANCE_IP} "echo 'SSH connection successful'"; then
+    echo "ERROR: Cannot connect to ${SSH_USER}@${INSTANCE_IP} using key $SSH_KEY"
+    exit 1
+fi
+
 echo "Copying environment file..."
 scp -i $SSH_KEY config/.env.production ${SSH_USER}@${INSTANCE_IP}:/tmp/.env.production
 
-# 4. Run upgrade on remote server
+# 4. Run upgrade on remote server with timeout
 echo "Running upgrade on production server..."
-ssh -i $SSH_KEY ${SSH_USER}@${INSTANCE_IP} << 'ENDSSH'
+timeout 1200 ssh -i $SSH_KEY -o ServerAliveInterval=30 -o ServerAliveCountMax=3 ${SSH_USER}@${INSTANCE_IP} << 'ENDSSH'
+set -euo pipefail
+trap 'echo "❌ Remote upgrade failed at line $LINENO"; exit 1' ERR
+
 # Configuration
 APP_NAME="atlas"
 APP_DIR="/opt/atlas"
 APP_DIR_NEW="${APP_DIR}_new"
 GITHUB_REPO="https://github.com/AI-as-Infrastructure/aiinfra-atlas.git"
 GIT_BRANCH="main"
+
+echo "🔄 Starting remote upgrade process..."
+
+# Pre-flight checks
+echo "🔍 Running pre-flight checks..."
+if ! command -v git >/dev/null 2>&1; then
+    echo "ERROR: git is not installed"
+    exit 1
+fi
+
+if ! command -v python3.10 >/dev/null 2>&1; then
+    echo "ERROR: python3.10 is not installed"
+    exit 1
+fi
+
+if ! command -v npm >/dev/null 2>&1; then
+    echo "ERROR: npm is not installed"
+    exit 1
+fi
+
+if [ ! -f "/tmp/.env.production" ]; then
+    echo "ERROR: Environment file was not copied successfully"
+    exit 1
+fi
+
+echo "✅ Pre-flight checks passed"
 
 echo "Setting up new application directory..."
 sudo mkdir -p $APP_DIR_NEW
@@ -133,6 +166,9 @@ chmod +x config/generate_vue_files.sh
 
 echo "Setting up Python environment..."
 cd $APP_DIR_NEW
+
+# Always create fresh venv to avoid disk space issues from copying
+echo "📦 Creating fresh Python environment..."
 python3.10 -m venv .venv
 . .venv/bin/activate
 pip install --upgrade pip
@@ -191,8 +227,8 @@ Restart=on-failure
 WantedBy=multi-user.target
 EOL
 
-echo "Pruning old backups..."
-sudo ls -1dt "${APP_DIR}_old_"* 2>/dev/null | tail -n +3 | xargs -r sudo rm -rf || true
+echo "Pruning old backups (keeping only 1)..."
+sudo ls -1dt "${APP_DIR}_old_"* 2>/dev/null | tail -n +2 | xargs -r sudo rm -rf || true
 
 # Perform quick switch..."
 # Stop old services
@@ -229,7 +265,28 @@ sudo systemctl start gunicorn
 # Verify service is running
 echo "Verifying Gunicorn service..."
 if ! sudo systemctl is-active --quiet gunicorn; then
-  echo "ERROR: Gunicorn failed to start. Check journalctl -u gunicorn for details."
+  echo "❌ ERROR: Gunicorn failed to start"
+  echo "🔄 Attempting rollback..."
+  
+  # Find the most recent backup
+  LATEST_BACKUP=$(ls -1dt "${APP_DIR}_old_"* 2>/dev/null | head -n 1)
+  if [ -n "$LATEST_BACKUP" ]; then
+    echo "Rolling back to: $LATEST_BACKUP"
+    sudo systemctl stop gunicorn || true
+    sudo mv "$APP_DIR" "${APP_DIR}_failed_$(date +%s)"
+    sudo mv "$LATEST_BACKUP" "$APP_DIR"
+    sudo systemctl start gunicorn
+    
+    if sudo systemctl is-active --quiet gunicorn; then
+      echo "✅ Rollback successful - service restored"
+    else
+      echo "❌ Rollback failed - manual intervention required"
+    fi
+  else
+    echo "❌ No backup found for rollback"
+  fi
+  
+  echo "Check logs: journalctl -u gunicorn -n 50"
   exit 1
 fi
 echo "✅ Gunicorn is running"
@@ -243,12 +300,50 @@ if [ $? -ne 0 ]; then
 fi
 
 echo "Restarting Nginx for WebSocket connections..."
-sudo systemctl restart nginx
+
+# Check if nginx is currently running
+if sudo systemctl is-active --quiet nginx; then
+  echo "Nginx is running, performing graceful restart..."
+  # Try reload first (safer than restart)
+  if sudo systemctl reload nginx; then
+    echo "✅ Nginx reloaded successfully"
+  else
+    echo "Reload failed, attempting full restart..."
+    sudo systemctl stop nginx
+    sleep 2
+    sudo systemctl start nginx
+  fi
+else
+  echo "Nginx is not running, starting service..."
+  sudo systemctl start nginx
+fi
+
+# Verify nginx is running
 if ! sudo systemctl is-active --quiet nginx; then
-  echo "ERROR: Nginx failed to restart. Check journalctl -u nginx for details."
+  echo "❌ ERROR: Nginx failed to start/restart"
+  echo ""
+  echo "=== Nginx Status ==="
+  sudo systemctl status nginx --no-pager -l
+  echo ""
+  echo "=== Recent Nginx Logs ==="
+  sudo journalctl -u nginx -n 30 --no-pager
+  echo ""
+  echo "=== Port Usage ==="
+  sudo netstat -tlnp | grep :80
+  sudo netstat -tlnp | grep :443
+  echo ""
+  echo "=== Nginx Config Test ==="
+  sudo nginx -t
+  echo ""
+  echo "=== Disk Space ==="
+  df -h /
+  echo ""
+  echo "=== Nginx Process Check ==="
+  ps aux | grep nginx
   exit 1
 fi
-echo "✅ Nginx restarted successfully"
+
+echo "✅ Nginx is running successfully"
 ENDSSH
 
 echo "✅ Upgrade complete!"
