@@ -90,60 +90,6 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
             status="error"
         )
 
-@router.get("/api/telemetry/status")
-async def telemetry_status():
-    """Check the status of the Phoenix telemetry integration"""
-    try:
-        # Check if telemetry is enabled via environment variable
-        telemetry_enabled = is_telemetry_enabled()
-        
-        # Check Phoenix native status
-        phoenix_native_available = PHOENIX_AVAILABLE and _phoenix_session is not None
-        
-        # Check if tracer is initialized
-        tracer_initialized = False
-        try:
-            tracer = get_tracer()
-            tracer_initialized = tracer is not None
-        except:
-            pass
-        
-        # Get Phoenix API key status
-        import os
-        phoenix_api_key = os.getenv('PHOENIX_API_KEY', '')
-        client_api_key = None
-        
-        # Try extracting API key from PHOENIX_CLIENT_HEADERS
-        if os.getenv('PHOENIX_CLIENT_HEADERS', ''):
-            headers_str = os.getenv('PHOENIX_CLIENT_HEADERS', '')
-            if 'api_key=' in headers_str:
-                client_api_key = headers_str.split('api_key=')[1].split(',')[0].strip()
-        
-        # Get other Phoenix configuration
-        phoenix_project_name = os.getenv('PHOENIX_PROJECT_NAME', '')
-        phoenix_collector_endpoint = os.getenv('PHOENIX_COLLECTOR_ENDPOINT', '')
-        otel_protocol = os.getenv('OTEL_EXPORTER_OTLP_PROTOCOL', '')
-        otel_headers = os.getenv('OTEL_EXPORTER_OTLP_HEADERS', '')
-        
-        # Return status information
-        return {
-            "status": "ok",
-            "telemetry_enabled": telemetry_enabled,
-            "telemetry_env_var": os.getenv('TELEMETRY_ENABLED', 'true'),
-            "phoenix_native_available": phoenix_native_available and telemetry_enabled,
-            "phoenix_session_active": _phoenix_session is not None and telemetry_enabled,
-            "tracer_initialized": tracer_initialized and telemetry_enabled,
-            "phoenix_project_name": phoenix_project_name,
-            "phoenix_collector_endpoint": phoenix_collector_endpoint,
-            "otel_protocol": otel_protocol,
-            "api_key_format": "PHOENIX_CLIENT_HEADERS" if client_api_key else "PHOENIX_API_KEY" if phoenix_api_key else "None",
-            "otel_headers_configured": bool(otel_headers),
-            "feedback_system": "phoenix_native" if (phoenix_native_available and telemetry_enabled) else "opentelemetry_fallback" if telemetry_enabled else "disabled",
-            "timestamp": datetime.now().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Error checking telemetry status: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error checking telemetry status: {str(e)}")
 
 def register_telemetry_api(app):
     """Register the telemetry API endpoints with the FastAPI app"""
