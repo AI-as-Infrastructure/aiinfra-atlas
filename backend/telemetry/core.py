@@ -315,18 +315,20 @@ def create_span(name: str, attributes: Dict[str, Any] = None,
         yield NoOpSpan()
         return
     
-    # Use OpenTelemetry with Phoenix OTLP exporter
+    # Use OpenTelemetry with Phoenix OTLP exporter inside Phoenix project context
     tracer = get_tracer()
     # Set OpenTelemetry protocol span kind if provided, else default to INTERNAL
     protocol_kind = otel_kind if otel_kind is not None else SpanKind.INTERNAL
     
-    # Use parent_context if provided for proper span hierarchy
-    if parent_context:
-        with tracer.start_as_current_span(name, context=parent_context, attributes=span_attributes, kind=protocol_kind) as span:
-            yield span
-    else:
-        with tracer.start_as_current_span(name, attributes=span_attributes, kind=protocol_kind) as span:
-            yield span
+    # Always create spans within the Phoenix project context
+    with using_project(_project_name):
+        # Use parent_context if provided for proper span hierarchy
+        if parent_context:
+            with tracer.start_as_current_span(name, context=parent_context, attributes=span_attributes, kind=protocol_kind) as span:
+                yield span
+        else:
+            with tracer.start_as_current_span(name, attributes=span_attributes, kind=protocol_kind) as span:
+                yield span
 
 def create_rag_pipeline_span(session_id: str, qa_id: str, query: str, **kwargs):
     """Create a RAG pipeline span directly without span factory"""
