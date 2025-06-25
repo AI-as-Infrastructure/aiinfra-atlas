@@ -72,6 +72,18 @@
 					</div>
 				</div>
 			</div>
+			
+			<!-- Show processing indicator when response is in progress but no content yet -->
+			<div v-if="!isResponseComplete && !hasCurrentAssistantResponse" class="message-container">
+				<div class="message is-primary">
+					<div class="message-content">
+						<div class="processing-indicator">
+							<span class="processing-dot"></span>
+							<span class="processing-text">Processing document chunks (search-k)...</span>
+						</div>
+					</div>
+				</div>
+			</div>
 		</div>
 
 		<!-- Citation Modal for single citation -->
@@ -230,17 +242,26 @@
 <script setup>
 import { storeToRefs } from 'pinia'
 import { useSessionStore } from '@/stores/session'
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { marked } from 'marked'
 
 const sessionStore = useSessionStore()
-const { chatHistory } = storeToRefs(sessionStore)
+const { chatHistory, isResponseComplete } = storeToRefs(sessionStore)
 
 // Citation hover and modal state
 const hoveredCitation = ref(null)
 const selectedCitation = ref(null)
 const showAllCitations = ref(false)
 const allCitations = ref([])
+
+// Check if there's a current assistant response being streamed
+const hasCurrentAssistantResponse = computed(() => {
+	// Look for the last message in chat history
+	if (chatHistory.value.length === 0) return false;
+	const lastMessage = chatHistory.value[chatHistory.value.length - 1];
+	// If the last message is from assistant and response is not complete, we have streaming content
+	return lastMessage.role === 'assistant' && !isResponseComplete.value;
+})
 
 // Configure marked options
 marked.setOptions({
@@ -991,5 +1012,38 @@ pre {
 
 .content :deep(a:hover) {
   text-decoration: underline;
+}
+
+/* Processing indicator styles */
+.processing-indicator {
+  display: flex;
+  align-items: center;
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.processing-dot {
+  width: 8px;
+  height: 8px;
+  background-color: #999;
+  border-radius: 50%;
+  margin-right: 0.5rem;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.processing-text {
+  color: #666;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.4;
+  }
 }
 </style>

@@ -36,10 +36,11 @@
 		  </div>
 		</div>
 	  </form>
-	  <div v-else class="has-text-centered my-4">
-		<span class="tag is-warning is-medium" style="background: #fffbe6; color: #b8860b; border: 1px solid #f7e07d; font-weight: 500; letter-spacing: 0.01em;">
-		  Processing document chunks (fetch-k)...
-		</span>
+	  <div v-else class="processing-container">
+		<div class="processing-indicator">
+		  <span class="processing-dot"></span>
+		  <span class="processing-text">Processing document chunks (search-k)...</span>
+		</div>
 	  </div>
 	</div>
   </template>
@@ -151,6 +152,7 @@
         emit('input-active-change', newActive)
     }
   })
+
   
   // Close EventSource connection
   function closeEventSource() {
@@ -478,6 +480,9 @@
       
       // Mark as complete
       session.setResponseComplete(true);
+      
+      // Hide processing indicator
+      isGenerating.value = false;
     }
   } // Missing closing brace for setupSSE function
   
@@ -699,4 +704,5 @@ input.input::placeholder {
   bottom: 0 !important;
   background: transparent !important;
 }
+
 </style>

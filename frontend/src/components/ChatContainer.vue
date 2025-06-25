@@ -14,6 +14,7 @@
 						<ChatHistory />
 					</div>
 					
+					
 					<!-- Show input at the bottom when response is complete -->
 					<div v-if="chatHistory.length > 0 && (isResponseComplete || feedbackSubmitted)" class="mb-4">
 						<UserInput @input-active-change="handleInputActiveChange" />
@@ -65,6 +66,7 @@ const shouldShowFeedback = computed(() => {
 		!isNewQuestionAsked.value && 
 		!sessionStore.hasFeedbackBeenSubmitted(qaId.value);
 });
+
 
 // Computed property to check if feedback has been submitted
 const feedbackSubmitted = computed(() => {
@@ -186,4 +188,5 @@ watch(() => sessionStore.corpusFilter, (newFilter, oldFilter) => {
 .column {
 	padding: 0.75rem;
 }
+
 </style>
