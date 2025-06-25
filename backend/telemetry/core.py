@@ -17,7 +17,11 @@ try:
     from phoenix.trace import using_project
     PHOENIX_AVAILABLE = True
 except ImportError as e:
-    raise ImportError("Phoenix telemetry is required but the 'phoenix' package is not installed.") from e
+    # Don't raise error immediately - check if telemetry is disabled first
+    PHOENIX_AVAILABLE = False
+    px = None
+    using_project = None
+    _phoenix_import_error = e
 
 from .constants import SpanAttributes, SpanNames, OpenInferenceSpanKind
 from opentelemetry.trace import SpanKind
@@ -70,6 +74,12 @@ def initialize_telemetry() -> bool:
         logger.info("🚫 Telemetry disabled via TELEMETRY_ENABLED environment variable")
         _telemetry_initialized = True  # Mark as initialized but disabled
         return False
+    
+    # Check if Phoenix is available when telemetry is enabled
+    if not PHOENIX_AVAILABLE:
+        global _phoenix_import_error
+        logger.error(f"❌ CRITICAL: Phoenix telemetry is enabled but Phoenix package is not available: {_phoenix_import_error}")
+        raise ImportError(f"Phoenix telemetry is required but not available: {_phoenix_import_error}")
     
     # Get Phoenix configuration from environment
     phoenix_endpoint = os.getenv("PHOENIX_COLLECTOR_ENDPOINT")
@@ -348,9 +358,15 @@ def create_rag_pipeline_span(session_id: str, qa_id: str, query: str, **kwargs):
     
     # Register the span for feedback association
     def _register_span_on_enter(span):
+        # Check if telemetry is disabled first
+        if not is_telemetry_enabled():
+            return span
+            
         from .spans import register_span, register_session_root_span
         from opentelemetry.trace import format_span_id as otel_format_span_id
         if not PHOENIX_AVAILABLE or not _phoenix_session:
+            # When telemetry is enabled but Phoenix is not available, this is an error
+            # When telemetry is disabled, we already returned above
             raise RuntimeError("Phoenix telemetry is not available for span registration.")
         
         # Get the span ID as hex string
@@ -395,6 +411,10 @@ def create_retrieval_span(session_id: str, qa_id: str, query: str, **kwargs):
     
     # Register the span for feedback association
     def _register_span_on_enter(span):
+        # Check if telemetry is disabled first
+        if not is_telemetry_enabled():
+            return span
+            
         from .spans import register_span
         from opentelemetry.trace import format_span_id as otel_format_span_id
         if not PHOENIX_AVAILABLE or not _phoenix_session:
@@ -427,6 +447,10 @@ def create_llm_span(session_id: str, qa_id: str, model: str, **kwargs):
     
     # Register the span for feedback association - this is the key span for feedback
     def _register_span_on_enter(span):
+        # Check if telemetry is disabled first
+        if not is_telemetry_enabled():
+            return span
+            
         from .spans import register_span
         from opentelemetry.trace import format_span_id as otel_format_span_id
         if not PHOENIX_AVAILABLE or not _phoenix_session:
