@@ -378,8 +378,7 @@
         session.addMessage({ 
           role: 'assistant', 
           content: answer,
-          citations: currentCitations.length > 0 ? currentCitations : undefined,
-          citations_loading: currentCitations.length === 0 // Show loading indicator if no citations yet
+          citations: currentCitations.length > 0 ? currentCitations : undefined
         });
         assistantMessageAdded = true;
       } else {
@@ -429,16 +428,14 @@
         // Update the message with citations but preserve existing content
         session.updateMessage(lastMessageIndex, {
           ...lastMessage,
-          citations: currentCitations,
-          citations_loading: false // Remove loading indicator
+          citations: currentCitations
         });
       } else if (currentCitations.length > 0) {
         // No assistant message yet - this happens when citations come before content
         session.addMessage({
           role: 'assistant',
           content: '', // Empty content that will be filled later
-          citations: currentCitations,
-          citations_loading: false
+          citations: currentCitations
         });
         assistantMessageAdded = true;
       }

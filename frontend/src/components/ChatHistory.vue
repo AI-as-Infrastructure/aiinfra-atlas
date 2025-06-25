@@ -62,13 +62,6 @@
 							</ul>
 						</div>
 						
-						<!-- Show citations loading indicator -->
-						<div v-if="message.citations_loading && !message.citations" class="citations-loading mt-2">
-							<div class="is-flex is-align-items-center">
-								<span class="mr-2">Loading citations</span>
-								<span class="loading-dots">...</span>
-							</div>
-						</div>
 					</div>
 				</div>
 			</div>
@@ -891,16 +884,6 @@ function formatMetadata(metadata) {
 	border-top: 1px solid #dbdbdb;
 }
 
-.loading-dots {
-	display: inline-block;
-	animation: loadingDots 1.5s infinite;
-}
-
-@keyframes loadingDots {
-	0% { opacity: 0.3; }
-	50% { opacity: 1; }
-	100% { opacity: 0.3; }
-}
 
 .ml-2 {
 	margin-left: 0.5rem;
