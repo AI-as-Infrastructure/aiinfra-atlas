@@ -48,7 +48,7 @@ telemetry_enabled = os.getenv("TELEMETRY_ENABLED", "true").lower() in ["true", "
 
 if not telemetry_enabled:
     logger.info("📝 Telemetry disabled via TELEMETRY_ENABLED=false")
-    telemetry_success = False
+    telemetry_success = True  # Consider disabled telemetry as "successful" for app startup
 else:
     try:
         telemetry_success = initialize_telemetry()
