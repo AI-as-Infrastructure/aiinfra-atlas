@@ -22,7 +22,7 @@ GLAM Practitioner - Gallery/Library/Archive/Museum professional</div>
                 </div>
               </div>
               <div class="control">
-                <select v-model="userCategory" class="input">
+                <select v-model="userCategory" class="input" :disabled="isSubmitting">
                   <option value="General User">General User</option>
                   <option value="Hansard Expert">Hansard Expert</option>
                   <option value="Digital HASS Researcher">Digital HASS Researcher</option>
@@ -42,9 +42,9 @@ False - The answer contains factual errors</div>
                 </div>
               </div>
               <div class="control checkbox-group">
-                <label class="checkbox-label"><input type="checkbox" :checked="factualAccuracy === 'true'" @change="factualAccuracy = $event.target.checked ? 'true' : (factualAccuracy === 'mixed' ? 'mixed' : 'false')"> True</label> 
-                <label class="checkbox-label"><input type="checkbox" :checked="factualAccuracy === 'mixed'" @change="factualAccuracy = $event.target.checked ? 'mixed' : (factualAccuracy === 'true' ? 'true' : 'false')"> Mixed</label> 
-                <label class="checkbox-label"><input type="checkbox" :checked="factualAccuracy === 'false'" @change="factualAccuracy = $event.target.checked ? 'false' : (factualAccuracy === 'mixed' ? 'mixed' : 'true')"> False</label>
+                <label class="checkbox-label"><input type="checkbox" :checked="factualAccuracy === 'true'" :disabled="isSubmitting" @change="factualAccuracy = $event.target.checked ? 'true' : (factualAccuracy === 'mixed' ? 'mixed' : 'false')"> True</label> 
+                <label class="checkbox-label"><input type="checkbox" :checked="factualAccuracy === 'mixed'" :disabled="isSubmitting" @change="factualAccuracy = $event.target.checked ? 'mixed' : (factualAccuracy === 'true' ? 'true' : 'false')"> Mixed</label> 
+                <label class="checkbox-label"><input type="checkbox" :checked="factualAccuracy === 'false'" :disabled="isSubmitting" @change="factualAccuracy = $event.target.checked ? 'false' : (factualAccuracy === 'mixed' ? 'mixed' : 'true')"> False</label>
               </div>
             </div>
             <div class="field">
@@ -61,7 +61,7 @@ False - The answer contains factual errors</div>
                 </div>
               </div>
               <div class="control">
-                <select v-model="relevance" class="input">
+                <select v-model="relevance" class="input" :disabled="isSubmitting">
                   <option :value="1">1</option>
                   <option :value="2">2</option>
                   <option :value="3">3</option>
@@ -84,7 +84,7 @@ False - The answer contains factual errors</div>
                 </div>
               </div>
               <div class="control">
-                <select v-model="sourceQuality" class="input">
+                <select v-model="sourceQuality" class="input" :disabled="isSubmitting">
                   <option :value="1">1</option>
                   <option :value="2">2</option>
                   <option :value="3">3</option>
@@ -107,7 +107,7 @@ False - The answer contains factual errors</div>
                 </div>
               </div>
               <div class="control">
-                <select v-model="clarity" class="input">
+                <select v-model="clarity" class="input" :disabled="isSubmitting">
                   <option :value="1">1</option>
                   <option :value="2">2</option>
                   <option :value="3">3</option>
@@ -130,7 +130,7 @@ False - The answer contains factual errors</div>
                 </div>
               </div>
               <div class="control">
-                <select v-model="questionRating" class="input">
+                <select v-model="questionRating" class="input" :disabled="isSubmitting">
                   <option :value="1">1</option>
                   <option :value="2">2</option>
                   <option :value="3">3</option>
@@ -142,11 +142,11 @@ False - The answer contains factual errors</div>
             <div class="field">
               <label class="label">Tags:</label>
               <div class="control checkbox-group">
-                <label class="checkbox-label"><input type="checkbox" value="hallucination" v-model="tags"> Hallucination</label> 
-                <label class="checkbox-label"><input type="checkbox" value="anachronism" v-model="tags"> Anachronism</label> 
-                <label class="checkbox-label"><input type="checkbox" value="biased" v-model="tags"> Biased</label> 
-                <label class="checkbox-label"><input type="checkbox" value="off-topic" v-model="tags"> Off-topic</label> 
-                <label class="checkbox-label"><input type="checkbox" value="well-sourced" v-model="tags"> Well-sourced</label>
+                <label class="checkbox-label"><input type="checkbox" value="hallucination" v-model="tags" :disabled="isSubmitting"> Hallucination</label> 
+                <label class="checkbox-label"><input type="checkbox" value="anachronism" v-model="tags" :disabled="isSubmitting"> Anachronism</label> 
+                <label class="checkbox-label"><input type="checkbox" value="biased" v-model="tags" :disabled="isSubmitting"> Biased</label> 
+                <label class="checkbox-label"><input type="checkbox" value="off-topic" v-model="tags" :disabled="isSubmitting"> Off-topic</label> 
+                <label class="checkbox-label"><input type="checkbox" value="well-sourced" v-model="tags" :disabled="isSubmitting"> Well-sourced</label>
               </div>
             </div>
             <div class="field">
@@ -158,7 +158,7 @@ False - The answer contains factual errors</div>
                 </div>
               </div>
               <div class="control">
-                <textarea class="textarea" v-model="feedbackText"></textarea>
+                <textarea class="textarea" v-model="feedbackText" :disabled="isSubmitting"></textarea>
               </div>
             </div>
             <div class="field">
@@ -170,7 +170,7 @@ False - The answer contains factual errors</div>
                 </div>
               </div>
               <div class="control">
-                <textarea class="textarea" v-model="modelAnswer"></textarea>
+                <textarea class="textarea" v-model="modelAnswer" :disabled="isSubmitting"></textarea>
               </div>
             </div>
             <div class="action-buttons">
@@ -191,6 +191,14 @@ False - The answer contains factual errors</div>
               </button>
             </div>
           </form>
+          
+          <!-- Show processing indicator when feedback is being submitted -->
+          <div v-if="isSubmitting" class="feedback-processing">
+            <div class="processing-indicator">
+              <span class="processing-dot"></span>
+              <span class="processing-text">Processing feedback...</span>
+            </div>
+          </div>
         </div>
       </Transition>
     </div>
@@ -596,5 +604,45 @@ async function submitFeedback() {
 .slide-leave-to {
   transform: translateY(20px);
   opacity: 0;
+}
+
+/* Processing indicator styles */
+.feedback-processing {
+  margin-top: 1rem;
+  padding: 1rem;
+  text-align: center;
+}
+
+.processing-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.processing-dot {
+  width: 8px;
+  height: 8px;
+  background-color: #999;
+  border-radius: 50%;
+  margin-right: 0.5rem;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.processing-text {
+  color: #666;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.4;
+  }
 }
 </style>

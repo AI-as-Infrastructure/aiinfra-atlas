@@ -67,7 +67,7 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
         }
         
         # Use Phoenix native feedback association
-        success = associate_feedback_with_spans(session_id, qa_id, feedback_data)
+        success = await associate_feedback_with_spans(session_id, qa_id, feedback_data)
         
         # Respond with success
         if success:
