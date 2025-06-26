@@ -548,14 +548,14 @@ def create_feedback_span(session_id: str, qa_id: str, feedback_data: Dict[str, A
         kind=OpenInferenceSpanKind.HUMAN
     )
 
-def log_user_feedback(session_id: str, qa_id: str, feedback_data: Dict[str, Any]) -> bool:
+async def log_user_feedback(session_id: str, qa_id: str, feedback_data: Dict[str, Any]) -> bool:
     """Log user feedback by associating it with the appropriate span."""
     if not is_telemetry_enabled():
         logger.info("Telemetry disabled - skipping feedback logging")
         return True  # Return True to indicate "success" even when disabled
     
     from .feedback import associate_feedback_with_spans
-    return associate_feedback_with_spans(session_id, qa_id, feedback_data)
+    return await associate_feedback_with_spans(session_id, qa_id, feedback_data)
 
 def set_span_outputs(span, summary: str = None, details: Dict[str, Any] = None, 
                     output: str = None, error: Exception = None):

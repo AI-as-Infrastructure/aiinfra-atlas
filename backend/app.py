@@ -212,7 +212,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                                 raise ValueError("Missing qa_id or feedback data")
                             
                             # Log feedback using the telemetry system
-                            success = log_user_feedback(session_id, qa_id, feedback)
+                            success = await log_user_feedback(session_id, qa_id, feedback)
                             
                             # Send confirmation
                             response = {
@@ -371,7 +371,7 @@ def get_config_endpoint():
 
 # --- Synchronous Q&A endpoint (non-streaming) ---
 @app.post("/api/ask")
-def ask(data: dict = Body(...)):
+async def ask(data: dict = Body(...)):
     """
     Process a question and return a response with citations.
     This is the non-streaming version of the ask endpoint.
@@ -399,7 +399,7 @@ def ask(data: dict = Body(...)):
         # Log feedback if provided
         if feedback:
             try:
-                log_user_feedback(session_id, qa_id, feedback)
+                await log_user_feedback(session_id, qa_id, feedback)
             except Exception as e:
                 # Log the error but don't fail the request
                 logger.error(f"Error logging feedback: {e}", exc_info=True)
@@ -798,7 +798,7 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
         with using_session(session_id):
             try:
                 # Log user feedback
-                success = log_user_feedback(session_id, qa_id, feedback_data)
+                success = await log_user_feedback(session_id, qa_id, feedback_data)
                 
                 if success:
                     logger.info(f"HTTP Feedback recorded for session_id={session_id}, qa_id={qa_id}")

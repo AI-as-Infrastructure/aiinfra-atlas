@@ -7,12 +7,30 @@ feedback with spans using Phoenix's native span evaluation system.
 
 import logging
 import json
+import asyncio
 from pydantic import BaseModel, ConfigDict
 from typing import Optional, List, Dict, Any
 from .spans import find_qa_span_id
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
+
+async def find_qa_span_id_with_retry(session_id: str, qa_id: str, max_retries: int = 3) -> Optional[str]:
+    """
+    Find span ID with retry logic for development SQLite timing issues.
+    In production (Redis), this will succeed on first attempt with minimal overhead.
+    """
+    delays = [0.05, 0.1, 0.2]  # 50ms, 100ms, 200ms
+    
+    for i in range(max_retries):
+        span_id = find_qa_span_id(session_id, qa_id)
+        if span_id:
+            return span_id
+        
+        if i < max_retries - 1:  # Don't sleep on last attempt
+            await asyncio.sleep(delays[min(i, len(delays)-1)])
+    
+    return None
 
 class UserFeedback(BaseModel):
     """User feedback submission model"""
@@ -412,7 +430,7 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
         logger.error(f"Headers: {headers}")
         return False
 
-def associate_feedback_with_spans(session_id: str, qa_id: str, feedback_data: Dict[str, Any]) -> bool:
+async def associate_feedback_with_spans(session_id: str, qa_id: str, feedback_data: Dict[str, Any]) -> bool:
     """
     Attach feedback as an annotation to the LLM generation response span using the native API and the span registry.
     This ensures feedback is directly associated with the model's response output.
@@ -422,12 +440,11 @@ def associate_feedback_with_spans(session_id: str, qa_id: str, feedback_data: Di
     logger = logging.getLogger(__name__)
     try:
         # The LLM response span is registered with a special key format of {qa_id}_response
-        # Look up this response span specifically for feedback
-        from .spans import find_qa_span_id
+        # Look up this response span specifically for feedback with retry logic
         
         # Special key pattern used for the response span in llm.py
         response_key = f"{qa_id}_response"
-        response_span_id = find_qa_span_id(session_id, response_key)
+        response_span_id = await find_qa_span_id_with_retry(session_id, response_key)
         
         if response_span_id:
             logger.info(f"Found response span ID: {response_span_id} for session={session_id}, qa_id={qa_id}")
@@ -444,7 +461,7 @@ def associate_feedback_with_spans(session_id: str, qa_id: str, feedback_data: Di
             # Fall back to the regular QA span if no response span is found
             logger.warning(f"No response span found for {response_key}, falling back to QA span")
             
-            qa_span_id = find_qa_span_id(session_id, qa_id)
+            qa_span_id = await find_qa_span_id_with_retry(session_id, qa_id)
             if not qa_span_id:
                 logger.error(f"No span ID found for session {session_id}, qa_id {qa_id}")
                 return False
