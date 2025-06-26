@@ -155,7 +155,7 @@ async def stream_response_chunks(
             logger.error(f"Error streaming response: {e}", exc_info=True)
             
             # Yield error message
-            error_message = create_error_message("streaming_error", str(e))
+            error_message = create_error_message("streaming_error", "An error occurred while streaming the response")
             yield format_sse_message(error_message, event="error")
             
             # Re-raise to allow higher-level error handling
@@ -246,7 +246,7 @@ async def stream_response_chunks(
             logger.error(f"Error streaming response: {e}", exc_info=True)
             
             # Yield error message
-            error_message = create_error_message("streaming_error", str(e))
+            error_message = create_error_message("streaming_error", "An error occurred while streaming the response")
             yield format_sse_message(error_message, event="error")
             
             # Re-raise to allow higher-level error handling
@@ -365,5 +365,5 @@ def stream_documents_as_references(
             logger.error(f"Error formatting references: {e}", exc_info=True)
             
             # Return error message
-            error_message = create_error_message("reference_error", str(e))
+            error_message = create_error_message("reference_error", "An error occurred while processing references")
             return format_sse_message(error_message, event="error") 
