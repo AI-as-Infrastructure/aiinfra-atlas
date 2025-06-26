@@ -416,7 +416,7 @@ def ask(data: dict = Body(...)):
         logger.warning(f"Validation error in /api/ask: {e}")
         raise HTTPException(
             status_code=400,
-            detail=str(e)
+            detail="Invalid request parameters"
         )
     except Exception as e:
         # Log the full error server-side
@@ -642,11 +642,10 @@ async def ask_stream(data: dict = Body(...)):
                 parent_span.set_status(Status(StatusCode.ERROR, str(e)))
                 
                 # Create a sanitized error message for the client
-                error_type = type(e).__name__
+                # Do not expose internal exception details to client
                 error_msg = create_error_message(
                     "streaming_error",
-                    "An error occurred while processing your request",
-                    error_type=error_type
+                    "An error occurred while processing your request"
                 )
                 yield format_sse_message(error_msg, event="error")
     
@@ -816,7 +815,7 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
             except Exception as e:
                 logger.error(f"Error processing HTTP feedback: {e}", exc_info=True)
                 return FeedbackResponse(
-                    message=f"Error processing feedback: {str(e)}",
+                    message="Error processing feedback",
                     status="error"
                 )
     except Exception as e:
@@ -914,7 +913,7 @@ async def ask_async(data: dict = Body(...), request: Request = None):
         
     except Exception as e:
         logger.error(f"Error queuing async request: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to queue request: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to queue request")
 
 @app.get("/api/ask/async/{request_id}")
 async def get_async_status(request_id: str):
@@ -940,7 +939,7 @@ async def get_async_status(request_id: str):
         raise
     except Exception as e:
         logger.error(f"Error getting async status for {request_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get status: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get status")
 
 @app.get("/api/queue/stats")
 async def get_queue_stats():
@@ -965,7 +964,7 @@ async def get_queue_stats():
         
     except Exception as e:
         logger.error(f"Error getting queue stats: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get queue stats: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get queue stats")
 
 @app.websocket("/ws/async/{request_id}")
 async def websocket_async_status(websocket: WebSocket, request_id: str):
@@ -1017,4 +1016,4 @@ async def get_vector_store_info():
             content = f.read()
         return {"content": content}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")

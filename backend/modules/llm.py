@@ -331,7 +331,7 @@ def generate_response(
             except Exception as e:
                 logger.error(f"Error during streaming: {e}")
                 if not full_response:
-                    full_response = f"Error generating response: {str(e)}"
+                    full_response = "Error generating response"
                     yield full_response
                 
             return
@@ -573,7 +573,7 @@ def generate_response(
         logger.error(f"Error creating LLM span: {e}", exc_info=True)
         
         # Yield error message
-        error_msg = f"Error generating response: {str(e)}"
+        error_msg = "Error generating response"
         yield error_msg
 
 def generate_response_with_telemetry(
