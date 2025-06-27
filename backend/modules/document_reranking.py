@@ -572,4 +572,24 @@ def configure_reranker(config: Dict[str, Any]) -> Dict[str, Any]:
         "max_preview_chars": MAX_PREVIEW_CHARS
     }
     
-    return updated_config 
+    return updated_config
+
+def rerank_documents(documents: List[Document], query: str, max_docs: int = DEFAULT_MAX_DOCS) -> List[Document]:
+    """
+    Simple reranking function without telemetry (used by HansardRetriever).
+    
+    This function provides a clean interface for document reranking without
+    creating additional telemetry spans, making it suitable for use within
+    other components that already have their own telemetry.
+    
+    Args:
+        documents: List of documents to rerank
+        query: Query string for relevance scoring
+        max_docs: Maximum number of documents to return
+        
+    Returns:
+        Reranked list of documents
+    """
+    # Use the internal implementation directly without creating telemetry spans
+    reranked_docs, _ = _rerank_documents_internal(documents, query, max_docs)
+    return reranked_docs
