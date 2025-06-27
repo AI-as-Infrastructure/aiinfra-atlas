@@ -77,7 +77,7 @@ def verify_corpus_distribution(distribution: Dict[str, int], corpus_filter: Opti
         result = filter_docs == total_docs
         span.set_attribute("filter_verified", result)
         if not result:
-            logger.warning(f"Corpus filter verification failed: Expected all documents to be '{corpus_filter}', but got distribution: {distribution}")
+            logger.warning("Corpus filter verification failed")
             
         return result
 

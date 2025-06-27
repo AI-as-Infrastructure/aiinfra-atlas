@@ -353,8 +353,6 @@ def enhance_document_relevance(
                 for i, doc in enumerate(reranked_docs[:3]):
                     span.set_attribute(f"document_{i}_preview", doc.page_content[:200])
             
-            # Log completion
-            logger.info(f"Document reranking complete: {summary}")
             
             return reranked_docs
             
@@ -554,8 +552,6 @@ def configure_reranker(config: Dict[str, Any]) -> Dict[str, Any]:
         weights_sum = WEIGHT_EXACT_MATCH + WEIGHT_KEYWORD_FREQ + WEIGHT_PROXIMITY
         if abs(weights_sum - 1.0) > 0.01:
             logger.warning(f"Reranker weights sum to {weights_sum}, not 1.0. This may produce unexpected results.")
-            
-        logger.info(f"Reranker configuration updated: {config}")
     
     # Return the updated configuration
     updated_config = {
