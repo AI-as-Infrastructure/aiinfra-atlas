@@ -507,13 +507,19 @@ async def ask_stream(data: dict = Body(...)):
                     logger.warning(f"Detected sensitive contexts for session {session_id}: {sensitive_contexts}")
                     # In the future, this could trigger special handling, warnings, or filtering
                 
-                # Retrieve documents using our utility
+                # Step 1: HNSW retrieval with per-corpus balanced reranking
+                # document_retrieval.py now handles per-corpus vs single-corpus logic internally
+                # and performs balanced reranking within each corpus
+                from backend.modules.config import get_search_k
+                final_k = get_search_k()  # Get configured SEARCH_K (e.g., 30)
+                
                 documents, qa_id = retrieve_documents_with_telemetry(
                     query=question,
                     retriever=get_retriever(),
                     session_id=session_id,
                     qa_id=qa_id,
-                    corpus_filter=corpus_filter
+                    corpus_filter=corpus_filter,
+                    k=final_k  # Use final desired document count (30 docs balanced across corpora)
                 )
                 
                 # If no documents were retrieved, return an error
@@ -525,21 +531,17 @@ async def ask_stream(data: dict = Body(...)):
                     yield format_sse_message(error_msg, event="error")
                     return
                 
-                # Record document count in parent span
+                logger.info(f"📄 Retrieved {len(documents)} balanced documents (per-corpus reranked)")
+                
+                # Debug: Show sample content from first few reranked docs
+                for i, doc in enumerate(documents[:3]):
+                    content_preview = doc.page_content[:200] if hasattr(doc, 'page_content') else str(doc)[:200]
+                    metadata = getattr(doc, 'metadata', {})
+                    corpus = metadata.get('corpus', 'unknown')
+                    logger.info(f"🥇 Reranked doc {i+1} ({corpus}): {content_preview}...")
+                
+                # Record final document count in parent span
                 parent_span.set_attribute(SpanAttributes.DOCUMENT_COUNT, len(documents))
-                
-                # Apply corpus filter if needed
-                if corpus_filter and corpus_filter.lower() != "all":
-                    from backend.modules.corpus_filtering import filter_documents_with_telemetry
-                    documents = filter_documents_with_telemetry(
-                        documents=documents,
-                        corpus_filter=corpus_filter,
-                        session_id=session_id,
-                        qa_id=qa_id
-                    )
-                
-                # Note: Document reranking is now handled directly in the HansardRetriever
-                # No need for redundant reranking here
                 
                 # Generate and stream the response
                 response_generator, qa_id = generate_response_with_telemetry(

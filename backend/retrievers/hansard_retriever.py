@@ -90,6 +90,9 @@ class HansardRetriever(BaseRetriever):
     # LangChain-compatible async implementation
     async def _get_relevant_documents(self, query: str, config: Optional[Dict] = None, **kwargs) -> List[Document]:
         """Internal implementation method called by invoke/ainvoke"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
         k = kwargs.get("k", 10)
         corpus_filter = None
         
@@ -97,18 +100,128 @@ class HansardRetriever(BaseRetriever):
         if config and isinstance(config, dict):
             corpus_filter = config.get("corpus_filter")
         
-        filter_dict = None
-        if corpus_filter and corpus_filter != "all":
-            filter_dict = {"corpus": corpus_filter}
+        logger.info(f"🔧 HansardRetriever._get_relevant_documents called with k={k}, corpus_filter={corpus_filter}")
         
-        # Use standard similarity search
-        return self.vector_store.similarity_search(query=query, k=k, filter=filter_dict)
+        # Handle corpus-specific retrieval logic
+        result = self._handle_corpus_retrieval(query, corpus_filter, k)
+        logger.info(f"🔧 HansardRetriever._get_relevant_documents returning {len(result)} documents")
+        return result
+    
+    def _handle_corpus_retrieval(self, query: str, corpus_filter: Optional[str], k: int) -> List[Document]:
+        """Handle all corpus-specific retrieval logic internally"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        if corpus_filter and corpus_filter.lower() != "all":
+            # Single corpus: retrieve large set then rerank for best quality
+            return self._single_corpus_retrieval(query, corpus_filter, k, logger)
+        else:
+            # All corpora: per-corpus balanced retrieval
+            return self._multi_corpus_balanced_retrieval(query, k, logger)
+    
+    def _single_corpus_retrieval(self, query: str, corpus_filter: str, final_k: int, logger) -> List[Document]:
+        """Retrieve from single corpus with reranking"""
+        # Get large set for reranking
+        large_k = 500  # Could be configurable
+        filter_dict = {"corpus": corpus_filter}
+        
+        logger.info(f"🔍 Single corpus retrieval: {large_k} docs → rerank to {final_k} (corpus: {corpus_filter})")
+        logger.info(f"🔧 Using filter_dict: {filter_dict}")
+        
+        # Step 1: Get large set from vector store
+        large_documents = self.vector_store.similarity_search(query=query, k=large_k, filter=filter_dict)
+        logger.info(f"📄 Retrieved {len(large_documents)} documents from corpus: {corpus_filter}")
+        
+        # Debug: Check what corpora were actually returned
+        if large_documents:
+            returned_corpora = set()
+            for doc in large_documents[:5]:  # Check first 5 docs
+                doc_corpus = doc.metadata.get('corpus', 'unknown')
+                returned_corpora.add(doc_corpus)
+            logger.info(f"🔍 Actual corpora in results: {list(returned_corpora)}")
+        
+        # Step 2: Rerank to get best documents  
+        reranked_documents = self._rerank_documents(query, large_documents, final_k)
+        logger.info(f"🔀 Reranked to {len(reranked_documents)} documents from corpus: {corpus_filter}")
+        
+        return reranked_documents
+    
+    def _multi_corpus_balanced_retrieval(self, query: str, final_k: int, logger) -> List[Document]:
+        """Retrieve balanced documents from all corpora"""
+        # Get available corpora (excluding 'all')
+        all_corpora = [option["value"] for option in CORPUS_OPTIONS if option["value"] != "all"]
+        
+        if not all_corpora:
+            # Fallback: standard retrieval without filtering
+            logger.debug(f"No corpora available, using standard retrieval (k={final_k})")
+            return self.vector_store.similarity_search(query=query, k=final_k, filter=None)
+        
+        # Calculate balanced distribution
+        per_corpus_k = 200  # Large retrieval size per corpus (could be configurable)
+        docs_per_corpus = max(1, final_k // len(all_corpora))
+        remaining_docs = final_k % len(all_corpora)
+        
+        logger.debug(f"Multi-corpus balanced retrieval: {per_corpus_k} docs from each of {len(all_corpora)} corpora")
+        logger.debug(f"Balanced distribution: {docs_per_corpus} docs per corpus, +{remaining_docs} extra")
+        
+        all_documents = []
+        for i, corpus in enumerate(all_corpora):
+            # Step 1: Retrieve from this corpus
+            filter_dict = {"corpus": corpus}
+            corpus_docs = self.vector_store.similarity_search(query=query, k=per_corpus_k, filter=filter_dict)
+            logger.debug(f"Retrieved {len(corpus_docs)} documents from corpus: {corpus}")
+            
+            # Step 2: Determine final count for this corpus
+            corpus_final_k = docs_per_corpus
+            if i < remaining_docs:  # Distribute remaining docs to first few corpora
+                corpus_final_k += 1
+            
+            # Step 3: Rerank within this corpus
+            if corpus_docs:
+                reranked_corpus_docs = self._rerank_documents(query, corpus_docs, corpus_final_k)
+                all_documents.extend(reranked_corpus_docs)
+                logger.debug(f"Added {len(reranked_corpus_docs)} reranked docs from corpus: {corpus}")
+        
+        logger.debug(f"Total balanced documents: {len(all_documents)} (target: {final_k})")
+        return all_documents
+    
+    def _rerank_documents(self, query: str, documents: List[Document], max_docs: int) -> List[Document]:
+        """Rerank documents using the sophisticated reranking algorithm"""
+        try:
+            # Use the existing reranking implementation
+            from backend.modules.document_reranking import rerank_documents
+            return rerank_documents(documents, query, max_docs)
+        except ImportError:
+            # Fallback: just return the first max_docs (preserving similarity search order)
+            logging.warning("Could not import reranking module, using simple truncation")
+            return documents[:max_docs]
     
     # Public API methods required by LangChain
     def invoke(self, input: str, config: Optional[Dict] = None, **kwargs) -> List[Document]:
         """Synchronous invoke method required by LangChain."""
         import asyncio
-        return asyncio.run(self._get_relevant_documents(input, config, **kwargs))
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"🔧 HansardRetriever.invoke called with config={config}, k={kwargs.get('k')}")
+        
+        try:
+            # Try to get the current event loop
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # We're in an async context, create a task
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, self._get_relevant_documents(input, config, **kwargs))
+                    result = future.result()
+            else:
+                # No running loop, safe to use asyncio.run
+                result = asyncio.run(self._get_relevant_documents(input, config, **kwargs))
+        except RuntimeError:
+            # Fallback: run in a new event loop
+            result = asyncio.new_event_loop().run_until_complete(self._get_relevant_documents(input, config, **kwargs))
+        
+        logger.info(f"🔧 HansardRetriever.invoke returning {len(result)} documents")
+        return result
     
     async def ainvoke(self, input: str, config: Optional[Dict] = None, **kwargs) -> List[Document]:
         """Asynchronous invoke method required by LangChain."""
