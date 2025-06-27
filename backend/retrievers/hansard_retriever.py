@@ -35,6 +35,9 @@ class HansardRetriever(BaseRetriever):
         self.chunk_overlap = "100"
         self.embedding_model = "Livingwithmachines/bert_1890_1900"
         self._supports_corpus_filtering = True
+        
+        # Store reranking metrics for later retrieval
+        self.reranking_metrics = []
 
         # Location of the persisted Chroma DB
         self.persist_directory = os.getenv("CHROMA_PERSIST_DIRECTORY", "./create/txt/output/chroma_db")
@@ -68,6 +71,12 @@ class HansardRetriever(BaseRetriever):
 
     def get_corpus_options(self) -> List[Dict[str, str]]:
         return CORPUS_OPTIONS
+    
+    def get_reranking_metrics(self) -> List[Dict[str, Any]]:
+        """Get collected reranking metrics and clear the list"""
+        metrics = self.reranking_metrics.copy()
+        self.reranking_metrics.clear()  # Clear for next query
+        return metrics
 
     def similar_search(self, query: str, k: int = 10, corpus_filter: Optional[str] = None) -> List[Dict[str, Any]]:
         logger.info(f"similar_search: k={k}, corpus_filter={corpus_filter}")
@@ -90,63 +99,51 @@ class HansardRetriever(BaseRetriever):
     # LangChain-compatible async implementation
     async def _get_relevant_documents(self, query: str, config: Optional[Dict] = None, **kwargs) -> List[Document]:
         """Internal implementation method called by invoke/ainvoke"""
-        import logging
-        logger = logging.getLogger(__name__)
-        
         k = kwargs.get("k", 10)
         corpus_filter = None
+        session_id = None
+        qa_id = None
         
-        # Extract corpus filter from config if present
+        # Extract corpus filter and telemetry context from config if present
         if config and isinstance(config, dict):
             corpus_filter = config.get("corpus_filter")
-        
-        logger.info(f"🔧 HansardRetriever._get_relevant_documents called with k={k}, corpus_filter={corpus_filter}")
+            session_id = config.get("session_id")
+            qa_id = config.get("qa_id")
         
         # Handle corpus-specific retrieval logic
-        result = self._handle_corpus_retrieval(query, corpus_filter, k)
-        logger.info(f"🔧 HansardRetriever._get_relevant_documents returning {len(result)} documents")
-        return result
+        return self._handle_corpus_retrieval(query, corpus_filter, k, session_id, qa_id)
     
-    def _handle_corpus_retrieval(self, query: str, corpus_filter: Optional[str], k: int) -> List[Document]:
+    def _handle_corpus_retrieval(self, query: str, corpus_filter: Optional[str], k: int, session_id: Optional[str] = None, qa_id: Optional[str] = None) -> List[Document]:
         """Handle all corpus-specific retrieval logic internally"""
         import logging
         logger = logging.getLogger(__name__)
         
         if corpus_filter and corpus_filter.lower() != "all":
             # Single corpus: retrieve large set then rerank for best quality
-            return self._single_corpus_retrieval(query, corpus_filter, k, logger)
+            return self._single_corpus_retrieval(query, corpus_filter, k, logger, session_id, qa_id)
         else:
             # All corpora: per-corpus balanced retrieval
-            return self._multi_corpus_balanced_retrieval(query, k, logger)
+            return self._multi_corpus_balanced_retrieval(query, k, logger, session_id, qa_id)
     
-    def _single_corpus_retrieval(self, query: str, corpus_filter: str, final_k: int, logger) -> List[Document]:
+    def _single_corpus_retrieval(self, query: str, corpus_filter: str, final_k: int, logger, session_id: Optional[str] = None, qa_id: Optional[str] = None) -> List[Document]:
         """Retrieve from single corpus with reranking"""
         # Get large set for reranking
         large_k = 500  # Could be configurable
         filter_dict = {"corpus": corpus_filter}
         
-        logger.info(f"🔍 Single corpus retrieval: {large_k} docs → rerank to {final_k} (corpus: {corpus_filter})")
-        logger.info(f"🔧 Using filter_dict: {filter_dict}")
+        logger.debug(f"Single corpus retrieval: {large_k} docs → rerank to {final_k} (corpus: {corpus_filter})")
         
         # Step 1: Get large set from vector store
         large_documents = self.vector_store.similarity_search(query=query, k=large_k, filter=filter_dict)
-        logger.info(f"📄 Retrieved {len(large_documents)} documents from corpus: {corpus_filter}")
-        
-        # Debug: Check what corpora were actually returned
-        if large_documents:
-            returned_corpora = set()
-            for doc in large_documents[:5]:  # Check first 5 docs
-                doc_corpus = doc.metadata.get('corpus', 'unknown')
-                returned_corpora.add(doc_corpus)
-            logger.info(f"🔍 Actual corpora in results: {list(returned_corpora)}")
+        logger.debug(f"Retrieved {len(large_documents)} documents from corpus: {corpus_filter}")
         
         # Step 2: Rerank to get best documents  
-        reranked_documents = self._rerank_documents(query, large_documents, final_k)
-        logger.info(f"🔀 Reranked to {len(reranked_documents)} documents from corpus: {corpus_filter}")
+        reranked_documents = self._rerank_documents(query, large_documents, final_k, session_id, qa_id)
+        logger.debug(f"Reranked to {len(reranked_documents)} documents from corpus: {corpus_filter}")
         
         return reranked_documents
     
-    def _multi_corpus_balanced_retrieval(self, query: str, final_k: int, logger) -> List[Document]:
+    def _multi_corpus_balanced_retrieval(self, query: str, final_k: int, logger, session_id: Optional[str] = None, qa_id: Optional[str] = None) -> List[Document]:
         """Retrieve balanced documents from all corpora"""
         # Get available corpora (excluding 'all')
         all_corpora = [option["value"] for option in CORPUS_OPTIONS if option["value"] != "all"]
@@ -178,19 +175,62 @@ class HansardRetriever(BaseRetriever):
             
             # Step 3: Rerank within this corpus
             if corpus_docs:
-                reranked_corpus_docs = self._rerank_documents(query, corpus_docs, corpus_final_k)
+                reranked_corpus_docs = self._rerank_documents(query, corpus_docs, corpus_final_k, session_id, qa_id)
                 all_documents.extend(reranked_corpus_docs)
                 logger.debug(f"Added {len(reranked_corpus_docs)} reranked docs from corpus: {corpus}")
         
         logger.debug(f"Total balanced documents: {len(all_documents)} (target: {final_k})")
         return all_documents
     
-    def _rerank_documents(self, query: str, documents: List[Document], max_docs: int) -> List[Document]:
-        """Rerank documents using the sophisticated reranking algorithm"""
+    def _rerank_documents(self, query: str, documents: List[Document], max_docs: int, session_id: Optional[str] = None, qa_id: Optional[str] = None) -> List[Document]:
+        """Rerank documents and add metrics to current span context"""
         try:
-            # Use the existing reranking implementation
-            from backend.modules.document_reranking import rerank_documents
-            return rerank_documents(documents, query, max_docs)
+            # Add reranking metrics to the current span context instead of creating a new span
+            from backend.modules.document_reranking import _rerank_documents_internal
+            from opentelemetry import trace
+            import time
+            import logging
+            
+            logger = logging.getLogger(__name__)
+            start_time = time.time()
+            
+            # Perform reranking
+            reranked_docs, scores = _rerank_documents_internal(documents, query, max_docs)
+            
+            # Calculate processing time
+            processing_time = time.time() - start_time
+            
+            # Store reranking metrics for later collection by the retrieval span
+            rerank_metric = {
+                "input_count": len(documents),
+                "output_count": len(reranked_docs),
+                "processing_time_seconds": processing_time,
+                "max_docs": max_docs,
+            }
+            
+            if scores:
+                rerank_metric.update({
+                    "score_min": min(scores),
+                    "score_max": max(scores),
+                    "score_avg": sum(scores) / len(scores),
+                    "score_range": f"{min(scores):.2f}-{max(scores):.2f}"
+                })
+            
+            # Add to metrics list
+            self.reranking_metrics.append(rerank_metric)
+            logger.debug(f"Stored reranking metrics: {len(documents)}→{len(reranked_docs)} docs")
+            
+            # Log reranking metrics for debugging
+            if scores:
+                logger.debug(f"Reranking: {len(documents)}→{len(reranked_docs)} docs, "
+                           f"scores {min(scores):.2f}-{max(scores):.2f}, "
+                           f"time {processing_time:.3f}s")
+            else:
+                logger.debug(f"Reranking: {len(documents)}→{len(reranked_docs)} docs, "
+                           f"time {processing_time:.3f}s")
+            
+            return reranked_docs
+                
         except ImportError:
             # Fallback: just return the first max_docs (preserving similarity search order)
             logging.warning("Could not import reranking module, using simple truncation")
@@ -200,9 +240,6 @@ class HansardRetriever(BaseRetriever):
     def invoke(self, input: str, config: Optional[Dict] = None, **kwargs) -> List[Document]:
         """Synchronous invoke method required by LangChain."""
         import asyncio
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.info(f"🔧 HansardRetriever.invoke called with config={config}, k={kwargs.get('k')}")
         
         try:
             # Try to get the current event loop
@@ -220,7 +257,6 @@ class HansardRetriever(BaseRetriever):
             # Fallback: run in a new event loop
             result = asyncio.new_event_loop().run_until_complete(self._get_relevant_documents(input, config, **kwargs))
         
-        logger.info(f"🔧 HansardRetriever.invoke returning {len(result)} documents")
         return result
     
     async def ainvoke(self, input: str, config: Optional[Dict] = None, **kwargs) -> List[Document]:

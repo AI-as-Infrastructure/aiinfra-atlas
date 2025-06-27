@@ -109,18 +109,11 @@ def retrieve_documents(
         
         try:
             # Corpus-agnostic document retrieval - let the retriever handle all corpus logic
-            logger.info(f"🔍 Document retrieval: corpus_filter='{corpus_filter}', k={k}")
-            
-            # Debug: Check what retriever we're actually using
-            logger.info(f"🔧 Retriever type: {type(retriever)}")
-            logger.info(f"🔧 Retriever class: {retriever.__class__.__name__}")
-            logger.info(f"🔧 Has _handle_corpus_retrieval: {hasattr(retriever, '_handle_corpus_retrieval')}")
+            logger.debug(f"Document retrieval: corpus_filter='{corpus_filter}', k={k}")
             
             # Simple call to retriever - it handles all corpus-specific logic internally
-            config = {"corpus_filter": corpus_filter} if corpus_filter else None
-            logger.info(f"🔧 Calling retriever.invoke with config={config}, k={k}")
+            config = {"corpus_filter": corpus_filter, "session_id": session_id, "qa_id": qa_id} if corpus_filter or session_id or qa_id else None
             documents = retriever.invoke(query, config=config, k=k)
-            logger.info(f"🔧 Retriever.invoke returned {len(documents)} documents")
             
             logger.info(f"📄 Retrieved {len(documents)} documents from retriever")
             return documents
@@ -168,12 +161,7 @@ def retrieve_documents(
             start_time = datetime.now()
             
             # Corpus-agnostic document retrieval - let the retriever handle all corpus logic
-            logger.info(f"🔍 TELEMETRY: Document retrieval: corpus_filter='{corpus_filter}', k={k}")
-            
-            # Debug: Check what retriever we're actually using
-            logger.info(f"🔧 Retriever type: {type(retriever)}")
-            logger.info(f"🔧 Retriever class: {retriever.__class__.__name__}")
-            logger.info(f"🔧 Has _handle_corpus_retrieval: {hasattr(retriever, '_handle_corpus_retrieval')}")
+            logger.debug(f"Document retrieval: corpus_filter='{corpus_filter}', k={k}")
             
             # Set basic telemetry attributes
             retrieval_span.set_attribute("actual_k", k)
@@ -181,12 +169,38 @@ def retrieve_documents(
             retrieval_span.set_attribute("retrieval_mode", "delegated_to_retriever")
             
             # Simple call to retriever - it handles all corpus-specific logic internally
-            config = {"corpus_filter": corpus_filter} if corpus_filter else None
-            logger.info(f"🔧 Calling retriever.invoke with config={config}, k={k}")
+            config = {"corpus_filter": corpus_filter, "session_id": session_id, "qa_id": qa_id} if corpus_filter or session_id or qa_id else None
             documents = retriever.invoke(query, config=config, k=k)
-            logger.info(f"🔧 Retriever.invoke returned {len(documents)} documents")
             
             logger.debug(f"Retrieved {len(documents)} documents from retriever")
+            
+            # Collect reranking metrics from the retriever (if available)
+            try:
+                if hasattr(retriever, 'get_reranking_metrics'):
+                    reranking_metrics = retriever.get_reranking_metrics()
+                    if reranking_metrics:
+                        # Add aggregated reranking metrics to the span
+                        total_input = sum(m["input_count"] for m in reranking_metrics)
+                        total_output = sum(m["output_count"] for m in reranking_metrics)
+                        total_time = sum(m["processing_time_seconds"] for m in reranking_metrics)
+                        
+                        retrieval_span.set_attribute("reranking_operations", len(reranking_metrics))
+                        retrieval_span.set_attribute("reranking_total_input", total_input)
+                        retrieval_span.set_attribute("reranking_total_output", total_output)
+                        retrieval_span.set_attribute("reranking_total_time_seconds", total_time)
+                        
+                        # Add individual corpus reranking details
+                        for i, metric in enumerate(reranking_metrics):
+                            prefix = f"reranking_{i+1}"
+                            retrieval_span.set_attribute(f"{prefix}_input", metric["input_count"])
+                            retrieval_span.set_attribute(f"{prefix}_output", metric["output_count"])
+                            retrieval_span.set_attribute(f"{prefix}_time", metric["processing_time_seconds"])
+                            if "score_range" in metric:
+                                retrieval_span.set_attribute(f"{prefix}_scores", metric["score_range"])
+                        
+                        logger.debug(f"Added reranking metrics to span: {len(reranking_metrics)} operations, {total_input}→{total_output} docs")
+            except Exception as e:
+                logger.debug(f"Could not collect reranking metrics: {e}")
             
             # Calculate processing time if start_time was recorded
             processing_time = None
