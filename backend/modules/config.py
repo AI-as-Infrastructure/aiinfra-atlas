@@ -282,7 +282,7 @@ def _initialize_retriever(config: Dict[str, Any]) -> None:
     try:
         logger.debug("Initializing retriever with configuration")
         _retriever_instance = HansardRetriever(config.get("retriever_config", {}))
-        _retriever = _retriever_instance.get_retriever()
+        _retriever = _retriever_instance  # Use HansardRetriever directly, not the LangChain wrapper
         logger.debug("Retriever initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize retriever: {e}")

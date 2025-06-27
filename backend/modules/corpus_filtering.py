@@ -140,10 +140,31 @@ def filter_documents_with_telemetry(
         kind=OpenInferenceSpanKind.PROCESSOR,
         otel_kind=SpanKind.INTERNAL
     ) as span:
-        # Fix: Don't pass span as a positional argument
+        # Apply filtering logic
         filtered_docs = apply_corpus_filter(documents, corpus_filter)
         
-        # Document counts
+        # Create output summary for Phoenix UI
+        if corpus_filter and corpus_filter.lower() != "all":
+            if len(filtered_docs) != len(documents):
+                output_summary = f"Applied '{corpus_filter}' filter: {len(documents)} → {len(filtered_docs)} documents"
+            else:
+                output_summary = f"Applied '{corpus_filter}' filter: {len(documents)} documents (no filtering needed)"
+        else:
+            output_summary = f"No corpus filter applied: {len(documents)} documents passed through"
+        
+        # Set telemetry attributes for Phoenix UI display
+        span.set_attribute("documents.input_count", len(documents))
+        span.set_attribute("documents.output_count", len(filtered_docs))
+        span.set_attribute("documents.filtered_count", len(documents) - len(filtered_docs))
+        span.set_attribute("filtering.applied", corpus_filter and corpus_filter.lower() != "all")
+        span.set_attribute("corpus_filter", corpus_filter or "all")
+        
+        # Set Phoenix UI display attributes
+        span.set_attribute("output", output_summary)
+        span.set_attribute("output.value", output_summary[:500])
+        span.set_attribute("summary", output_summary)
+        
+        # Legacy attribute for compatibility
         span.set_attribute(SpanAttributes.DOCUMENT_COUNT, len(filtered_docs))
         
         return filtered_docs 

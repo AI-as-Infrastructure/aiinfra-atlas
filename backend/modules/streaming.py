@@ -53,7 +53,7 @@ def create_error_message(error_type: str, detail: str, error_class: str = None) 
         "type": error_type,
         "detail": detail,
         "error_class": error_class,
-        "timestamp": datetime.datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat()
     }
 
 def create_complete_message(
