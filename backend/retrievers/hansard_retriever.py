@@ -79,7 +79,6 @@ class HansardRetriever(BaseRetriever):
         return metrics
 
     def similar_search(self, query: str, k: int = 10, corpus_filter: Optional[str] = None) -> List[Dict[str, Any]]:
-        logger.info(f"similar_search: k={k}, corpus_filter={corpus_filter}")
         filter_dict = None
         if corpus_filter and corpus_filter != "all":
             filter_dict = {"corpus": corpus_filter}
@@ -131,15 +130,11 @@ class HansardRetriever(BaseRetriever):
         large_k = 500  # Could be configurable
         filter_dict = {"corpus": corpus_filter}
         
-        logger.debug(f"Single corpus retrieval: {large_k} docs → rerank to {final_k} (corpus: {corpus_filter})")
-        
         # Step 1: Get large set from vector store
         large_documents = self.vector_store.similarity_search(query=query, k=large_k, filter=filter_dict)
-        logger.debug(f"Retrieved {len(large_documents)} documents from corpus: {corpus_filter}")
         
         # Step 2: Rerank to get best documents  
         reranked_documents = self._rerank_documents(query, large_documents, final_k, session_id, qa_id)
-        logger.debug(f"Reranked to {len(reranked_documents)} documents from corpus: {corpus_filter}")
         
         return reranked_documents
     
@@ -150,7 +145,6 @@ class HansardRetriever(BaseRetriever):
         
         if not all_corpora:
             # Fallback: standard retrieval without filtering
-            logger.debug(f"No corpora available, using standard retrieval (k={final_k})")
             return self.vector_store.similarity_search(query=query, k=final_k, filter=None)
         
         # Calculate balanced distribution
@@ -158,15 +152,11 @@ class HansardRetriever(BaseRetriever):
         docs_per_corpus = max(1, final_k // len(all_corpora))
         remaining_docs = final_k % len(all_corpora)
         
-        logger.debug(f"Multi-corpus balanced retrieval: {per_corpus_k} docs from each of {len(all_corpora)} corpora")
-        logger.debug(f"Balanced distribution: {docs_per_corpus} docs per corpus, +{remaining_docs} extra")
-        
         all_documents = []
         for i, corpus in enumerate(all_corpora):
             # Step 1: Retrieve from this corpus
             filter_dict = {"corpus": corpus}
             corpus_docs = self.vector_store.similarity_search(query=query, k=per_corpus_k, filter=filter_dict)
-            logger.debug(f"Retrieved {len(corpus_docs)} documents from corpus: {corpus}")
             
             # Step 2: Determine final count for this corpus
             corpus_final_k = docs_per_corpus
@@ -177,9 +167,6 @@ class HansardRetriever(BaseRetriever):
             if corpus_docs:
                 reranked_corpus_docs = self._rerank_documents(query, corpus_docs, corpus_final_k, session_id, qa_id)
                 all_documents.extend(reranked_corpus_docs)
-                logger.debug(f"Added {len(reranked_corpus_docs)} reranked docs from corpus: {corpus}")
-        
-        logger.debug(f"Total balanced documents: {len(all_documents)} (target: {final_k})")
         return all_documents
     
     def _rerank_documents(self, query: str, documents: List[Document], max_docs: int, session_id: Optional[str] = None, qa_id: Optional[str] = None) -> List[Document]:
@@ -218,16 +205,6 @@ class HansardRetriever(BaseRetriever):
             
             # Add to metrics list
             self.reranking_metrics.append(rerank_metric)
-            logger.debug(f"Stored reranking metrics: {len(documents)}→{len(reranked_docs)} docs")
-            
-            # Log reranking metrics for debugging
-            if scores:
-                logger.debug(f"Reranking: {len(documents)}→{len(reranked_docs)} docs, "
-                           f"scores {min(scores):.2f}-{max(scores):.2f}, "
-                           f"time {processing_time:.3f}s")
-            else:
-                logger.debug(f"Reranking: {len(documents)}→{len(reranked_docs)} docs, "
-                           f"time {processing_time:.3f}s")
             
             return reranked_docs
                 

@@ -109,13 +109,8 @@ def retrieve_documents(
         
         try:
             # Corpus-agnostic document retrieval - let the retriever handle all corpus logic
-            logger.debug(f"Document retrieval: corpus_filter='{corpus_filter}', k={k}")
-            
-            # Simple call to retriever - it handles all corpus-specific logic internally
             config = {"corpus_filter": corpus_filter, "session_id": session_id, "qa_id": qa_id} if corpus_filter or session_id or qa_id else None
             documents = retriever.invoke(query, config=config, k=k)
-            
-            logger.info(f"📄 Retrieved {len(documents)} documents from retriever")
             return documents
             
         except Exception as e:
@@ -161,7 +156,6 @@ def retrieve_documents(
             start_time = datetime.now()
             
             # Corpus-agnostic document retrieval - let the retriever handle all corpus logic
-            logger.debug(f"Document retrieval: corpus_filter='{corpus_filter}', k={k}")
             
             # Set basic telemetry attributes
             retrieval_span.set_attribute("actual_k", k)
@@ -171,8 +165,6 @@ def retrieve_documents(
             # Simple call to retriever - it handles all corpus-specific logic internally
             config = {"corpus_filter": corpus_filter, "session_id": session_id, "qa_id": qa_id} if corpus_filter or session_id or qa_id else None
             documents = retriever.invoke(query, config=config, k=k)
-            
-            logger.debug(f"Retrieved {len(documents)} documents from retriever")
             
             # Collect reranking metrics from the retriever (if available)
             try:
@@ -198,9 +190,8 @@ def retrieve_documents(
                             if "score_range" in metric:
                                 retrieval_span.set_attribute(f"{prefix}_scores", metric["score_range"])
                         
-                        logger.debug(f"Added reranking metrics to span: {len(reranking_metrics)} operations, {total_input}→{total_output} docs")
             except Exception as e:
-                logger.debug(f"Could not collect reranking metrics: {e}")
+                pass  # Silently continue if reranking metrics collection fails
             
             # Calculate processing time if start_time was recorded
             processing_time = None
