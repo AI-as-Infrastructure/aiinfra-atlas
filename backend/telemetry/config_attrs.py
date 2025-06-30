@@ -28,36 +28,72 @@ def get_test_target_attributes() -> Dict[str, Any]:
         # Import the base target for unified config
         from backend.targets.base_target import TargetConfig
         target_config = TargetConfig()
-        config = target_config.get_full_config()
+        # Use exportable config to match exactly what's shown in the UI test target box
+        config = target_config.get_exportable_config()
         
-        # Add all the required UI attributes with exact keys expected by Phoenix
-        result["test_target.id"] = config.get("target_id", "")
-        result["embedding_model"] = config.get("embedding_model", "")
-        result["search_type"] = config.get("search_type", "")
-        result["search_k"] = config.get("search_k", 0)
-        result["search_score_threshold"] = config.get("search_score_threshold", 0)
-        result["pooling"] = config.get("pooling", "mean")
-        result["large_retrieval_size"] = config.get("large_retrieval_size", 0)
-        result["algorithm"] = config.get("algorithm", "")
-        result["chunk_size"] = config.get("chunk_size", "")
-        result["chunk_overlap"] = config.get("chunk_overlap", "")
+        # === TOP-LEVEL METADATA FOR PHOENIX QUERYABILITY ===
+        # These are the primary fields for data analysis and filtering
+        
+        # Atlas Version - prominently displayed for version analysis
+        atlas_version = config.get("ATLAS_VERSION", "1.0.0")
+        result["atlas_version"] = atlas_version
+        result["ATLAS_VERSION"] = atlas_version  # Also add the original key name
+        
+        # Composite Target - the full identifier combining config profile + vector database
+        composite_target = config.get("composite_target", f"{test_target}_unknown")
+        result["composite_target"] = composite_target
+        
+        # Break down composite target into its two queryable components:
+        # Component 1: Test Target (configuration profile like k15_openai4o)
+        result["atlas_target_profile"] = test_target
+        result["test_target_profile"] = test_target  # Alternative naming
+        
+        # Component 2: Vector Database (like blert_1000)
+        vector_db = config.get("chroma_collection", config.get("vector_database", "unknown"))
+        result["atlas_vector_database"] = vector_db
+        
+        # === DIRECT UI CONFIG MAPPING ===
+        # Map all exportable fields exactly as they appear in the UI
+        
+        # Core identification
+        result["target_id"] = config.get("target_id", test_target)
+        result["target_version"] = config.get("target_version", "1.0")
+        
+        # LLM Configuration
         result["llm_provider"] = config.get("llm_provider", "")
         result["llm_model"] = config.get("llm_model", "")
-        result["composite_target"] = config.get("composite_target", "")
-        result["atlas_version"] = config.get("ATLAS_VERSION", "0.1.0")
         
-        # Add system prompt
-        if "system_prompt" in config:
-            result["system_prompt"] = config.get("system_prompt", "")[:300] + "..."  # Truncate for size
+        # Vector Store and Embedding
+        result["vector_database"] = config.get("vector_database", "")
+        result["chroma_collection"] = config.get("chroma_collection", "")
+        result["embedding_model"] = config.get("embedding_model", "")
+        result["large_retrieval_size"] = config.get("large_retrieval_size", 0)
+        result["algorithm"] = config.get("algorithm", "")
         
-        # Add environment-specific configurations
-        result["multi_corpus_vectorstore"] = os.getenv("MULTI_CORPUS_VECTORSTORE", "False")
-        result["chroma_collection_name"] = os.getenv("CHROMA_COLLECTION_NAME", "")
+        # Search Configuration
+        result["search_type"] = config.get("search_type", "")
+        result["search_k"] = config.get("search_k", 0)
+        result["search_score_threshold"] = config.get("search_score_threshold", 0.0)
         
-        # Add any other attributes present in the config
-        for key, value in config.items():
-            if isinstance(value, (str, int, float, bool)) and key not in result:
-                result[key.lower()] = value
+        # Text Processing
+        result["chunk_size"] = config.get("chunk_size", "")
+        result["chunk_overlap"] = config.get("chunk_overlap", "")
+        result["pooling"] = config.get("pooling", "mean")
+        
+        # Output Configuration
+        result["citation_limit"] = config.get("citation_limit", 10)
+        
+        # System Prompt (truncated for span size limits)
+        if "system_prompt" in config and config["system_prompt"]:
+            prompt = config["system_prompt"]
+            if len(prompt) > 300:
+                result["system_prompt"] = prompt[:297] + "..."
+            else:
+                result["system_prompt"] = prompt
+        
+        # === BACKWARD COMPATIBILITY ===
+        # Keep legacy flat naming for existing queries
+        result["test_target.id"] = config.get("target_id", test_target)
     
     except Exception as e:
         logger.warning(f"Failed to get test target attributes from TargetConfig: {e}")

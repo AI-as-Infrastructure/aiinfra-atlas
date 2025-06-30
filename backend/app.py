@@ -457,15 +457,12 @@ async def ask_stream(data: dict = Body(...)):
         # Get test target configuration for telemetry
         test_target_attrs = get_test_target_attributes()
         
-        # Create base attributes for the span with flat structure (no info. prefixes)
+        # Create base attributes for the span - avoid conflicting with OpenInference input/output fields
         pipeline_attributes = {
             SpanAttributes.SESSION_ID: session_id,
             SpanAttributes.QA_ID: qa_id,
-            # Don't use SpanAttributes.INPUT_VALUE since it has a dot notation that Phoenix consolidates into info
-            # Instead use flat attribute names without dots
-            "input": question,
-            "query": question,
-            "content": question,  # This is what Phoenix shows by default
+            # Store question in attributes using non-conflicting names
+            "user_query": question,  # Store original question in attributes (not conflicting with input.value)
             "is_streaming": True,
             "corpus_filter": corpus_filter,
             "previous_corpus_filter": previous_corpus_filter,
@@ -593,34 +590,11 @@ async def ask_stream(data: dict = Body(...)):
                 yield references_message
                 await asyncio.sleep(0)
                 
-                # Process the references to get citations for the parent span
-                try:
-                    refs_data = json.loads(references_message.split("data: ")[1])
-                    all_citations = refs_data.get("allCitations", [])
-                    
-                    # First process the citation data we need
-                    citation_summary = {
-                        "count": len(all_citations),
-                        "corpora": list(set(c.get("metadata", {}).get("corpus", "") for c in all_citations if "metadata" in c))
-                    }
-                    
-                    # Create document summary before setting attributes
-                    doc_summary = []
-                    if all_citations:
-                        for i, citation in enumerate(all_citations[:5]):
-                            first_100_chars = citation.get("content", "")[:100] + "..."
-                            doc_summary.append(f"Doc {i+1}: {first_100_chars}")
-                    
-                    # Now set the attributes all at once with flat names
-                    parent_span.set_attribute("citations_json", json.dumps(all_citations))
-                    parent_span.set_attribute("citations_summary", json.dumps(citation_summary))
-                    
-                    # Only set document summary if we have one
-                    if doc_summary:
-                        parent_span.set_attribute("document_summary", "\n\n".join(doc_summary))
-                
-                except (IndexError, json.JSONDecodeError, KeyError) as e:
-                    logger.warning(f"Could not extract citations for parent span: {e}")
+                # Set top-level span info following OpenInference conventions for proper Phoenix UI separation
+                # Info field content (using OpenInference standard attributes) - same pattern as com.atlas.rag.references
+                parent_span.set_attribute("input.value", question)
+                parent_span.set_attribute("output.value", full_response)
+                parent_span.set_attribute("openinference.span.kind", OpenInferenceSpanKind.AGENT)
 
                 # Send completion message
                 complete_message = create_complete_message(
