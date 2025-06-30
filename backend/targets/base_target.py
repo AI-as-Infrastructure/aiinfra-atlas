@@ -178,6 +178,8 @@ class TargetConfig:
         search_type = "similarity"
         
         cfg = {
+            # Atlas metadata
+            "ATLAS_VERSION": self.env['ATLAS_VERSION'],
             # Target metadata
             "target_id": self.env['TEST_TARGET'],
             "composite_target": self.composite_target,
