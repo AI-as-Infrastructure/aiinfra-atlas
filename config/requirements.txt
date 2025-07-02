@@ -63,3 +63,11 @@ tqdm==4.67.1
 
 # Used for converting Livingwithmachines/bert_1890_1900 to a compatible format
 sentence-transformers==2.6.1
+
+# ---
+# Load Testing Dependencies
+# These are needed for load testing with Locust (no auth dependencies needed)
+locust==2.20.0
+websocket-client==1.7.0
+faker==22.0.0
+pyyaml==6.0.1

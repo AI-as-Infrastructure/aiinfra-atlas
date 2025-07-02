@@ -1,0 +1,193 @@
+# Production Environment Configuration for ATLAS Load Testing
+
+# Environment Settings
+environment:
+  name: "production"
+  host: "${VITE_API_URL}"  # Uses VITE_API_URL from .env.production
+  api_version: "v1"
+
+# Authentication Configuration
+# Load tests assume VITE_USE_COGNITO_AUTH=false in .env files
+
+# Redis Configuration
+redis:
+  url: "${REDIS_URL}"
+  password: "${REDIS_PASSWORD}"
+  queue_name: "llm_request_queue"
+  ttl: 3600  # 1 hour
+
+# Load Testing Parameters
+load_test:
+  # User Distribution (percentages should sum to 100)
+  user_distribution:
+    question_users: 70      # Higher question volume in production
+    feedback_users: 15      # Realistic feedback ratio
+    mixed_users: 10         # Some mixed usage
+    websocket_users: 3      # WebSocket connections
+    async_users: 2          # Async processing users
+  
+  # Load Patterns - More conservative for production testing
+  load_patterns:
+    ramp_up:
+      start_users: 1
+      end_users: 20
+      duration: "3m"
+    
+    sustained:
+      users: 20
+      duration: "10m"
+    
+    peak:
+      users: 25
+      duration: "3m"
+    
+    ramp_down:
+      start_users: 20
+      end_users: 0
+      duration: "2m"
+  
+  # Performance Targets - Production Grade
+  performance_targets:
+    response_time_p95: 5000  # ms
+    response_time_p99: 10000 # ms
+    error_rate_max: 2.0      # percentage - stricter for production
+    throughput_min: 15       # requests per second
+    
+    # Streaming specific targets
+    streaming_first_token_max: 1500  # ms - stricter
+    streaming_total_time_max: 12000  # ms - stricter
+    
+    # WebSocket targets
+    websocket_connection_time_max: 800   # ms - stricter
+    websocket_error_rate_max: 1.0        # percentage - stricter
+    
+    # Redis/Async targets
+    async_processing_time_max: 25000     # ms - stricter
+    redis_queue_depth_max: 50            # requests - stricter
+    
+    # Evaluation thresholds for pass/fail/borderline assessment
+    # Production standards - same as staging
+    success_rate:
+      pass_threshold: 95.0        # 95%+ success rate required
+      borderline_threshold: 90.0  # 90-95% is borderline
+    
+    error_rate:
+      pass_threshold: 5.0         # <5% error rate required
+      borderline_threshold: 10.0  # 5-10% is borderline
+    
+    avg_response_time:
+      pass_threshold: 2000        # <2s average response time
+      borderline_threshold: 4000  # 2-4s is borderline
+    
+    p95_response_time:
+      pass_threshold: 5000        # <5s P95 response time
+      borderline_threshold: 8000  # 5-8s is borderline
+    
+    first_token_time:
+      pass_threshold: 4000        # <4s to first token (user expectation)
+      borderline_threshold: 5000  # 4-5s is borderline
+    
+    requests_per_second:
+      pass_threshold: 10.0        # >10 RPS required for production load
+      borderline_threshold: 5.0   # 5-10 RPS is borderline
+
+# Test Data Configuration
+test_data:
+  corpus_filters:
+    - corpus: "hansard"
+      date_range:
+        start: "1900"
+        end: "2000"
+    - corpus: "hansard"
+      date_range:
+        start: "2000"
+        end: "2020"
+    - corpus: "all"
+  
+  question_types:
+    - "parliamentary_debates"
+    - "government_policy"
+    - "historical_events"
+    - "legislation"
+  
+  feedback_distribution:
+    thumbs_up: 75     # Slightly more positive in production
+    thumbs_down: 25
+    with_comment: 20  # percentage of feedback with comments
+
+# Monitoring and Reporting
+monitoring:
+  metrics_export_interval: 15  # seconds - more frequent for production
+  detailed_logging: true
+  export_format: "json"
+  
+  # Custom metrics collection
+  custom_metrics:
+    - "streaming_performance"
+    - "redis_queue_stats"
+    - "websocket_stability"
+    - "user_journey_completion"
+    - "error_categorization"
+
+# Infrastructure Assumptions - Production Scale
+infrastructure:
+  backend_workers: 8          # More workers in production
+  redis_instances: 2          # Redundant Redis
+  load_balancer: "nginx"
+  ssl_enabled: true
+  cdn_enabled: true
+  
+  # Expected bottlenecks
+  expected_bottlenecks:
+    - "llm_inference"
+    - "vector_search"
+    - "database_connections"
+
+# Safety Limits - More conservative for production
+safety:
+  max_concurrent_users: 50    # Lower limit for production testing
+  max_test_duration: "30m"    # Shorter duration for production
+  circuit_breaker:
+    error_threshold: 15.0     # percentage - more sensitive
+    timeout_threshold: 8000   # ms - more sensitive
+  
+  # Rate limiting
+  rate_limits:
+    requests_per_user_per_minute: 25
+    concurrent_connections_per_user: 3
+
+# Environment Variables (reference - loaded from .env.production)
+env_vars:
+  VITE_API_URL: "${VITE_API_URL}"
+  VITE_USE_COGNITO_AUTH: "${VITE_USE_COGNITO_AUTH}"
+  REDIS_URL: "${REDIS_URL}"
+  REDIS_PASSWORD: "${REDIS_PASSWORD}"
+  BACKEND_LOG_LEVEL: "${BACKEND_LOG_LEVEL}"
+  CORS_ORIGINS: "${CORS_ORIGINS}"
+
+# Test Scenarios - Production Focused
+scenarios:
+  production_validation:
+    description: "Conservative production validation test"
+    duration: "15m"
+    users: 20
+    user_types: ["question_users", "feedback_users", "mixed_users"]
+  
+  streaming_performance:
+    description: "Validate streaming endpoint performance"
+    duration: "10m"
+    users: 15
+    user_types: ["question_users"]
+    streaming_ratio: 0.9
+  
+  user_journey:
+    description: "End-to-end user journey validation"
+    duration: "12m"
+    users: 12
+    user_types: ["mixed_users", "question_users"]
+  
+  minimal_load:
+    description: "Minimal load test for production health check"
+    duration: "5m"
+    users: 5
+    user_types: ["question_users", "feedback_users"]
