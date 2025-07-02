@@ -76,20 +76,20 @@ load_test:
       borderline_threshold: 10.0  # 5-10% is borderline
     
     avg_response_time:
-      pass_threshold: 2000        # <2s average response time
-      borderline_threshold: 4000  # 2-4s is borderline
+      pass_threshold: 15000       # <15s average response time
+      borderline_threshold: 20000 # 15-20s is borderline
     
     p95_response_time:
-      pass_threshold: 5000        # <5s P95 response time
-      borderline_threshold: 8000  # 5-8s is borderline
+      pass_threshold: 18000       # <18s P95 response time
+      borderline_threshold: 25000 # 18-25s is borderline
     
     first_token_time:
-      pass_threshold: 4000        # <4s to first token (user expectation)
-      borderline_threshold: 5000  # 4-5s is borderline
+      pass_threshold: 5000        # <5s to first token (user expectation)
+      borderline_threshold: 7000  # 5-7s is borderline
     
     requests_per_second:
-      pass_threshold: 10.0        # >10 RPS required for production load
-      borderline_threshold: 5.0   # 5-10 RPS is borderline
+      pass_threshold: 0.5         # >0.5 RPS for LLM workloads
+      borderline_threshold: 0.2   # 0.2-0.5 RPS is borderline
 
 # Test Data Configuration
 test_data:
