@@ -86,7 +86,7 @@ class DataGenerator:
         return random.choice(self.corpus_filters)
     
     def generate_feedback_data(self, qa_id: str, session_id: str, question: str = None, answer: str = None) -> Dict[str, Any]:
-        """Generate feedback submission data matching UI format exactly"""
+        """Generate feedback submission data matching actual UI format exactly"""
         
         # Generate realistic LLM response if not provided
         if not answer:
@@ -95,58 +95,25 @@ class DataGenerator:
         if not question:
             question = self.generate_question()
         
-        # Generate structured feedback matching UI format
+        # Match the EXACT UI feedback format from actual payload you provided
         data = {
             "session_id": session_id,
             "qa_id": qa_id,
             "trace_id": self.generate_qa_id(),
             "relevance": random.randint(1, 5),
-            "factual_accuracy": random.choice(["true", "false", "partial"]),
+            "factual_accuracy": random.choice(["true", "false", "mixed"]),  # UI uses "mixed" not just true/false
             "source_quality": random.randint(1, 5),
             "clarity": random.randint(1, 5),
             "question_rating": random.randint(1, 5),
-            "user_category": random.choice(["General User", "Researcher", "Academic", "Student", "Journalist"]),
-            "tags": random.sample(["hallucination", "anachronism", "off-topic", "biased", "well-sourced", "comprehensive", "accurate"], k=random.randint(1, 3)),
+            "user_category": random.choice(["General User", "Hansard Expert", "Digital HASS Researcher", "GLAM Practitioner"]),
+            "tags": random.sample(["hallucination", "anachronism", "biased", "off-topic", "well-sourced"], k=random.randint(0, 3)),  # Can be empty
             "feedback_text": random.choice(self.feedback_comments),
-            "model_answer": answer,
-            "test_target": {
-                "api_url": "https://staging.atlas.parliament.uk",
-                "corpus_type": "hansard",
-                "date_range": {"start": "1900", "end": "2024"},
-                "provider": "ANTHROPIC",
-                "model": "claude-3-sonnet",
-                "temperature": 0.1,
-                "max_tokens": 4000,
-                "stream": True,
-                "system_prompt": "You are a helpful AI assistant that provides information about UK Parliamentary proceedings.",
-                "embedding_model": "text-embedding-3-large",
-                "vector_db": "chroma",
-                "reranker": "cross-encoder",
-                "chunk_size": 1000,
-                "overlap": 200,
-                "top_k": 10,
-                "score_threshold": 0.7
-            },
+            "model_answer": answer or "",
+            "test_target": {},  # UI often sends empty object
             "question": question,
             "answer": answer,
-            "citations": [
-                {
-                    "id": f"doc_{random.randint(1000, 9999)}",
-                    "title": f"Parliamentary Debate {random.randint(1900, 2024)}",
-                    "url": f"https://hansard.parliament.uk/debates/{random.randint(1000, 9999)}",
-                    "date": fake.date_between(start_date='-50y', end_date='today').isoformat(),
-                    "relevance_score": round(random.uniform(0.7, 0.95), 3),
-                    "excerpt": f"During the debate on {random.choice(['education', 'healthcare', 'economy'])}, the Minister stated that comprehensive reforms were necessary..."
-                },
-                {
-                    "id": f"doc_{random.randint(1000, 9999)}",
-                    "title": f"Committee Report {random.randint(1900, 2024)}",
-                    "url": f"https://committees.parliament.uk/reports/{random.randint(100, 999)}",
-                    "date": fake.date_between(start_date='-30y', end_date='today').isoformat(),
-                    "relevance_score": round(random.uniform(0.6, 0.9), 3),
-                    "excerpt": f"The committee found that {random.choice(['implementation', 'oversight', 'funding'])} required additional attention..."
-                }
-            ]
+            "citations": [],
+            "timestamp": fake.iso8601()
         }
         
         return data

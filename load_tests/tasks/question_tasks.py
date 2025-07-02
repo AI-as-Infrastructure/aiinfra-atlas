@@ -31,27 +31,6 @@ class QuestionSubmissionUser(HttpUser):
             print(f"Failed to connect to API: {e}")
             raise StopUser()
             
-        # Test CORS preflight for ask endpoint
-        try:
-            base_host = os.getenv('VITE_API_URL', self.environment.host)
-            cors_headers = {
-                "Origin": base_host,
-                "Access-Control-Request-Method": "POST",
-                "Access-Control-Request-Headers": "content-type"
-            }
-            
-            response = self.client.options("/api/ask", headers=cors_headers)
-            print(f"🔍 DEBUG - CORS preflight status: {response.status_code}")
-            print(f"🔍 DEBUG - CORS response headers: {dict(response.headers)}")
-            
-            # Check if CORS is properly configured
-            cors_origin = response.headers.get('Access-Control-Allow-Origin')
-            cors_methods = response.headers.get('Access-Control-Allow-Methods')
-            print(f"🔍 DEBUG - CORS Allow-Origin: {cors_origin}")
-            print(f"🔍 DEBUG - CORS Allow-Methods: {cors_methods}")
-            
-        except Exception as e:
-            print(f"CORS preflight test failed: {e}")
     
     @task(80)
     def ask_streaming_question(self):
@@ -77,10 +56,6 @@ class QuestionSubmissionUser(HttpUser):
             "Sec-Fetch-Site": "same-origin"
         }
         
-        # DEBUG: Log the request payload
-        print(f"🔍 DEBUG - Streaming request payload: {question_data}")
-        print(f"🔍 DEBUG - Headers: {headers}")
-        print(f"🔍 DEBUG - URL: /api/ask/stream")
         
         start_time = time.time()
         first_token_time = None
@@ -95,12 +70,7 @@ class QuestionSubmissionUser(HttpUser):
                 catch_response=True
             ) as response:
                 
-                # DEBUG: Log response details
-                print(f"🔍 DEBUG - Response status: {response.status_code}")
-                print(f"🔍 DEBUG - Response headers: {dict(response.headers)}")
-                
                 if response.status_code != 200:
-                    print(f"🔍 DEBUG - Error response body: {response.text[:500]}...")
                     response.failure(f"HTTP {response.status_code}")
                     metrics_collector.record_request("ask_stream", time.time() - start_time, response.status_code, f"HTTP {response.status_code}")
                     return
@@ -163,6 +133,8 @@ class QuestionSubmissionUser(HttpUser):
                 
                 response.success()
                 
+                # Skip feedback submission for now - focus on core Q&A capacity testing
+                
         except Exception as e:
             total_time = time.time() - start_time
             metrics_collector.record_request("ask_stream", total_time, 0, str(e))
@@ -173,6 +145,12 @@ class QuestionSubmissionUser(HttpUser):
                 exception=e
             )
     
+    @task(15)
+    def repeat_question_submission(self):
+        """Submit additional questions to test concurrent capacity"""
+        # Focus on core Q&A functionality - no feedback for now
+        self.ask_streaming_question()
+
     @task(3)
     def query_documents(self):
         """Search documents directly"""
@@ -252,6 +230,78 @@ class QuestionSubmissionUser(HttpUser):
                 response.failure(f"HTTP {response.status_code}")
             
             metrics_collector.record_request("diagnostics", response_time, response.status_code)
+    
+    def _submit_delayed_http_feedback(self, qa_id: str, answer: str, question: str):
+        """Submit feedback via HTTP POST after realistic user reading delay (matches actual UI behavior)"""
+        # Simulate user reading time (2-8 seconds realistic for feedback)
+        reading_time = random.uniform(2, 8)
+        time.sleep(reading_time)
+        
+        # Generate realistic feedback data
+        feedback_data = data_generator.generate_feedback_data(
+            qa_id, self.session_id, question, answer
+        )
+        
+        # Submit via HTTP POST to match actual UI behavior
+        success = self._submit_http_feedback(qa_id, feedback_data)
+        
+        if success:
+            print(f"✅ HTTP feedback submitted successfully for QA: {qa_id}")
+            metrics_collector.record_request("feedback_http", 0.5, 200)
+        else:
+            print(f"❌ HTTP feedback failed for QA: {qa_id}")
+            metrics_collector.record_request("feedback_http", 0.5, 500)
+    
+    def _submit_http_feedback(self, qa_id: str, feedback_data: dict) -> bool:
+        """Submit feedback via HTTP POST to match actual UI behavior exactly"""
+        try:
+            # Get the base host from environment
+            base_host = os.getenv('VITE_API_URL', self.environment.host)
+            
+            # Headers matching actual UI submission (from FeedbackBox.vue)
+            headers = {
+                "Content-Type": "application/json",
+                "Accept": "*/*",
+                "Accept-Language": "en-US,en;q=0.5",
+                "Accept-Encoding": "gzip, deflate, br, zstd",
+                "Origin": base_host,
+                "Referer": f"{base_host}/",
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:139.0) Gecko/20100101 Firefox/139.0",
+                "X-Trace-Id": feedback_data.get("trace_id", qa_id),  # Critical for telemetry correlation
+                "X-Session-Id": feedback_data.get("session_id", self.session_id),
+                "Cache-Control": "no-cache",
+                "Sec-Fetch-Dest": "empty",
+                "Sec-Fetch-Mode": "cors",
+                "Sec-Fetch-Site": "same-origin"
+            }
+            
+            # Submit feedback via HTTP POST (like actual UI)
+            with self.client.post(
+                "/api/feedback",
+                json=feedback_data,
+                headers=headers,
+                catch_response=True
+            ) as response:
+                
+                if response.status_code == 200:
+                    try:
+                        result = response.json()
+                        # Check for success status in response
+                        if result.get("status") == "success" or result.get("success") is True:
+                            return True
+                        else:
+                            print(f"❌ Feedback API returned error: {result}")
+                            return False
+                    except json.JSONDecodeError:
+                        print(f"❌ Invalid JSON response from feedback API")
+                        return False
+                else:
+                    print(f"❌ HTTP feedback failed: {response.status_code} - {response.text[:200]}")
+                    return False
+                    
+        except Exception as e:
+            print(f"❌ HTTP feedback error: {e}")
+            return False
     
     def on_stop(self):
         """Cleanup when user stops"""
