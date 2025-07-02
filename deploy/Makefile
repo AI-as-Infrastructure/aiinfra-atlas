@@ -78,6 +78,91 @@ usr: ## Upgrade remote staging with minimal downtime
 	@echo "Upgrading remote staging environment..."
 	@bash deploy/staging/scripts/upgrade_remote.sh
 
+# Load Testing Targets
+.PHONY: lts ltp ltq ltweb ltasync
+lts: ## Run load test against staging environment
+	@echo "🧪 Running load test against staging environment..."
+	@if [ ! -f "config/.env.staging" ]; then \
+		echo "❌ ERROR: config/.env.staging file not found!"; \
+		exit 1; \
+	fi
+	@if [ ! -d ".venv" ]; then \
+		echo "📦 Creating virtual environment..."; \
+		python3 -m venv .venv; \
+	fi
+	@if [ ! -f ".venv/bin/locust" ]; then \
+		echo "📥 Installing dependencies..."; \
+		.venv/bin/pip install -r config/requirements.txt; \
+	fi
+	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=staging ../.venv/bin/locust -f locustfile.py --host=\$$VITE_API_URL --users=30 --spawn-rate=2 --run-time=15m --headless"
+
+ltp: ## Run load test against production environment
+	@echo "🚨 Running load test against production environment..."
+	@if [ ! -f "config/.env.production" ]; then \
+		echo "❌ ERROR: config/.env.production file not found!"; \
+		exit 1; \
+	fi
+	@echo "⚠️  WARNING: Testing against production environment!"
+	@read -p "Are you sure you want to continue? (y/N): " confirm && [ "$$confirm" = "y" ] || exit 1
+	@if [ ! -d ".venv" ]; then \
+		echo "📦 Creating virtual environment..."; \
+		python3 -m venv .venv; \
+	fi
+	@if [ ! -f ".venv/bin/locust" ]; then \
+		echo "📥 Installing dependencies..."; \
+		.venv/bin/pip install -r config/requirements.txt; \
+	fi
+	@bash -c "cd load_tests && source ../config/.env.production && LOAD_TEST_CONFIG=production ../.venv/bin/locust -f locustfile.py --host=\$$VITE_API_URL --users=20 --spawn-rate=1 --run-time=10m --headless"
+
+ltq: ## Quick smoke test against staging (5 users, 3 minutes)
+	@echo "💨 Running quick smoke test against staging..."
+	@if [ ! -f "config/.env.staging" ]; then \
+		echo "❌ ERROR: config/.env.staging file not found!"; \
+		exit 1; \
+	fi
+	@if [ ! -d ".venv" ]; then \
+		echo "📦 Creating virtual environment..."; \
+		python3 -m venv .venv; \
+	fi
+	@if [ ! -f ".venv/bin/locust" ]; then \
+		echo "📥 Installing dependencies..."; \
+		.venv/bin/pip install -r config/requirements.txt; \
+	fi
+	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=staging ../.venv/bin/locust -f locustfile.py --host=\$$VITE_API_URL --users=1 --spawn-rate=1 --run-time=3m --headless"
+
+ltweb: ## Interactive load test with web UI (staging)
+	@echo "🌐 Starting interactive load test with web UI against staging..."
+	@echo "📊 Open http://localhost:8089 to control the test"
+	@if [ ! -f "config/.env.staging" ]; then \
+		echo "❌ ERROR: config/.env.staging file not found!"; \
+		exit 1; \
+	fi
+	@if [ ! -d ".venv" ]; then \
+		echo "📦 Creating virtual environment..."; \
+		python3 -m venv .venv; \
+	fi
+	@if [ ! -f ".venv/bin/locust" ]; then \
+		echo "📥 Installing dependencies..."; \
+		.venv/bin/pip install -r config/requirements.txt; \
+	fi
+	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=staging ../.venv/bin/locust -f locustfile.py --host=\$$VITE_API_URL"
+
+ltasync: ## Test async processing and Redis queue (staging)
+	@echo "🔄 Running async processing load test against staging..."
+	@if [ ! -f "config/.env.staging" ]; then \
+		echo "❌ ERROR: config/.env.staging file not found!"; \
+		exit 1; \
+	fi
+	@if [ ! -d ".venv" ]; then \
+		echo "📦 Creating virtual environment..."; \
+		python3 -m venv .venv; \
+	fi
+	@if [ ! -f ".venv/bin/locust" ]; then \
+		echo "📥 Installing dependencies..."; \
+		.venv/bin/pip install -r config/requirements.txt; \
+	fi
+	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=staging ../.venv/bin/locust -f locustfile.py --host=\$$VITE_API_URL --tags=async --users=15 --spawn-rate=1 --run-time=10m --headless"
+
 # Utility Targets
 .PHONY: l c vs r xs
 l: ## Generate requirements.lock file

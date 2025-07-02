@@ -102,4 +102,9 @@ venv.bk/
 frontend/public/logout.html
 frontend/dist/
 
+# Load Testing Results (exclude sensitive performance data)
+load_tests/reports/
+load_tests/results/
+load_tests/*.log
+
 
