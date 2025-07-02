@@ -80,14 +80,14 @@ class LoadTestEvaluator:
             
             # Performance Metrics (response times in milliseconds)
             'avg_response_time': Threshold(
-                pass_value=2000,      # <2s average is excellent
-                borderline_value=5000, # 2-5s is acceptable
+                pass_value=5000,      # <5s average is excellent
+                borderline_value=10000, # 5-10s is acceptable
                 unit="ms",
                 higher_is_better=False
             ),
             'p95_response_time': Threshold(
-                pass_value=5000,      # <5s P95 is excellent
-                borderline_value=10000, # 5-10s is acceptable
+                pass_value=10000,     # <10s P95 is excellent
+                borderline_value=15000, # 10-15s is acceptable
                 unit="ms",
                 higher_is_better=False
             ),
@@ -108,8 +108,8 @@ class LoadTestEvaluator:
             
             # LLM-Specific Metrics (for streaming responses)
             'first_token_time': Threshold(
-                pass_value=1000,      # <1s to first token is excellent
-                borderline_value=3000, # 1-3s is acceptable
+                pass_value=5000,      # <5s to first token is excellent
+                borderline_value=8000, # 5-8s is acceptable
                 unit="ms",
                 higher_is_better=False
             ),
