@@ -369,63 +369,6 @@ def get_config_endpoint():
     
     return JSONResponse(content=config_data)
 
-# --- Synchronous Q&A endpoint (non-streaming) ---
-@app.post("/api/ask")
-async def ask(data: dict = Body(...)):
-    """
-    Process a question and return a response with citations.
-    This is the non-streaming version of the ask endpoint.
-    """
-    try:
-        # Extract question and session ID from request
-        question = data.get("question", "").strip()
-        session_id = data.get("session_id")
-        feedback = data.get("feedback")
-
-        # Validate required fields
-        if not question:
-            raise ValueError("Question is required")
-        if not session_id:
-            raise ValueError("Session ID is required")
-
-        # Get configuration
-        config = get_config()
-        if not config:
-            raise ValueError("Configuration not available")
-
-        # Process the question
-        response_text, documents, qa_id = process_question(question, session_id, config)
-
-        # Log feedback if provided
-        if feedback:
-            try:
-                await log_user_feedback(session_id, qa_id, feedback)
-            except Exception as e:
-                # Log the error but don't fail the request
-                logger.error(f"Error logging feedback: {e}", exc_info=True)
-
-        return {
-            "result": response_text,
-            "session_id": session_id,
-            "qa_id": qa_id,
-            "document_count": len(documents)
-        }
-
-    except ValueError as e:
-        # Handle validation errors
-        logger.warning(f"Validation error in /api/ask: {e}")
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid request parameters"
-        )
-    except Exception as e:
-        # Log the full error server-side
-        logger.error(f"Error in /api/ask: {e}", exc_info=True)
-        # Raise a sanitized error for the client
-        raise HTTPException(
-            status_code=500,
-            detail="An error occurred while processing your request"
-        )
 
 # --- Streaming Q&A endpoint ---
 @app.post("/api/ask/stream")
