@@ -25,6 +25,27 @@ from opentelemetry.trace import Status, StatusCode
 logger = logging.getLogger(__name__)
 
 #----------------------------------------------------------------------
+# COMPILED REGEX PATTERNS - Pre-compiled for performance
+#----------------------------------------------------------------------
+WORD_PATTERN = re.compile(r'\b\w+\b')
+KEYWORD_PATTERN_CACHE = {}  # Cache for compiled keyword patterns
+PROXIMITY_PATTERN_CACHE = {}  # Cache for compiled proximity patterns
+
+def get_keyword_pattern(keyword: str) -> re.Pattern:
+    """Get or create a compiled regex pattern for a keyword."""
+    if keyword not in KEYWORD_PATTERN_CACHE:
+        KEYWORD_PATTERN_CACHE[keyword] = re.compile(r'\b' + re.escape(keyword) + r'\b')
+    return KEYWORD_PATTERN_CACHE[keyword]
+
+def get_proximity_pattern(kw1: str, kw2: str, window: int) -> re.Pattern:
+    """Get or create a compiled regex pattern for keyword proximity."""
+    key = f"{kw1}_{kw2}_{window}"
+    if key not in PROXIMITY_PATTERN_CACHE:
+        pattern = r'\b' + re.escape(kw1) + r'(.{0,' + str(window) + r'})' + re.escape(kw2) + r'\b'
+        PROXIMITY_PATTERN_CACHE[key] = re.compile(pattern)
+    return PROXIMITY_PATTERN_CACHE[key]
+
+#----------------------------------------------------------------------
 # RERANKING CONFIGURATION - Adjust these values to calibrate behavior
 #----------------------------------------------------------------------
 
@@ -151,7 +172,7 @@ def calculate_relevance_score(document: Document, query: str) -> float:
     query_lower = query.lower()
     
     # Extract meaningful keywords (ignoring common stop words)
-    keywords = [word for word in re.findall(r'\b\w+\b', query_lower) 
+    keywords = [word for word in WORD_PATTERN.findall(query_lower) 
                 if word not in STOP_WORDS and len(word) >= MIN_TERM_LENGTH]
     
     # 1. Exact phrase match (highest weight)
@@ -160,7 +181,8 @@ def calculate_relevance_score(document: Document, query: str) -> float:
     # 2. Keyword frequency
     keyword_score = 0.0
     for keyword in keywords:
-        count = len(re.findall(r'\b' + re.escape(keyword) + r'\b', content))
+        pattern = get_keyword_pattern(keyword)
+        count = len(pattern.findall(content))
         # More occurrences increase score, but with diminishing returns
         keyword_score += min(MAX_KEYWORD_SCORE, count * 1.0)  # Cap per keyword
     
@@ -171,12 +193,12 @@ def calculate_relevance_score(document: Document, query: str) -> float:
         for i, kw1 in enumerate(keywords[:-1]):
             for kw2 in keywords[i+1:]:
                 # Look for patterns where keywords are close
-                pattern = r'\b' + re.escape(kw1) + r'(.{0,' + str(PROXIMITY_WINDOW) + r'})' + re.escape(kw2) + r'\b'
-                if re.search(pattern, content):
+                pattern1 = get_proximity_pattern(kw1, kw2, PROXIMITY_WINDOW)
+                if pattern1.search(content):
                     proximity_score += 1.0
                 # Check reverse order too
-                pattern = r'\b' + re.escape(kw2) + r'(.{0,' + str(PROXIMITY_WINDOW) + r'})' + re.escape(kw1) + r'\b'
-                if re.search(pattern, content):
+                pattern2 = get_proximity_pattern(kw2, kw1, PROXIMITY_WINDOW)
+                if pattern2.search(content):
                     proximity_score += 1.0
     
     # Combine scores with appropriate weights
@@ -221,11 +243,25 @@ def _rerank_documents_internal(
     if not query or len(query.strip()) == 0:
         return documents[:max_docs], [0.0] * min(len(documents), max_docs)
     
-    # Calculate relevance scores for each document
+    # Calculate relevance scores for each document in batches
     scored_docs = []
-    for doc in documents:
-        score = calculate_relevance_score(doc, query)
-        scored_docs.append((doc, score))
+    batch_size = 50  # Process documents in batches to yield control
+    
+    for i in range(0, len(documents), batch_size):
+        batch = documents[i:i + batch_size]
+        batch_scores = []
+        
+        # Process batch
+        for doc in batch:
+            score = calculate_relevance_score(doc, query)
+            batch_scores.append((doc, score))
+        
+        scored_docs.extend(batch_scores)
+        
+        # Brief pause to allow other threads to run
+        if i > 0 and i % (batch_size * 2) == 0:
+            import time
+            time.sleep(0.001)  # 1ms pause to yield to other threads
     
     # Sort by score (descending)
     scored_docs.sort(key=lambda x: x[1], reverse=True)

@@ -125,21 +125,49 @@ class HansardRetriever(BaseRetriever):
             return self._multi_corpus_balanced_retrieval(query, k, logger, session_id, qa_id)
     
     def _single_corpus_retrieval(self, query: str, corpus_filter: str, final_k: int, logger, session_id: Optional[str] = None, qa_id: Optional[str] = None) -> List[Document]:
-        """Retrieve from single corpus with reranking"""
-        # Get large set for reranking
-        large_k = 500  # Could be configurable
-        filter_dict = {"corpus": corpus_filter}
+        """Retrieve from single corpus using same parallel logic as multi-corpus"""
+        # Treat single corpus as a list with one corpus for consistency
+        corpus_list = [corpus_filter]
         
-        # Step 1: Get large set from vector store
-        large_documents = self.vector_store.similarity_search(query=query, k=large_k, filter=filter_dict)
+        # Calculate parameters (same logic as multi-corpus)
+        per_corpus_k = 500  # Large retrieval size for single corpus
+        docs_per_corpus = final_k  # All final docs come from this corpus
         
-        # Step 2: Rerank to get best documents  
-        reranked_documents = self._rerank_documents(query, large_documents, final_k, session_id, qa_id)
+        # Use the same parallel processing logic
+        import concurrent.futures
         
-        return reranked_documents
+        def retrieve_and_rerank_corpus(corpus_info):
+            i, corpus = corpus_info
+            # Step 1: Retrieve from this corpus
+            filter_dict = {"corpus": corpus}
+            corpus_docs = self.vector_store.similarity_search(query=query, k=per_corpus_k, filter=filter_dict)
+            
+            # Step 2: Rerank within this corpus (use full final_k since it's single corpus)
+            if corpus_docs:
+                return self._rerank_documents(query, corpus_docs, docs_per_corpus, session_id, qa_id)
+            return []
+        
+        all_documents = []
+        # Use same ThreadPoolExecutor pattern (even though it's just one corpus)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            # Submit corpus retrieval task
+            corpus_tasks = [(0, corpus_filter)]
+            future_to_corpus = {executor.submit(retrieve_and_rerank_corpus, corpus_info): corpus_info 
+                               for corpus_info in corpus_tasks}
+            
+            # Collect results
+            for future in concurrent.futures.as_completed(future_to_corpus):
+                try:
+                    corpus_docs = future.result()
+                    all_documents.extend(corpus_docs)
+                except Exception as e:
+                    corpus_info = future_to_corpus[future]
+                    logger.error(f"Error processing corpus {corpus_info[1]}: {e}")
+        
+        return all_documents
     
     def _multi_corpus_balanced_retrieval(self, query: str, final_k: int, logger, session_id: Optional[str] = None, qa_id: Optional[str] = None) -> List[Document]:
-        """Retrieve balanced documents from all corpora"""
+        """Retrieve balanced documents from all corpora in parallel"""
         # Get available corpora (excluding 'all')
         all_corpora = [option["value"] for option in CORPUS_OPTIONS if option["value"] != "all"]
         
@@ -152,8 +180,12 @@ class HansardRetriever(BaseRetriever):
         docs_per_corpus = max(1, final_k // len(all_corpora))
         remaining_docs = final_k % len(all_corpora)
         
-        all_documents = []
-        for i, corpus in enumerate(all_corpora):
+        # Process corpora in parallel using ThreadPoolExecutor
+        import concurrent.futures
+        import threading
+        
+        def retrieve_and_rerank_corpus(corpus_info):
+            i, corpus = corpus_info
             # Step 1: Retrieve from this corpus
             filter_dict = {"corpus": corpus}
             corpus_docs = self.vector_store.similarity_search(query=query, k=per_corpus_k, filter=filter_dict)
@@ -165,8 +197,26 @@ class HansardRetriever(BaseRetriever):
             
             # Step 3: Rerank within this corpus
             if corpus_docs:
-                reranked_corpus_docs = self._rerank_documents(query, corpus_docs, corpus_final_k, session_id, qa_id)
-                all_documents.extend(reranked_corpus_docs)
+                return self._rerank_documents(query, corpus_docs, corpus_final_k, session_id, qa_id)
+            return []
+        
+        all_documents = []
+        # Use ThreadPoolExecutor for parallel corpus processing
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(all_corpora)) as executor:
+            # Submit all corpus retrieval tasks
+            corpus_tasks = [(i, corpus) for i, corpus in enumerate(all_corpora)]
+            future_to_corpus = {executor.submit(retrieve_and_rerank_corpus, corpus_info): corpus_info 
+                               for corpus_info in corpus_tasks}
+            
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(future_to_corpus):
+                try:
+                    corpus_docs = future.result()
+                    all_documents.extend(corpus_docs)
+                except Exception as e:
+                    corpus_info = future_to_corpus[future]
+                    logger.error(f"Error processing corpus {corpus_info[1]}: {e}")
+        
         return all_documents
     
     def _rerank_documents(self, query: str, documents: List[Document], max_docs: int, session_id: Optional[str] = None, qa_id: Optional[str] = None) -> List[Document]:
