@@ -9,26 +9,26 @@ class DataGenerator:
     
     def __init__(self):
         self.parliamentary_questions = [
-            "What was the government's position on the Education Act of 1944?",
-            "Can you provide details about healthcare reforms discussed in Parliament in the 1960s?",
-            "What debates occurred regarding immigration policy in the 1970s?",
-            "How did Parliament address economic challenges during the recession?",
-            "What was discussed about environmental protection legislation?",
-            "Can you find information about social security reforms?",
-            "What parliamentary debates covered women's rights in the workplace?",
-            "How did MPs discuss infrastructure spending proposals?",
-            "What was the government's response to housing shortage concerns?",
-            "Can you provide details about taxation policy debates?",
-            "What discussions occurred regarding trade union legislation?",
-            "How did Parliament address unemployment issues?",
-            "What debates covered public transportation funding?",
-            "Can you find information about agricultural policy reforms?",
-            "What parliamentary discussions addressed child welfare?",
-            "How did MPs debate defense spending allocations?",
-            "What was discussed about international trade agreements?",
-            "Can you provide details about pension reform proposals?",
-            "What debates occurred regarding local government funding?",
-            "How did Parliament address climate change concerns?"
+            "What was discussed about the Australian Federation Act in 1901?",
+            "Can you provide details about colonial governance reforms in 1901?",
+            "What debates occurred regarding the White Australia Policy in 1901?",
+            "How did Parliament address tariff policy and trade protection in 1901?",
+            "What was discussed about Imperial relations with Britain in 1901?",
+            "Can you find information about land settlement schemes in 1901?",
+            "What parliamentary debates covered mining regulations in 1901?",
+            "How did MPs discuss railway construction and transport in 1901?",
+            "What was the government's response to labor disputes in 1901?",
+            "Can you provide details about public works funding in 1901?",
+            "What discussions occurred regarding military defense in 1901?",
+            "How did Parliament address public health concerns in 1901?",
+            "What debates covered education policy in the colonies in 1901?",
+            "Can you find information about postal and telegraph services in 1901?",
+            "What parliamentary discussions addressed Aboriginal affairs in 1901?",
+            "How did MPs debate agricultural development in 1901?",
+            "What was discussed about banking and currency in 1901?",
+            "Can you provide details about public service appointments in 1901?",
+            "What debates occurred regarding women's suffrage in 1901?",
+            "How did Parliament address immigration and settlement in 1901?"
         ]
         
         self.feedback_comments = [
@@ -58,20 +58,19 @@ class DataGenerator:
     
     def generate_custom_question(self) -> str:
         """Generate a more varied question using Faker"""
-        topics = ["education", "healthcare", "economy", "environment", "defense", "immigration"]
+        topics = ["federation", "colonial administration", "tariff policy", "imperial relations", "land settlement", "mining", "railway construction", "labor disputes", "public works", "military defense", "public health", "education", "postal services", "Aboriginal affairs", "agricultural development", "banking", "women's suffrage", "immigration"]
         topic = random.choice(topics)
         
         patterns = [
-            f"What did Parliament discuss about {topic} in the {{year}}s?",
-            f"Can you find debates on {topic} policy reforms?",
-            f"How did the government address {topic} concerns?",
-            f"What was the opposition's stance on {topic} legislation?",
-            f"Can you provide details about {topic} spending debates?"
+            f"What did Parliament discuss about {topic} in 1901?",
+            f"Can you find debates on {topic} policy in 1901?",
+            f"How did the government address {topic} concerns in 1901?",
+            f"What was the opposition's stance on {topic} legislation in 1901?",
+            f"Can you provide details about {topic} discussions in 1901?"
         ]
         
         pattern = random.choice(patterns)
-        year = random.randint(1900, 2020) // 10 * 10  # Round to decade
-        return pattern.format(year=year)
+        return pattern
     
     def generate_session_id(self) -> str:
         """Generate a realistic session ID"""

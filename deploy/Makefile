@@ -80,7 +80,7 @@ usr: ## Upgrade remote staging with minimal downtime
 
 # Load Testing Targets
 .PHONY: lts ltp ltq ltweb ltasync
-lts: ## Run load test against staging environment
+lts: ## Run load test against staging environment (20 concurrent users, 15 min)
 	@echo "🧪 Running load test against staging environment..."
 	@if [ ! -f "config/.env.staging" ]; then \
 		echo "❌ ERROR: config/.env.staging file not found!"; \
@@ -94,9 +94,9 @@ lts: ## Run load test against staging environment
 		echo "📥 Installing dependencies..."; \
 		.venv/bin/pip install -r config/requirements.txt; \
 	fi
-	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=staging ../.venv/bin/locust -f locustfile.py --host=\$$VITE_API_URL --users=30 --spawn-rate=2 --run-time=15m --headless"
+	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=staging ../.venv/bin/locust -f locustfile.py --host=\$$VITE_API_URL --users=20 --spawn-rate=2 --run-time=15m --headless"
 
-ltp: ## Run load test against production environment
+ltp: ## Run load test against production environment (20 concurrent users, 10 min)
 	@echo "🚨 Running load test against production environment..."
 	@if [ ! -f "config/.env.production" ]; then \
 		echo "❌ ERROR: config/.env.production file not found!"; \
@@ -114,7 +114,7 @@ ltp: ## Run load test against production environment
 	fi
 	@bash -c "cd load_tests && source ../config/.env.production && LOAD_TEST_CONFIG=production ../.venv/bin/locust -f locustfile.py --host=\$$VITE_API_URL --users=20 --spawn-rate=1 --run-time=10m --headless"
 
-ltq: ## Quick smoke test against staging (5 users, 3 minutes)
+ltq: ## Quick smoke test against staging (1 user, 3 minutes) - single session
 	@echo "💨 Running quick smoke test against staging..."
 	@if [ ! -f "config/.env.staging" ]; then \
 		echo "❌ ERROR: config/.env.staging file not found!"; \
