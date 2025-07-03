@@ -43,10 +43,9 @@ load_tests/
 
 ### 1. QuestionSubmissionUser (Primary Load)
 - **Weight:** 60% of total users
-- **Behavior:** Submits parliamentary questions via streaming and sync endpoints
+- **Behavior:** Submits parliamentary questions via streaming endpoints
 - **Key Tasks:**
-  - `POST /api/ask/stream` (40% of requests) - Streaming Q&A
-  - `POST /api/ask` (20% of requests) - Synchronous Q&A
+  - `POST /api/ask/stream` (60% of requests) - Streaming Q&A
   - `POST /api/query` (10% of requests) - Document search
   - Health checks and diagnostics (remaining)
 

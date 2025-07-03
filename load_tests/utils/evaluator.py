@@ -98,6 +98,20 @@ class LoadTestEvaluator:
                 higher_is_better=False
             ),
             
+            # Success-only Performance Metrics
+            'avg_success_response_time': Threshold(
+                pass_value=5000,      # <5s average for successful requests
+                borderline_value=10000, # 5-10s is acceptable
+                unit="ms",
+                higher_is_better=False
+            ),
+            'p95_success_response_time': Threshold(
+                pass_value=10000,     # <10s P95 for successful requests
+                borderline_value=15000, # 10-15s is acceptable
+                unit="ms",
+                higher_is_better=False
+            ),
+            
             # Throughput Metrics
             'requests_per_second': Threshold(
                 pass_value=10.0,      # >10 RPS is good for this application
@@ -209,7 +223,7 @@ class LoadTestEvaluator:
                 results.append(self._evaluate_metric('success_rate', success_rate))
                 results.append(self._evaluate_metric('error_rate', error_rate))
         
-        # Calculate average response times from response_times data
+        # Calculate average response times from response_times data (ALL REQUESTS)
         response_times = metrics_data.get('response_times', {})
         if response_times:
             # Calculate weighted average across all endpoints
@@ -239,6 +253,35 @@ class LoadTestEvaluator:
                     # Use the worst P95 time (most conservative)
                     max_p95 = max(p95_times)
                     results.append(self._evaluate_metric('p95_response_time', max_p95))
+        
+        # Calculate success-only response time metrics
+        success_response_times = metrics_data.get('success_response_times', {})
+        if success_response_times:
+            total_weighted_success_time = 0
+            total_success_requests = 0
+            success_p95_times = []
+            
+            for endpoint, times in success_response_times.items():
+                if isinstance(times, dict) and '50' in times:
+                    # Get success count for this endpoint
+                    endpoint_success = counters.get(f"{endpoint}_success", 0)
+                    if endpoint_success > 0:
+                        # Convert from seconds to milliseconds
+                        avg_time_ms = times['50'] * 1000
+                        total_weighted_success_time += avg_time_ms * endpoint_success
+                        total_success_requests += endpoint_success
+                        
+                        # Collect P95 times
+                        if '95' in times:
+                            success_p95_times.append(times['95'] * 1000)
+            
+            if total_success_requests > 0:
+                avg_success_response_time = total_weighted_success_time / total_success_requests
+                results.append(self._evaluate_metric('avg_success_response_time', avg_success_response_time))
+                
+                if success_p95_times:
+                    max_success_p95 = max(success_p95_times)
+                    results.append(self._evaluate_metric('p95_success_response_time', max_success_p95))
         
         # Calculate throughput (RPS)
         throughput_data = metrics_data.get('throughput', {})

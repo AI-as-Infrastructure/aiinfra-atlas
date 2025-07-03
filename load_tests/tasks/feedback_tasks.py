@@ -214,11 +214,12 @@ class MixedFeedbackUser(HttpUser):
         
         start_time = time.time()
         
-        # Submit question
+        # Submit question via streaming endpoint
         with self.client.post(
-            "/api/ask",
+            "/api/ask/stream",
             json=question_data,
             headers=headers,
+            stream=True,
             catch_response=True
         ) as response:
             
@@ -226,8 +227,22 @@ class MixedFeedbackUser(HttpUser):
             
             if response.status_code == 200:
                 try:
-                    data = response.json()
-                    qa_id = data.get("qa_id")
+                    # Process streaming response to get qa_id
+                    qa_id = None
+                    for line in response.iter_lines():
+                        if line:
+                            line = line.decode('utf-8')
+                            if line.startswith('data: '):
+                                data_str = line[6:]
+                                if data_str.strip() == '[DONE]':
+                                    break
+                                try:
+                                    data = json.loads(data_str)
+                                    if data.get("qa_id"):
+                                        qa_id = data["qa_id"]
+                                except json.JSONDecodeError:
+                                    continue
+                    
                     if qa_id:
                         self.qa_history.append({
                             "qa_id": qa_id,
@@ -240,12 +255,12 @@ class MixedFeedbackUser(HttpUser):
                             self._provide_delayed_feedback(qa_id)
                     
                     response.success()
-                except json.JSONDecodeError:
-                    response.failure("Invalid JSON response")
+                except Exception as e:
+                    response.failure(f"Stream processing error: {str(e)}")
             else:
                 response.failure(f"HTTP {response.status_code}")
             
-            metrics_collector.record_request("ask_sync", response_time, response.status_code)
+            metrics_collector.record_request("ask_stream", response_time, response.status_code)
     
     def _provide_delayed_feedback(self, qa_id: str):
         """Provide feedback after a short delay (simulates user reading response)"""

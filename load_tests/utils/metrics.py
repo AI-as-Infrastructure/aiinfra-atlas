@@ -23,15 +23,29 @@ class MetricsCollector:
             'async_status': deque(maxlen=1000),
             'websocket': deque(maxlen=1000)
         }
+        
+        # Separate tracking for successful requests only
+        self.success_response_times = {
+            'ask_stream': deque(maxlen=1000),
+            'ask_sync': deque(maxlen=1000),
+            'feedback': deque(maxlen=1000),
+            'async_submit': deque(maxlen=1000),
+            'async_status': deque(maxlen=1000),
+            'websocket': deque(maxlen=1000)
+        }
     
     def record_request(self, endpoint: str, response_time: float, status_code: int, error: str = None):
         """Record request metrics"""
         with self._lock:
             timestamp = time.time()
             
-            # Record response time
+            # Record response time (all requests)
             if endpoint in self.response_times:
                 self.response_times[endpoint].append(response_time)
+            
+            # Record response time for successful requests only
+            if 200 <= status_code < 300 and endpoint in self.success_response_times:
+                self.success_response_times[endpoint].append(response_time)
             
             # Record general metrics
             self.metrics[f"{endpoint}_response_times"].append({
@@ -85,11 +99,29 @@ class MetricsCollector:
             self.metrics['redis_processing_time'].append(processing_time)
     
     def get_percentiles(self, endpoint: str, percentiles: List[int] = [50, 95, 99]) -> Dict[int, float]:
-        """Calculate response time percentiles"""
+        """Calculate response time percentiles (all requests)"""
         if endpoint not in self.response_times:
             return {}
         
         times = sorted(list(self.response_times[endpoint]))
+        if not times:
+            return {}
+        
+        result = {}
+        for p in percentiles:
+            index = int((p / 100.0) * len(times))
+            if index >= len(times):
+                index = len(times) - 1
+            result[p] = times[index]
+        
+        return result
+    
+    def get_success_percentiles(self, endpoint: str, percentiles: List[int] = [50, 95, 99]) -> Dict[int, float]:
+        """Calculate response time percentiles for successful requests only"""
+        if endpoint not in self.success_response_times:
+            return {}
+        
+        times = sorted(list(self.success_response_times[endpoint]))
         if not times:
             return {}
         
@@ -137,12 +169,18 @@ class MetricsCollector:
             'redis_metrics': {}
         }
         
-        # Response time percentiles
+        # Response time percentiles (all requests and successful only)
         for endpoint in self.response_times.keys():
             if self.response_times[endpoint]:
                 summary['response_times'][endpoint] = self.get_percentiles(endpoint)
                 summary['throughput'][endpoint] = self.get_throughput(endpoint)
                 summary['error_rates'][endpoint] = self.get_error_rate(endpoint)
+        
+        # Success-only response time percentiles
+        summary['success_response_times'] = {}
+        for endpoint in self.success_response_times.keys():
+            if self.success_response_times[endpoint]:
+                summary['success_response_times'][endpoint] = self.get_success_percentiles(endpoint)
         
         # Streaming metrics
         if self.metrics['streaming_first_token']:

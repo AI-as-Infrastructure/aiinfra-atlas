@@ -16,11 +16,18 @@ class QuestionSubmissionUser(HttpUser):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.client.verify = False
+        # Set longer timeout for streaming responses (20 seconds)
+        self.client.timeout = 20.0
     
     def on_start(self):
         """Initialize user session"""
         self.session_id = data_generator.generate_session_id()
         self.qa_history = []  # Track Q&A pairs for feedback
+        
+        # Add startup delay to avoid thundering herd on service startup
+        import random
+        startup_delay = random.uniform(2, 5)  # 2-5 second random delay
+        time.sleep(startup_delay)
         
         # Test connectivity (no auth headers needed)
         try:
@@ -70,6 +77,11 @@ class QuestionSubmissionUser(HttpUser):
                 catch_response=True
             ) as response:
                 
+                # DEBUG: Log request and response details
+                print(f"🔍 DEBUG - Request payload: {question_data}")
+                print(f"🔍 DEBUG - Response status: {response.status_code}")
+                print(f"🔍 DEBUG - Response headers: {dict(response.headers)}")
+                
                 if response.status_code != 200:
                     response.failure(f"HTTP {response.status_code}")
                     metrics_collector.record_request("ask_stream", time.time() - start_time, response.status_code, f"HTTP {response.status_code}")
@@ -81,8 +93,13 @@ class QuestionSubmissionUser(HttpUser):
                 citations = []
                 response_complete = False
                 
+                line_count = 0
                 for line in response.iter_lines():
                     if line:
+                        line_count += 1
+                        if line_count <= 3:  # Debug first 3 lines
+                            print(f"🔍 DEBUG - Line {line_count}: {line}")
+                            
                         if first_token_time is None:
                             first_token_time = time.time() - start_time
                         
@@ -109,6 +126,11 @@ class QuestionSubmissionUser(HttpUser):
                                     
                         except json.JSONDecodeError:
                             continue
+                
+                print(f"🔍 DEBUG - Total lines received: {line_count}")
+                print(f"🔍 DEBUG - QA ID: {qa_id}")
+                print(f"🔍 DEBUG - Answer content length: {len(answer_content)}")
+                print(f"🔍 DEBUG - Response complete: {response_complete}")
                 
                 # Store QA data for potential feedback
                 if qa_id:
