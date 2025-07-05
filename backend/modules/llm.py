@@ -17,6 +17,7 @@ from langchain_core.documents.base import Document
 from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
 from langchain_community.chat_models import ChatOllama
+from langchain_aws import ChatBedrock
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser
@@ -159,6 +160,19 @@ def create_llm(
             api_key=openai_api_key,
             model=model or "gpt-4o",
             temperature=temperature,
+            streaming=streaming
+        )
+    elif provider == 'BEDROCK':
+        aws_region = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
+        
+        logger.debug(f"Using AWS Bedrock in region {aws_region}")
+        return ChatBedrock(
+            model_id=model or "anthropic.claude-3-sonnet-20240229-v1:0",
+            region_name=aws_region,
+            model_kwargs={
+                "temperature": temperature,
+                "max_tokens": 4096
+            },
             streaming=streaming
         )
     else:
