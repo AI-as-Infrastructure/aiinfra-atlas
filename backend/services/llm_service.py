@@ -31,8 +31,9 @@ except ImportError as e:
     print("Please ensure your LLM processing code is available")
 
 # Thread pool for running sync LLM operations
-# Increased workers for better API concurrency
-llm_executor = ThreadPoolExecutor(max_workers=16, thread_name_prefix="llm-worker")
+import os
+LLM_WORKERS = int(os.getenv("LLM_THREAD_POOL_WORKERS", "2"))
+llm_executor = ThreadPoolExecutor(max_workers=LLM_WORKERS, thread_name_prefix="llm-worker")
 
 def process_query_sync(query_data: Dict[str, Any]) -> Dict[str, Any]:
     """

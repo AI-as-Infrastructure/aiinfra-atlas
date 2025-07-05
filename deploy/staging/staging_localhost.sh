@@ -259,7 +259,7 @@ Environment="ENVIRONMENT=staging"
 EnvironmentFile=$APP_DIR/config/.env.staging
 
 # Start Gunicorn directly
-ExecStart=$APP_DIR/.venv/bin/python -m gunicorn backend.app:app -k uvicorn.workers.UvicornWorker -w 12 -b 127.0.0.1:8000 --access-logfile ${LOGS_ABS_PATH}/gunicorn-access.log --error-logfile ${LOGS_ABS_PATH}/gunicorn-error.log
+ExecStart=/bin/bash -c 'source $APP_DIR/config/.env.staging && $APP_DIR/.venv/bin/python -m gunicorn backend.app:app -k uvicorn.workers.UvicornWorker -w ${GUNICORN_WORKERS:-4} -b 127.0.0.1:8000 --access-logfile ${LOGS_ABS_PATH}/gunicorn-access.log --error-logfile ${LOGS_ABS_PATH}/gunicorn-error.log'
 Restart=on-failure
 
 [Install]

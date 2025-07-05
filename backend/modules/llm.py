@@ -29,70 +29,7 @@ from opentelemetry.trace import SpanKind
 from opentelemetry.trace import SpanKind, Status, StatusCode
 from backend.modules.config import get_system_prompt, get_llm_config
 from backend.modules.system_prompts import get_qa_prompt_template, system_prompt
-from backend.modules.rate_limiter import with_exponential_backoff, get_rate_limiter
-from backend.modules.http_config import configure_langchain_http_clients
-
 logger = logging.getLogger(__name__)
-
-# Initialize optimized HTTP client configuration
-configure_langchain_http_clients()
-
-def _rate_limited_generate_response(question: str, documents: List[Document], 
-                                   chat_history: Optional[List[Dict[str, str]]] = None,
-                                   system_prompt: Optional[str] = None,
-                                   temperature: float = 0.7,
-                                   provider: Optional[str] = None,
-                                   span=None,
-                                   create_llm_span: bool = True) -> Generator[str, None, None]:
-    """
-    Rate-limited wrapper for generate_response with exponential backoff.
-    
-    Args:
-        Same as generate_response
-        
-    Returns:
-        Generator yielding response chunks
-    """
-    # Determine provider for rate limiting
-    rate_limit_provider = 'default'
-    if provider:
-        if 'openai' in provider.lower() or 'gpt' in provider.lower():
-            rate_limit_provider = 'openai'
-        elif 'anthropic' in provider.lower() or 'claude' in provider.lower():
-            rate_limit_provider = 'anthropic'
-    
-    # Apply rate limiting
-    limiter = get_rate_limiter(rate_limit_provider)
-    if not limiter.acquire(timeout=30.0):
-        logger.error(f"Rate limit timeout exceeded for provider {rate_limit_provider}")
-        raise Exception(f"Rate limit timeout exceeded for provider {rate_limit_provider}")
-    
-    # Apply exponential backoff for API failures
-    @with_exponential_backoff(
-        max_retries=3,
-        base_delay=1.0,
-        max_delay=60.0,
-        exceptions=(Exception,)
-    )
-    def _generate_with_backoff():
-        return generate_response(
-            question=question,
-            documents=documents,
-            chat_history=chat_history,
-            system_prompt=system_prompt,
-            temperature=temperature,
-            provider=provider,
-            span=span,
-            create_llm_span=create_llm_span
-        )
-    
-    try:
-        response_gen = _generate_with_backoff()
-        for chunk in response_gen:
-            yield chunk
-    except Exception as e:
-        logger.error(f"LLM generation failed after retries: {e}")
-        raise
 
 def format_documents(documents: List[Document]) -> str:
     """
@@ -209,11 +146,7 @@ def create_llm(
             api_key=anthropic_api_key,
             model_name=model or "claude-3-5-sonnet-20240620",
             temperature=temperature,
-            streaming=streaming,
-            # Optimize for high concurrency
-            max_retries=3,
-            timeout=60.0,  # 60 second timeout
-            max_tokens_to_sample=4096
+            streaming=streaming
         )
     elif provider == 'OPENAI':
         openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -226,11 +159,7 @@ def create_llm(
             api_key=openai_api_key,
             model=model or "gpt-4o",
             temperature=temperature,
-            streaming=streaming,
-            # Optimize for high concurrency
-            max_retries=3,
-            timeout=60.0,  # 60 second timeout
-            max_tokens=4096
+            streaming=streaming
         )
     else:
         logger.warning(f"Unknown provider '{provider}', falling back to OpenAI")
@@ -242,11 +171,7 @@ def create_llm(
             api_key=openai_api_key,
             model=model or "gpt-4o",
             temperature=temperature,
-            streaming=streaming,
-            # Optimize for high concurrency
-            max_retries=3,
-            timeout=60.0,  # 60 second timeout
-            max_tokens=4096
+            streaming=streaming
         )
 
 def create_qa_prompt(
@@ -735,8 +660,8 @@ def generate_response_with_telemetry(
                 register_span(session_id, qa_id, span_id)
                 logger.info(f"Registered main LLM span with session_id={session_id}, qa_id={qa_id}, span_id={span_id}")
 
-                # Generate response with rate limiting
-                response_gen = _rate_limited_generate_response(
+                # Generate response without nested span
+                response_gen = generate_response(
                     question=question,
                     documents=documents,
                     chat_history=chat_history,
