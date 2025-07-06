@@ -48,10 +48,11 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
     
     try:
         # Log reception of feedback
-        logger.debug(f"Received feedback for session {session_id}, qa {qa_id} from {client_ip}")
+        logger.info(f"Received feedback for session {session_id}, qa {qa_id} from {client_ip}")
         
         # Format feedback data for Phoenix native evaluation system
         feedback_data = {
+            # Original fields
             "relevance": feedback.relevance,
             "factual_accuracy": feedback.factual_accuracy,
             "source_quality": feedback.source_quality,
@@ -63,7 +64,20 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
             "model_answer": feedback.model_answer,
             "timestamp": datetime.now().isoformat(),
             "client_ip": client_ip,
-            "trace_id": feedback.trace_id  # Include trace_id for span correlation
+            "trace_id": feedback.trace_id,  # Include trace_id for span correlation
+            
+            # New inline feedback fields
+            "feedback_type": feedback.feedback_type,
+            "sentiment": feedback.sentiment,
+            "analysis_quality": feedback.analysis_quality,
+            "difficulty": feedback.difficulty,
+            "faults": feedback.faults,
+            
+            # Include rich context data from frontend
+            "test_target": feedback.test_target,
+            "question": feedback.question,
+            "answer": feedback.answer,
+            "citations": feedback.citations
         }
         
         # Use Phoenix native feedback association

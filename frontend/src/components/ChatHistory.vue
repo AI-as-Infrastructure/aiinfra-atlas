@@ -62,6 +62,16 @@
 							</ul>
 						</div>
 						
+						<!-- Inline Feedback (New) - Only for assistant messages with citations -->
+						<InlineFeedback
+							v-if="message.role === 'assistant' && message.citations && message.citations.length > 0 && !message.is_clarification"
+							:qa-id="qaId"
+							:session-id="sessionId"
+							:message-complete="isResponseComplete"
+							:citations-visible="true"
+							@feedback-workflow-complete="onFeedbackWorkflowComplete"
+						/>
+						
 					</div>
 				</div>
 			</div>
@@ -237,9 +247,15 @@ import { storeToRefs } from 'pinia'
 import { useSessionStore } from '@/stores/session'
 import { ref, onMounted, computed } from 'vue'
 import { marked } from 'marked'
+import InlineFeedback from './InlineFeedback.vue'
+
+const emit = defineEmits(['feedback-workflow-complete'])
 
 const sessionStore = useSessionStore()
-const { chatHistory, isResponseComplete } = storeToRefs(sessionStore)
+const { chatHistory, isResponseComplete, qaId } = storeToRefs(sessionStore)
+
+// Session ID for feedback
+const sessionId = computed(() => sessionStore.sessionId)
 
 // Citation hover and modal state
 const hoveredCitation = ref(null)
@@ -461,6 +477,12 @@ function formatMetadata(metadata) {
 	} catch (e) {
 		return 'error formatting metadata'
 	}
+}
+
+// Handle feedback workflow completion
+function onFeedbackWorkflowComplete(qaId) {
+	// Emit to parent that feedback workflow is complete for this QA ID
+	emit('feedback-workflow-complete', qaId)
 }
 
 

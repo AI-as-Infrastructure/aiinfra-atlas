@@ -1,6 +1,11 @@
 <template>
   <div class="session-button-container">
-    <span v-if="showRefreshedMessage" class="session-refreshed-message">Session refreshed!</span>
+    <div v-if="showRefreshedMessage" class="session-refreshed-message">
+      <div class="refreshed-content">
+        <span class="check-icon">✓</span>
+        <span class="refreshed-text">Session refreshed!</span>
+      </div>
+    </div>
     <a class="new-session-link nav-link" @click.prevent="newSession">New Session</a>
   </div>
 </template>
@@ -30,14 +35,51 @@ function newSession() {
 }
 
 .session-refreshed-message {
-  margin-right: 1rem;
-  color: #008000; 
-  font-size: 0.9rem;
-  animation: fadeIn 0.3s ease-in-out;
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 1000;
+  padding: 1rem;
+  background-color: #d4edda;
+  border: 1px solid #c3e6cb;
+  border-radius: 8px;
+  animation: slideInFade 0.3s ease-in-out;
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+.refreshed-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  color: #155724;
+  font-weight: 500;
+}
+
+.check-icon {
+  background-color: #28a745;
+  color: white;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.refreshed-text {
+  font-size: 14px;
+}
+
+@keyframes slideInFade {
+  from { 
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to { 
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 </style>

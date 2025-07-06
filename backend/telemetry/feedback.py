@@ -38,15 +38,28 @@ class UserFeedback(BaseModel):
     
     session_id: str
     qa_id: str
+    
+    # Existing fields (for backward compatibility)
     relevance: Optional[int] = None
-    factual_accuracy: Optional[str] = None  # Changed from bool to str to support "mixed"
+    factual_accuracy: Optional[int] = None  # Now accepts numeric ratings (1-5)
     source_quality: Optional[int] = None
     clarity: Optional[int] = None
     question_rating: Optional[int] = None
-    user_category: Optional[str] = None  # New field for user category
+    user_category: Optional[str] = None
     tags: Optional[List[str]] = []
     feedback_text: Optional[str] = None
     model_answer: Optional[str] = None
+    
+    # New inline feedback fields
+    feedback_type: Optional[str] = None  # 'simple' or 'extended'
+    sentiment: Optional[str] = None  # 'positive' or 'negative'
+    
+    # New extended feedback fields
+    analysis_quality: Optional[int] = None  # 1-5 Likert scale
+    difficulty: Optional[int] = None  # 1-5 Likert scale
+    
+    # New faults structure (alternative to tags)
+    faults: Optional[Dict[str, bool]] = None  # {hallucination, off_topic, inappropriate, bias}
     
     # Additional rich data from frontend
     test_target: Optional[Dict[str, Any]] = None
@@ -117,6 +130,42 @@ def get_user_category_description(category: str) -> str:
     }
     return descriptions.get(category, f"User Category: {category}")
 
+def get_analysis_quality_description(score: int) -> str:
+    """Return a description for analysis quality score"""
+    descriptions = {
+        1: "1/5: Poor analysis - Lacks depth or accuracy",
+        2: "2/5: Fair analysis - Basic understanding shown",
+        3: "3/5: Good analysis - Adequate historical reasoning",
+        4: "4/5: Very good analysis - Strong historical insight",
+        5: "5/5: Excellent analysis - Outstanding historical scholarship"
+    }
+    return descriptions.get(score, f"Analysis quality score: {score}/5")
+
+def get_difficulty_description(score: int) -> str:
+    """Return a description for query difficulty score"""
+    descriptions = {
+        1: "1/5: Very easy - Basic factual query",
+        2: "2/5: Easy - Simple research question",
+        3: "3/5: Moderate - Requires some analysis",
+        4: "4/5: Difficult - Complex research question",
+        5: "5/5: Very difficult - Highly complex query requiring deep expertise"
+    }
+    return descriptions.get(score, f"Query difficulty score: {score}/5")
+
+def get_sentiment_description(sentiment: str) -> str:
+    """Return a description for sentiment feedback"""
+    descriptions = {
+        "positive": "👍 Positive - User found response helpful",
+        "negative": "👎 Negative - User found response unhelpful"
+    }
+    return descriptions.get(sentiment, f"Sentiment: {sentiment}")
+
+def format_faults_list(faults: Dict[str, bool]) -> List[str]:
+    """Convert faults dictionary to list of active fault types"""
+    if not faults:
+        return []
+    return [fault_type for fault_type, is_present in faults.items() if is_present]
+
 def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None) -> bool:
     """
     Submit feedback as a span annotation to Phoenix using their span annotations API.
@@ -147,13 +196,10 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
         # Convert to 16-character lowercase hexadecimal string - this is the format required by Phoenix
         formatted_span_id = format(span_id_int, '016x')
         
-        logger.info(f"Original span ID: {span_id} (decimal)")
-        logger.info(f"Converted to required 16-character hex format: {formatted_span_id}")
     except (ValueError, TypeError) as e:
         logger.warning(f"Failed to convert span_id to hex: {e}. Using original format.")
         formatted_span_id = str(span_id)
     
-    logger.info(f"Attempting to annotate span with ID: {formatted_span_id}")
     
     phoenix_endpoint = os.getenv('PHOENIX_COLLECTOR_ENDPOINT', 'https://app.phoenix.arize.com')
     # Use synchronous processing to get immediate feedback
@@ -170,7 +216,6 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
             if phoenix_api_key.startswith('api_key='):
                 phoenix_api_key = phoenix_api_key[8:]
             headers['api_key'] = phoenix_api_key
-            logger.info("Using explicit PHOENIX_API_KEY")
             return headers
         
         # For Arize Cloud, use PHOENIX_CLIENT_HEADERS (contains api_key)
@@ -181,13 +226,11 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
                     # Extract the actual key (remove 'api_key=' prefix)
                     api_key_value = client_headers[8:]
                     headers['api_key'] = api_key_value
-                    logger.info("Using api_key value from PHOENIX_CLIENT_HEADERS (removed prefix)")
                     return headers
                     
                 # Check if it's in key:value format (like '71c89f6ab6b6dafbb51:a61f175')
                 if ':' in client_headers and not client_headers.startswith('{'):
                     headers['api_key'] = client_headers
-                    logger.info("Using api_key directly from PHOENIX_CLIENT_HEADERS")
                     return headers
                     
                 # Or it might be JSON formatted
@@ -195,12 +238,10 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
                 headers_dict = json.loads(client_headers)
                 if 'api_key' in headers_dict:
                     headers['api_key'] = headers_dict['api_key']
-                    logger.info("Using api_key from PHOENIX_CLIENT_HEADERS JSON")
                     return headers
             except json.JSONDecodeError:
                 # Not JSON, likely a direct api_key
                 headers['api_key'] = client_headers
-                logger.info("Using PHOENIX_CLIENT_HEADERS as direct api_key")
                 return headers
             except Exception as e:
                 logger.error(f"Error processing PHOENIX_CLIENT_HEADERS: {e}")
@@ -229,16 +270,14 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
                 "score": None,
                 "explanation": feedback_data.get("feedback_text")
             },
-            # Include the question and answer if available
+            # Only include qa_id in metadata
             "metadata": {
-                "qa_id": qa_id,
-                "question": feedback_data.get("question"),
-                "answer": feedback_data.get("answer")
+                "qa_id": qa_id
             } if qa_id else {}
         })
     
     # Add answer/relevance rating annotation
-    if "relevance" in feedback_data:
+    if "relevance" in feedback_data and feedback_data["relevance"] is not None:
         annotation_data.append({
             "id": f"{annotation_id}_relevance",
             "name": "Relevance Rating",  # Required field by Phoenix API
@@ -253,23 +292,17 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
         })
     
     # Add factual accuracy annotation
-    if "factual_accuracy" in feedback_data:
-        # Handle the three possible values: "true", "false", "mixed"
+    if "factual_accuracy" in feedback_data and feedback_data["factual_accuracy"] is not None:
         accuracy_value = feedback_data["factual_accuracy"]
         
-        if accuracy_value == "true":
-            score = 1
-            explanation = "Response is factually accurate"
-        elif accuracy_value == "false":
-            score = 0
-            explanation = "Response contains factual errors"
-        elif accuracy_value == "mixed":
-            score = 0.5  # Use 0.5 to represent mixed accuracy
-            explanation = "Response contains both accurate and inaccurate information"
+        # Use the actual numeric rating (1-5 Likert scale)
+        score = accuracy_value
+        if accuracy_value <= 2:
+            explanation = f"Low factual accuracy (rated {accuracy_value}/5)"
+        elif accuracy_value == 3:
+            explanation = f"Moderate factual accuracy (rated {accuracy_value}/5)"
         else:
-            # Default case
-            score = 0
-            explanation = "Factual accuracy unclear"
+            explanation = f"High factual accuracy (rated {accuracy_value}/5)"
             
         annotation_data.append({
             "id": f"{annotation_id}_factual",
@@ -285,7 +318,7 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
         })
     
     # Add clarity rating annotation if present
-    if "clarity" in feedback_data:
+    if "clarity" in feedback_data and feedback_data["clarity"] is not None:
         clarity_score = feedback_data["clarity"]
         annotation_data.append({
             "id": f"{annotation_id}_clarity",
@@ -374,6 +407,83 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
                 "metadata": {"qa_id": qa_id, "tag": tag} if qa_id else {"tag": tag}
             })
     
+    # Add new inline feedback fields
+    
+    # Add thumbs up/down annotation if present (following Phoenix docs)
+    if "sentiment" in feedback_data and feedback_data["sentiment"]:
+        if feedback_data["sentiment"] == "positive":
+            label = "thumbs-up"
+            score = 1
+        elif feedback_data["sentiment"] == "negative":
+            label = "thumbs-down"
+            score = 0
+        else:
+            # Skip unknown sentiment values
+            label = None
+            score = None
+            
+        if label and score is not None:
+            annotation_data.append({
+                "id": f"{annotation_id}_user_feedback",
+                "name": "user feedback",  # Phoenix standard name
+                "span_id": formatted_span_id,
+                "annotator_kind": "HUMAN",
+                "result": {
+                    "label": label,  # "thumbs-up" or "thumbs-down"
+                    "score": score   # 1 for thumbs-up, 0 for thumbs-down
+                },
+                "metadata": {"qa_id": qa_id, "sentiment": feedback_data["sentiment"]} if qa_id else {"sentiment": feedback_data["sentiment"]}
+            })
+    
+    # Add analysis quality annotation if present
+    if "analysis_quality" in feedback_data and feedback_data["analysis_quality"] is not None:
+        analysis_quality_score = feedback_data["analysis_quality"]
+        annotation_data.append({
+            "id": f"{annotation_id}_analysis_quality",
+            "name": "Analysis Quality",
+            "span_id": formatted_span_id,
+            "annotator_kind": "HUMAN",
+            "result": {
+                "label": "analysis_quality",
+                "score": analysis_quality_score,
+                "explanation": get_analysis_quality_description(analysis_quality_score)
+            },
+            "metadata": {"qa_id": qa_id} if qa_id else {}
+        })
+    
+    # Add difficulty annotation if present
+    if "difficulty" in feedback_data and feedback_data["difficulty"] is not None:
+        difficulty_score = feedback_data["difficulty"]
+        annotation_data.append({
+            "id": f"{annotation_id}_difficulty",
+            "name": "Query Difficulty",
+            "span_id": formatted_span_id,
+            "annotator_kind": "HUMAN",
+            "result": {
+                "label": "query_difficulty",
+                "score": difficulty_score,
+                "explanation": get_difficulty_description(difficulty_score)
+            },
+            "metadata": {"qa_id": qa_id} if qa_id else {}
+        })
+    
+    # Add faults annotations if present
+    if "faults" in feedback_data and feedback_data["faults"]:
+        active_faults = format_faults_list(feedback_data["faults"])
+        for fault_type in active_faults:
+            annotation_data.append({
+                "id": f"{annotation_id}_fault_{fault_type}",
+                "name": f"Fault: {fault_type.replace('_', ' ').title()}",
+                "span_id": formatted_span_id,
+                "annotator_kind": "HUMAN",
+                "result": {
+                    "label": "fault",
+                    "score": 1,  # Binary presence of fault
+                    "explanation": f"User identified fault: {fault_type.replace('_', ' ')}"
+                },
+                "metadata": {"qa_id": qa_id, "fault_type": fault_type} if qa_id else {"fault_type": fault_type}
+            })
+    
     # Note: We don't need to add feedback_text here as it's already handled above as user_comment
         
     # Add model answer if provided
@@ -403,9 +513,6 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
     
     # Convert to JSON for logging and sending
     payload_json = json.dumps(payload)
-    logger.info(f"Submitting annotation to Phoenix at {annotation_endpoint}")
-    logger.info(f"Annotation payload: {payload_json}")
-    logger.info(f"Headers being used: {headers}")
     
     # Submit the annotation
     try:
@@ -447,7 +554,6 @@ async def associate_feedback_with_spans(session_id: str, qa_id: str, feedback_da
         response_span_id = await find_qa_span_id_with_retry(session_id, response_key)
         
         if response_span_id:
-            logger.info(f"Found response span ID: {response_span_id} for session={session_id}, qa_id={qa_id}")
             
             # Submit annotation to Phoenix using the response span
             success = submit_span_annotation(response_span_id, feedback_data, qa_id)

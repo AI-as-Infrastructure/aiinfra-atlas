@@ -694,16 +694,31 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
         # Log reception of feedback
         logger.info(f"Received HTTP feedback for session {session_id}, qa {qa_id} from {client_ip}")
         
+        # Debug: Log what we received from frontend
+        logger.info(f"Raw feedback data received: {feedback.model_dump()}")
+        logger.info(f"Sentiment field from Pydantic model: {feedback.sentiment}")
+        
         # Format feedback data for telemetry using the correct field names
         feedback_data = {
+            # Original fields
             "relevance": feedback.relevance,
             "factual_accuracy": feedback.factual_accuracy,
             "source_quality": feedback.source_quality,
             "clarity": feedback.clarity,
+            "question_rating": feedback.question_rating,
+            "user_category": feedback.user_category,
             "tags": feedback.tags,
             "feedback_text": feedback.feedback_text,
+            "model_answer": feedback.model_answer,
             "timestamp": feedback.timestamp or datetime.datetime.now().isoformat(),
             "source": "http_fallback",
+            
+            # New inline feedback fields
+            "feedback_type": feedback.feedback_type,
+            "sentiment": feedback.sentiment,
+            "analysis_quality": feedback.analysis_quality,
+            "difficulty": feedback.difficulty,
+            "faults": feedback.faults,
             
             # Include rich context data from frontend
             "test_target": feedback.test_target,
