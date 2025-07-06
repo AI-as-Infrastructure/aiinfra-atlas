@@ -171,7 +171,6 @@ def initialize_telemetry() -> bool:
         )
         tracer_provider.add_span_processor(span_processor)
 
-        logger.info("✅ Configured BatchSpanProcessor with 100ms delay for proper span ordering")
 
         # Set as global tracer provider
         otel_trace.set_tracer_provider(tracer_provider)
@@ -180,9 +179,7 @@ def initialize_telemetry() -> bool:
         _tracer = tracer_provider.get_tracer("atlas.telemetry")
         _phoenix_session = True
 
-        logger.info(f" Phoenix Arize online tracing initialized")
-        logger.info(f" Project: {_project_name}")
-        logger.info(f" Endpoint: {phoenix_endpoint}")
+        logger.info(f"Phoenix Arize online tracing initialized for project: {_project_name}")
         _telemetry_initialized = True
         return True
     except Exception as e:
@@ -550,6 +547,11 @@ def create_feedback_span(session_id: str, qa_id: str, feedback_data: Dict[str, A
 
 async def log_user_feedback(session_id: str, qa_id: str, feedback_data: Dict[str, Any]) -> bool:
     """Log user feedback by associating it with the appropriate span."""
+    logger.info(f"CORE: log_user_feedback called with session_id={session_id}, qa_id={qa_id}")
+    logger.info(f"CORE: feedback_data keys: {list(feedback_data.keys())}")
+    logger.info(f"CORE: sentiment in feedback_data: {'sentiment' in feedback_data}")
+    logger.info(f"CORE: sentiment value: {feedback_data.get('sentiment')}")
+    
     if not is_telemetry_enabled():
         logger.info("Telemetry disabled - skipping feedback logging")
         return True  # Return True to indicate "success" even when disabled

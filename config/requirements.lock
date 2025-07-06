@@ -68,6 +68,12 @@ beautifulsoup4==4.13.4
     # via unstructured
 blinker==1.9.0
     # via flask
+boto3==1.39.3
+    # via langchain-aws
+botocore==1.39.3
+    # via
+    #   boto3
+    #   s3transfer
 brotli==1.1.0
     # via geventhttpclient
 build==1.2.2.post1
@@ -253,6 +259,10 @@ jiter==0.10.0
     # via
     #   anthropic
     #   openai
+jmespath==1.0.1
+    # via
+    #   boto3
+    #   botocore
 joblib==1.5.1
     # via
     #   nltk
@@ -269,6 +279,8 @@ langchain==0.3.25
     #   langchain-community
 langchain-anthropic==0.3.13
     # via -r config/requirements.txt
+langchain-aws==0.2.4
+    # via -r config/requirements.txt
 langchain-community==0.3.23
     # via -r config/requirements.txt
 langchain-core==0.3.59
@@ -276,6 +288,7 @@ langchain-core==0.3.59
     #   -r config/requirements.txt
     #   langchain
     #   langchain-anthropic
+    #   langchain-aws
     #   langchain-community
     #   langchain-huggingface
     #   langchain-ollama
@@ -348,6 +361,7 @@ numpy==1.26.4
     #   arize-phoenix
     #   chroma-hnswlib
     #   chromadb
+    #   langchain-aws
     #   langchain-community
     #   onnxruntime
     #   pandas
@@ -551,6 +565,7 @@ pydantic==2.11.4
     #   fastapi
     #   langchain
     #   langchain-anthropic
+    #   langchain-aws
     #   langchain-core
     #   langsmith
     #   ollama
@@ -574,6 +589,7 @@ pyproject-hooks==1.2.0
     # via build
 python-dateutil==2.9.0.post0
     # via
+    #   botocore
     #   faker
     #   kubernetes
     #   pandas
@@ -653,6 +669,8 @@ rsa==4.9.1
     # via
     #   google-auth
     #   python-jose
+s3transfer==0.13.0
+    # via boto3
 safetensors==0.5.3
     # via transformers
 scikit-learn==1.7.0
@@ -809,6 +827,7 @@ unstructured-client==0.36.0
     # via unstructured
 urllib3==2.4.0
     # via
+    #   botocore
     #   geventhttpclient
     #   kubernetes
     #   requests
