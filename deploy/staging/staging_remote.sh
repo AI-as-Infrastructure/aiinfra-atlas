@@ -409,8 +409,42 @@ Environment="PHOENIX_CLIENT_HEADERS=\$PHOENIX_CLIENT_HEADERS"
 Environment="PHOENIX_PROJECT_NAME=\$PHOENIX_PROJECT_NAME"
 Environment="PHOENIX_COLLECTOR_ENDPOINT=\$PHOENIX_COLLECTOR_ENDPOINT"
 EnvironmentFile=\$APP_DIR/config/.env.staging
-ExecStart=\$APP_DIR/.venv/bin/python -m gunicorn backend.app:app -k uvicorn.workers.UvicornWorker -w 4 -b 127.0.0.1:8000 --access-logfile /var/log/\$APP_NAME/gunicorn-access.log --error-logfile /var/log/\$APP_NAME/gunicorn-error.log
+ExecStart=/bin/bash -c 'source \$APP_DIR/config/.env.staging && \$APP_DIR/.venv/bin/python -m gunicorn backend.app:app -k uvicorn.workers.UvicornWorker -w \${GUNICORN_WORKERS:-4} -b 127.0.0.1:8000 --access-logfile /var/log/\$APP_NAME/gunicorn-access.log --error-logfile /var/log/\$APP_NAME/gunicorn-error.log'
 Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+EOL
+
+# Create LLM Worker service
+cat > /tmp/llm-worker.service << EOL
+[Unit]
+Description=Atlas LLM Background Worker
+After=network.target redis-server.service
+Requires=redis-server.service
+
+[Service]
+User=\$DEPLOY_USER
+Group=\$DEPLOY_USER
+WorkingDirectory=\$APP_DIR
+Environment="PATH=\$APP_DIR/.venv/bin"
+Environment="PYTHONPATH=\$APP_DIR"
+# Pass Phoenix telemetry environment variables to the worker
+Environment="PHOENIX_CLIENT_HEADERS=\$PHOENIX_CLIENT_HEADERS"
+Environment="PHOENIX_PROJECT_NAME=\$PHOENIX_PROJECT_NAME"
+Environment="PHOENIX_COLLECTOR_ENDPOINT=\$PHOENIX_COLLECTOR_ENDPOINT"
+Environment="ENVIRONMENT=staging"
+
+# Environment settings come from .env.staging
+EnvironmentFile=\$APP_DIR/config/.env.staging
+
+# Worker-specific variables
+Environment="WORKER_ID=staging-worker-1"
+
+# Start worker directly
+ExecStart=\$APP_DIR/.venv/bin/python \$APP_DIR/backend/services/worker.py
+Restart=on-failure
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
@@ -484,6 +518,7 @@ sudo chown www-data:adm /var/log/nginx
 
 # Copy config files to server
 sudo mv /tmp/gunicorn.service /etc/systemd/system/
+sudo mv /tmp/llm-worker.service /etc/systemd/system/
 sudo mv /tmp/nginx.conf /etc/nginx/sites-available/$APP_NAME
 sudo ln -sf /etc/nginx/sites-available/$APP_NAME /etc/nginx/sites-enabled/
 sudo rm -f /etc/nginx/sites-enabled/default
@@ -498,7 +533,9 @@ echo "Setting permissions and restarting services..."
 sudo chown -R \$USER:\$USER $APP_DIR /var/log/$APP_NAME
 sudo systemctl daemon-reload
 sudo systemctl enable gunicorn
+sudo systemctl enable llm-worker
 sudo systemctl restart gunicorn
+sudo systemctl restart llm-worker
 
 # Test nginx config before restarting
 echo "Testing Nginx configuration..."
