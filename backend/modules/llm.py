@@ -18,6 +18,7 @@ from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
 from langchain_community.chat_models import ChatOllama
 from langchain_aws import ChatBedrock
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser
@@ -105,11 +106,11 @@ def create_llm(
     Create an LLM instance for any supported provider.
     
     This function is the centralized implementation for creating LLM instances
-    in the ATLAS system, supporting OpenAI, Anthropic, and Ollama providers.
+    in the ATLAS system, supporting OpenAI, Anthropic, Ollama, Bedrock, and Google providers.
     
     Args:
         model_name: Name of the model
-        provider: LLM provider (openai, anthropic, ollama)
+        provider: LLM provider (openai, anthropic, ollama, bedrock, google)
         temperature: Temperature for generation
         streaming: Whether to use streaming mode
         
@@ -173,6 +174,19 @@ def create_llm(
                 "temperature": temperature,
                 "max_tokens": 4096
             },
+            streaming=streaming
+        )
+    elif provider == 'GOOGLE':
+        google_api_key = os.getenv("GOOGLE_API_KEY")
+        if not google_api_key:
+            logger.error("GOOGLE_API_KEY not found in environment - check environment variable loading")
+            raise ValueError("GOOGLE_API_KEY not found. Please set the environment variable.")
+            
+        logger.debug("Using Google Generative AI with API key")
+        return ChatGoogleGenerativeAI(
+            google_api_key=google_api_key,
+            model=model or "gemini-1.5-pro",
+            temperature=temperature,
             streaming=streaming
         )
     else:
