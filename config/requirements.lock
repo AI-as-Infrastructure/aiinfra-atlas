@@ -154,7 +154,9 @@ filelock==3.18.0
     #   torch
     #   transformers
 filetype==1.2.0
-    # via unstructured
+    # via
+    #   langchain-google-genai
+    #   unstructured
 flask==3.1.1
     # via
     #   flask-basicauth
@@ -180,13 +182,21 @@ gevent==25.5.1
     #   locust
 geventhttpclient==2.3.4
     # via locust
+google-ai-generativelanguage==0.6.18
+    # via langchain-google-genai
+google-api-core[grpc]==2.25.1
+    # via google-ai-generativelanguage
 google-auth[requests]==2.40.1
     # via
     #   -r config/requirements.txt
     #   anthropic
+    #   google-ai-generativelanguage
+    #   google-api-core
     #   kubernetes
 googleapis-common-protos==1.70.0
     # via
+    #   google-api-core
+    #   grpcio-status
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
 graphql-core==3.2.6
@@ -201,8 +211,12 @@ grpcio==1.73.0
     # via
     #   arize-phoenix
     #   chromadb
+    #   google-api-core
     #   grpc-interceptor
+    #   grpcio-status
     #   opentelemetry-exporter-otlp-proto-grpc
+grpcio-status==1.71.2
+    # via google-api-core
 gunicorn==23.0.0
     # via -r config/requirements.txt
 h11==0.16.0
@@ -279,21 +293,24 @@ langchain==0.3.25
     #   langchain-community
 langchain-anthropic==0.3.13
     # via -r config/requirements.txt
-langchain-aws==0.2.4
+langchain-aws==0.2.27
     # via -r config/requirements.txt
 langchain-community==0.3.23
     # via -r config/requirements.txt
-langchain-core==0.3.59
+langchain-core==0.3.66
     # via
     #   -r config/requirements.txt
     #   langchain
     #   langchain-anthropic
     #   langchain-aws
     #   langchain-community
+    #   langchain-google-genai
     #   langchain-huggingface
     #   langchain-ollama
     #   langchain-openai
     #   langchain-text-splitters
+langchain-google-genai==2.1.6
+    # via -r config/requirements.txt
 langchain-huggingface==0.2.0
     # via -r config/requirements.txt
 langchain-ollama==0.3.2
@@ -532,12 +549,20 @@ propcache==0.3.2
     # via
     #   aiohttp
     #   yarl
+proto-plus==1.26.1
+    # via
+    #   google-ai-generativelanguage
+    #   google-api-core
 protobuf==5.29.5
     # via
     #   arize-phoenix
+    #   google-ai-generativelanguage
+    #   google-api-core
     #   googleapis-common-protos
+    #   grpcio-status
     #   onnxruntime
     #   opentelemetry-proto
+    #   proto-plus
 psutil==7.0.0
     # via
     #   arize-phoenix
@@ -567,6 +592,7 @@ pydantic==2.11.4
     #   langchain-anthropic
     #   langchain-aws
     #   langchain-core
+    #   langchain-google-genai
     #   langsmith
     #   ollama
     #   openai
@@ -640,6 +666,7 @@ requests==2.32.4
     # via
     #   -r config/requirements.txt
     #   chromadb
+    #   google-api-core
     #   google-auth
     #   huggingface-hub
     #   kubernetes
