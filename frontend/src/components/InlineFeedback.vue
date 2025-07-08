@@ -85,8 +85,18 @@ export default {
   },
   computed: {
     shouldShowFeedback() {
+      // Don't show feedback if it's already been submitted for this QA ID
+      if (this.isAlreadySubmitted) {
+        return false
+      }
+      
+      // Don't show feedback if we're in the complete state
+      if (this.currentStep === 'complete') {
+        return false
+      }
+      
       // Show feedback after message is complete and citations are visible
-      return this.messageComplete && this.citationsVisible && this.qaId && this.currentStep !== 'complete'
+      return this.messageComplete && this.citationsVisible && this.qaId
     },
     
     isAlreadySubmitted() {
@@ -97,12 +107,15 @@ export default {
   watch: {
     qaId: {
       immediate: true,
-      handler(newQaId) {
+      handler(newQaId, oldQaId) {
         if (newQaId) {
-          if (this.isAlreadySubmitted) {
-            this.currentStep = 'complete'
-          } else {
-            this.resetFeedbackState()
+          // Only reset if this is actually a new QA ID, not just a re-render
+          if (newQaId !== oldQaId) {
+            if (this.isAlreadySubmitted) {
+              this.currentStep = 'complete'
+            } else {
+              this.resetFeedbackState()
+            }
           }
         }
       }
@@ -111,10 +124,17 @@ export default {
     isAlreadySubmitted: {
       immediate: true,
       handler(submitted) {
-        if (submitted) {
+        if (submitted && this.currentStep !== 'complete') {
           this.currentStep = 'complete'
         }
       }
+    }
+  },
+  
+  mounted() {
+    // Ensure proper initial state on mount
+    if (this.isAlreadySubmitted) {
+      this.currentStep = 'complete'
     }
   },
   methods: {
