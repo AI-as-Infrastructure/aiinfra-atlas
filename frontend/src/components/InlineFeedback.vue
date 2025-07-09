@@ -8,6 +8,7 @@
       @feedback-changed="onSimpleFeedbackChanged"
       @feedback-data-ready="onSimpleFeedbackDataReady"
       @feedback-submitted="onSimpleFeedbackSubmitted"
+      @cancel="onSimpleCancel"
       ref="simpleFeedback"
     />
 
@@ -186,6 +187,11 @@ export default {
           this.completeFeedbackWorkflow()
         }, 1500)
       }
+    },
+    
+    onSimpleCancel() {
+      // User cancelled simple feedback - complete workflow without submitting feedback
+      this.completeFeedbackWorkflow()
     },
     
     onExtendedCancel() {
