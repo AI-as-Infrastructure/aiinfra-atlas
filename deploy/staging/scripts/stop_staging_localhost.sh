@@ -22,56 +22,44 @@ APP_NAME="atlas"
 APP_DIR="/opt/$APP_NAME"
 LOG_DIR="/var/log/$APP_NAME"
 
-echo "🛑 Gracefully stopping local staging environment..."
+echo "🛑 Stopping local staging environment gracefully..."
 
-# Function to check if a service is running
-check_service() {
-    local service_name=$1
-    if sudo systemctl is-active --quiet "$service_name" 2>/dev/null; then
-        return 0  # Service is running
-    else
-        return 1  # Service is not running
-    fi
-}
+# App settings
+APP_NAME="atlas"
 
-# Function to stop a service gracefully
-stop_service() {
-    local service_name=$1
-    local display_name=$2
-    
-    echo "Checking $display_name..."
-    if check_service "$service_name"; then
-        echo "Stopping $display_name..."
-        sudo systemctl stop "$service_name"
-        echo "✅ $display_name stopped"
-    else
-        echo "ℹ️  $display_name was not running"
-    fi
-}
+echo "📊 Checking current service status..."
+sudo systemctl status gunicorn --no-pager -l || echo "Gunicorn not running"
+sudo systemctl status llm-worker --no-pager -l || echo "LLM worker not running"
+sudo systemctl status nginx --no-pager -l || echo "Nginx not running"
+sudo systemctl status redis-server --no-pager -l || echo "Redis not running"
 
-# Stop services in order (application first, then infrastructure)
-echo "🔄 Stopping staging services..."
+echo ""
+echo "🔄 Stopping services gracefully..."
 
-# Stop application services first
-stop_service "gunicorn" "Gunicorn (application server)"
-stop_service "llm-worker" "LLM Worker service"
+# Stop LLM worker first (handles in-flight requests)
+echo "Stopping LLM worker..."
+sudo systemctl stop llm-worker || echo "LLM worker was not running"
 
-# Stop infrastructure services (but keep some running for development)
-echo "Checking Nginx..."
-if check_service "nginx"; then
-    echo "ℹ️  Keeping Nginx running (may be used by other projects)"
-    echo "   To stop Nginx manually: sudo systemctl stop nginx"
-else
-    echo "ℹ️  Nginx was not running"
-fi
+# Wait a moment for LLM worker to finish current tasks
+sleep 2
 
-echo "Checking Redis..."
-if check_service "redis-server"; then
-    echo "ℹ️  Keeping Redis running for data persistence"
-    echo "   To stop Redis manually: sudo systemctl stop redis-server"
-else
-    echo "ℹ️  Redis was not running"
-fi
+# Stop Gunicorn (backend API)
+echo "Stopping Gunicorn backend..."
+sudo systemctl stop gunicorn || echo "Gunicorn was not running"
+
+# Stop Nginx (frontend)
+echo "Stopping Nginx..."
+sudo systemctl stop nginx || echo "Nginx was not running"
+
+# Stop Redis last (in case services need to write final data)
+echo "Stopping Redis..."
+sudo systemctl stop redis-server || echo "Redis was not running"
+
+echo ""
+echo "📈 Memory cleanup..."
+# Force garbage collection and clear any remaining memory
+sync
+echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || echo "Note: Cannot clear system caches (non-root)"
 
 # Clean temporary files but preserve logs and data
 echo "🧹 Cleaning temporary files..."
@@ -88,20 +76,12 @@ fi
 echo "🔄 Reloading systemd..."
 sudo systemctl daemon-reload
 
-# Display status summary
 echo ""
-echo "📊 Service Status Summary:"
-echo "========================="
-
-services=("gunicorn:Gunicorn" "llm-worker:LLM Worker" "nginx:Nginx" "redis-server:Redis")
-for service_info in "${services[@]}"; do
-    IFS=':' read -r service display <<< "$service_info"
-    if check_service "$service"; then
-        echo "🟢 $display: Running"
-    else
-        echo "🔴 $display: Stopped"
-    fi
-done
+echo "📋 Final service status check..."
+sudo systemctl is-active gunicorn || echo "✅ Gunicorn stopped"
+sudo systemctl is-active llm-worker || echo "✅ LLM worker stopped"
+sudo systemctl is-active nginx || echo "✅ Nginx stopped"
+sudo systemctl is-active redis-server || echo "✅ Redis stopped"
 
 echo ""
 echo "✅ Local staging environment stopped gracefully!"
