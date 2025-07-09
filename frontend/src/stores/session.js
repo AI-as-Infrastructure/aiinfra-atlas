@@ -12,7 +12,7 @@ export const useSessionStore = defineStore('session', {
     previousCorpusFilter: null, // Store previous corpus filter for context changes
     isResponseComplete: false,
     isNewQuestionAsked: false,
-    feedbackSubmitted: {}, // Track feedback status by qaId
+    feedbackSubmitted: {}, // Track feedback status by message_id
     contextChangeNotification: null // Added for context change notification
   }),
   actions: {
@@ -52,7 +52,13 @@ export const useSessionStore = defineStore('session', {
      * Add a message to the chat history
      */
     addMessage(message) {
-      this.chatHistory.push(message)
+      const messageWithId = {
+        ...message,
+        message_id: uuidv4(),
+        timestamp: new Date().toISOString(),
+        qa_id: this.qaId
+      }
+      this.chatHistory.push(messageWithId)
     },
     
     /**
@@ -92,10 +98,10 @@ export const useSessionStore = defineStore('session', {
     },
     
     /**
-     * Mark feedback as submitted for a specific QA ID
+     * Mark feedback as submitted for a specific message ID
      */
-    markFeedbackSubmitted(qaId) {
-      this.feedbackSubmitted[qaId] = true
+    markFeedbackSubmitted(messageId) {
+      this.feedbackSubmitted[messageId] = true
     },
     
     /**
@@ -107,11 +113,11 @@ export const useSessionStore = defineStore('session', {
     },
     
     /**
-     * Check if feedback has been submitted for a specific QA ID
+     * Check if feedback has been submitted for a specific message ID
      */
-    hasFeedbackBeenSubmitted(qaId) {
-      if (!qaId) return false
-      return !!this.feedbackSubmitted[qaId]
+    hasFeedbackBeenSubmitted(messageId) {
+      if (!messageId) return false
+      return !!this.feedbackSubmitted[messageId]
     },
     
     /**
@@ -130,9 +136,12 @@ export const useSessionStore = defineStore('session', {
         sessionId: this.sessionId,
         timestamp: new Date().toISOString(),
         messages: this.chatHistory.map(msg => ({
+          message_id: msg.message_id,
           role: msg.role,
           content: msg.content,
-          citations: msg.citations || []
+          citations: msg.citations || [],
+          timestamp: msg.timestamp,
+          qa_id: msg.qa_id
         })),
         corpusFilter: this.corpusFilter
       }
