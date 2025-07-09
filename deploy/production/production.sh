@@ -394,7 +394,7 @@ WorkingDirectory=\$APP_DIR
 Environment="PATH=\$APP_DIR/.venv/bin"
 Environment="PYTHONPATH=\$APP_DIR"
 EnvironmentFile=\$APP_DIR/config/.env.production
-ExecStart=\$APP_DIR/.venv/bin/python -m gunicorn backend.app:app -k uvicorn.workers.UvicornWorker -w 4 -b 127.0.0.1:8000 --access-logfile /var/log/\$APP_NAME/gunicorn-access.log --error-logfile /var/log/\$APP_NAME/gunicorn-error.log
+ExecStart=/bin/bash -c 'source \$APP_DIR/config/.env.production && \$APP_DIR/.venv/bin/python -m gunicorn backend.app:app -k uvicorn.workers.UvicornWorker -w \${GUNICORN_WORKERS:-8} -b 127.0.0.1:8000 --max-requests \${GUNICORN_MAX_REQUESTS:-3000} --max-requests-jitter \${GUNICORN_MAX_REQUESTS_JITTER:-300} --timeout \${GUNICORN_TIMEOUT:-300} --keep-alive \${GUNICORN_KEEPALIVE:-30} --worker-tmp-dir /dev/shm --access-logfile /var/log/\$APP_NAME/gunicorn-access.log --error-logfile /var/log/\$APP_NAME/gunicorn-error.log'
 Restart=on-failure
 
 [Install]

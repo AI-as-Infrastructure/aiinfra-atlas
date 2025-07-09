@@ -49,7 +49,7 @@ export const useSessionStore = defineStore('session', {
     },
     
     /**
-     * Add a message to the chat history
+     * Add a message to the chat history with size limits
      */
     addMessage(message) {
       const messageWithId = {
@@ -58,7 +58,38 @@ export const useSessionStore = defineStore('session', {
         timestamp: new Date().toISOString(),
         qa_id: this.qaId
       }
+      
+      // Add the new message
       this.chatHistory.push(messageWithId)
+      
+      // Apply chat history limits (keep last 100 messages)
+      const maxMessages = 100
+      if (this.chatHistory.length > maxMessages) {
+        // Remove oldest messages, but keep pairs (user question + assistant response)
+        const messagesToRemove = this.chatHistory.length - maxMessages
+        this.chatHistory.splice(0, messagesToRemove)
+      }
+      
+      // Also check total content size (limit to ~1MB of text)
+      const maxContentSize = 1024 * 1024 // 1MB
+      let totalSize = 0
+      
+      // Calculate total content size
+      for (const msg of this.chatHistory) {
+        totalSize += (msg.content || '').length
+        if (msg.citations) {
+          totalSize += JSON.stringify(msg.citations).length
+        }
+      }
+      
+      // If too large, remove oldest messages
+      while (totalSize > maxContentSize && this.chatHistory.length > 10) {
+        const removedMessage = this.chatHistory.shift()
+        totalSize -= (removedMessage.content || '').length
+        if (removedMessage.citations) {
+          totalSize -= JSON.stringify(removedMessage.citations).length
+        }
+      }
     },
     
     /**
