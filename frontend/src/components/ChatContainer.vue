@@ -52,9 +52,14 @@ const {
 // Track feedback workflow completion for current QA ID
 const feedbackWorkflowComplete = ref(false)
 
-// Computed property to check if feedback has been submitted
+// Computed property to check if feedback has been submitted for the current response
 const feedbackSubmitted = computed(() => {
-	return qaId.value ? sessionStore.hasFeedbackBeenSubmitted(qaId.value) : false;
+	if (chatHistory.value.length === 0) return false
+	const lastMessage = chatHistory.value[chatHistory.value.length - 1]
+	if (lastMessage.role === 'assistant' && lastMessage.message_id) {
+		return sessionStore.hasFeedbackBeenSubmitted(lastMessage.message_id)
+	}
+	return false
 });
 
 // Computed property to determine when to show new question input
@@ -86,9 +91,11 @@ function handleInputActiveChange(isActive) {
 }
 
 // Handle feedback workflow completion
-function onFeedbackWorkflowComplete(completedQaId) {
-	// Only mark as complete if it's for the current QA ID
-	if (completedQaId === qaId.value) {
+function onFeedbackWorkflowComplete(completedMessageId) {
+	// Check if this is for the current/latest assistant response
+	if (chatHistory.value.length === 0) return
+	const lastMessage = chatHistory.value[chatHistory.value.length - 1]
+	if (lastMessage.role === 'assistant' && lastMessage.message_id === completedMessageId) {
 		feedbackWorkflowComplete.value = true
 	}
 }
@@ -98,9 +105,13 @@ watch(qaId, (newQaId) => {
 	if (newQaId) {
 		// Reset feedback workflow state for new QA
 		feedbackWorkflowComplete.value = false
-		// If feedback was already submitted, mark workflow as complete
-		if (sessionStore.hasFeedbackBeenSubmitted(newQaId)) {
-			feedbackWorkflowComplete.value = true
+		// Check if feedback was already submitted for the latest response
+		if (chatHistory.value.length > 0) {
+			const lastMessage = chatHistory.value[chatHistory.value.length - 1]
+			if (lastMessage.role === 'assistant' && lastMessage.message_id && 
+				sessionStore.hasFeedbackBeenSubmitted(lastMessage.message_id)) {
+				feedbackWorkflowComplete.value = true
+			}
 		}
 	}
 })

@@ -57,6 +57,10 @@ export default {
       type: String,
       required: true
     },
+    messageId: {
+      type: String,
+      required: true
+    },
     sessionId: {
       type: String,
       required: true
@@ -100,17 +104,17 @@ export default {
     },
     
     isAlreadySubmitted() {
-      // Check if feedback was already submitted for this QA ID
-      return this.sessionStore.feedbackSubmitted[this.qaId] || false
+      // Check if feedback was already submitted for this message ID
+      return this.sessionStore.feedbackSubmitted[this.messageId] || false
     }
   },
   watch: {
-    qaId: {
+    messageId: {
       immediate: true,
-      handler(newQaId, oldQaId) {
-        if (newQaId) {
-          // Only reset if this is actually a new QA ID, not just a re-render
-          if (newQaId !== oldQaId) {
+      handler(newMessageId, oldMessageId) {
+        if (newMessageId) {
+          // Only reset if this is actually a new message ID, not just a re-render
+          if (newMessageId !== oldMessageId) {
             if (this.isAlreadySubmitted) {
               this.currentStep = 'complete'
             } else {
@@ -231,10 +235,10 @@ export default {
     
     completeFeedbackWorkflow() {
       this.currentStep = 'complete'
-      // NOW mark feedback as submitted in session store
-      this.sessionStore.markFeedbackSubmitted(this.qaId)
+      // NOW mark feedback as submitted in session store using message ID
+      this.sessionStore.markFeedbackSubmitted(this.messageId)
       // Emit event to parent to indicate feedback workflow is complete
-      this.$emit('feedback-workflow-complete', this.qaId)
+      this.$emit('feedback-workflow-complete', this.messageId)
     },
     
     resetFeedbackState() {

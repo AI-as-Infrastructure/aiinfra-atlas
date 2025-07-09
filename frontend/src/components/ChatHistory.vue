@@ -1,7 +1,7 @@
 <template>
 	<div class="chat-history">
 		<div class="messages">
-			<div v-for="(message, index) in chatHistory" :key="index" class="message-container">
+			<div v-for="(message, index) in chatHistory" :key="message.message_id || index" class="message-container">
 				<div :class="['message', 
 					message.role === 'assistant' ? 'is-primary' : 'is-info',
 					message.is_clarification ? 'is-clarification-question' : '',
@@ -65,7 +65,8 @@
 						<!-- Inline Feedback (New) - Only for assistant messages with citations -->
 						<InlineFeedback
 							v-if="message.role === 'assistant' && message.citations && message.citations.length > 0 && !message.is_clarification"
-							:qa-id="qaId"
+							:qa-id="message.qa_id"
+							:message-id="message.message_id"
 							:session-id="sessionId"
 							:message-complete="isResponseComplete"
 							:citations-visible="true"
@@ -252,7 +253,7 @@ import InlineFeedback from './InlineFeedback.vue'
 const emit = defineEmits(['feedback-workflow-complete'])
 
 const sessionStore = useSessionStore()
-const { chatHistory, isResponseComplete, qaId } = storeToRefs(sessionStore)
+const { chatHistory, isResponseComplete } = storeToRefs(sessionStore)
 
 // Session ID for feedback
 const sessionId = computed(() => sessionStore.sessionId)
@@ -469,20 +470,11 @@ function truncateText(text, length) {
 	return text.length > length ? text.substring(0, length) + '...' : text
 }
 
-// Format metadata for display
-function formatMetadata(metadata) {
-	if (!metadata) return 'none'
-	try {
-		return JSON.stringify(metadata, null, 2)
-	} catch (e) {
-		return 'error formatting metadata'
-	}
-}
 
 // Handle feedback workflow completion
-function onFeedbackWorkflowComplete(qaId) {
-	// Emit to parent that feedback workflow is complete for this QA ID
-	emit('feedback-workflow-complete', qaId)
+function onFeedbackWorkflowComplete(messageId) {
+	// Emit to parent that feedback workflow is complete for this message ID
+	emit('feedback-workflow-complete', messageId)
 }
 
 
