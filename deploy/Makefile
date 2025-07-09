@@ -19,7 +19,7 @@ d: ## Destroy development environment
 	@./deploy/dev/scripts/clean_dev.sh
 
 # Production Deployment Targets
-.PHONY: p dp up
+.PHONY: p dp up sp
 p: ## Deploy to production
 	@if [ ! -f "config/.env.production" ]; then \
 		echo "ERROR: config/.env.production file not found!"; \
@@ -43,8 +43,14 @@ up: ## Upgrade production with minimal downtime
 	@bash deploy/production/scripts/upgrade_prod.sh
 	@rm -f /tmp/.env.production
 
+sp: ## Stop production environment gracefully
+	@echo "🚨 WARNING: This will stop the production environment!"
+	@read -p "Are you sure you want to continue? (y/N): " confirm && [ "$$confirm" = "y" ] || exit 1
+	@echo "🛑 Stopping production environment gracefully..."
+	@bash deploy/production/scripts/stop_production.sh
+
 # Staging Deployment Targets
-.PHONY: sl sr dsl dsr usl usr
+.PHONY: sl sr dsl dsr usl usr ssl ssr
 sl: ## Deploy to local staging environment
 	@echo "Deploying to local staging environment..."
 	@bash deploy/staging/staging_localhost.sh
@@ -77,6 +83,14 @@ usl: ## Upgrade local staging with minimal downtime
 usr: ## Upgrade remote staging with minimal downtime
 	@echo "Upgrading remote staging environment..."
 	@bash deploy/staging/scripts/upgrade_remote.sh
+
+ssl: ## Stop local staging environment gracefully
+	@echo "🛑 Stopping local staging environment gracefully..."
+	@bash deploy/staging/scripts/stop_staging_localhost.sh
+
+ssr: ## Stop remote staging environment gracefully
+	@echo "🛑 Stopping remote staging environment gracefully..."
+	@bash deploy/staging/scripts/stop_staging_remote.sh
 
 # Load Testing Targets
 .PHONY: lts ltp ltq ltweb ltasync
