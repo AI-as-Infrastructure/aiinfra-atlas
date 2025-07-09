@@ -38,6 +38,7 @@ requests==2.32.4
 python-jose[cryptography]==3.4.0  # For AWS Cognito JWT validation
 redis==5.0.1  # For async LLM request queuing
 slowapi==0.1.9  # For rate limiting FastAPI endpoints
+psutil==5.9.8  # For memory monitoring and WebSocket management
 
 # GraphQL and Pydantic
 strawberry-graphql==0.270.1

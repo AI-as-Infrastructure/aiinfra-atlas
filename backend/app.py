@@ -9,6 +9,7 @@ import asyncio
 import json
 import datetime
 import logging
+import time
 from typing import Dict, List, Optional
 import uuid
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -158,28 +159,210 @@ except Exception as e:
     logger.error(f"Failed to initialize configuration: {e}")
     raise
 
-# WebSocket connection manager
+# WebSocket connection manager with enhanced features
 class ConnectionManager:
     def __init__(self):
         self.active_connections: dict[str, WebSocket] = {}
+        self.connection_timestamps: dict[str, float] = {}
+        self.connection_activity: dict[str, float] = {}  # Track last activity
+        self.connection_message_counts: dict[str, int] = {}  # Track messages per connection
+        
+        # Configuration from environment
+        self.max_connections = int(os.getenv("WEBSOCKET_MAX_CONNECTIONS", "100"))
+        self.max_idle_time = int(os.getenv("WEBSOCKET_MAX_IDLE_TIME", "1800"))  # 30 minutes
+        self.max_connection_time = int(os.getenv("WEBSOCKET_MAX_CONNECTION_TIME", "7200"))  # 2 hours
+        self.max_messages_per_connection = int(os.getenv("WEBSOCKET_MAX_MESSAGES", "1000"))
+        self.cleanup_interval = int(os.getenv("WEBSOCKET_CLEANUP_INTERVAL", "300"))  # 5 minutes
+        
+        # Memory monitoring
+        self.memory_threshold_mb = int(os.getenv("WEBSOCKET_MEMORY_THRESHOLD_MB", "500"))
+        self.last_cleanup = time.time()
 
     async def connect(self, websocket: WebSocket, session_id: str):
+        # Check connection limits
+        if len(self.active_connections) >= self.max_connections:
+            await websocket.close(code=1013, reason="Server overloaded - too many connections")
+            logger.warning(f"Connection rejected for {session_id}: max connections ({self.max_connections}) reached")
+            return False
+        
+        # Check memory usage before accepting new connections
+        if self._check_memory_pressure():
+            await websocket.close(code=1013, reason="Server memory pressure - connection rejected")
+            logger.warning(f"Connection rejected for {session_id}: memory pressure detected")
+            return False
+            
         await websocket.accept()
+        current_time = time.time()
         self.active_connections[session_id] = websocket
+        self.connection_timestamps[session_id] = current_time
+        self.connection_activity[session_id] = current_time
+        self.connection_message_counts[session_id] = 0
+        
+        logger.info(f"WebSocket connected for {session_id}. Active connections: {len(self.active_connections)}")
+        
+        # Perform cleanup if needed
+        if current_time - self.last_cleanup > self.cleanup_interval:
+            await self._background_cleanup()
+            
+        return True
 
     def disconnect(self, session_id: str):
+        """Gracefully disconnect a WebSocket connection"""
         if session_id in self.active_connections:
+            try:
+                # Log connection statistics
+                if session_id in self.connection_timestamps:
+                    duration = time.time() - self.connection_timestamps[session_id]
+                    messages = self.connection_message_counts.get(session_id, 0)
+                    logger.info(f"WebSocket {session_id} disconnected: duration={duration:.1f}s, messages={messages}")
+            except Exception as e:
+                logger.error(f"Error logging disconnect stats for {session_id}: {e}")
+            
+            # Clean up all connection data
             del self.active_connections[session_id]
+        
+        # Clean up tracking data
+        self.connection_timestamps.pop(session_id, None)
+        self.connection_activity.pop(session_id, None)
+        self.connection_message_counts.pop(session_id, None)
+        
+        logger.debug(f"WebSocket disconnected for {session_id}. Active connections: {len(self.active_connections)}")
 
     async def send_message(self, session_id: str, message: dict):
-        if session_id in self.active_connections:
+        """Send message to WebSocket with error handling and activity tracking"""
+        if session_id not in self.active_connections:
+            logger.warning(f"Cannot send message to {session_id}: connection not found")
+            return False
+            
+        try:
+            # Update activity and message count
+            self.connection_activity[session_id] = time.time()
+            self.connection_message_counts[session_id] = self.connection_message_counts.get(session_id, 0) + 1
+            
+            # Check if connection has exceeded message limit
+            if self.connection_message_counts[session_id] > self.max_messages_per_connection:
+                logger.warning(f"Connection {session_id} exceeded message limit, disconnecting")
+                await self.active_connections[session_id].close(code=1008, reason="Message limit exceeded")
+                self.disconnect(session_id)
+                return False
+            
             await self.active_connections[session_id].send_json(message)
+            return True
+            
+        except Exception as e:
+            logger.warning(f"Failed to send message to {session_id}: {e}")
+            self.disconnect(session_id)
+            return False
+
+    async def _background_cleanup(self):
+        """Background cleanup of stale and inactive connections"""
+        current_time = time.time()
+        cleanup_count = 0
+        
+        # Find connections to clean up
+        connections_to_remove = []
+        
+        for session_id in list(self.active_connections.keys()):
+            connection_age = current_time - self.connection_timestamps.get(session_id, current_time)
+            last_activity = self.connection_activity.get(session_id, current_time)
+            idle_time = current_time - last_activity
+            message_count = self.connection_message_counts.get(session_id, 0)
+            
+            # Reasons to disconnect
+            should_disconnect = False
+            reason = ""
+            
+            if connection_age > self.max_connection_time:
+                should_disconnect = True
+                reason = "Maximum connection time exceeded"
+            elif idle_time > self.max_idle_time:
+                should_disconnect = True
+                reason = "Connection idle too long"
+            elif message_count > self.max_messages_per_connection:
+                should_disconnect = True
+                reason = "Message limit exceeded"
+            
+            if should_disconnect:
+                try:
+                    await self.active_connections[session_id].close(code=1000, reason=reason)
+                except Exception as e:
+                    logger.debug(f"Error closing connection {session_id}: {e}")
+                
+                connections_to_remove.append(session_id)
+                cleanup_count += 1
+        
+        # Remove cleaned up connections
+        for session_id in connections_to_remove:
+            self.disconnect(session_id)
+        
+        if cleanup_count > 0:
+            logger.info(f"Background cleanup: removed {cleanup_count} stale connections")
+        
+        self.last_cleanup = current_time
+
+    def _check_memory_pressure(self) -> bool:
+        """Check if system is under memory pressure"""
+        try:
+            import psutil
+            memory = psutil.virtual_memory()
+            # Check if available memory is less than threshold
+            available_mb = memory.available / (1024 * 1024)
+            if available_mb < self.memory_threshold_mb:
+                logger.warning(f"Memory pressure detected: {available_mb:.1f}MB available (threshold: {self.memory_threshold_mb}MB)")
+                return True
+        except ImportError:
+            # psutil not available, skip memory check
+            pass
+        except Exception as e:
+            logger.error(f"Error checking memory pressure: {e}")
+        
+        return False
+
+    def get_connection_stats(self) -> dict:
+        """Get statistics about current connections"""
+        current_time = time.time()
+        stats = {
+            "total_connections": len(self.active_connections),
+            "max_connections": self.max_connections,
+            "connections_by_age": {"0-5min": 0, "5-30min": 0, "30min+": 0},
+            "connections_by_activity": {"active": 0, "idle": 0},
+            "total_messages": sum(self.connection_message_counts.values()),
+            "average_messages_per_connection": 0
+        }
+        
+        if stats["total_connections"] > 0:
+            stats["average_messages_per_connection"] = stats["total_messages"] / stats["total_connections"]
+            
+            for session_id in self.active_connections:
+                # Age classification
+                age = current_time - self.connection_timestamps.get(session_id, current_time)
+                if age < 300:  # 5 minutes
+                    stats["connections_by_age"]["0-5min"] += 1
+                elif age < 1800:  # 30 minutes
+                    stats["connections_by_age"]["5-30min"] += 1
+                else:
+                    stats["connections_by_age"]["30min+"] += 1
+                
+                # Activity classification
+                last_activity = self.connection_activity.get(session_id, current_time)
+                if current_time - last_activity < 300:  # 5 minutes
+                    stats["connections_by_activity"]["active"] += 1
+                else:
+                    stats["connections_by_activity"]["idle"] += 1
+        
+        return stats
+
+    async def cleanup_stale_connections(self):
+        """Public method to trigger cleanup (for backward compatibility)"""
+        await self._background_cleanup()
 
 manager = ConnectionManager()
 
 @app.websocket("/ws/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
-    await manager.connect(websocket, session_id)
+    connected = await manager.connect(websocket, session_id)
+    if not connected:
+        return
     
     # Import telemetry functions
     from backend.telemetry import using_session, log_user_feedback
@@ -638,6 +821,62 @@ async def diagnostics(request: Request):
         "config": config_info,
         "telemetry_initialized": telemetry_initialized
     }
+
+@app.get("/api/websocket/stats")
+async def websocket_stats(request: Request):
+    """Return WebSocket connection statistics for monitoring."""
+    # Check if authentication is required based on environment
+    auth_required = os.getenv("VITE_USE_COGNITO_AUTH", "false").lower() == "true"
+    
+    if auth_required:
+        # Get the authorization header
+        auth_header = request.headers.get("Authorization")
+        if not auth_header:
+            raise HTTPException(
+                status_code=401,
+                detail="Authentication required for WebSocket stats"
+            )
+        
+        # Verify user is authenticated
+        user = await optional_user(request)
+        if not user.get("authenticated", False):
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied for WebSocket stats"
+            )
+    
+    try:
+        # Get connection statistics
+        stats = manager.get_connection_stats()
+        
+        # Add memory information if available
+        try:
+            import psutil
+            memory = psutil.virtual_memory()
+            stats["memory"] = {
+                "available_mb": round(memory.available / (1024 * 1024), 1),
+                "used_percent": memory.percent,
+                "threshold_mb": manager.memory_threshold_mb
+            }
+        except ImportError:
+            stats["memory"] = {"status": "psutil not available"}
+        except Exception as e:
+            stats["memory"] = {"error": str(e)}
+        
+        # Add configuration
+        stats["config"] = {
+            "max_connections": manager.max_connections,
+            "max_idle_time": manager.max_idle_time,
+            "max_connection_time": manager.max_connection_time,
+            "max_messages_per_connection": manager.max_messages_per_connection,
+            "cleanup_interval": manager.cleanup_interval
+        }
+        
+        return stats
+    
+    except Exception as e:
+        logger.error(f"Error getting WebSocket stats: {e}")
+        return {"error": "Failed to get WebSocket statistics"}
 
 # --- HTTP Feedback endpoint (fallback for WebSocket failures) ---
 @app.post("/api/feedback", response_model=FeedbackResponse)
