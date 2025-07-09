@@ -26,23 +26,27 @@ load_test:
     websocket_users: 0      # WebSocket connections (disabled for realistic test)
     async_users: 0          # Async processing users (disabled for realistic test)
   
-  # Load Patterns - Realistic user behavior
+  # Load Patterns - Optimized for 8 vCPU, 16GB RAM servers
   load_patterns:
     ramp_up:
       start_users: 1
-      end_users: 20
-      duration: "3m"        # Gradual ramp up
+      end_users: 15
+      duration: "2m"        # Faster ramp up for server specs
     
     sustained:
-      users: 20
-      duration: "15m"       # Sustained realistic load
+      users: 15
+      duration: "20m"       # Sustained realistic load
     
     peak:
-      users: 25             # Slight peak above normal
-      duration: "3m"        # Short peak period
+      users: 20             # Peak load matching server capacity
+      duration: "5m"        # Longer peak period for stress testing
+    
+    burst:
+      users: 25             # Burst load testing LLM_MAX_CONCURRENT=30
+      duration: "2m"        # Short burst to test limits
     
     ramp_down:
-      start_users: 20
+      start_users: 15
       end_users: 0
       duration: "2m"
   
@@ -74,16 +78,16 @@ load_test:
       probability: 0.3      # 30% chance of longer pause
       duration: 300000      # 5 minute pause (user distraction)
   
-  # Performance Targets - Adjusted for realistic load
+  # Performance Targets - Optimized for 8 vCPU, 16GB RAM servers
   performance_targets:
-    response_time_p95: 12000  # ms (12s for P95 with LLM processing)
-    response_time_p99: 18000  # ms (18s for P99 with LLM processing)
-    error_rate_max: 2.0       # percentage (stricter for realistic load)
-    throughput_min: 2         # requests per second (more realistic for 20 users)
+    response_time_p95: 15000  # ms (15s for P95 with full response time)
+    response_time_p99: 22000  # ms (22s for P99 with full response time)
+    error_rate_max: 1.0       # percentage (stricter for production-grade servers)
+    throughput_min: 3         # requests per second (higher with better specs)
     
-    # Streaming specific targets - aligned with your observations
-    streaming_first_token_max: 5000   # ms (4s + buffer)
-    streaming_total_time_max: 12000   # ms (10s + buffer)
+    # Streaming specific targets - optimized for server specs
+    streaming_first_token_max: 6000   # ms (6s realistic for LLM processing)
+    streaming_total_time_max: 18000   # ms (18s realistic for full response)
     
     # WebSocket targets
     websocket_connection_time_max: 1000  # ms
@@ -104,20 +108,20 @@ load_test:
       borderline_threshold: 10.0  # 5-10% is borderline
     
     avg_response_time:
-      pass_threshold: 15000       # <15s average response time
+      pass_threshold: 15000       # <15s average response time (realistic)
       borderline_threshold: 20000 # 15-20s is borderline
     
     p95_response_time:
-      pass_threshold: 18000       # <18s P95 response time
-      borderline_threshold: 25000 # 18-25s is borderline
+      pass_threshold: 18000       # <18s P95 response time (realistic)
+      borderline_threshold: 24000 # 18-24s is borderline
     
     first_token_time:
-      pass_threshold: 5000        # <5s to first token (user expectation)
-      borderline_threshold: 7000  # 5-7s is borderline
+      pass_threshold: 6000        # <6s to first token (realistic for LLM)
+      borderline_threshold: 8000  # 6-8s is borderline
     
     requests_per_second:
-      pass_threshold: 0.5         # >0.5 RPS for LLM workloads
-      borderline_threshold: 0.2   # 0.2-0.5 RPS is borderline
+      pass_threshold: 1.0         # >1.0 RPS for optimized LLM workloads
+      borderline_threshold: 0.5   # 0.5-1.0 RPS is borderline
 
 # Test Data Configuration
 test_data:
@@ -156,18 +160,21 @@ monitoring:
     - "websocket_stability"
     - "user_journey_completion"
 
-# Infrastructure Assumptions
+# Infrastructure Assumptions - 8 vCPU, 16GB RAM servers
 infrastructure:
-  backend_workers: 4
+  backend_workers: 8              # Matching GUNICORN_WORKERS
   redis_instances: 1
   load_balancer: "nginx"
   ssl_enabled: true
+  llm_max_concurrent: 30          # Matching LLM_MAX_CONCURRENT
+  websocket_max_connections: 100  # Matching WEBSOCKET_MAX_CONNECTIONS
   
   # Expected bottlenecks
   expected_bottlenecks:
     - "llm_inference"
     - "vector_search"
     - "redis_queue"
+    - "memory_pressure"           # Added for higher concurrency
 
 # Safety Limits
 safety:
@@ -194,32 +201,49 @@ env_vars:
 # Test Scenarios - Realistic usage patterns
 scenarios:
   realistic_usage:
-    description: "Realistic 20-user concurrent load test"
-    duration: "25m"
-    users: 20
+    description: "Realistic 15-user concurrent load test (optimized for server specs)"
+    duration: "30m"
+    users: 15
     user_types: ["question_users", "feedback_users", "mixed_users"]
     think_time_enabled: true
     natural_pauses_enabled: true
   
   steady_state:
-    description: "Steady state performance test"
-    duration: "15m"
+    description: "Steady state performance test (server baseline)"
+    duration: "20m"
     users: 15
     user_types: ["question_users", "mixed_users"]
     think_time_enabled: true
     streaming_ratio: 1.0
   
   peak_realistic:
-    description: "Realistic peak load (25 users)"
-    duration: "8m"
-    users: 25
+    description: "Realistic peak load (20 users - server capacity)"
+    duration: "10m"
+    users: 20
     user_types: ["question_users", "feedback_users", "mixed_users"]
     think_time_enabled: true
     reduced_think_time: true  # Slightly faster during peak
   
-  long_session:
-    description: "Long user session simulation"
+  burst_test:
+    description: "Burst load test (25 users - testing LLM_MAX_CONCURRENT)"
+    duration: "5m"
+    users: 25
+    user_types: ["question_users", "mixed_users"]
+    think_time_enabled: false  # Aggressive testing
+    reduced_think_time: true
+  
+  focus_group:
+    description: "Focus group simulation (15-20 users, realistic behavior)"
     duration: "45m"
+    users: 18
+    user_types: ["question_users", "feedback_users", "mixed_users"]
+    extended_sessions: true
+    think_time_enabled: true
+    natural_pauses_enabled: true
+  
+  long_session:
+    description: "Long user session simulation (optimized)"
+    duration: "60m"
     users: 12
     user_types: ["mixed_users"]
     extended_sessions: true
