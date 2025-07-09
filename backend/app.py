@@ -771,83 +771,99 @@ async def ask_stream(data: dict = Body(...)):
                         provider=provider  # Pass the provider if specified
                     )
                 
-                # Stream response chunks
-                full_response = ""
-                chunk_count = 0
-                
-                # Use our streaming utility to format SSE messages
-                async for sse_message in stream_response_chunks(
-                    chunks_generator=response_generator,
-                    qa_id=qa_id,
-                    session_id=session_id,
-                    create_streaming_span=False  # Prevent redundant streaming spans
-                ):
-                    # Ensure each SSE message ends with \n\n
-                    if not sse_message.endswith('\n\n'):
-                        sse_message += '\n\n'
-                    yield sse_message
+                    # Stream response chunks
+                    full_response = ""
+                    chunk_count = 0
+                    
+                    # Use our streaming utility to format SSE messages
+                    async for sse_message in stream_response_chunks(
+                        chunks_generator=response_generator,
+                        qa_id=qa_id,
+                        session_id=session_id,
+                        create_streaming_span=False  # Prevent redundant streaming spans
+                    ):
+                        # Ensure each SSE message ends with \n\n
+                        if not sse_message.endswith('\n\n'):
+                            sse_message += '\n\n'
+                        yield sse_message
+                        await asyncio.sleep(0)
+                        
+                        # Extract the chunk for building full response
+                        try:
+                            data = json.loads(sse_message.split("data: ")[1])
+                            chunk = data.get("chunk", {}).get("text", "")
+                            full_response += chunk
+                            chunk_count += 1
+                        except (IndexError, json.JSONDecodeError):
+                            pass
+
+                    # After all content, stream references/citations
+                    citation_limit = get_citation_limit()
+                    references_message = stream_documents_as_references(
+                        documents=documents,
+                        qa_id=qa_id,
+                        session_id=session_id,
+                        citation_limit=citation_limit
+                    )
+                    if not references_message.endswith('\n\n'):
+                        references_message += '\n\n'
+                    yield references_message
                     await asyncio.sleep(0)
                     
-                    # Extract the chunk for building full response
-                    try:
-                        data = json.loads(sse_message.split("data: ")[1])
-                        chunk = data.get("chunk", {}).get("text", "")
-                        full_response += chunk
-                        chunk_count += 1
-                    except (IndexError, json.JSONDecodeError):
-                        pass
+                    # Set top-level span info following OpenInference conventions for proper Phoenix UI separation
+                    # Info field content (using OpenInference standard attributes) - same pattern as com.atlas.rag.references
+                    parent_span.set_attribute("input.value", question)
+                    parent_span.set_attribute("output.value", full_response)
+                    parent_span.set_attribute("openinference.span.kind", OpenInferenceSpanKind.AGENT)
 
-                # After all content, stream references/citations
-                citation_limit = get_citation_limit()
-                references_message = stream_documents_as_references(
-                    documents=documents,
-                    qa_id=qa_id,
-                    session_id=session_id,
-                    citation_limit=citation_limit
-                )
-                if not references_message.endswith('\n\n'):
-                    references_message += '\n\n'
-                yield references_message
-                await asyncio.sleep(0)
-                
-                # Set top-level span info following OpenInference conventions for proper Phoenix UI separation
-                # Info field content (using OpenInference standard attributes) - same pattern as com.atlas.rag.references
-                parent_span.set_attribute("input.value", question)
-                parent_span.set_attribute("output.value", full_response)
-                parent_span.set_attribute("openinference.span.kind", OpenInferenceSpanKind.AGENT)
-
-                # Send completion message
-                complete_message = create_complete_message(
-                    text=full_response,
-                    qa_id=qa_id
-                )
-                complete_sse = format_sse_message(complete_message, event="complete")
-                if not complete_sse.endswith('\n\n'):
-                    complete_sse += '\n\n'
-                yield complete_sse
-                
-                # Update parent span with final metrics
-                parent_span.set_attribute(SpanAttributes.RESPONSE_LENGTH, len(full_response))
-                parent_span.set_attribute("final_chunk_count", chunk_count)
-                
+                    # Send completion message
+                    complete_message = create_complete_message(
+                        text=full_response,
+                        qa_id=qa_id
+                    )
+                    complete_sse = format_sse_message(complete_message, event="complete")
+                    if not complete_sse.endswith('\n\n'):
+                        complete_sse += '\n\n'
+                    yield complete_sse
+                    
+                    # Update parent span with final metrics
+                    parent_span.set_attribute(SpanAttributes.RESPONSE_LENGTH, len(full_response))
+                    parent_span.set_attribute("final_chunk_count", chunk_count)
+                    
                 except Exception as e:
-                # Log the full error details server-side
-                logger.error(f"Error in streaming response: {e}", exc_info=True)
-                # Record error in parent span
-                parent_span.record_exception(e)
-                parent_span.set_status(Status(StatusCode.ERROR, str(e)))
-                
-                # Create a sanitized error message for the client
-                # Do not expose internal exception details to client
-                error_msg = create_error_message(
-                    "streaming_error",
-                    "An error occurred while processing your request"
-                )
-                yield format_sse_message(error_msg, event="error")
-                
+                    # Log the full error details server-side
+                    logger.error(f"Error in streaming response: {e}", exc_info=True)
+                    # Record error in parent span
+                    parent_span.record_exception(e)
+                    parent_span.set_status(Status(StatusCode.ERROR, str(e)))
+                    
+                    # Create a sanitized error message for the client
+                    # Do not expose internal exception details to client
+                    error_msg = create_error_message(
+                        "streaming_error",
+                        "An error occurred while processing your request"
+                    )
+                    yield format_sse_message(error_msg, event="error")
+                    
                 finally:
                     # Always release the LLM resource slot
                     llm_resource_manager.release_llm_slot()
+                    
+            except Exception as e:
+                # Handle any outer exceptions
+                logger.error(f"Error in RAG pipeline: {e}", exc_info=True)
+                parent_span.record_exception(e)
+                parent_span.set_status(Status(StatusCode.ERROR, str(e)))
+                
+                # Release LLM resource slot on error
+                llm_resource_manager.release_llm_slot()
+                
+                # Create error message for client
+                error_msg = create_error_message(
+                    "pipeline_error",
+                    "An error occurred while processing your request"
+                )
+                yield format_sse_message(error_msg, event="error")
     
     # Return the streaming response with appropriate headers
     response = StreamingResponse(response_generator(), media_type="text/event-stream")
