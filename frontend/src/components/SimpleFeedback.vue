@@ -37,8 +37,15 @@
         />
       </div>
 
-      <!-- Submit Button -->
+      <!-- Submit and Cancel Buttons -->
       <div class="submit-section">
+        <button
+          class="cancel-btn"
+          @click="cancelFeedback"
+          :disabled="isSubmitting"
+        >
+          Cancel
+        </button>
         <button
           class="submit-btn"
           @click="submitBasicFeedback"
@@ -72,7 +79,7 @@ export default {
       default: false
     }
   },
-  emits: ['feedback-submitted', 'feedback-changed', 'feedback-data-ready'],
+  emits: ['feedback-submitted', 'feedback-changed', 'feedback-data-ready', 'cancel'],
   setup() {
     const sessionStore = useSessionStore()
     const telemetryStore = useTelemetryStore()
@@ -217,6 +224,16 @@ export default {
       }
     },
     
+    cancelFeedback() {
+      // Reset form state
+      this.sentiment = null
+      this.basicText = ''
+      this.isSubmitting = false
+      
+      // Emit cancel event to parent
+      this.$emit('cancel')
+    },
+    
     reset() {
       this.sentiment = null
       this.basicText = ''
@@ -326,6 +343,7 @@ export default {
 .submit-section {
   display: flex;
   align-items: center;
+  gap: 0.5rem;
 }
 
 .submit-btn {
@@ -345,6 +363,26 @@ export default {
 
 .submit-btn:disabled {
   background-color: #6c757d;
+  cursor: not-allowed;
+}
+
+.cancel-btn {
+  background-color: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s ease;
+}
+
+.cancel-btn:hover:not(:disabled) {
+  background-color: #5a6268;
+}
+
+.cancel-btn:disabled {
+  background-color: #adb5bd;
   cursor: not-allowed;
 }
 
