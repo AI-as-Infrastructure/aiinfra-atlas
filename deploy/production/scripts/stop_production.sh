@@ -66,25 +66,36 @@ ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no ubuntu@"$INSTANCE_IP" bash -s << '
 set -e
 APP_NAME="atlas"
 
-echo "🔄 Gracefully stopping production services..."
+echo "🚨 Stopping production environment gracefully..."
 
-# Stop Gunicorn first (application layer)
-echo "Stopping Gunicorn (application server)..."
-if sudo systemctl is-active --quiet gunicorn; then
-    sudo systemctl stop gunicorn
-    echo "✅ Gunicorn stopped"
-else
-    echo "ℹ️  Gunicorn was not running"
-fi
+echo "📊 Checking current service status..."
+sudo systemctl status gunicorn --no-pager -l || echo "Gunicorn not running"
+sudo systemctl status llm-worker --no-pager -l || echo "LLM worker not running"
+sudo systemctl status nginx --no-pager -l || echo "Nginx not running"
+sudo systemctl status redis-server --no-pager -l || echo "Redis not running"
 
-# Stop Nginx next (reverse proxy)
-echo "Stopping Nginx (reverse proxy)..."
-if sudo systemctl is-active --quiet nginx; then
-    sudo systemctl stop nginx
-    echo "✅ Nginx stopped"
-else
-    echo "ℹ️  Nginx was not running"
-fi
+echo ""
+echo "🔄 Stopping services gracefully..."
+
+# Put up maintenance page first
+echo "📄 Enabling maintenance mode..."
+sudo systemctl stop nginx || echo "Nginx was not running"
+
+# Wait for current requests to complete
+echo "⏱️  Waiting 30 seconds for current requests to complete..."
+sleep 30
+
+# Stop LLM worker (handles in-flight requests)
+echo "Stopping LLM worker..."
+sudo systemctl stop llm-worker || echo "LLM worker was not running"
+
+# Wait for LLM worker to finish current tasks
+echo "⏱️  Waiting 10 seconds for LLM tasks to complete..."
+sleep 10
+
+# Stop Gunicorn (backend API)
+echo "Stopping Gunicorn backend..."
+sudo systemctl stop gunicorn || echo "Gunicorn was not running"
 
 # Stop worker services if they exist
 echo "Stopping worker services..."
@@ -95,17 +106,27 @@ else
     echo "ℹ️  Atlas worker was not running"
 fi
 
-# Keep Redis running for data persistence unless explicitly requested
-echo "ℹ️  Keeping Redis running for data persistence"
-echo "   To stop Redis manually: sudo systemctl stop redis-server"
+# Stop Redis last (in case services need to write final data)
+echo "Stopping Redis..."
+sudo systemctl stop redis-server || echo "Redis was not running"
 
-# Clear any temporary files but preserve logs
-echo "Cleaning temporary files..."
-sudo rm -f /tmp/gunicorn* /tmp/atlas* || true
+echo ""
+echo "📈 Memory cleanup..."
+# Force garbage collection and clear any remaining memory
+sync
+sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches' 2>/dev/null || echo "Note: Cannot clear system caches"
 
-echo "✅ Production services stopped gracefully"
-echo "📊 Data and logs preserved for restart"
-echo "🔄 To restart: make p (redeploy) or manually start services"
+echo ""
+echo "📋 Final service status check..."
+sudo systemctl is-active gunicorn || echo "✅ Gunicorn stopped"
+sudo systemctl is-active llm-worker || echo "✅ LLM worker stopped"
+sudo systemctl is-active nginx || echo "✅ Nginx stopped"
+sudo systemctl is-active redis-server || echo "✅ Redis stopped"
+
+echo ""
+echo "🛑 PRODUCTION ENVIRONMENT STOPPED"
+echo "⚠️  Website is now offline!"
+echo "💡 To restart: make p"
 
 ENDSTOP
 
