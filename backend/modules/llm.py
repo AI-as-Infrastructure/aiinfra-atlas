@@ -31,6 +31,7 @@ from opentelemetry.trace import SpanKind
 from opentelemetry.trace import SpanKind, Status, StatusCode
 from backend.modules.config import get_system_prompt, get_llm_config
 from backend.modules.system_prompts import get_qa_prompt_template, system_prompt
+from backend.modules.prompt_cache import optimize_prompt_for_provider
 logger = logging.getLogger(__name__)
 
 def format_documents(documents: List[Document]) -> str:
@@ -291,37 +292,47 @@ def generate_response(
             # Create LLM with the specified provider (or from config)
             llm = create_llm(temperature=temperature, provider=provider)
             
+            # Get model information for caching
+            model_name = getattr(llm, "model_name", getattr(llm, "model", "unknown"))
+            provider_name = provider or "unknown"
+            
             # Format chat history (ensure it's not None)
             chat_history_list = chat_history or []
             formatted_history = format_chat_history(chat_history_list)
             chat_history_str = "\n".join([f"{'User' if isinstance(msg, HumanMessage) else 'Assistant'}: {msg.content}" 
                                        for msg in formatted_history])
             
-            # Create the prompt template using the standard approach
-            prompt = create_qa_prompt(system_prompt, bool(chat_history_list))
+            # Get system prompt for caching
+            effective_system_prompt = system_prompt or get_system_prompt()
             
-            # Prepare input data
-            input_data = {
-                "context": context,
-                "question": question
-            }
+            # Use universal prompt caching for all providers
+            optimized_prompt, cache_info = optimize_prompt_for_provider(
+                system_prompt=effective_system_prompt,
+                context=context,
+                provider=provider_name,
+                model=model_name
+            )
             
-            # Add chat history if available
+            # Build complete prompt with chat history and question
             if chat_history_list:
-                input_data["chat_history"] = chat_history_str
+                final_prompt = f"{optimized_prompt}Previous conversation:\n{chat_history_str}\n\nUser question: {question}\n\nAnswer:"
+            else:
+                final_prompt = f"{optimized_prompt}User question: {question}\n\nAnswer:"
             
-            # Create the chain using proper LangChain constructs
-            chain = prompt | llm
-            
-            # Format the prompt
-            formatted_prompt = prompt.format(**input_data)
+            # Log cache performance
+            if cache_info.get("cache_hit"):
+                logger.info(f"Prompt cache hit for {provider_name}/{model_name} "
+                           f"(hit #{cache_info.get('hit_count', 0)}, "
+                           f"estimated {cache_info.get('token_savings_estimated', 0)} tokens saved)")
+            else:
+                logger.debug(f"Prompt cached for future use: {provider_name}/{model_name}")
             
             # Generate response
             full_response = ""
             
             try:
-                # Process the streaming response
-                for chunk in llm.stream(formatted_prompt):
+                # Process the streaming response using optimized prompt
+                for chunk in llm.stream(final_prompt):
                     # Extract content from chunk based on provider and format
                     content = None
                     
@@ -391,8 +402,10 @@ def generate_response(
                 
                 # Create LLM with the specified provider (or from config)
                 llm = create_llm(temperature=temperature, provider=provider)
-                model_name = getattr(llm, "model_name", str(llm))
+                model_name = getattr(llm, "model_name", getattr(llm, "model", str(llm)))
+                provider_name = provider or "unknown"
                 llm_span.set_attribute("model", model_name)
+                llm_span.set_attribute("provider", provider_name)
                 
                 # Format chat history (ensure it's not None)
                 chat_history_list = chat_history or []
@@ -402,24 +415,40 @@ def generate_response(
                 
                 llm_span.set_attribute("chat_history_turns", len(formatted_history))
                 
-                # Create the prompt template using the standard approach
-                prompt = create_qa_prompt(system_prompt, bool(chat_history_list))
+                # Get system prompt for caching
+                effective_system_prompt = system_prompt or get_system_prompt()
                 
-                # Log the prompt for debugging
-                logger.debug(f"Created prompt template with system_prompt: {system_prompt[:50] if system_prompt else 'default'}... and {len(formatted_history)} chat history turns")
+                # Use universal prompt caching for all providers
+                optimized_prompt, cache_info = optimize_prompt_for_provider(
+                    system_prompt=effective_system_prompt,
+                    context=context,
+                    provider=provider_name,
+                    model=model_name
+                )
                 
-                # Prepare input data
-                input_data = {
-                    "context": context,
-                    "question": question
-                }
+                # Add cache information to telemetry
+                llm_span.set_attribute("cache_hit", cache_info.get("cache_hit", False))
+                llm_span.set_attribute("cache_optimization", cache_info.get("optimization", "none"))
+                if cache_info.get("cache_hit"):
+                    llm_span.set_attribute("cache_hit_count", cache_info.get("hit_count", 0))
+                    llm_span.set_attribute("token_savings_estimated", cache_info.get("token_savings_estimated", 0))
                 
-                # Add chat history if available
+                # Build complete prompt with chat history and question
                 if chat_history_list:
-                    input_data["chat_history"] = chat_history_str
+                    formatted_prompt = f"{optimized_prompt}Previous conversation:\n{chat_history_str}\n\nUser question: {question}\n\nAnswer:"
+                else:
+                    formatted_prompt = f"{optimized_prompt}User question: {question}\n\nAnswer:"
                 
-                # Create the chain using proper LangChain constructs
-                chain = prompt | llm
+                # Log cache performance and prompt details
+                if cache_info.get("cache_hit"):
+                    logger.info(f"Prompt cache hit for {provider_name}/{model_name} "
+                               f"(hit #{cache_info.get('hit_count', 0)}, "
+                               f"estimated {cache_info.get('token_savings_estimated', 0)} tokens saved)")
+                else:
+                    logger.debug(f"Prompt cached for future use: {provider_name}/{model_name}")
+                    
+                logger.debug(f"Built optimized prompt with {len(formatted_history)} chat history turns, "
+                           f"cache: {cache_info.get('optimization', 'none')}")
 
                 # Stream response
                 full_response = ""
@@ -429,8 +458,7 @@ def generate_response(
                 logger.debug(f"Starting stream with {llm.__class__.__name__}")
                 
                 try:
-                    # Check the formatted prompt
-                    formatted_prompt = prompt.format(**input_data)
+                    # Use the optimized formatted prompt
                     prompt_length = len(formatted_prompt)
                     llm_span.set_attribute("prompt_length", prompt_length)
                     
@@ -687,6 +715,13 @@ def generate_response_with_telemetry(
                 span_id = str(llm_span.get_span_context().span_id)
                 register_span(session_id, qa_id, span_id)
                 logger.info(f"Registered main LLM span with session_id={session_id}, qa_id={qa_id}, span_id={span_id}")
+
+                # Add cache statistics to span
+                from backend.modules.prompt_cache import get_cache_statistics
+                cache_stats = get_cache_statistics()
+                llm_span.set_attribute("cache_enabled", cache_stats.get("enabled", False))
+                llm_span.set_attribute("cache_total_entries", cache_stats.get("total_entries", 0))
+                llm_span.set_attribute("cache_total_hits", cache_stats.get("total_hits", 0))
 
                 # Generate response without nested span
                 response_gen = generate_response(
