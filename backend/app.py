@@ -10,6 +10,8 @@ import json
 import datetime
 import logging
 import time
+import gc
+import weakref
 from typing import Dict, List, Optional
 import uuid
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -146,6 +148,25 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add request size limits middleware
+@app.middleware("http")
+async def limit_request_size(request: Request, call_next):
+    """Limit request body size to prevent memory exhaustion"""
+    max_size = 10 * 1024 * 1024  # 10MB limit
+    
+    # Check content-length header
+    content_length = request.headers.get("content-length")
+    if content_length:
+        if int(content_length) > max_size:
+            return JSONResponse(
+                status_code=413,
+                content={"error": "Request too large", "max_size": f"{max_size // (1024*1024)}MB"}
+            )
+    
+    # Process the request
+    response = await call_next(request)
+    return response
 
 # Include the telemetry router
 app.include_router(telemetry_router)
@@ -357,6 +378,75 @@ class ConnectionManager:
         await self._background_cleanup()
 
 manager = ConnectionManager()
+
+# LLM Resource Management
+class LLMResourceManager:
+    def __init__(self):
+        # Limit concurrent LLM requests to prevent memory exhaustion
+        self.max_concurrent_requests = int(os.getenv("LLM_MAX_CONCURRENT", "10"))
+        self.request_semaphore = asyncio.Semaphore(self.max_concurrent_requests)
+        
+        # Track active LLM instances for memory cleanup
+        self.active_llm_instances = weakref.WeakSet()
+        self.last_cleanup = time.time()
+        self.cleanup_interval = 300  # 5 minutes
+        
+        # Response size limits
+        self.max_response_tokens = int(os.getenv("LLM_MAX_RESPONSE_TOKENS", "4000"))
+        self.max_response_chars = int(os.getenv("LLM_MAX_RESPONSE_CHARS", "32000"))
+        
+        logger.info(f"LLM Resource Manager initialized: max_concurrent={self.max_concurrent_requests}")
+    
+    async def acquire_llm_slot(self):
+        """Acquire a slot for LLM processing"""
+        await self.request_semaphore.acquire()
+        
+        # Periodic cleanup
+        if time.time() - self.last_cleanup > self.cleanup_interval:
+            self.cleanup_memory()
+    
+    def release_llm_slot(self):
+        """Release a slot for LLM processing"""
+        self.request_semaphore.release()
+    
+    def register_llm_instance(self, llm_instance):
+        """Register an LLM instance for tracking"""
+        self.active_llm_instances.add(llm_instance)
+    
+    def cleanup_memory(self):
+        """Perform memory cleanup"""
+        try:
+            # Force garbage collection
+            gc.collect()
+            
+            # Log active instances
+            active_count = len(self.active_llm_instances)
+            logger.info(f"LLM memory cleanup: {active_count} active instances")
+            
+            self.last_cleanup = time.time()
+            
+        except Exception as e:
+            logger.error(f"Error during LLM memory cleanup: {e}")
+    
+    def check_response_size(self, response_text: str) -> bool:
+        """Check if response exceeds size limits"""
+        if len(response_text) > self.max_response_chars:
+            logger.warning(f"Response truncated: {len(response_text)} chars > {self.max_response_chars} limit")
+            return False
+        return True
+    
+    def truncate_response(self, response_text: str) -> str:
+        """Truncate response to size limits"""
+        if len(response_text) > self.max_response_chars:
+            truncated = response_text[:self.max_response_chars]
+            # Try to truncate at last complete sentence
+            last_period = truncated.rfind('.')
+            if last_period > self.max_response_chars * 0.8:  # If we can find a period in the last 20%
+                truncated = truncated[:last_period + 1]
+            return truncated + "\n\n[Response truncated due to length limits]"
+        return response_text
+
+llm_resource_manager = LLMResourceManager()
 
 @app.websocket("/ws/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
@@ -666,16 +756,20 @@ async def ask_stream(data: dict = Body(...)):
                 # Record final document count in parent span
                 parent_span.set_attribute(SpanAttributes.DOCUMENT_COUNT, len(documents))
                 
-                # Generate and stream the response
-                response_generator, qa_id = generate_response_with_telemetry(
-                    question=question,
-                    documents=documents,
-                    session_id=session_id,
-                    qa_id=qa_id,
-                    chat_history=chat_history,
-                    corpus_filter=corpus_filter,
-                    provider=provider  # Pass the provider if specified
-                )
+                # Acquire LLM resource slot before generation
+                await llm_resource_manager.acquire_llm_slot()
+                
+                try:
+                    # Generate and stream the response
+                    response_generator, qa_id = generate_response_with_telemetry(
+                        question=question,
+                        documents=documents,
+                        session_id=session_id,
+                        qa_id=qa_id,
+                        chat_history=chat_history,
+                        corpus_filter=corpus_filter,
+                        provider=provider  # Pass the provider if specified
+                    )
                 
                 # Stream response chunks
                 full_response = ""
@@ -736,7 +830,7 @@ async def ask_stream(data: dict = Body(...)):
                 parent_span.set_attribute(SpanAttributes.RESPONSE_LENGTH, len(full_response))
                 parent_span.set_attribute("final_chunk_count", chunk_count)
                 
-            except Exception as e:
+                except Exception as e:
                 # Log the full error details server-side
                 logger.error(f"Error in streaming response: {e}", exc_info=True)
                 # Record error in parent span
@@ -750,6 +844,10 @@ async def ask_stream(data: dict = Body(...)):
                     "An error occurred while processing your request"
                 )
                 yield format_sse_message(error_msg, event="error")
+                
+                finally:
+                    # Always release the LLM resource slot
+                    llm_resource_manager.release_llm_slot()
     
     # Return the streaming response with appropriate headers
     response = StreamingResponse(response_generator(), media_type="text/event-stream")
