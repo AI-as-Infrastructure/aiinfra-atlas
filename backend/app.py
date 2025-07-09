@@ -936,6 +936,107 @@ async def diagnostics(request: Request):
         "telemetry_initialized": telemetry_initialized
     }
 
+@app.get("/api/cache/stats")
+async def get_cache_stats(request: Request):
+    """Return prompt cache statistics for monitoring."""
+    # Check if authentication is required based on environment
+    auth_required = os.getenv("VITE_USE_COGNITO_AUTH", "false").lower() == "true"
+    
+    if auth_required:
+        # Get the authorization header
+        auth_header = request.headers.get("Authorization")
+        if not auth_header:
+            raise HTTPException(
+                status_code=401,
+                detail="Authorization header required"
+            )
+        
+        # Extract the token from the header
+        try:
+            token = auth_header.split(" ")[1] if " " in auth_header else auth_header
+        except (IndexError, AttributeError):
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid authorization header format"
+            )
+        
+        # Verify the token (will raise HTTPException if invalid)
+        user = await verify_cognito_token(token)
+        
+        # Check if the user is authenticated
+        if not user.get("authenticated", False):
+            raise HTTPException(
+                status_code=403,
+                detail="Unauthorized access to cache statistics"
+            )
+    
+    try:
+        from backend.modules.prompt_cache import get_cache_statistics
+        cache_stats = get_cache_statistics()
+        
+        return {
+            "cache_statistics": cache_stats,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting cache statistics: {e}")
+        return {
+            "error": "Failed to retrieve cache statistics",
+            "cache_statistics": {},
+            "timestamp": datetime.now().isoformat()
+        }
+
+@app.post("/api/cache/clear")
+async def clear_cache(request: Request):
+    """Clear the prompt cache."""
+    # Check if authentication is required based on environment
+    auth_required = os.getenv("VITE_USE_COGNITO_AUTH", "false").lower() == "true"
+    
+    if auth_required:
+        # Get the authorization header
+        auth_header = request.headers.get("Authorization")
+        if not auth_header:
+            raise HTTPException(
+                status_code=401,
+                detail="Authorization header required"
+            )
+        
+        # Extract the token from the header
+        try:
+            token = auth_header.split(" ")[1] if " " in auth_header else auth_header
+        except (IndexError, AttributeError):
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid authorization header format"
+            )
+        
+        # Verify the token (will raise HTTPException if invalid)
+        user = await verify_cognito_token(token)
+        
+        # Check if the user is authenticated
+        if not user.get("authenticated", False):
+            raise HTTPException(
+                status_code=403,
+                detail="Unauthorized access to cache management"
+            )
+    
+    try:
+        from backend.modules.prompt_cache import clear_prompt_cache
+        clear_prompt_cache()
+        
+        logger.info("Prompt cache cleared via API")
+        
+        return {
+            "message": "Prompt cache cleared successfully",
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error clearing cache: {e}")
+        return {
+            "error": "Failed to clear cache",
+            "timestamp": datetime.now().isoformat()
+        }
+
 @app.get("/api/websocket/stats")
 async def websocket_stats(request: Request):
     """Return WebSocket connection statistics for monitoring."""
