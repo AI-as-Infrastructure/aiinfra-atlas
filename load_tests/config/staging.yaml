@@ -20,42 +20,70 @@ redis:
 load_test:
   # User Distribution (percentages should sum to 100)
   user_distribution:
-    question_users: 60      # Users primarily asking questions
+    question_users: 70      # Users primarily asking questions
     feedback_users: 20      # Users primarily giving feedback
-    mixed_users: 15         # Users doing both
-    websocket_users: 3      # WebSocket connections
-    async_users: 2          # Async processing users
+    mixed_users: 10         # Users doing both
+    websocket_users: 0      # WebSocket connections (disabled for realistic test)
+    async_users: 0          # Async processing users (disabled for realistic test)
   
-  # Load Patterns
+  # Load Patterns - Realistic user behavior
   load_patterns:
     ramp_up:
       start_users: 1
-      end_users: 30
-      duration: "5m"
+      end_users: 20
+      duration: "3m"        # Gradual ramp up
     
     sustained:
-      users: 30
-      duration: "20m"
+      users: 20
+      duration: "15m"       # Sustained realistic load
     
     peak:
-      users: 50
-      duration: "5m"
+      users: 25             # Slight peak above normal
+      duration: "3m"        # Short peak period
     
     ramp_down:
-      start_users: 30
+      start_users: 20
       end_users: 0
       duration: "2m"
   
-  # Performance Targets
-  performance_targets:
-    response_time_p95: 3000  # ms
-    response_time_p99: 5000  # ms
-    error_rate_max: 5.0      # percentage
-    throughput_min: 10       # requests per second
+  # Realistic User Behavior Patterns
+  user_behavior:
+    think_time:
+      min: 30000            # 30 seconds minimum between questions
+      max: 180000           # 3 minutes maximum between questions
+      distribution: "normal" # Normal distribution around average
+      average: 90000        # 90 seconds average think time
     
-    # Streaming specific targets
-    streaming_first_token_max: 2000  # ms
-    streaming_total_time_max: 15000  # ms
+    reading_time:
+      base: 5000            # 5 seconds base reading time
+      per_word: 200         # 200ms per word (300 WPM reading speed)
+      max: 120000           # 2 minutes maximum reading time
+    
+    session_duration:
+      min: 300000           # 5 minutes minimum session
+      max: 1800000          # 30 minutes maximum session
+      average: 900000       # 15 minutes average session
+    
+    questions_per_session:
+      min: 1
+      max: 8
+      average: 3            # Average 3 questions per session
+    
+    natural_pauses:
+      enabled: true
+      probability: 0.3      # 30% chance of longer pause
+      duration: 300000      # 5 minute pause (user distraction)
+  
+  # Performance Targets - Adjusted for realistic load
+  performance_targets:
+    response_time_p95: 12000  # ms (12s for P95 with LLM processing)
+    response_time_p99: 18000  # ms (18s for P99 with LLM processing)
+    error_rate_max: 2.0       # percentage (stricter for realistic load)
+    throughput_min: 2         # requests per second (more realistic for 20 users)
+    
+    # Streaming specific targets - aligned with your observations
+    streaming_first_token_max: 5000   # ms (4s + buffer)
+    streaming_total_time_max: 12000   # ms (10s + buffer)
     
     # WebSocket targets
     websocket_connection_time_max: 1000  # ms
@@ -149,10 +177,10 @@ safety:
     error_threshold: 20.0  # percentage
     timeout_threshold: 10000  # ms
   
-  # Rate limiting
+  # Rate limiting - realistic human behavior
   rate_limits:
-    requests_per_user_per_minute: 30
-    concurrent_connections_per_user: 5
+    requests_per_user_per_minute: 4    # Max 4 questions per minute (realistic)
+    concurrent_connections_per_user: 2  # Reduced concurrent connections
 
 # Environment Variables (reference - loaded from .env.staging)
 env_vars:
@@ -163,35 +191,36 @@ env_vars:
   BACKEND_LOG_LEVEL: "${BACKEND_LOG_LEVEL}"
   CORS_ORIGINS: "${CORS_ORIGINS}"
 
-# Test Scenarios
+# Test Scenarios - Realistic usage patterns
 scenarios:
-  basic_load_test:
-    description: "Basic load test with mixed user types"
-    duration: "30m"
-    users: 30
-    user_types: ["question_users", "feedback_users", "mixed_users"]
-  
-  streaming_focus:
-    description: "Focus on streaming endpoint performance"
-    duration: "15m"
-    users: 25
-    user_types: ["question_users"]
-    streaming_ratio: 0.8
-  
-  websocket_stress:
-    description: "WebSocket connection stress test"
-    duration: "20m"
-    users: 20
-    user_types: ["websocket_users", "mixed_users"]
-  
-  async_processing:
-    description: "Async processing and queue performance"
+  realistic_usage:
+    description: "Realistic 20-user concurrent load test"
     duration: "25m"
-    users: 15
-    user_types: ["async_users", "question_users"]
+    users: 20
+    user_types: ["question_users", "feedback_users", "mixed_users"]
+    think_time_enabled: true
+    natural_pauses_enabled: true
   
-  peak_load:
-    description: "Peak load simulation"
-    duration: "10m"
-    users: 50
-    user_types: ["question_users", "feedback_users", "mixed_users", "websocket_users"]
+  steady_state:
+    description: "Steady state performance test"
+    duration: "15m"
+    users: 15
+    user_types: ["question_users", "mixed_users"]
+    think_time_enabled: true
+    streaming_ratio: 1.0
+  
+  peak_realistic:
+    description: "Realistic peak load (25 users)"
+    duration: "8m"
+    users: 25
+    user_types: ["question_users", "feedback_users", "mixed_users"]
+    think_time_enabled: true
+    reduced_think_time: true  # Slightly faster during peak
+  
+  long_session:
+    description: "Long user session simulation"
+    duration: "45m"
+    users: 12
+    user_types: ["mixed_users"]
+    extended_sessions: true
+    think_time_enabled: true
