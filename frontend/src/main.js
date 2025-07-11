@@ -53,16 +53,11 @@ if (isDebugMode) {
 // Mount the app
 app.mount('#app')
 
-// Initialize WebSocket only after Pinia is registered and app is mounted
+// Initialize telemetry after Pinia is registered and app is mounted
 import { nextTick } from 'vue'
-import { useSocketStore } from '@/stores/socket'
 import { useTelemetryStore } from '@/stores/telemetry'
 
 nextTick(() => {
-  // Initialize socket connection
-  const socketStore = useSocketStore()
-  socketStore.initializeSocket()
-  
   // Initialize telemetry interceptors
   setupTelemetryInterceptors()
   

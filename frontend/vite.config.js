@@ -47,13 +47,7 @@ export default ({ mode }) => {
           changeOrigin: true,
           secure: false,
         },
-        '/ws': {
-          target: (env.ENVIRONMENT === 'staging' || env.ENVIRONMENT === 'production')
-            ? 'wss://localhost:8000' 
-            : 'ws://localhost:8000',
-          ws: true,
-          secure: false,
-        }
+        // WebSocket proxy removed - WebSocket functionality no longer available
       },
       // Explicitly configure HMR for HTTPS
       hmr: {
