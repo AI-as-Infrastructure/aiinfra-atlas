@@ -39,11 +39,8 @@ from locust.env import Environment
 from utils.metrics import metrics_collector
 from utils.evaluator import LoadTestEvaluator, format_evaluation_report
 
-# Import all user classes
+# Import core user classes (removed WebSocket and feedback testing)
 from tasks.question_tasks import QuestionSubmissionUser
-from tasks.feedback_tasks import FeedbackUser, MixedFeedbackUser
-from tasks.websocket_tasks import WebSocketUser, AsyncWebSocketUser
-from tasks.async_tasks import AsyncProcessingUser, RedisMonitorUser
 
 # Configuration loading
 def load_config():
@@ -183,14 +180,8 @@ def signal_handler(signum, frame):
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
-# Set default user class weights - Balanced for realistic behavior
-QuestionSubmissionUser.weight = 30  # Reduced from 60 to prevent hammering
-FeedbackUser.weight = 25
-MixedFeedbackUser.weight = 20
-WebSocketUser.weight = 10
-AsyncWebSocketUser.weight = 5
-AsyncProcessingUser.weight = 5
-RedisMonitorUser.weight = 5
+# Set user class weights - Focus on core RAG functionality only
+QuestionSubmissionUser.weight = 100  # Only test core streaming questions
 
 # Configuration validation
 def validate_config():
