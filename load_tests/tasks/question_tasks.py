@@ -10,7 +10,7 @@ from utils.metrics import metrics_collector
 class QuestionSubmissionUser(HttpUser):
     """Load test user for question submission endpoints"""
     
-    wait_time = between(60, 300)  # Wait 1-5 minutes between tasks (realistic user behavior)
+    wait_time = between(30, 120)  # Wait 30-120 seconds between tasks (realistic human behavior)
     
     # Disable SSL verification for self-signed certificates
     def __init__(self, *args, **kwargs):
@@ -26,7 +26,7 @@ class QuestionSubmissionUser(HttpUser):
         
         # Add startup delay to avoid thundering herd on service startup
         import random
-        startup_delay = random.uniform(5, 15)  # 5-15 second random delay
+        startup_delay = random.uniform(5, 30)  # 5-30 second random delay for realistic staggering
         time.sleep(startup_delay)
         
         # Test connectivity (no auth headers needed)
@@ -77,11 +77,6 @@ class QuestionSubmissionUser(HttpUser):
                 catch_response=True
             ) as response:
                 
-                # DEBUG: Log request and response details
-                print(f"🔍 DEBUG - Request payload: {question_data}")
-                print(f"🔍 DEBUG - Response status: {response.status_code}")
-                print(f"🔍 DEBUG - Response headers: {dict(response.headers)}")
-                
                 if response.status_code != 200:
                     response.failure(f"HTTP {response.status_code}")
                     metrics_collector.record_request("ask_stream", time.time() - start_time, response.status_code, f"HTTP {response.status_code}")
@@ -93,13 +88,8 @@ class QuestionSubmissionUser(HttpUser):
                 citations = []
                 response_complete = False
                 
-                line_count = 0
                 for line in response.iter_lines():
                     if line:
-                        line_count += 1
-                        if line_count <= 3:  # Debug first 3 lines
-                            print(f"🔍 DEBUG - Line {line_count}: {line}")
-                            
                         if first_token_time is None:
                             first_token_time = time.time() - start_time
                         
@@ -126,11 +116,6 @@ class QuestionSubmissionUser(HttpUser):
                                     
                         except json.JSONDecodeError:
                             continue
-                
-                print(f"🔍 DEBUG - Total lines received: {line_count}")
-                print(f"🔍 DEBUG - QA ID: {qa_id}")
-                print(f"🔍 DEBUG - Answer content length: {len(answer_content)}")
-                print(f"🔍 DEBUG - Response complete: {response_complete}")
                 
                 # Store QA data for potential feedback
                 if qa_id:
@@ -270,12 +255,7 @@ class QuestionSubmissionUser(HttpUser):
         # Submit via HTTP POST to match actual UI behavior
         success = self._submit_http_feedback(qa_id, feedback_data)
         
-        if success:
-            print(f"✅ HTTP feedback submitted successfully for QA: {qa_id}")
-            metrics_collector.record_request("feedback_http", 0.5, 200)
-        else:
-            print(f"❌ HTTP feedback failed for QA: {qa_id}")
-            metrics_collector.record_request("feedback_http", 0.5, 500)
+        metrics_collector.record_request("feedback_http", 0.5, 200 if success else 500)
     
     def _submit_http_feedback(self, qa_id: str, feedback_data: dict) -> bool:
         """Submit feedback via HTTP POST to match actual UI behavior exactly"""
@@ -312,20 +292,13 @@ class QuestionSubmissionUser(HttpUser):
                     try:
                         result = response.json()
                         # Check for success status in response
-                        if result.get("status") == "success" or result.get("success") is True:
-                            return True
-                        else:
-                            print(f"❌ Feedback API returned error: {result}")
-                            return False
+                        return result.get("status") == "success" or result.get("success") is True
                     except json.JSONDecodeError:
-                        print(f"❌ Invalid JSON response from feedback API")
                         return False
                 else:
-                    print(f"❌ HTTP feedback failed: {response.status_code} - {response.text[:200]}")
                     return False
                     
         except Exception as e:
-            print(f"❌ HTTP feedback error: {e}")
             return False
     
     def _simulate_reading_time(self, response_text, citations):
@@ -344,13 +317,12 @@ class QuestionSubmissionUser(HttpUser):
         variability = random.uniform(0.8, 1.2)
         total_reading_time = (base_reading_time + citation_bonus) * variability
         
-        # Cap at 5 minutes maximum
-        reading_time = min(total_reading_time, 300)
+        # Cap at 3 minutes maximum for realistic reading
+        reading_time = min(total_reading_time, 180)
         
-        # Add minimum reading time of 10 seconds
-        reading_time = max(reading_time, 10)
+        # Add minimum reading time of 15 seconds
+        reading_time = max(reading_time, 15)
         
-        print(f"📖 Reading time: {reading_time:.1f}s for {words} words + {len(citations)} citations")
         time.sleep(reading_time)
     
     def on_stop(self):

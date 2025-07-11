@@ -109,7 +109,7 @@ lts: ## Run realistic load test against staging environment (15 concurrent users
 		echo "📥 Installing dependencies..."; \
 		.venv/bin/pip install -r config/requirements.txt; \
 	fi
-	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=staging ../.venv/bin/locust -f locustfile.py --host=\$$VITE_API_URL --users=15 --spawn-rate=1 --run-time=30m --headless"
+	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=staging ../.venv/bin/locust -f locustfile.py --host=\$$VITE_API_URL --users=15 --spawn-rate=0.2 --run-time=30m --headless"
 
 ltp: ## Run realistic load test against production environment (15 concurrent users, 30 min)
 	@echo "🚨 Running realistic load test against production environment..."
@@ -128,7 +128,7 @@ ltp: ## Run realistic load test against production environment (15 concurrent us
 		echo "📥 Installing dependencies..."; \
 		.venv/bin/pip install -r config/requirements.txt; \
 	fi
-	@bash -c "cd load_tests && source ../config/.env.production && LOAD_TEST_CONFIG=production ../.venv/bin/locust -f locustfile.py --host=\$$VITE_API_URL --users=15 --spawn-rate=1 --run-time=30m --headless"
+	@bash -c "cd load_tests && source ../config/.env.production && LOAD_TEST_CONFIG=production ../.venv/bin/locust -f locustfile.py --host=\$$VITE_API_URL --users=15 --spawn-rate=0.2 --run-time=30m --headless"
 
 ltq: ## Quick smoke test against staging (1 user, 3 minutes) - single session
 	@echo "💨 Running quick smoke test against staging..."
@@ -228,7 +228,7 @@ ltfocus: ## Focus group simulation (18 concurrent users, 45 min)
 		echo "📥 Installing dependencies..."; \
 		.venv/bin/pip install -r config/requirements.txt; \
 	fi
-	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=staging ../.venv/bin/locust -f locustfile.py --host=\$$VITE_API_URL --users=18 --spawn-rate=1 --run-time=45m --headless"
+	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=staging ../.venv/bin/locust -f locustfile.py --host=\$$VITE_API_URL --users=18 --spawn-rate=0.2 --run-time=45m --headless"
 
 # Optimized Load Testing Targets
 lto: ## Run optimized load test (15 concurrent users, 45 min, cache-busting)
