@@ -115,7 +115,10 @@ load_tests/
 ### Standard User Types (Legacy)
 
 #### 1. QuestionSubmissionUser (60%)
-- **Behavior:** Submits parliamentary questions via streaming endpoints
+- **Behavior:** Submits parliamentary questions via streaming endpoints with realistic human timing
+- **Timing:** 30-120 seconds between tasks (mimics real user thinking time)
+- **Startup:** 5-30 second staggered delays to avoid thundering herd
+- **Reading Time:** 15 seconds to 3 minutes based on content length
 - **Key Tasks:**
   - `POST /api/ask/stream` (60% of requests)
   - `POST /api/query` (10% of requests)
@@ -276,31 +279,40 @@ BACKEND_LOG_LEVEL=warn
 
 ## Running Tests
 
-### Optimized Commands (Recommended)
+### Realistic Load Testing (Recommended)
 ```bash
-# Primary optimized test (recommended for 8vCPU/16GB)
-make lt15    # 15 users, 30min
+# Primary realistic test (recommended for 8vCPU/16GB)
+make lts     # 15 users, 30min, realistic human behavior
 
-# Full optimization test
-make lto     # 15 users, 45min, full features
+# Quick smoke test
+make ltq     # 1 user, 3min, basic functionality
 
-# Stress testing
-make lt20    # 20 users, 20min, peak capacity
-make lt25    # 25 users, 10min, burst testing
+# Peak load test
+make ltpeak  # 20 users, 10min, peak capacity test
+
+# Burst test
+make ltburst # 25 users, 5min, burst testing
 
 # Show all available targets
 make help
 ```
 
+### Key Improvements (v0.1.5)
+- **Realistic timing:** 30-120 seconds between user actions
+- **Staggered startup:** 5-30 second delays to prevent thundering herd
+- **Human reading time:** 15 seconds to 3 minutes based on content
+- **Gradual ramp-up:** 0.2 users/second spawn rate
+- **Clean output:** Removed debug spam for better performance
+
 ### Manual Commands
 ```bash
-# Run optimized test manually
+# Run realistic test manually
 cd load_tests
-LOAD_TEST_CONFIG=optimized_staging locust -f optimized_locustfile.py \
-  --host=https://192.168.20.17 --users=15 --spawn-rate=1.5 --run-time=30m --headless
+LOAD_TEST_CONFIG=staging locust -f locustfile.py \
+  --host=https://192.168.20.17 --users=15 --spawn-rate=0.2 --run-time=30m --headless
 
 # Interactive mode with web UI
-LOAD_TEST_CONFIG=optimized_staging locust -f optimized_locustfile.py \
+LOAD_TEST_CONFIG=staging locust -f locustfile.py \
   --host=https://192.168.20.17
 ```
 
@@ -332,6 +344,8 @@ make ltpeak  # 20 users, 10min
 - **Swap Usage:** <1GB (vs 2.1GB before optimization)
 - **CPU Usage:** <85% sustained
 - **Requests/Second:** 0.8 RPS (realistic for thoughtful queries)
+- **User Ramp-up:** 0.2 users/second (gradual realistic increase)
+- **Concurrent Users:** 15 target (with realistic behavior patterns)
 
 ### Standard Targets (Legacy)
 - **P50:** <1s (median response)
