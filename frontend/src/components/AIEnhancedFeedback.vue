@@ -15,6 +15,9 @@
       <div class="notification is-info is-light info-box">
         <p><strong>How AI Validation Works:</strong></p>
         <p>AI validation analyzes the complete response including the full answer text, all citations, and metadata. This comprehensive analysis takes 10-12 seconds as the AI processes the entire payload to provide detailed quality assessments.</p>
+        <p v-if="validationConfig?.current_model">
+          <strong>Validation Model:</strong> {{ getValidationModelInfo() }}
+        </p>
         <p><strong>Important:</strong> LLMs can make mistakes. Use the AI validation as a helpful starting point, but exercise your own judgment when providing final feedback.</p>
       </div>
     </div>
@@ -343,7 +346,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useSessionStore } from '@/stores/session'
 
@@ -372,6 +375,7 @@ const isValidating = ref(false)
 const aiValidation = ref(null)
 const aiValidationError = ref(null)
 const markdownExport = ref(null)
+const validationConfig = ref(null)
 const validationProgress = ref({
   step: '',
   message: '',
@@ -416,10 +420,23 @@ async function runAIValidation() {
     updateProgress('prepare', 'Preparing session data for validation...', 10)
     await new Promise(resolve => setTimeout(resolve, 100)) // Small delay to show progress
     
+    // Fetch validation configuration if not already loaded
+    if (!validationConfig.value) {
+      try {
+        const configResponse = await fetch('/api/validate_config')
+        if (configResponse.ok) {
+          validationConfig.value = await configResponse.json()
+        }
+      } catch (configError) {
+        console.warn('Could not fetch validation config:', configError)
+      }
+    }
+    
     const currentSession = getCurrentSessionData()
     
-    // Step 2: Sending to LLM
-    updateProgress('sending', 'Sending data to AI validation service...', 20)
+    // Step 2: Sending to LLM with model info
+    const modelInfo = getValidationModelInfo()
+    updateProgress('sending', `Sending data to ${modelInfo}...`, 20)
     
     const response = await fetch('/api/validate_session', {
       method: 'POST',
@@ -430,7 +447,7 @@ async function runAIValidation() {
     })
     
     // Step 3: Processing
-    updateProgress('processing', 'AI is analyzing the complete response, citations, and metadata...', 40)
+    updateProgress('processing', `${modelInfo} is analyzing the complete response, citations, and metadata...`, 40)
     
     const data = await response.json()
     
@@ -473,6 +490,29 @@ function getEstimatedTime() {
   if (percentage < 40) return '8-10 seconds'
   if (percentage < 90) return '4-6 seconds'
   return '1-2 seconds'
+}
+
+function getValidationModelInfo() {
+  if (!validationConfig.value) {
+    return 'AI validation service'
+  }
+  
+  const currentModel = validationConfig.value.current_model
+  if (!currentModel) {
+    return 'AI validation service'
+  }
+  
+  // Format provider name for display
+  const providerName = currentModel.provider === 'OPENAI' ? 'OpenAI' : 
+                      currentModel.provider === 'ANTHROPIC' ? 'Anthropic' : 
+                      currentModel.provider
+  
+  // Format model name for display
+  const modelName = currentModel.model === 'gpt-4o' ? 'GPT-4o' :
+                   currentModel.model === 'claude-3-5-sonnet-20241022' ? 'Claude 3.5 Sonnet' :
+                   currentModel.model
+  
+  return `${providerName} ${modelName}`
 }
 
 function getCurrentSessionData() {
@@ -562,6 +602,18 @@ async function submitFeedback() {
     isSubmitting.value = false
   }
 }
+
+// Load validation configuration when component mounts
+onMounted(async () => {
+  try {
+    const configResponse = await fetch('/api/validate_config')
+    if (configResponse.ok) {
+      validationConfig.value = await configResponse.json()
+    }
+  } catch (error) {
+    console.warn('Could not fetch validation config on mount:', error)
+  }
+})
 </script>
 
 <style scoped>
