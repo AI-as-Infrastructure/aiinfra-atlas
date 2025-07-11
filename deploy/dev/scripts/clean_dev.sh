@@ -18,6 +18,7 @@ cd frontend
 rm -rf node_modules
 rm -f package-lock.json
 rm -rf dist
+rm -f .env
 cd ..
 
 # Clean up telemetry span registry 

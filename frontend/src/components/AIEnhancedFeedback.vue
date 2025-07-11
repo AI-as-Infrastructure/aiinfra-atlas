@@ -12,6 +12,11 @@
       <p class="subtitle">
         Get AI validation assistance and provide comprehensive human feedback
       </p>
+      <div class="notification is-info is-light info-box">
+        <p><strong>How AI Validation Works:</strong></p>
+        <p>AI validation analyzes the complete response including the full answer text, all citations, and metadata. This comprehensive analysis takes 10-12 seconds as the AI processes the entire payload to provide detailed quality assessments.</p>
+        <p><strong>Important:</strong> LLMs can make mistakes. Use the AI validation as a helpful starting point, but exercise your own judgment when providing final feedback.</p>
+      </div>
     </div>
 
     <div class="feedback-content">
@@ -37,6 +42,23 @@
             </span>
             <span>{{ hasAIValidation ? 'AI Validation Complete' : 'Run AI Validation' }}</span>
           </button>
+        </div>
+
+        <!-- AI Validation Progress -->
+        <div v-if="isValidating" class="validation-progress mb-4">
+          <div class="progress-header">
+            <span class="progress-message">{{ validationProgress.message }}</span>
+            <span class="progress-percentage">{{ validationProgress.percentage }}%</span>
+          </div>
+          <progress class="progress is-primary" :value="validationProgress.percentage" max="100">
+            {{ validationProgress.percentage }}%
+          </progress>
+          <div class="progress-details">
+            <span class="tag is-light">
+              <i class="fas fa-clock"></i>
+              Estimated time: {{ getEstimatedTime() }}
+            </span>
+          </div>
         </div>
 
         <!-- AI Validation Results -->
@@ -300,28 +322,6 @@
         </div>
       </div>
 
-      <!-- Export Options -->
-      <div v-if="hasAIValidation" class="export-section">
-        <h5 class="title is-6">Export Options</h5>
-        <div class="field is-grouped">
-          <div class="control">
-            <button class="button is-small is-info" @click="downloadFullReport">
-              <span class="icon is-small">
-                <i class="fas fa-download"></i>
-              </span>
-              <span>Download Full Report</span>
-            </button>
-          </div>
-          <div class="control">
-            <button class="button is-small is-primary" @click="copyAIFeedback">
-              <span class="icon is-small">
-                <i class="fas fa-copy"></i>
-              </span>
-              <span>Copy AI Analysis</span>
-            </button>
-          </div>
-        </div>
-      </div>
     </div>
 
     <!-- Action Buttons -->
@@ -372,6 +372,11 @@ const isValidating = ref(false)
 const aiValidation = ref(null)
 const aiValidationError = ref(null)
 const markdownExport = ref(null)
+const validationProgress = ref({
+  step: '',
+  message: '',
+  percentage: 0
+})
 
 // Human feedback state
 const ratings = ref({
@@ -407,7 +412,14 @@ async function runAIValidation() {
   aiValidationError.value = null
   
   try {
+    // Step 1: Preparing data
+    updateProgress('prepare', 'Preparing session data for validation...', 10)
+    await new Promise(resolve => setTimeout(resolve, 100)) // Small delay to show progress
+    
     const currentSession = getCurrentSessionData()
+    
+    // Step 2: Sending to LLM
+    updateProgress('sending', 'Sending data to AI validation service...', 20)
     
     const response = await fetch('/api/validate_session', {
       method: 'POST',
@@ -417,11 +429,18 @@ async function runAIValidation() {
       body: JSON.stringify(currentSession)
     })
     
+    // Step 3: Processing
+    updateProgress('processing', 'AI is analyzing the complete response, citations, and metadata...', 40)
+    
     const data = await response.json()
+    
+    // Step 4: Finalizing
+    updateProgress('finalizing', 'Processing validation results...', 90)
     
     if (data.success) {
       aiValidation.value = data.validation_result
       markdownExport.value = data.markdown_export
+      updateProgress('complete', 'AI validation completed successfully!', 100)
     } else {
       aiValidationError.value = data.message
     }
@@ -430,8 +449,30 @@ async function runAIValidation() {
     console.error('AI validation error:', error)
     aiValidationError.value = `Network error: ${error.message}`
   } finally {
-    isValidating.value = false
+    // Clean up progress after a short delay
+    setTimeout(() => {
+      isValidating.value = false
+      if (!aiValidationError.value) {
+        validationProgress.value = { step: '', message: '', percentage: 0 }
+      }
+    }, 1000)
   }
+}
+
+function updateProgress(step, message, percentage) {
+  validationProgress.value = {
+    step,
+    message,
+    percentage: Math.min(percentage, 100)
+  }
+}
+
+function getEstimatedTime() {
+  const percentage = validationProgress.value.percentage
+  if (percentage < 20) return '10-12 seconds'
+  if (percentage < 40) return '8-10 seconds'
+  if (percentage < 90) return '4-6 seconds'
+  return '1-2 seconds'
 }
 
 function getCurrentSessionData() {
@@ -498,66 +539,6 @@ function getScoreProgressClass(score) {
   return 'is-danger'
 }
 
-async function downloadFullReport() {
-  if (!markdownExport.value) return
-  
-  const fullReport = `${markdownExport.value}
-
-# Human Assessment
-
-## Ratings
-${Object.entries(ratings.value)
-  .filter(([key, value]) => value !== null)
-  .map(([key, value]) => `- ${formatCategoryName(key)}: ${value}/5`)
-  .join('\n')}
-
-## AI Agreement
-${aiAgreement.value ? `Agreement with AI Assessment: ${aiAgreement.value}` : 'No AI agreement rating provided'}
-
-## Human Comments
-${humanComments.value || 'No additional comments provided'}
-
-## AI vs Human Comparison
-${generateComparisonTable()}
-`
-  
-  const blob = new Blob([fullReport], { type: 'text/markdown' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `ai-enhanced-feedback-${props.sessionId}-${props.qaId}.md`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
-}
-
-function generateComparisonTable() {
-  if (!hasAIScores.value) return 'No AI scores available for comparison'
-  
-  const aiScores = getAIQualityScores()
-  let table = '| Category | AI Score | Human Score | Difference |\n'
-  table += '|----------|----------|-------------|------------|\n'
-  
-  Object.entries(aiScores).forEach(([category, aiScore]) => {
-    const humanScore = ratings.value[category]
-    const diff = humanScore !== null ? (humanScore - aiScore.score) : 'N/A'
-    table += `| ${formatCategoryName(category)} | ${aiScore.score}/5 | ${humanScore !== null ? humanScore + '/5' : 'N/A'} | ${diff} |\n`
-  })
-  
-  return table
-}
-
-async function copyAIFeedback() {
-  if (!aiValidation.value?.feedback) return
-  
-  try {
-    await navigator.clipboard.writeText(aiValidation.value.feedback)
-    // Could add toast notification here
-  } catch (error) {
-    console.error('Failed to copy to clipboard:', error)
-  }
-}
 
 async function submitFeedback() {
   if (!canSubmit.value) return
@@ -587,6 +568,50 @@ async function submitFeedback() {
 .ai-enhanced-feedback {
   max-width: 800px;
   margin: 0 auto;
+}
+
+.validation-progress {
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  padding: 1rem;
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.progress-message {
+  font-weight: 500;
+  color: #495057;
+}
+
+.progress-percentage {
+  font-weight: 600;
+  color: #0066cc;
+}
+
+.progress-details {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.progress-details .tag {
+  font-size: 0.75rem;
+}
+
+.progress-details .fas {
+  margin-right: 0.25rem;
+}
+
+.info-box {
+  text-align: left;
 }
 
 .feedback-header {

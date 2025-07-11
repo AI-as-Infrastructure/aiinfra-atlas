@@ -4,10 +4,26 @@ set -e
 # Frontend development startup script
 echo "🔍 Checking frontend environment..."
 
+# Set environment
+export ENVIRONMENT=development
+
 # Check if frontend directory exists
 if [ ! -d "frontend" ]; then
     echo "❌ Error: frontend directory not found!"
     exit 1
+fi
+
+# Generate frontend environment variables if .env doesn't exist
+if [ ! -f "frontend/.env" ]; then
+    echo "📝 Generating frontend environment variables..."
+    if [ -f "config/generate_vue_files.sh" ]; then
+        bash config/generate_vue_files.sh
+    else
+        echo "❌ Error: config/generate_vue_files.sh not found!"
+        exit 1
+    fi
+else
+    echo "✅ Frontend .env file already exists"
 fi
 
 # Load nvm from common locations
