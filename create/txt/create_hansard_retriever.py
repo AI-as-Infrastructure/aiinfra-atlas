@@ -16,40 +16,43 @@ import sys
 from pathlib import Path
 import argparse
 from datetime import datetime
-from typing import Dict, List, Any, Optional, Tuple
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores import Chroma
-from langchain_core.documents.base import Document
-from backend.retrievers.base_retriever import BaseRetriever
-
 # Ensure project root is on sys.path so `import backend` works no matter where
 # this script is executed from (Makefile may invoke it from a sub-shell).
 repo_root = Path(__file__).resolve().parents[2]
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
+from typing import Dict, List, Any, Optional, Tuple
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.vectorstores import Chroma
+from langchain_core.documents.base import Document
+from backend.retrievers.base_retriever import BaseRetriever
+
 def parse_manifest_file(manifest_path):
     config = {}
     try:
         with open(manifest_path, 'r') as f:
             content = f.read()
-            # Extract key parameters
-            index_name = re.search(r'INDEX_NAME\s*=\s*"(.+?)"', content)
-            embedding_model = re.search(r'EMBEDDING_MODEL\s*=\s*"(.+?)"', content)
-            algorithm = re.search(r'ALGORITHM\s*=\s*"(.+?)"', content)
-            chunk_size = re.search(r'CHUNK_SIZE\s*=\s*(\d+)', content)
-            chunk_overlap = re.search(r'CHUNK_OVERLAP\s*=\s*(\d+)', content)
+            # Extract key parameters from stats file format
+            index_name = re.search(r'Collection:\s*(.+)', content)
+            embedding_model = re.search(r'Model:\s*(.+)', content)
+            chunk_size = re.search(r'Chunk Size:\s*(\d+)', content)
+            chunk_overlap = re.search(r'Chunk Overlap:\s*(\d+)', content)
             created = re.search(r'Created:\s*(.+)', content)
-            if index_name: config['INDEX_NAME'] = index_name.group(1)
-            if embedding_model: config['EMBEDDING_MODEL'] = embedding_model.group(1)
-            if algorithm: config['ALGORITHM'] = algorithm.group(1)
-            if chunk_size: config['CHUNK_SIZE'] = chunk_size.group(1)
-            if chunk_overlap: config['CHUNK_OVERLAP'] = chunk_overlap.group(1)
-            if created: config['CREATED'] = created.group(1)
+            
+            if index_name: config['INDEX_NAME'] = index_name.group(1).strip()
+            if embedding_model: config['EMBEDDING_MODEL'] = embedding_model.group(1).strip()
+            if chunk_size: config['CHUNK_SIZE'] = chunk_size.group(1).strip()
+            if chunk_overlap: config['CHUNK_OVERLAP'] = chunk_overlap.group(1).strip()
+            if created: config['CREATED'] = created.group(1).strip()
+            
+            # Default algorithm for Chroma
+            config['ALGORITHM'] = 'HNSW'
+            
     except Exception as e:
         print(f"Error parsing manifest: {e}")
         sys.exit(1)
-    req = ['INDEX_NAME','EMBEDDING_MODEL','ALGORITHM','CHUNK_SIZE','CHUNK_OVERLAP']
+    req = ['INDEX_NAME','EMBEDDING_MODEL','CHUNK_SIZE','CHUNK_OVERLAP']
     for k in req:
         if k not in config:
             print(f"Missing {k} in manifest!")
@@ -73,6 +76,9 @@ from langchain_community.vectorstores import Chroma
 from langchain_core.documents.base import Document
 from backend.retrievers.base_retriever import BaseRetriever
 
+# Configure logging
+logger = logging.getLogger(__name__)
+
 # Define corpus options directly (removed SelfQuery prefix)
 CORPUS_OPTIONS = [
     {{"value": "all", "label": "All Collections"}},
@@ -91,15 +97,23 @@ class HansardRetriever(BaseRetriever):
         config["CORPUS_OPTIONS"] = CORPUS_OPTIONS
         super().__init__(config)
         self.index_name = "{INDEX_NAME}"
-        self.chunk_size = "{CHUNK_SIZE}"
-        self.chunk_overlap = "{CHUNK_OVERLAP}"
+        self.chunk_size = int("{CHUNK_SIZE}")
+        self.chunk_overlap = int("{CHUNK_OVERLAP}")
         self.embedding_model = "{EMBEDDING_MODEL}"
         self._supports_corpus_filtering = True
 
         # Location of the persisted Chroma DB
         self.persist_directory = os.getenv("CHROMA_PERSIST_DIRECTORY", "./create/txt/output/chroma_db")
+        
+        # Initialize LLM instance (required by retriever_call_model.py)
+        self._initialize_llm()
         self._initialize_vector_store()
 
+    def _initialize_llm(self):
+        \"\"\"Initialize the LLM instance required by the system.\"\"\"
+        from backend.modules.llm import create_llm
+        self.llm = create_llm()
+    
     def _initialize_vector_store(self):
         self.embeddings = HuggingFaceEmbeddings(model_name=self.embedding_model)
         self.vector_store = Chroma(
@@ -120,6 +134,9 @@ class HansardRetriever(BaseRetriever):
             "embedding_model": self.embedding_model,
             "persist_directory": self.persist_directory,
             "supports_corpus_filtering": self._supports_corpus_filtering,
+            "algorithm": "HNSW",
+            "search_type": "similarity",
+            "search_kwargs": {{"k": 10}}
         }}
 
     @property
@@ -173,6 +190,10 @@ class HansardRetriever(BaseRetriever):
     async def ainvoke(self, input: str, config: Optional[Dict] = None, **kwargs) -> List[Document]:
         """Asynchronous invoke method required by LangChain."""
         return await self._get_relevant_documents(input, config, **kwargs)
+    
+    def format_document_for_citation(self, document: Document, idx: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        \"\"\"Instance method version for compatibility with retriever_call_model.py.\"\"\"
+        return format_document_for_citation(document, idx)
 
 # Compatibility helper for citation formatting (imported by streaming.py)
 def format_document_for_citation(document: Document, idx: Optional[int] = None) -> Optional[Dict[str, Any]]:
@@ -202,6 +223,16 @@ def format_document_for_citation(document: Document, idx: Optional[int] = None) 
         "weight": 1.0,
         "has_more": len(text) > 300,
     }}
+
+# Required functions for compatibility with retriever_call_model.py
+def enhance_document_relevance(documents: List[Document], query: str) -> List[Document]:
+    \"\"\"Enhance document relevance using the centralized reranking module.\"\"\"
+    from backend.modules.document_reranking import enhance_document_relevance as _enhance
+    return _enhance(documents, query, create_span=False)
+
+def format_citations(documents: List[Document], **kwargs) -> List[Dict[str, Any]]:
+    \"\"\"Format documents as citations for the frontend.\"\"\"
+    return [format_document_for_citation(doc, i) for i, doc in enumerate(documents)]
 '''
     cfg = config.copy()
     cfg['now'] = now
@@ -238,7 +269,7 @@ def main():
     output_dir = str(script_dir / 'output')
     os.makedirs(output_dir, exist_ok=True)
     index_name = config['INDEX_NAME']
-    output_path = os.path.join(output_dir, f"{index_name}_retriever.py")
+    output_path = os.path.join(output_dir, "hansard_retriever.py")
     generate_atlas_retriever(config, output_path)
     print(f"\nRetriever script generation complete!\nLocation: {output_path}\nYou can use it in ATLAS backend or run it standalone.")
 
