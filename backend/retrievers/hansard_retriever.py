@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Auto-generated ATLAS Retriever for blert_1000 (HNSW)
-Generated: 2025-06-12 21:18:33
-Manifest creation: 2025-06-12 21:16:11
+Generated: 2025-07-11 11:52:50
+Manifest creation: 2025-07-11 11:38:26
 """
 import os
 import logging
@@ -12,6 +12,9 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_core.documents.base import Document
 from backend.retrievers.base_retriever import BaseRetriever
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # Define corpus options directly (removed SelfQuery prefix)
 CORPUS_OPTIONS = [
@@ -31,18 +34,23 @@ class HansardRetriever(BaseRetriever):
         config["CORPUS_OPTIONS"] = CORPUS_OPTIONS
         super().__init__(config)
         self.index_name = "blert_1000"
-        self.chunk_size = "1000"
-        self.chunk_overlap = "100"
+        self.chunk_size = int("1000")
+        self.chunk_overlap = int("100")
         self.embedding_model = "Livingwithmachines/bert_1890_1900"
         self._supports_corpus_filtering = True
-        
-        # Store reranking metrics for later retrieval
-        self.reranking_metrics = []
 
         # Location of the persisted Chroma DB
         self.persist_directory = os.getenv("CHROMA_PERSIST_DIRECTORY", "./create/txt/output/chroma_db")
+        
+        # Initialize LLM instance (required by retriever_call_model.py)
+        self._initialize_llm()
         self._initialize_vector_store()
 
+    def _initialize_llm(self):
+        """Initialize the LLM instance required by the system."""
+        from backend.modules.llm import create_llm
+        self.llm = create_llm()
+    
     def _initialize_vector_store(self):
         self.embeddings = HuggingFaceEmbeddings(model_name=self.embedding_model)
         self.vector_store = Chroma(
@@ -63,6 +71,9 @@ class HansardRetriever(BaseRetriever):
             "embedding_model": self.embedding_model,
             "persist_directory": self.persist_directory,
             "supports_corpus_filtering": self._supports_corpus_filtering,
+            "algorithm": "HNSW",
+            "search_type": "similarity",
+            "search_kwargs": {"k": 10}
         }
 
     @property
@@ -71,14 +82,9 @@ class HansardRetriever(BaseRetriever):
 
     def get_corpus_options(self) -> List[Dict[str, str]]:
         return CORPUS_OPTIONS
-    
-    def get_reranking_metrics(self) -> List[Dict[str, Any]]:
-        """Get collected reranking metrics and clear the list"""
-        metrics = self.reranking_metrics.copy()
-        self.reranking_metrics.clear()  # Clear for next query
-        return metrics
 
     def similar_search(self, query: str, k: int = 10, corpus_filter: Optional[str] = None) -> List[Dict[str, Any]]:
+        logger.info(f"similar_search: k={k}, corpus_filter={corpus_filter}")
         filter_dict = None
         if corpus_filter and corpus_filter != "all":
             filter_dict = {"corpus": corpus_filter}
@@ -100,207 +106,59 @@ class HansardRetriever(BaseRetriever):
         """Internal implementation method called by invoke/ainvoke"""
         k = kwargs.get("k", 10)
         corpus_filter = None
-        session_id = None
-        qa_id = None
         
-        # Extract corpus filter and telemetry context from config if present
+        # Extract corpus filter from config if present
         if config and isinstance(config, dict):
             corpus_filter = config.get("corpus_filter")
-            session_id = config.get("session_id")
-            qa_id = config.get("qa_id")
         
-        # Handle corpus-specific retrieval logic
-        return self._handle_corpus_retrieval(query, corpus_filter, k, session_id, qa_id)
-    
-    def _handle_corpus_retrieval(self, query: str, corpus_filter: Optional[str], k: int, session_id: Optional[str] = None, qa_id: Optional[str] = None) -> List[Document]:
-        """Handle all corpus-specific retrieval logic internally"""
-        import logging
-        logger = logging.getLogger(__name__)
+        filter_dict = None
+        if corpus_filter and corpus_filter != "all":
+            filter_dict = {"corpus": corpus_filter}
         
-        if corpus_filter and corpus_filter.lower() != "all":
-            # Single corpus: retrieve large set then rerank for best quality
-            return self._single_corpus_retrieval(query, corpus_filter, k, logger, session_id, qa_id)
-        else:
-            # All corpora: per-corpus balanced retrieval
-            return self._multi_corpus_balanced_retrieval(query, k, logger, session_id, qa_id)
-    
-    def _single_corpus_retrieval(self, query: str, corpus_filter: str, final_k: int, logger, session_id: Optional[str] = None, qa_id: Optional[str] = None) -> List[Document]:
-        """Retrieve from single corpus using same parallel logic as multi-corpus"""
-        # Treat single corpus as a list with one corpus for consistency
-        corpus_list = [corpus_filter]
-        
-        # Calculate parameters (same logic as multi-corpus)
-        per_corpus_k = 500  # Large retrieval size for single corpus
-        docs_per_corpus = final_k  # All final docs come from this corpus
-        
-        # Use the same parallel processing logic
-        import concurrent.futures
-        
-        def retrieve_and_rerank_corpus(corpus_info):
-            i, corpus = corpus_info
-            # Step 1: Retrieve from this corpus
-            filter_dict = {"corpus": corpus}
-            corpus_docs = self.vector_store.similarity_search(query=query, k=per_corpus_k, filter=filter_dict)
-            
-            # Step 2: Rerank within this corpus (use full final_k since it's single corpus)
-            if corpus_docs:
-                return self._rerank_documents(query, corpus_docs, docs_per_corpus, session_id, qa_id)
-            return []
-        
-        all_documents = []
-        # Use same ThreadPoolExecutor pattern (even though it's just one corpus)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            # Submit corpus retrieval task
-            corpus_tasks = [(0, corpus_filter)]
-            future_to_corpus = {executor.submit(retrieve_and_rerank_corpus, corpus_info): corpus_info 
-                               for corpus_info in corpus_tasks}
-            
-            # Collect results
-            for future in concurrent.futures.as_completed(future_to_corpus):
-                try:
-                    corpus_docs = future.result()
-                    all_documents.extend(corpus_docs)
-                except Exception as e:
-                    corpus_info = future_to_corpus[future]
-                    logger.error(f"Error processing corpus {corpus_info[1]}: {e}")
-        
-        return all_documents
-    
-    def _multi_corpus_balanced_retrieval(self, query: str, final_k: int, logger, session_id: Optional[str] = None, qa_id: Optional[str] = None) -> List[Document]:
-        """Retrieve balanced documents from all corpora in parallel"""
-        # Get available corpora (excluding 'all')
-        all_corpora = [option["value"] for option in CORPUS_OPTIONS if option["value"] != "all"]
-        
-        if not all_corpora:
-            # Fallback: standard retrieval without filtering
-            return self.vector_store.similarity_search(query=query, k=final_k, filter=None)
-        
-        # Calculate balanced distribution
-        per_corpus_k = 200  # Large retrieval size per corpus (could be configurable)
-        docs_per_corpus = max(1, final_k // len(all_corpora))
-        remaining_docs = final_k % len(all_corpora)
-        
-        # Process corpora in parallel using ThreadPoolExecutor
-        import concurrent.futures
-        import threading
-        
-        def retrieve_and_rerank_corpus(corpus_info):
-            i, corpus = corpus_info
-            # Step 1: Retrieve from this corpus
-            filter_dict = {"corpus": corpus}
-            corpus_docs = self.vector_store.similarity_search(query=query, k=per_corpus_k, filter=filter_dict)
-            
-            # Step 2: Determine final count for this corpus
-            corpus_final_k = docs_per_corpus
-            if i < remaining_docs:  # Distribute remaining docs to first few corpora
-                corpus_final_k += 1
-            
-            # Step 3: Rerank within this corpus
-            if corpus_docs:
-                return self._rerank_documents(query, corpus_docs, corpus_final_k, session_id, qa_id)
-            return []
-        
-        all_documents = []
-        # Use ThreadPoolExecutor for parallel corpus processing
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(all_corpora)) as executor:
-            # Submit all corpus retrieval tasks
-            corpus_tasks = [(i, corpus) for i, corpus in enumerate(all_corpora)]
-            future_to_corpus = {executor.submit(retrieve_and_rerank_corpus, corpus_info): corpus_info 
-                               for corpus_info in corpus_tasks}
-            
-            # Collect results as they complete
-            for future in concurrent.futures.as_completed(future_to_corpus):
-                try:
-                    corpus_docs = future.result()
-                    all_documents.extend(corpus_docs)
-                except Exception as e:
-                    corpus_info = future_to_corpus[future]
-                    logger.error(f"Error processing corpus {corpus_info[1]}: {e}")
-        
-        return all_documents
-    
-    def _rerank_documents(self, query: str, documents: List[Document], max_docs: int, session_id: Optional[str] = None, qa_id: Optional[str] = None) -> List[Document]:
-        """Rerank documents and add metrics to current span context"""
-        try:
-            # Add reranking metrics to the current span context instead of creating a new span
-            from backend.modules.document_reranking import _rerank_documents_internal
-            from opentelemetry import trace
-            import time
-            import logging
-            
-            logger = logging.getLogger(__name__)
-            start_time = time.time()
-            
-            # Perform reranking
-            reranked_docs, scores = _rerank_documents_internal(documents, query, max_docs)
-            
-            # Calculate processing time
-            processing_time = time.time() - start_time
-            
-            # Store reranking metrics for later collection by the retrieval span
-            rerank_metric = {
-                "input_count": len(documents),
-                "output_count": len(reranked_docs),
-                "processing_time_seconds": processing_time,
-                "max_docs": max_docs,
-            }
-            
-            if scores:
-                rerank_metric.update({
-                    "score_min": min(scores),
-                    "score_max": max(scores),
-                    "score_avg": sum(scores) / len(scores),
-                    "score_range": f"{min(scores):.2f}-{max(scores):.2f}"
-                })
-            
-            # Add to metrics list
-            self.reranking_metrics.append(rerank_metric)
-            
-            return reranked_docs
-                
-        except ImportError:
-            # Fallback: just return the first max_docs (preserving similarity search order)
-            logging.warning("Could not import reranking module, using simple truncation")
-            return documents[:max_docs]
+        # Use standard similarity search
+        return self.vector_store.similarity_search(query=query, k=k, filter=filter_dict)
     
     # Public API methods required by LangChain
     def invoke(self, input: str, config: Optional[Dict] = None, **kwargs) -> List[Document]:
         """Synchronous invoke method required by LangChain."""
         import asyncio
         
+        # Check if we're already in an event loop
         try:
-            # Try to get the current event loop
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
+            # If we're in a running loop, we need to handle this differently
             if loop.is_running():
-                # We're in an async context, create a task
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, self._get_relevant_documents(input, config, **kwargs))
-                    result = future.result()
-            else:
-                # No running loop, safe to use asyncio.run
-                result = asyncio.run(self._get_relevant_documents(input, config, **kwargs))
+                # Run synchronously by calling the vector store directly
+                k = kwargs.get("k", 10)
+                corpus_filter = None
+                
+                # Extract corpus filter from config if present
+                if config and isinstance(config, dict):
+                    corpus_filter = config.get("corpus_filter")
+                
+                filter_dict = None
+                if corpus_filter and corpus_filter != "all":
+                    filter_dict = {"corpus": corpus_filter}
+                
+                # Use standard similarity search
+                return self.vector_store.similarity_search(query=input, k=k, filter=filter_dict)
         except RuntimeError:
-            # Fallback: run in a new event loop
-            result = asyncio.new_event_loop().run_until_complete(self._get_relevant_documents(input, config, **kwargs))
+            # No event loop running, safe to use asyncio.run()
+            pass
         
-        return result
+        return asyncio.run(self._get_relevant_documents(input, config, **kwargs))
     
     async def ainvoke(self, input: str, config: Optional[Dict] = None, **kwargs) -> List[Document]:
         """Asynchronous invoke method required by LangChain."""
         return await self._get_relevant_documents(input, config, **kwargs)
+    
+    def format_document_for_citation(self, document: Document, idx: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        """Instance method version for compatibility with retriever_call_model.py."""
+        return format_document_for_citation(document, idx)
 
-# --- Compatibility helper (used by streaming.py) ---
+# Compatibility helper for citation formatting (imported by streaming.py)
 def format_document_for_citation(document: Document, idx: Optional[int] = None) -> Optional[Dict[str, Any]]:
-    """Convert a Document into the citation structure expected by the frontend.
-
-    Args:
-        document: LangChain Document instance
-        idx: Optional numeric index (for fallback ID generation)
-
-    Returns:
-        Dict with citation fields or None if the document is invalid
-    """
+    """Convert a Document into the citation structure expected by the frontend."""
     if not document:
         return None
 
@@ -326,3 +184,13 @@ def format_document_for_citation(document: Document, idx: Optional[int] = None) 
         "weight": 1.0,
         "has_more": len(text) > 300,
     }
+
+# Required functions for compatibility with retriever_call_model.py
+def enhance_document_relevance(documents: List[Document], query: str) -> List[Document]:
+    """Enhance document relevance using the centralized reranking module."""
+    from backend.modules.document_reranking import enhance_document_relevance as _enhance
+    return _enhance(documents, query, create_span=False)
+
+def format_citations(documents: List[Document], **kwargs) -> List[Dict[str, Any]]:
+    """Format documents as citations for the frontend."""
+    return [format_document_for_citation(doc, i) for i, doc in enumerate(documents)]
