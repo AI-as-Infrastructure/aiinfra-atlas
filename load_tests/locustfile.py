@@ -183,14 +183,14 @@ def signal_handler(signum, frame):
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
-# Set default user class weights
-QuestionSubmissionUser.weight = 60
-FeedbackUser.weight = 20
-MixedFeedbackUser.weight = 15
-WebSocketUser.weight = 3
-AsyncWebSocketUser.weight = 1
-AsyncProcessingUser.weight = 2
-RedisMonitorUser.weight = 1
+# Set default user class weights - Balanced for realistic behavior
+QuestionSubmissionUser.weight = 30  # Reduced from 60 to prevent hammering
+FeedbackUser.weight = 25
+MixedFeedbackUser.weight = 20
+WebSocketUser.weight = 10
+AsyncWebSocketUser.weight = 5
+AsyncProcessingUser.weight = 5
+RedisMonitorUser.weight = 5
 
 # Configuration validation
 def validate_config():
