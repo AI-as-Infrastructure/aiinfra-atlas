@@ -1,6 +1,24 @@
 <template>
   <div class="inline-feedback" v-if="shouldShowFeedback">
-    <!-- Simple Feedback (Initial Step) -->
+    <!-- Feedback Type Selection (Initial Step) -->
+    <div v-if="currentStep === 'selection'" class="feedback-selection">
+      <div class="feedback-options">
+        <button class="button" @click="selectFeedbackType('simple')">
+          Simple Feedback
+        </button>
+        <button class="button" @click="selectFeedbackType('extended')">
+          Enhanced Feedback
+        </button>
+        <button class="button" @click="selectFeedbackType('ai-enhanced')">
+          AI Assisted Feedback
+        </button>
+        <button class="button" @click="selectFeedbackType('skip')">
+          Skip
+        </button>
+      </div>
+    </div>
+
+    <!-- Simple Feedback -->
     <SimpleFeedback
       v-if="currentStep === 'simple'"
       :qa-id="qaId"
@@ -94,7 +112,7 @@ export default {
   emits: ['feedback-workflow-complete'],
   data() {
     return {
-      currentStep: 'simple', // 'simple', 'prompt', 'extended', 'ai-enhanced', 'thankyou', 'complete'
+      currentStep: 'selection', // 'selection', 'simple', 'prompt', 'extended', 'ai-enhanced', 'thankyou', 'complete'
       simpleFeedbackData: {},
       completeFeedbackPayload: null // Store the complete feedback data
     }
@@ -169,15 +187,21 @@ export default {
       this.completeFeedbackPayload = feedbackData // Already includes feedback_type and timestamp
     },
     
-    onSimpleFeedbackSubmitted() {
-      console.log('INLINE: onSimpleFeedbackSubmitted called - moving to prompt (NO API CALL)')
-      // DON'T mark as submitted yet - wait for workflow completion
-      // Just move to prompt step
-      this.currentStep = 'prompt'
+    async onSimpleFeedbackSubmitted() {
+      console.log('INLINE: onSimpleFeedbackSubmitted called - submitting simple feedback')
+      console.log('INLINE: completeFeedbackPayload available:', !!this.completeFeedbackPayload)
       
-      // Reset simple feedback form
-      if (this.$refs.simpleFeedback) {
-        this.$refs.simpleFeedback.reset()
+      // Submit simple feedback directly since user chose Simple Feedback from selection
+      const success = await this.submitSimpleFeedbackOnly()
+      if (success) {
+        this.currentStep = 'thankyou'
+        
+        // Show thank you for 1.5 seconds, then complete workflow
+        setTimeout(() => {
+          this.completeFeedbackWorkflow()
+        }, 1500)
+      } else {
+        console.error('INLINE: Failed to submit simple feedback')
       }
     },
     
@@ -212,13 +236,13 @@ export default {
     },
     
     onSimpleCancel() {
-      // User cancelled simple feedback - complete workflow without submitting feedback
-      this.completeFeedbackWorkflow()
+      // User cancelled simple feedback - return to selection
+      this.currentStep = 'selection'
     },
     
     onExtendedCancel() {
-      // User cancelled extended feedback - workflow complete
-      this.completeFeedbackWorkflow()
+      // User cancelled extended feedback - return to selection
+      this.currentStep = 'selection'
     },
     
     onExtendedFeedbackSubmitted() {
@@ -232,8 +256,8 @@ export default {
     },
     
     onAIEnhancedBack() {
-      // User went back from AI-Enhanced feedback - return to prompt
-      this.currentStep = 'prompt'
+      // User went back from AI-Enhanced feedback - return to selection
+      this.currentStep = 'selection'
     },
     
     async onAIEnhancedSubmit(feedbackData) {
@@ -247,11 +271,12 @@ export default {
         const currentAnswer = chatHistory[chatHistory.length - 1]?.content || ''
         const fullCitations = chatHistory[chatHistory.length - 1]?.citations || []
         
-        // Build the complete feedback payload using the same pattern as extended feedback
+        // Build the complete feedback payload for AI-enhanced feedback
         const completeFeedbackPayload = {
-          ...this.completeFeedbackPayload, // Include all simple feedback data
-          feedback_type: 'ai_enhanced', // Override to ai_enhanced
-          timestamp: new Date().toISOString(), // Update timestamp
+          qa_id: this.qaId,
+          session_id: this.sessionId,
+          feedback_type: 'ai_enhanced',
+          timestamp: new Date().toISOString(),
           question: currentQuestion,
           answer: currentAnswer,
           citations: fullCitations,
@@ -375,13 +400,25 @@ export default {
     },
     
     resetFeedbackState() {
-      this.currentStep = 'simple'
+      this.currentStep = 'selection'
       this.simpleFeedbackData = {}
       this.completeFeedbackPayload = null
       
       // Reset simple feedback form if it exists
       if (this.$refs.simpleFeedback) {
         this.$refs.simpleFeedback.reset()
+      }
+    },
+    
+    selectFeedbackType(type) {
+      console.log('INLINE: User selected feedback type:', type)
+      
+      if (type === 'skip') {
+        // User chose to skip feedback - complete workflow immediately
+        this.completeFeedbackWorkflow()
+      } else {
+        // Move to the selected feedback type
+        this.currentStep = type
       }
     }
   }
@@ -445,10 +482,39 @@ export default {
   transform: translateY(-10px);
 }
 
+/* Feedback Selection Styles */
+.feedback-selection {
+  padding: 0.5rem 0;
+  width: 100%;
+}
+
+.feedback-options {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.feedback-options .button {
+  font-size: 0.875rem;
+  padding: 0.5rem 1rem;
+  white-space: nowrap;
+}
+
 @media (max-width: 768px) {
   .inline-feedback {
     margin-top: 0.75rem;
     margin-bottom: 0.75rem;
+  }
+  
+  .feedback-options {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .feedback-options .button {
+    width: 100%;
   }
 }
 </style>
