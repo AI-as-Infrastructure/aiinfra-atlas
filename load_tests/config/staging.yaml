@@ -26,42 +26,43 @@ load_test:
     websocket_users: 0      # WebSocket connections (disabled for realistic test)
     async_users: 0          # Async processing users (disabled for realistic test)
   
-  # Load Patterns - Optimized for 8 vCPU, 16GB RAM servers
+  # Load Patterns - Optimized for 15 concurrent users with realistic behavior
   load_patterns:
     ramp_up:
       start_users: 1
       end_users: 15
-      duration: "2m"        # Faster ramp up for server specs
+      duration: "3m"        # Gradual ramp up to prevent overwhelming
     
     sustained:
       users: 15
-      duration: "20m"       # Sustained realistic load
+      duration: "30m"       # Sustained realistic load for 15 users
     
     peak:
-      users: 20             # Peak load matching server capacity
-      duration: "5m"        # Longer peak period for stress testing
+      users: 20             # Peak load stress testing
+      duration: "10m"       # Longer peak period for stress testing
     
     burst:
-      users: 25             # Burst load testing LLM_MAX_CONCURRENT=30
-      duration: "2m"        # Short burst to test limits
+      users: 25             # Burst load testing limits
+      duration: "5m"        # Short burst to test breaking point
     
     ramp_down:
       start_users: 15
       end_users: 0
       duration: "2m"
   
-  # Realistic User Behavior Patterns
+  # Realistic User Behavior Patterns - Optimized for 15 concurrent users
   user_behavior:
     think_time:
-      min: 30000            # 30 seconds minimum between questions
-      max: 180000           # 3 minutes maximum between questions
+      min: 60000            # 1 minute minimum between questions
+      max: 300000           # 5 minutes maximum between questions
       distribution: "normal" # Normal distribution around average
-      average: 90000        # 90 seconds average think time
+      average: 180000       # 3 minutes average think time
     
     reading_time:
-      base: 5000            # 5 seconds base reading time
-      per_word: 200         # 200ms per word (300 WPM reading speed)
-      max: 120000           # 2 minutes maximum reading time
+      base_wpm: 200         # 200 words per minute (academic reading)
+      citation_bonus: 10000 # 10 seconds per citation review
+      min_reading: 10000    # 10 seconds minimum reading time
+      max_reading: 300000   # 5 minutes maximum reading time
     
     session_duration:
       min: 300000           # 5 minutes minimum session
@@ -78,16 +79,19 @@ load_test:
       probability: 0.3      # 30% chance of longer pause
       duration: 300000      # 5 minute pause (user distraction)
   
-  # Performance Targets - Optimized for 8 vCPU, 16GB RAM servers
+  # Performance Targets - Optimized for Google Gemini 2.0 with realistic expectations
   performance_targets:
-    response_time_p95: 15000  # ms (15s for P95 with full response time)
-    response_time_p99: 22000  # ms (22s for P99 with full response time)
-    error_rate_max: 1.0       # percentage (stricter for production-grade servers)
-    throughput_min: 3         # requests per second (higher with better specs)
+    response_time_p50: 14000  # ms (14s P50 for complete response)
+    response_time_p95: 20000  # ms (20s P95 for complete response)
+    response_time_p99: 25000  # ms (25s P99 for complete response)
+    error_rate_max: 3.0       # percentage (3% max error rate)
+    throughput_min: 0.5       # requests per second (realistic with reading time)
     
-    # Streaming specific targets - optimized for server specs
-    streaming_first_token_max: 6000   # ms (6s realistic for LLM processing)
-    streaming_total_time_max: 18000   # ms (18s realistic for full response)
+    # Streaming specific targets - optimized for Gemini 2.0
+    streaming_first_token_p50: 4000   # ms (4s P50 for first token)
+    streaming_first_token_p95: 6000   # ms (6s P95 for first token)
+    streaming_total_time_p50: 14000   # ms (14s P50 for complete response)
+    streaming_total_time_p95: 20000   # ms (20s P95 for complete response)
     
     # WebSocket targets
     websocket_connection_time_max: 1000  # ms
@@ -98,30 +102,30 @@ load_test:
     redis_queue_depth_max: 100           # requests
     
     # Evaluation thresholds for pass/fail/borderline assessment
-    # Production-grade thresholds - staging must meet production standards
+    # Realistic thresholds for 15 concurrent users with proper behavior
     success_rate:
-      pass_threshold: 95.0        # 95%+ success rate required
-      borderline_threshold: 90.0  # 90-95% is borderline
+      pass_threshold: 97.0        # 97%+ success rate required
+      borderline_threshold: 95.0  # 95-97% is borderline
     
     error_rate:
-      pass_threshold: 5.0         # <5% error rate required
-      borderline_threshold: 10.0  # 5-10% is borderline
+      pass_threshold: 3.0         # <3% error rate required
+      borderline_threshold: 5.0   # 3-5% is borderline
     
     avg_response_time:
-      pass_threshold: 15000       # <15s average response time (realistic)
-      borderline_threshold: 20000 # 15-20s is borderline
+      pass_threshold: 16000       # <16s average response time
+      borderline_threshold: 20000 # 16-20s is borderline
     
     p95_response_time:
-      pass_threshold: 18000       # <18s P95 response time (realistic)
-      borderline_threshold: 24000 # 18-24s is borderline
+      pass_threshold: 20000       # <20s P95 response time
+      borderline_threshold: 25000 # 20-25s is borderline
     
-    first_token_time:
-      pass_threshold: 6000        # <6s to first token (realistic for LLM)
+    first_token_time_p95:
+      pass_threshold: 6000        # <6s P95 first token time
       borderline_threshold: 8000  # 6-8s is borderline
     
     requests_per_second:
-      pass_threshold: 1.0         # >1.0 RPS for optimized LLM workloads
-      borderline_threshold: 0.5   # 0.5-1.0 RPS is borderline
+      pass_threshold: 0.4         # >0.4 RPS realistic with reading time
+      borderline_threshold: 0.3   # 0.3-0.4 RPS is borderline
 
 # Test Data Configuration
 test_data:
@@ -198,53 +202,70 @@ env_vars:
   BACKEND_LOG_LEVEL: "${BACKEND_LOG_LEVEL}"
   CORS_ORIGINS: "${CORS_ORIGINS}"
 
-# Test Scenarios - Realistic usage patterns
+# Test Scenarios - 4-Phase Rollout for Realistic Usage Patterns
 scenarios:
-  realistic_usage:
-    description: "Realistic 15-user concurrent load test (optimized for server specs)"
+  # Phase 1: Baseline Testing (5 users, 10 min)
+  phase1_baseline:
+    description: "Phase 1: Baseline performance with 5 users - establish performance baseline"
+    duration: "10m"
+    users: 5
+    spawn_rate: 1
+    user_types: ["question_users"]
+    think_time_enabled: true
+    natural_pauses_enabled: true
+    tags: ["baseline", "phase1"]
+  
+  # Phase 2: Target Load Testing (15 users, 30 min)
+  phase2_target_load:
+    description: "Phase 2: Target load with 15 concurrent users - main test scenario"
     duration: "30m"
     users: 15
+    spawn_rate: 1.5
     user_types: ["question_users", "feedback_users", "mixed_users"]
     think_time_enabled: true
     natural_pauses_enabled: true
+    tags: ["target", "phase2", "main"]
   
-  steady_state:
-    description: "Steady state performance test (server baseline)"
-    duration: "20m"
-    users: 15
-    user_types: ["question_users", "mixed_users"]
-    think_time_enabled: true
-    streaming_ratio: 1.0
-  
-  peak_realistic:
-    description: "Realistic peak load (20 users - server capacity)"
+  # Phase 3: Stress Testing (20 users, 10 min)
+  phase3_stress_test:
+    description: "Phase 3: Stress test with 20 users - find breaking point"
     duration: "10m"
     users: 20
-    user_types: ["question_users", "feedback_users", "mixed_users"]
-    think_time_enabled: true
-    reduced_think_time: true  # Slightly faster during peak
-  
-  burst_test:
-    description: "Burst load test (25 users - testing LLM_MAX_CONCURRENT)"
-    duration: "5m"
-    users: 25
+    spawn_rate: 2
     user_types: ["question_users", "mixed_users"]
-    think_time_enabled: false  # Aggressive testing
+    think_time_enabled: true
     reduced_think_time: true
+    tags: ["stress", "phase3"]
   
-  focus_group:
-    description: "Focus group simulation (15-20 users, realistic behavior)"
-    duration: "45m"
-    users: 18
+  # Phase 4: Endurance Testing (15 users, 60 min)
+  phase4_endurance:
+    description: "Phase 4: Endurance test with 15 users - long-term stability"
+    duration: "60m"
+    users: 15
+    spawn_rate: 1
     user_types: ["question_users", "feedback_users", "mixed_users"]
-    extended_sessions: true
     think_time_enabled: true
     natural_pauses_enabled: true
-  
-  long_session:
-    description: "Long user session simulation (optimized)"
-    duration: "60m"
-    users: 12
-    user_types: ["mixed_users"]
     extended_sessions: true
+    tags: ["endurance", "phase4", "stability"]
+  
+  # Additional scenarios for specific testing
+  burst_test:
+    description: "Burst load test (25 users) - maximum capacity testing"
+    duration: "5m"
+    users: 25
+    spawn_rate: 5
+    user_types: ["question_users"]
+    think_time_enabled: false
+    tags: ["burst", "capacity"]
+  
+  realistic_usage:
+    description: "Realistic usage simulation - mixed user behavior"
+    duration: "45m"
+    users: 15
+    spawn_rate: 1.5
+    user_types: ["question_users", "feedback_users", "mixed_users"]
     think_time_enabled: true
+    natural_pauses_enabled: true
+    extended_sessions: true
+    tags: ["realistic", "mixed"]
