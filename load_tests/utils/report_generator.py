@@ -419,9 +419,17 @@ For a specialized parliamentary research tool:
                 return "NEEDS ATTENTION"
 
 def main():
-    """Generate performance report"""
+    """Generate performance report with timestamped filename"""
     generator = PerformanceReportGenerator()
-    report_path = Path(__file__).parent.parent / 'PERFORMANCE_REPORT.md'
+    
+    # Generate timestamp-based filename matching load test reports
+    timestamp = int(time.time())
+    report_filename = f'performance_report_{timestamp}.md'
+    report_path = Path(__file__).parent.parent / 'reports' / report_filename
+    
+    # Ensure reports directory exists
+    report_path.parent.mkdir(exist_ok=True)
+    
     generator.generate_report(str(report_path))
 
 if __name__ == "__main__":
