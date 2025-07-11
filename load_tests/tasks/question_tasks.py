@@ -10,7 +10,7 @@ from utils.metrics import metrics_collector
 class QuestionSubmissionUser(HttpUser):
     """Load test user for question submission endpoints"""
     
-    wait_time = between(2, 8)  # Wait 2-8 seconds between tasks
+    wait_time = between(60, 300)  # Wait 1-5 minutes between tasks (realistic user behavior)
     
     # Disable SSL verification for self-signed certificates
     def __init__(self, *args, **kwargs):
@@ -26,7 +26,7 @@ class QuestionSubmissionUser(HttpUser):
         
         # Add startup delay to avoid thundering herd on service startup
         import random
-        startup_delay = random.uniform(2, 5)  # 2-5 second random delay
+        startup_delay = random.uniform(5, 15)  # 5-15 second random delay
         time.sleep(startup_delay)
         
         # Test connectivity (no auth headers needed)
@@ -154,6 +154,9 @@ class QuestionSubmissionUser(HttpUser):
                     )
                 
                 response.success()
+                
+                # Implement realistic reading time based on response length
+                self._simulate_reading_time(answer_content, citations)
                 
                 # Skip feedback submission for now - focus on core Q&A capacity testing
                 
@@ -324,6 +327,31 @@ class QuestionSubmissionUser(HttpUser):
         except Exception as e:
             print(f"❌ HTTP feedback error: {e}")
             return False
+    
+    def _simulate_reading_time(self, response_text, citations):
+        """Simulate realistic reading time based on response content"""
+        if not response_text:
+            return
+            
+        # Calculate reading time: 200 WPM for academic reading
+        words = len(response_text.split())
+        base_reading_time = (words / 200) * 60  # 200 WPM in seconds
+        
+        # Add time for citation review
+        citation_bonus = len(citations) * 10  # 10 seconds per citation
+        
+        # Add some variability (±20%) to simulate individual differences
+        variability = random.uniform(0.8, 1.2)
+        total_reading_time = (base_reading_time + citation_bonus) * variability
+        
+        # Cap at 5 minutes maximum
+        reading_time = min(total_reading_time, 300)
+        
+        # Add minimum reading time of 10 seconds
+        reading_time = max(reading_time, 10)
+        
+        print(f"📖 Reading time: {reading_time:.1f}s for {words} words + {len(citations)} citations")
+        time.sleep(reading_time)
     
     def on_stop(self):
         """Cleanup when user stops"""
