@@ -51,7 +51,7 @@ class UserFeedback(BaseModel):
     model_answer: Optional[str] = None
     
     # New inline feedback fields
-    feedback_type: Optional[str] = None  # 'simple' or 'extended'
+    feedback_type: Optional[str] = None  # 'simple', 'extended', or 'ai_enhanced'
     sentiment: Optional[str] = None  # 'positive' or 'negative'
     
     # New extended feedback fields
@@ -70,6 +70,11 @@ class UserFeedback(BaseModel):
     
     # Phoenix trace correlation
     trace_id: Optional[str] = None
+    
+    # AI-Enhanced feedback fields (minimal addition)
+    ai_validation: Optional[Dict[str, Any]] = None  # Full AI validation results
+    ai_agreement: Optional[str] = None  # Agreement level with AI assessment  
+    ratings: Optional[Dict[str, int]] = None  # Human ratings for AI-enhanced feedback
 
 class FeedbackResponse(BaseModel):
     """Feedback submission response model"""
@@ -182,6 +187,7 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
     from time import sleep
 
     logger = logging.getLogger(__name__)
+    
     
     # Cannot annotate without a span_id
     if not span_id:
@@ -485,6 +491,103 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
             })
     
     # Note: We don't need to add feedback_text here as it's already handled above as user_comment
+    
+    # Add AI-Enhanced feedback annotations (minimal addition - only if feedback_type is ai_enhanced)
+    if feedback_data.get('feedback_type') == 'ai_enhanced':
+        # Add AI validation results as separate annotations
+        if "ai_validation" in feedback_data and feedback_data["ai_validation"]:
+            ai_validation = feedback_data["ai_validation"]
+            
+            # Add AI overall quality assessment
+            structured_feedback = ai_validation.get("structured_feedback")
+            if structured_feedback and structured_feedback.get("overall_quality"):
+                overall_quality = structured_feedback["overall_quality"]
+                quality_scores = {"excellent": 5, "good": 4, "fair": 3, "poor": 2}
+                quality_score = quality_scores.get(overall_quality, 3)
+                
+                annotation_data.append({
+                    "id": f"{annotation_id}_ai_overall_quality",
+                    "name": "AI Overall Quality Assessment",
+                    "span_id": formatted_span_id,
+                    "annotator_kind": "LLM",  # AI assessment
+                    "result": {
+                        "label": "ai_overall_quality",
+                        "score": quality_score,
+                        "explanation": f"AI assessed overall quality as: {overall_quality}"
+                    },
+                    "metadata": {
+                        "qa_id": qa_id,
+                        "feedback_type": "ai_validation"
+                    } if qa_id else {"feedback_type": "ai_validation"}
+                })
+            
+            # Add AI individual category scores
+            if structured_feedback:
+                ai_categories = ['factual_accuracy', 'completeness', 'relevance', 'citation_quality', 'clarity', 'historical_context']
+                for category in ai_categories:
+                    if category in structured_feedback and isinstance(structured_feedback[category], dict):
+                        category_data = structured_feedback[category]
+                        if 'score' in category_data:
+                            annotation_data.append({
+                                "id": f"{annotation_id}_ai_{category}",
+                                "name": f"AI {category.replace('_', ' ').title()}",
+                                "span_id": formatted_span_id,
+                                "annotator_kind": "LLM",  # AI assessment
+                                "result": {
+                                    "label": f"ai_{category}",
+                                    "score": category_data['score'],
+                                    "explanation": f"AI {category.replace('_', ' ')} assessment: {category_data['score']}/5"
+                                },
+                                "metadata": {
+                                    "qa_id": qa_id,
+                                    "feedback_type": "ai_validation",
+                                    "category": category
+                                } if qa_id else {"feedback_type": "ai_validation", "category": category}
+                            })
+        
+        # Add human ratings from AI-enhanced feedback
+        if "ratings" in feedback_data and feedback_data["ratings"]:
+            human_ratings = feedback_data["ratings"]
+            for rating_type, rating_value in human_ratings.items():
+                if rating_value is not None:
+                    annotation_data.append({
+                        "id": f"{annotation_id}_human_{rating_type}",
+                        "name": f"Human {rating_type.replace('_', ' ').title()}",
+                        "span_id": formatted_span_id,
+                        "annotator_kind": "HUMAN",  # Human assessment
+                        "result": {
+                            "label": f"human_{rating_type}",
+                            "score": rating_value,
+                            "explanation": f"Human {rating_type.replace('_', ' ')} assessment: {rating_value}/5"
+                        },
+                        "metadata": {
+                            "qa_id": qa_id,
+                            "feedback_type": "ai_enhanced_human"
+                        } if qa_id else {"feedback_type": "ai_enhanced_human"}
+                    })
+        
+        # Add AI agreement level
+        if "ai_agreement" in feedback_data and feedback_data["ai_agreement"]:
+            agreement_scores = {
+                "strongly_agree": 5, "agree": 4, "neutral": 3, "disagree": 2, "strongly_disagree": 1
+            }
+            agreement_score = agreement_scores.get(feedback_data["ai_agreement"], 3)
+            
+            annotation_data.append({
+                "id": f"{annotation_id}_ai_agreement",
+                "name": "AI Agreement Level",
+                "span_id": formatted_span_id,
+                "annotator_kind": "HUMAN",  # Human assessment of AI agreement
+                "result": {
+                    "label": "ai_agreement",
+                    "score": agreement_score,
+                    "explanation": f"Human agreement with AI assessment: {feedback_data['ai_agreement']}"
+                },
+                "metadata": {
+                    "qa_id": qa_id,
+                    "feedback_type": "ai_enhanced_human"
+                } if qa_id else {"feedback_type": "ai_enhanced_human"}
+            })
         
     # Add model answer if provided
     if "model_answer" in feedback_data and feedback_data["model_answer"]:

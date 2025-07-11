@@ -77,7 +77,12 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
             "test_target": feedback.test_target,
             "question": feedback.question,
             "answer": feedback.answer,
-            "citations": feedback.citations
+            "citations": feedback.citations,
+            
+            # AI-Enhanced feedback fields
+            "ai_validation": feedback.ai_validation,
+            "ai_agreement": feedback.ai_agreement,
+            "ratings": feedback.ratings
         }
         
         # Use Phoenix native feedback association

@@ -2,21 +2,33 @@
   <div class="feedback-prompt">
     <div class="prompt-content">
       <div class="prompt-text">
-        <span class="prompt-message">Submit extended feedback?</span>
-        <span class="tooltip" title="Take some time to provide valuable extended feedback">ⓘ</span>
+        <span class="prompt-message">Choose feedback type:</span>
+        <span class="tooltip" title="Select how you'd like to provide feedback">ⓘ</span>
       </div>
       <div class="prompt-buttons">
         <button
-          class="prompt-btn yes-btn"
-          @click="$emit('response', 'yes')"
+          class="prompt-btn extended-btn"
+          @click="$emit('response', 'extended')"
+          title="Provide detailed manual feedback"
         >
-          Yes
+          <span class="icon">📝</span>
+          Extended
+        </button>
+        <button
+          class="prompt-btn ai-enhanced-btn"
+          @click="$emit('response', 'ai-enhanced')"
+          title="Get AI validation assistance with your feedback"
+        >
+          <span class="icon">🤖</span>
+          AI-Enhanced
         </button>
         <button
           class="prompt-btn no-btn"
           @click="$emit('response', 'no')"
+          title="Submit simple feedback only"
         >
-          No
+          <span class="icon">✓</span>
+          Done
         </button>
       </div>
     </div>
@@ -78,15 +90,31 @@ export default {
   font-size: 14px;
   font-weight: 500;
   transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
-.yes-btn {
-  background-color: #2196f3;
+.prompt-btn .icon {
+  font-size: 16px;
+}
+
+.extended-btn {
+  background-color: #28a745;
   color: white;
 }
 
-.yes-btn:hover {
-  background-color: #1976d2;
+.extended-btn:hover {
+  background-color: #218838;
+}
+
+.ai-enhanced-btn {
+  background-color: #3273dc;
+  color: white;
+}
+
+.ai-enhanced-btn:hover {
+  background-color: #2366d1;
 }
 
 .no-btn {
