@@ -23,6 +23,7 @@ deploy/docker/
 create/output/*
 models/**
 models/bert_1890_1900_st/
+load_tests/reports/*
 
 # Chroma database directories (except reference database)
 backend/chroma_db/
