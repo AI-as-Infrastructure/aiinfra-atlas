@@ -93,7 +93,7 @@ ssr: ## Stop remote staging environment gracefully
 	@bash deploy/staging/scripts/stop_staging_remote.sh
 
 # Load Testing Targets
-.PHONY: lts ltp ltq ltweb ltasync ltpeak ltburst ltfocus
+.PHONY: lts ltp ltq ltweb ltasync ltpeak ltburst ltfocus lto lt15 lt20 lt25
 lts: ## Run realistic load test against staging environment (15 concurrent users, 30 min)
 	@echo "🧪 Running realistic load test against staging environment..."
 	@echo "📊 Optimized for 8 vCPU, 16GB RAM servers with 15-20 concurrent users"
@@ -230,6 +230,76 @@ ltfocus: ## Focus group simulation (18 concurrent users, 45 min)
 	fi
 	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=staging ../.venv/bin/locust -f locustfile.py --host=\$$VITE_API_URL --users=18 --spawn-rate=1 --run-time=45m --headless"
 
+# Optimized Load Testing Targets
+lto: ## Run optimized load test (15 concurrent users, 45 min, cache-busting)
+	@echo "🚀 Running OPTIMIZED load test against staging environment..."
+	@echo "📊 Enhanced with cache-busting, expanded questions, and realistic user behavior"
+	@echo "🎯 Optimized for 8vCPU/16GB RAM with k20 fetch-k (33% memory reduction)"
+	@if [ ! -f "config/.env.staging" ]; then \
+		echo "❌ ERROR: config/.env.staging file not found!"; \
+		exit 1; \
+	fi
+	@if [ ! -d ".venv" ]; then \
+		echo "📦 Creating virtual environment..."; \
+		python3 -m venv .venv; \
+	fi
+	@if [ ! -f ".venv/bin/locust" ]; then \
+		echo "📥 Installing dependencies..."; \
+		.venv/bin/pip install -r config/requirements.txt; \
+	fi
+	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=optimized_staging ../.venv/bin/locust -f optimized_locustfile.py --host=\$$VITE_API_URL --users=15 --spawn-rate=1.5 --run-time=45m --headless"
+
+lt15: ## Optimized test for 15 concurrent users (recommended for 8vCPU/16GB)
+	@echo "🎯 Running optimized 15-user load test..."
+	@echo "📊 Perfect for 8vCPU/16GB staging environment"
+	@if [ ! -f "config/.env.staging" ]; then \
+		echo "❌ ERROR: config/.env.staging file not found!"; \
+		exit 1; \
+	fi
+	@if [ ! -d ".venv" ]; then \
+		echo "📦 Creating virtual environment..."; \
+		python3 -m venv .venv; \
+	fi
+	@if [ ! -f ".venv/bin/locust" ]; then \
+		echo "📥 Installing dependencies..."; \
+		.venv/bin/pip install -r config/requirements.txt; \
+	fi
+	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=optimized_staging ../.venv/bin/locust -f optimized_locustfile.py --host=\$$VITE_API_URL --users=15 --spawn-rate=1.5 --run-time=30m --headless"
+
+lt20: ## Stress test with 20 concurrent users
+	@echo "🔥 Running stress test with 20 concurrent users..."
+	@echo "📊 Testing peak capacity on 8vCPU/16GB"
+	@if [ ! -f "config/.env.staging" ]; then \
+		echo "❌ ERROR: config/.env.staging file not found!"; \
+		exit 1; \
+	fi
+	@if [ ! -d ".venv" ]; then \
+		echo "📦 Creating virtual environment..."; \
+		python3 -m venv .venv; \
+	fi
+	@if [ ! -f ".venv/bin/locust" ]; then \
+		echo "📥 Installing dependencies..."; \
+		.venv/bin/pip install -r config/requirements.txt; \
+	fi
+	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=optimized_staging ../.venv/bin/locust -f optimized_locustfile.py --host=\$$VITE_API_URL --users=20 --spawn-rate=2 --run-time=20m --headless"
+
+lt25: ## Burst test with 25 concurrent users (capacity limit test)
+	@echo "💥 Running burst test with 25 concurrent users..."
+	@echo "📊 Testing absolute capacity limits"
+	@if [ ! -f "config/.env.staging" ]; then \
+		echo "❌ ERROR: config/.env.staging file not found!"; \
+		exit 1; \
+	fi
+	@if [ ! -d ".venv" ]; then \
+		echo "📦 Creating virtual environment..."; \
+		python3 -m venv .venv; \
+	fi
+	@if [ ! -f ".venv/bin/locust" ]; then \
+		echo "📥 Installing dependencies..."; \
+		.venv/bin/pip install -r config/requirements.txt; \
+	fi
+	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=optimized_staging ../.venv/bin/locust -f optimized_locustfile.py --host=\$$VITE_API_URL --users=25 --spawn-rate=5 --run-time=10m --headless"
+
 # Utility Targets
 .PHONY: l c vs r xs
 l: ## Generate requirements.lock file
@@ -245,4 +315,44 @@ r: ## Generate retriever
 	@./utils/scripts/create_retriever.sh
 
 xs: ## Create XML vector store
-	@./utils/scripts/create_xml_store.sh 
+	@./utils/scripts/create_xml_store.sh
+
+# Help target
+help: ## Show this help message
+	@echo "ATLAS Load Testing - Available Targets:"
+	@echo ""
+	@echo "🚀 OPTIMIZED LOAD TESTING (Recommended for 8vCPU/16GB):"
+	@echo "  make lto     - Optimized 15-user test (45min, cache-busting)"
+	@echo "  make lt15    - Optimized 15-user test (30min, recommended)"
+	@echo "  make lt20    - Stress test with 20 users (20min)"
+	@echo "  make lt25    - Burst test with 25 users (10min)"
+	@echo ""
+	@echo "📊 STANDARD LOAD TESTING:"
+	@echo "  make lts     - Staging test (15 users, 30min)"
+	@echo "  make ltq     - Quick smoke test (1 user, 3min)"
+	@echo "  make ltpeak  - Peak load test (20 users, 10min)"
+	@echo "  make ltburst - Burst load test (25 users, 5min)"
+	@echo ""
+	@echo "🎯 SPECIALIZED TESTING:"
+	@echo "  make ltfocus - Focus group simulation (18 users, 45min)"
+	@echo "  make ltasync - Async processing test (15 users, 10min)"
+	@echo "  make ltweb   - Interactive web UI test"
+	@echo ""
+	@echo "🔧 DEVELOPMENT:"
+	@echo "  make b       - Start backend development server"
+	@echo "  make f       - Start frontend development server"
+	@echo "  make vs      - Create vector store"
+	@echo "  make r       - Generate retriever"
+	@echo ""
+	@echo "🚀 DEPLOYMENT:"
+	@echo "  make sr      - Deploy to remote staging"
+	@echo "  make p       - Deploy to production"
+	@echo "  make up      - Upgrade production"
+	@echo ""
+	@echo "💡 OPTIMIZATION FEATURES:"
+	@echo "  ✅ 100+ diverse questions with cache-busting"
+	@echo "  ✅ Realistic user behavior patterns (5 user types)"
+	@echo "  ✅ k20 fetch-k optimization (33% memory reduction)"
+	@echo "  ✅ Enhanced metrics and evaluation"
+	@echo "  ✅ Weighted corpus filter distribution"
+	@echo "  ✅ Follow-up question patterns"
