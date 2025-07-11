@@ -103,6 +103,9 @@ from backend.modules.streaming import (
 from backend.modules.llm import generate_response_with_telemetry
 from backend.telemetry.feedback import UserFeedback, FeedbackResponse
 from backend.modules.auth import get_current_user, optional_user
+from backend.services.validation_service import validation_service, SessionData
+from pydantic import BaseModel
+from typing import Dict, List, Optional, Any
 from backend.modules.sensitive_contexts import detect_sensitive_contexts
 from backend.telemetry.config_attrs import get_test_target_attributes
 
@@ -1220,6 +1223,8 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
         # Debug: Log what we received from frontend
         logger.info(f"Raw feedback data received: {feedback.model_dump()}")
         logger.info(f"Sentiment field from Pydantic model: {feedback.sentiment}")
+        logger.info(f"AI validation field from Pydantic model: {feedback.ai_validation}")
+        logger.info(f"AI agreement field from Pydantic model: {feedback.ai_agreement}")
         
         # Format feedback data for telemetry using the correct field names
         feedback_data = {
@@ -1249,6 +1254,11 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
             "answer": feedback.answer,
             "citations": feedback.citations,
             "citation_count": len(feedback.citations) if feedback.citations else 0,
+            
+            # AI-Enhanced feedback fields (minimal addition)
+            "ai_validation": feedback.ai_validation,
+            "ai_agreement": feedback.ai_agreement,
+            "ratings": feedback.ratings,
         }
         
         # Use the session context to ensure spans are properly associated
@@ -1281,6 +1291,103 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
             message="An error occurred processing your feedback",
             status="error"
         )
+
+# --- Validation Models ---
+class ValidationRequest(BaseModel):
+    session_id: str
+    qa_id: str
+    question: str
+    answer: str
+    citations: List[Dict[str, Any]]
+    metadata: Dict[str, Any]
+    validation_mode: Optional[str] = None  # "default" or "alternate"
+
+class ValidationResponse(BaseModel):
+    success: bool
+    message: str
+    validation_result: Optional[Dict[str, Any]] = None
+    markdown_export: Optional[str] = None
+    validation_config: Optional[Dict[str, Any]] = None
+
+# --- Session Validation endpoint ---
+@app.post("/api/validate_session", response_model=ValidationResponse)
+async def validate_session(validation_request: ValidationRequest, request: Request):
+    """
+    Validate a RAG session using an alternate LLM to provide structured feedback.
+    
+    This endpoint:
+    1. Exports the session data to structured Markdown
+    2. Sends it to a validation LLM (configured via .env)
+    3. Returns structured feedback to guide human reviewers
+    """
+    
+    # Check if validation is enabled
+    if not validation_service.is_enabled():
+        return ValidationResponse(
+            success=False,
+            message="Session validation is disabled",
+            validation_config=validation_service.get_validation_config_info()
+        )
+    
+    try:
+        # Create session data object
+        session_data = SessionData(
+            session_id=validation_request.session_id,
+            qa_id=validation_request.qa_id,
+            question=validation_request.question,
+            answer=validation_request.answer,
+            citations=validation_request.citations,
+            metadata=validation_request.metadata,
+            timestamp=datetime.datetime.now().isoformat()
+        )
+        
+        # Export session to Markdown
+        markdown_export = validation_service.export_session_to_markdown(session_data)
+        
+        # Validate the session
+        validation_result = validation_service.validate_session(
+            session_data, 
+            validation_mode=validation_request.validation_mode
+        )
+        
+        # Convert validation result to dict for response
+        result_dict = {
+            "session_id": validation_result.session_id,
+            "qa_id": validation_result.qa_id,
+            "validation_model": validation_result.validation_model,
+            "validation_provider": validation_result.validation_provider,
+            "validation_mode": validation_result.validation_mode,
+            "feedback": validation_result.feedback,
+            "structured_feedback": validation_result.structured_feedback,
+            "validation_timestamp": validation_result.validation_timestamp,
+            "processing_time": validation_result.processing_time
+        }
+        
+        logger.info(f"Session validation completed for {validation_request.session_id} using {validation_result.validation_provider}/{validation_result.validation_model}")
+        
+        return ValidationResponse(
+            success=True,
+            message="Session validation completed successfully",
+            validation_result=result_dict,
+            markdown_export=markdown_export,
+            validation_config=validation_service.get_validation_config_info()
+        )
+        
+    except Exception as e:
+        logger.error(f"Error during session validation: {e}", exc_info=True)
+        return ValidationResponse(
+            success=False,
+            message=f"Error during session validation: {str(e)}",
+            validation_config=validation_service.get_validation_config_info()
+        )
+
+# --- Validation Configuration endpoint ---
+@app.get("/api/validate_config")
+async def get_validation_config():
+    """
+    Get current validation configuration information.
+    """
+    return validation_service.get_validation_config_info()
 
 # --- Security middleware for HTTPS support ---
 

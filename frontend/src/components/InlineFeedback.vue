@@ -18,7 +18,7 @@
       @response="onPromptResponse"
     />
 
-    <!-- Extended Feedback (If User Chose Yes) -->
+    <!-- Extended Feedback (If User Chose Extended) -->
     <ExtendedFeedback
       v-if="currentStep === 'extended'"
       :qa-id="qaId"
@@ -27,6 +27,15 @@
       :complete-feedback-payload="completeFeedbackPayload"
       @cancel="onExtendedCancel"
       @feedback-submitted="onExtendedFeedbackSubmitted"
+    />
+
+    <!-- AI-Enhanced Feedback (If User Chose AI-Enhanced) -->
+    <AIEnhancedFeedback
+      v-if="currentStep === 'ai-enhanced'"
+      :qa-id="qaId"
+      :session-id="sessionId"
+      @back="onAIEnhancedBack"
+      @submit="onAIEnhancedSubmit"
     />
 
     <!-- Thank You Message (After Feedback Submission) -->
@@ -42,6 +51,7 @@
 <script>
 import SimpleFeedback from './SimpleFeedback.vue'
 import ExtendedFeedback from './ExtendedFeedback.vue'
+import AIEnhancedFeedback from './AIEnhancedFeedback.vue'
 import FeedbackPrompt from './FeedbackPrompt.vue'
 import { useSessionStore } from '../stores/session'
 import { useTelemetryStore } from '../stores/telemetry'
@@ -51,6 +61,7 @@ export default {
   components: {
     SimpleFeedback,
     ExtendedFeedback,
+    AIEnhancedFeedback,
     FeedbackPrompt
   },
   props: {
@@ -83,7 +94,7 @@ export default {
   emits: ['feedback-workflow-complete'],
   data() {
     return {
-      currentStep: 'simple', // 'simple', 'prompt', 'extended', 'thankyou', 'complete'
+      currentStep: 'simple', // 'simple', 'prompt', 'extended', 'ai-enhanced', 'thankyou', 'complete'
       simpleFeedbackData: {},
       completeFeedbackPayload: null // Store the complete feedback data
     }
@@ -172,20 +183,31 @@ export default {
     
     async onPromptResponse(response) {
       console.log('INLINE: User response to prompt:', response)
-      if (response === 'yes') {
+      if (response === 'extended') {
         // User wants to provide extended feedback - DON'T submit simple feedback yet
-        console.log('INLINE: User chose YES - moving to extended feedback (NO API call yet)')
+        console.log('INLINE: User chose EXTENDED - moving to extended feedback (NO API call yet)')
         this.currentStep = 'extended'
+      } else if (response === 'ai-enhanced') {
+        // User wants AI-Enhanced feedback - DON'T submit simple feedback yet
+        console.log('INLINE: User chose AI-ENHANCED - moving to AI-enhanced feedback (NO API call yet)')
+        this.currentStep = 'ai-enhanced'
       } else {
         // User doesn't want extended feedback - submit simple feedback and show thank you
         console.log('INLINE: User chose NO - submitting simple feedback only')
-        await this.submitSimpleFeedbackOnly()
-        this.currentStep = 'thankyou'
+        console.log('INLINE: completeFeedbackPayload available:', !!this.completeFeedbackPayload)
         
-        // Show thank you for 1.5 seconds, then complete workflow
-        setTimeout(() => {
-          this.completeFeedbackWorkflow()
-        }, 1500)
+        const success = await this.submitSimpleFeedbackOnly()
+        if (success) {
+          this.currentStep = 'thankyou'
+          
+          // Show thank you for 1.5 seconds, then complete workflow
+          setTimeout(() => {
+            this.completeFeedbackWorkflow()
+          }, 1500)
+        } else {
+          console.error('INLINE: Failed to submit simple feedback')
+          // Could show error message to user
+        }
       }
     },
     
@@ -207,6 +229,111 @@ export default {
       setTimeout(() => {
         this.completeFeedbackWorkflow()
       }, 2000)
+    },
+    
+    onAIEnhancedBack() {
+      // User went back from AI-Enhanced feedback - return to prompt
+      this.currentStep = 'prompt'
+    },
+    
+    async onAIEnhancedSubmit(feedbackData) {
+      // AI-Enhanced feedback submitted - submit to API
+      console.log('INLINE: AI-Enhanced feedback submitted:', feedbackData)
+      
+      try {
+        // Get current session data for the submission
+        const chatHistory = this.sessionStore.chatHistory
+        const currentQuestion = chatHistory[chatHistory.length - 2]?.content || ''
+        const currentAnswer = chatHistory[chatHistory.length - 1]?.content || ''
+        const fullCitations = chatHistory[chatHistory.length - 1]?.citations || []
+        
+        // Build the complete feedback payload using the same pattern as extended feedback
+        const completeFeedbackPayload = {
+          ...this.completeFeedbackPayload, // Include all simple feedback data
+          feedback_type: 'ai_enhanced', // Override to ai_enhanced
+          timestamp: new Date().toISOString(), // Update timestamp
+          question: currentQuestion,
+          answer: currentAnswer,
+          citations: fullCitations,
+          
+          // Add trace ID if available
+          trace_id: this.telemetryStore.traceId
+        }
+        
+        // Add AI-enhanced specific fields using direct assignment (same pattern as extended feedback)
+        if (feedbackData.human_comments) {
+          completeFeedbackPayload.feedback_text = feedbackData.human_comments
+        }
+        
+        if (feedbackData.ai_agreement) {
+          completeFeedbackPayload.ai_agreement = feedbackData.ai_agreement
+        }
+        
+        // Add AI validation data (always try to unwrap Vue Proxy)
+        try {
+          const aiValidation = JSON.parse(JSON.stringify(feedbackData.ai_validation))
+          console.log('INLINE: Unwrapped ai_validation:', aiValidation)
+          console.log('INLINE: ai_validation keys count:', aiValidation ? Object.keys(aiValidation).length : 0)
+          if (aiValidation && Object.keys(aiValidation).length > 0) {
+            completeFeedbackPayload.ai_validation = aiValidation
+            console.log('INLINE: Added ai_validation to payload')
+          } else {
+            console.log('INLINE: ai_validation is empty or null, not adding to payload')
+          }
+        } catch (error) {
+          console.error('Error unwrapping ai_validation:', error)
+        }
+        
+        // Add human ratings using direct assignment (same pattern as extended feedback)
+        if (feedbackData.ratings) {
+          const ratings = JSON.parse(JSON.stringify(feedbackData.ratings))
+          
+          // Add each rating individually (same pattern as extended feedback)
+          if (ratings.factual_accuracy !== null) {
+            completeFeedbackPayload.factual_accuracy = ratings.factual_accuracy
+          }
+          if (ratings.completeness !== null) {
+            completeFeedbackPayload.completeness = ratings.completeness
+          }
+          if (ratings.relevance !== null) {
+            completeFeedbackPayload.relevance = ratings.relevance
+          }
+          if (ratings.citation_quality !== null) {
+            completeFeedbackPayload.source_quality = ratings.citation_quality // Map to backend field name
+          }
+          if (ratings.clarity !== null) {
+            completeFeedbackPayload.clarity = ratings.clarity
+          }
+        }
+        
+        console.log('INLINE: Submitting AI-Enhanced feedback:', completeFeedbackPayload)
+        
+        const response = await fetch('/api/feedback', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Trace-Id': this.telemetryStore.traceId,
+            'X-Session-Id': this.sessionId
+          },
+          body: JSON.stringify(completeFeedbackPayload)
+        })
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+        
+        console.log('INLINE: AI-Enhanced feedback submission SUCCESS')
+        this.currentStep = 'thankyou'
+        
+        // Show thank you for 2 seconds, then complete workflow
+        setTimeout(() => {
+          this.completeFeedbackWorkflow()
+        }, 2000)
+        
+      } catch (error) {
+        console.error('INLINE: Error submitting AI-Enhanced feedback:', error)
+        // Could show error message to user
+      }
     },
     
     async submitSimpleFeedbackOnly() {
