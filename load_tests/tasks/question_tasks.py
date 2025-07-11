@@ -143,7 +143,7 @@ class QuestionSubmissionUser(HttpUser):
                 # Implement realistic reading time based on response length
                 self._simulate_reading_time(answer_content, citations)
                 
-                # Skip feedback submission for now - focus on core Q&A capacity testing
+                # Removed feedback testing - focus on core RAG functionality only
                 
         except Exception as e:
             total_time = time.time() - start_time
@@ -158,7 +158,7 @@ class QuestionSubmissionUser(HttpUser):
     @task(15)
     def repeat_question_submission(self):
         """Submit additional questions to test concurrent capacity"""
-        # Focus on core Q&A functionality - no feedback for now
+        # Focus on core RAG functionality only
         self.ask_streaming_question()
 
     @task(3)
@@ -241,65 +241,7 @@ class QuestionSubmissionUser(HttpUser):
             
             metrics_collector.record_request("diagnostics", response_time, response.status_code)
     
-    def _submit_delayed_http_feedback(self, qa_id: str, answer: str, question: str):
-        """Submit feedback via HTTP POST after realistic user reading delay (matches actual UI behavior)"""
-        # Simulate user reading time (2-8 seconds realistic for feedback)
-        reading_time = random.uniform(2, 8)
-        time.sleep(reading_time)
-        
-        # Generate realistic feedback data
-        feedback_data = data_generator.generate_feedback_data(
-            qa_id, self.session_id, question, answer
-        )
-        
-        # Submit via HTTP POST to match actual UI behavior
-        success = self._submit_http_feedback(qa_id, feedback_data)
-        
-        metrics_collector.record_request("feedback_http", 0.5, 200 if success else 500)
-    
-    def _submit_http_feedback(self, qa_id: str, feedback_data: dict) -> bool:
-        """Submit feedback via HTTP POST to match actual UI behavior exactly"""
-        try:
-            # Get the base host from environment
-            base_host = os.getenv('VITE_API_URL', self.environment.host)
-            
-            # Headers matching actual UI submission (from FeedbackBox.vue)
-            headers = {
-                "Content-Type": "application/json",
-                "Accept": "*/*",
-                "Accept-Language": "en-US,en;q=0.5",
-                "Accept-Encoding": "gzip, deflate, br, zstd",
-                "Origin": base_host,
-                "Referer": f"{base_host}/",
-                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:139.0) Gecko/20100101 Firefox/139.0",
-                "X-Trace-Id": feedback_data.get("trace_id", qa_id),  # Critical for telemetry correlation
-                "X-Session-Id": feedback_data.get("session_id", self.session_id),
-                "Cache-Control": "no-cache",
-                "Sec-Fetch-Dest": "empty",
-                "Sec-Fetch-Mode": "cors",
-                "Sec-Fetch-Site": "same-origin"
-            }
-            
-            # Submit feedback via HTTP POST (like actual UI)
-            with self.client.post(
-                "/api/feedback",
-                json=feedback_data,
-                headers=headers,
-                catch_response=True
-            ) as response:
-                
-                if response.status_code == 200:
-                    try:
-                        result = response.json()
-                        # Check for success status in response
-                        return result.get("status") == "success" or result.get("success") is True
-                    except json.JSONDecodeError:
-                        return False
-                else:
-                    return False
-                    
-        except Exception as e:
-            return False
+    # Removed feedback testing methods - focus on core RAG functionality only
     
     def _simulate_reading_time(self, response_text, citations):
         """Simulate realistic reading time based on response content"""
