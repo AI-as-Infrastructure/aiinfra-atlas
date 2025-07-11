@@ -9,26 +9,153 @@ class DataGenerator:
     
     def __init__(self):
         self.parliamentary_questions = [
+            # Federation and Constitutional Questions
             "What was discussed about the Australian Federation Act in 1901?",
-            "Can you provide details about colonial governance reforms in 1901?",
+            "How did UK Parliament debate dominion status for Australia in 1901?",
+            "What were the key arguments for and against federation in Australian colonies?",
+            "How did New Zealand's decision to remain outside federation influence Australian debates?",
+            "What constitutional precedents were established during the federation debates?",
+            
+            # The South African War (1899-1902)
+            "How did Parliament debate Britain's conduct in the South African War?",
+            "What were the financial implications of the South African War discussed in Parliament?",
+            "How did Australian colonial parliaments respond to calls for South African War volunteers?",
+            "What debates occurred about concentration camps during the South African War?",
+            "How did New Zealand Parliament discuss participation in the South African War?",
+            "What was the parliamentary response to Emily Hobhouse's reports on South African conditions?",
+            
+            # White Australia Policy and Immigration
             "What debates occurred regarding the White Australia Policy in 1901?",
-            "How did Parliament address tariff policy and trade protection in 1901?",
+            "How did Parliament justify the Immigration Restriction Act of 1901?",
+            "What were the economic arguments for and against the White Australia Policy?",
+            "How did Parliament debate the dictation test for immigrants?",
+            "What was discussed about Chinese immigration in Australian parliaments?",
+            "How did New Zealand Parliament address Asian immigration restrictions?",
+            
+            # Treaty of Waitangi and Māori Affairs
+            "What parliamentary debates addressed the Treaty of Waitangi interpretation?",
+            "How did New Zealand Parliament discuss Māori land rights around 1900?",
+            "What was debated about Māori political representation in Parliament?",
+            "How did Parliament address Māori education and welfare issues?",
+            "What debates occurred about Māori customary law versus European law?",
+            "How did Parliament discuss the Native Land Court system?",
+            
+            # Empire and Imperial Relations
             "What was discussed about Imperial relations with Britain in 1901?",
-            "Can you find information about land settlement schemes in 1901?",
-            "What parliamentary debates covered mining regulations in 1901?",
-            "How did MPs discuss railway construction and transport in 1901?",
+            "How did Parliament debate the concept of Greater Britain?",
+            "What were the discussions about imperial preference in trade?",
+            "How did Australian Parliament address imperial defense obligations?",
+            "What debates occurred about the role of the Governor-General?",
+            "How did Parliament discuss imperial unity versus colonial autonomy?",
+            "What was debated about the Imperial Conference proposals?",
+            
+            # Economic and Trade Policy
+            "How did Parliament address tariff policy and trade protection in 1901?",
+            "What debates occurred about free trade versus protection?",
+            "How did Parliament discuss inter-colonial trade barriers?",
+            "What was debated about imperial preference for British goods?",
+            "How did Parliament address the sugar industry protection?",
+            "What discussions occurred about mining industry regulation?",
+            "How did Parliament debate railway construction and transport policy?",
+            
+            # Labor and Industrial Relations
             "What was the government's response to labor disputes in 1901?",
-            "Can you provide details about public works funding in 1901?",
-            "What discussions occurred regarding military defense in 1901?",
-            "How did Parliament address public health concerns in 1901?",
-            "What debates covered education policy in the colonies in 1901?",
-            "Can you find information about postal and telegraph services in 1901?",
-            "What parliamentary discussions addressed Aboriginal affairs in 1901?",
-            "How did MPs debate agricultural development in 1901?",
-            "What was discussed about banking and currency in 1901?",
-            "Can you provide details about public service appointments in 1901?",
+            "How did Parliament debate the eight-hour working day?",
+            "What discussions occurred about trade union rights?",
+            "How did Parliament address factory conditions and worker safety?",
+            "What was debated about arbitration and conciliation courts?",
+            "How did Parliament discuss strikes and industrial disputes?",
+            "What debates occurred about child labor restrictions?",
+            
+            # Women's Rights and Gender
             "What debates occurred regarding women's suffrage in 1901?",
-            "How did Parliament address immigration and settlement in 1901?"
+            "How did Parliament discuss women's legal status and property rights?",
+            "What was debated about women's employment opportunities?",
+            "How did Parliament address the marriage and divorce laws?",
+            "What discussions occurred about women's education access?",
+            "How did Parliament debate women's role in public life?",
+            "What was discussed about maternal and child welfare?",
+            
+            # Social Class and Inequality
+            "How did Parliament address poverty and social welfare issues?",
+            "What debates occurred about old-age pensions?",
+            "How did Parliament discuss class distinctions in colonial society?",
+            "What was debated about public education access across social classes?",
+            "How did Parliament address housing conditions for the working class?",
+            "What discussions occurred about social mobility and opportunity?",
+            "How did Parliament debate charity and poor relief systems?",
+            
+            # Indigenous Affairs and Race Relations
+            "What parliamentary discussions addressed Aboriginal affairs in 1901?",
+            "How did Parliament debate Aboriginal protection and assimilation policies?",
+            "What was discussed about Aboriginal land rights and reserves?",
+            "How did Parliament address Aboriginal education and missions?",
+            "What debates occurred about Aboriginal voting rights?",
+            "How did Parliament discuss half-caste children and removal policies?",
+            "What was debated about Aboriginal employment and wages?",
+            
+            # Culture and National Identity
+            "How did Parliament debate Australian national identity and culture?",
+            "What discussions occurred about Australian versus British cultural values?",
+            "How did Parliament address language policy and English proficiency?",
+            "What was debated about Australian literature and arts support?",
+            "How did Parliament discuss public holidays and national celebrations?",
+            "What debates occurred about Australian symbols and flags?",
+            "How did Parliament address cultural institutions and museums?",
+            
+            # Public Health and Social Issues
+            "How did Parliament address public health concerns in 1901?",
+            "What debates occurred about quarantine and disease prevention?",
+            "How did Parliament discuss alcohol regulation and temperance?",
+            "What was debated about sanitation and urban health?",
+            "How did Parliament address mental health and asylum conditions?",
+            "What discussions occurred about medical education and regulation?",
+            "How did Parliament debate pharmaceutical regulation?",
+            
+            # Education and Knowledge
+            "What debates covered education policy in the colonies in 1901?",
+            "How did Parliament discuss state versus religious education?",
+            "What was debated about university funding and access?",
+            "How did Parliament address teacher training and qualifications?",
+            "What discussions occurred about technical and vocational education?",
+            "How did Parliament debate school curriculum and standards?",
+            "What was discussed about education for girls and women?",
+            
+            # Colonial Governance and Administration
+            "Can you provide details about colonial governance reforms in 1901?",
+            "How did Parliament debate the role of colonial governors?",
+            "What discussions occurred about civil service reform?",
+            "How did Parliament address corruption in colonial administration?",
+            "What was debated about local government powers and responsibilities?",
+            "How did Parliament discuss judicial independence and legal reform?",
+            "What debates occurred about police and law enforcement?",
+            
+            # Infrastructure and Development
+            "Can you find information about land settlement schemes in 1901?",
+            "How did Parliament debate closer settlement policies?",
+            "What discussions occurred about irrigation and water rights?",
+            "How did Parliament address telegraph and postal services?",
+            "What was debated about port development and shipping?",
+            "How did Parliament discuss road construction and maintenance?",
+            "What debates occurred about public works funding priorities?",
+            
+            # Military and Defense
+            "What discussions occurred regarding military defense in 1901?",
+            "How did Parliament debate colonial military contributions to imperial defense?",
+            "What was discussed about military training and conscription?",
+            "How did Parliament address coastal defense and fortifications?",
+            "What debates occurred about military pensions and veteran affairs?",
+            "How did Parliament discuss the role of colonial militias?",
+            "What was debated about military equipment and modernization?",
+            
+            # Financial and Banking
+            "What was discussed about banking and currency in 1901?",
+            "How did Parliament debate the establishment of a national bank?",
+            "What discussions occurred about gold standard and monetary policy?",
+            "How did Parliament address government debt and borrowing?",
+            "What was debated about taxation and revenue collection?",
+            "How did Parliament discuss customs duties and excise taxes?",
+            "What debates occurred about colonial financial relations with Britain?"
         ]
         
         self.feedback_comments = [
