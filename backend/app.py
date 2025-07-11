@@ -409,13 +409,15 @@ class LLMResourceManager:
         """Release a slot for LLM processing"""
         self.request_semaphore.release()
     
-    def register_llm_instance(self, llm_instance):
-        """Register an LLM instance for tracking"""
-        self.active_llm_instances.add(llm_instance)
-    
     def cleanup_memory(self):
         """Perform memory cleanup"""
         try:
+            # Clean up LLM instances
+            self._cleanup_llm_instances()
+            
+            # Clean up vector store connections
+            self._cleanup_vector_stores()
+            
             # Force garbage collection
             gc.collect()
             
@@ -427,6 +429,73 @@ class LLMResourceManager:
             
         except Exception as e:
             logger.error(f"Error during LLM memory cleanup: {e}")
+    
+    def _cleanup_llm_instances(self):
+        """Clean up LLM instances that are no longer needed"""
+        try:
+            # Get list of current instances (weak references may be None)
+            current_instances = [inst for inst in self.active_llm_instances if inst is not None]
+            
+            # Explicit cleanup for instances that support it
+            for instance in current_instances:
+                try:
+                    # Check if instance has cleanup methods
+                    if hasattr(instance, 'cleanup'):
+                        instance.cleanup()
+                    elif hasattr(instance, 'close'):
+                        instance.close()
+                    elif hasattr(instance, '__del__'):
+                        # Let Python handle cleanup
+                        pass
+                except Exception as inst_error:
+                    logger.debug(f"Error cleaning up LLM instance: {inst_error}")
+            
+            logger.debug(f"Cleaned up {len(current_instances)} LLM instances")
+            
+        except Exception as e:
+            logger.error(f"Error during LLM instance cleanup: {e}")
+    
+    def _cleanup_vector_stores(self):
+        """Clean up vector store connections"""
+        try:
+            from backend.modules.vector_store_manager import get_vector_store_manager
+            vector_manager = get_vector_store_manager()
+            
+            # Clean up expired connections
+            vector_manager._cleanup_expired_connections()
+            
+            logger.debug("Cleaned up vector store connections")
+            
+        except Exception as e:
+            logger.debug(f"Error cleaning up vector stores: {e}")
+    
+    def register_llm_instance(self, llm_instance):
+        """Register an LLM instance for tracking"""
+        self.active_llm_instances.add(llm_instance)
+        
+        # Register cleanup callback if possible
+        if hasattr(llm_instance, 'register_cleanup_callback'):
+            llm_instance.register_cleanup_callback(self._instance_cleanup_callback)
+    
+    def _instance_cleanup_callback(self, instance):
+        """Callback when an LLM instance is cleaned up"""
+        logger.debug(f"LLM instance cleaned up: {type(instance).__name__}")
+    
+    def dispose_llm_instance(self, llm_instance):
+        """Explicitly dispose of an LLM instance"""
+        try:
+            if hasattr(llm_instance, 'cleanup'):
+                llm_instance.cleanup()
+            elif hasattr(llm_instance, 'close'):
+                llm_instance.close()
+            
+            # Remove from tracking
+            self.active_llm_instances.discard(llm_instance)
+            
+            logger.debug(f"Disposed LLM instance: {type(llm_instance).__name__}")
+            
+        except Exception as e:
+            logger.error(f"Error disposing LLM instance: {e}")
     
     def check_response_size(self, response_text: str) -> bool:
         """Check if response exceeds size limits"""
