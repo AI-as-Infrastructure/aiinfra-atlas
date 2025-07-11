@@ -3,16 +3,32 @@
     <!-- Feedback Type Selection (Initial Step) -->
     <div v-if="currentStep === 'selection'" class="feedback-selection">
       <div class="feedback-options">
-        <button class="button" @click="selectFeedbackType('simple')">
+        <button 
+          v-if="isSimpleEnabled"
+          class="button" 
+          @click="selectFeedbackType('simple')"
+        >
           Simple Feedback
         </button>
-        <button class="button" @click="selectFeedbackType('extended')">
+        <button 
+          v-if="isEnhancedEnabled"
+          class="button" 
+          @click="selectFeedbackType('extended')"
+        >
           Enhanced Feedback
         </button>
-        <button class="button" @click="selectFeedbackType('ai-enhanced')">
+        <button 
+          v-if="isAIAssistedEnabled"
+          class="button" 
+          @click="selectFeedbackType('ai-enhanced')"
+        >
           AI Assisted Feedback
         </button>
-        <button class="button" @click="selectFeedbackType('skip')">
+        <button 
+          v-if="isSkipEnabled"
+          class="button" 
+          @click="selectFeedbackType('skip')"
+        >
           Skip
         </button>
       </div>
@@ -119,6 +135,11 @@ export default {
   },
   computed: {
     shouldShowFeedback() {
+      // Don't show feedback if no feedback options are enabled
+      if (!this.hasAnyFeedbackOptions) {
+        return false
+      }
+      
       // Don't show feedback if it's already been submitted for this QA ID
       if (this.isAlreadySubmitted) {
         return false
@@ -136,6 +157,27 @@ export default {
     isAlreadySubmitted() {
       // Check if feedback was already submitted for this message ID
       return this.sessionStore.feedbackSubmitted[this.messageId] || false
+    },
+    
+    // Environment variable toggles for feedback types
+    isSimpleEnabled() {
+      return import.meta.env.VITE_FEEDBACK_SIMPLE_ENABLED !== 'false'
+    },
+    
+    isEnhancedEnabled() {
+      return import.meta.env.VITE_FEEDBACK_ENHANCED_ENABLED !== 'false'
+    },
+    
+    isAIAssistedEnabled() {
+      return import.meta.env.VITE_FEEDBACK_AI_ASSISTED_ENABLED !== 'false'
+    },
+    
+    isSkipEnabled() {
+      return import.meta.env.VITE_FEEDBACK_SKIP_ENABLED !== 'false'
+    },
+    
+    hasAnyFeedbackOptions() {
+      return this.isSimpleEnabled || this.isEnhancedEnabled || this.isAIAssistedEnabled || this.isSkipEnabled
     }
   },
   watch: {
