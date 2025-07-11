@@ -52,11 +52,14 @@ class HansardRetriever(BaseRetriever):
         self.llm = create_llm()
     
     def _initialize_vector_store(self):
-        self.embeddings = HuggingFaceEmbeddings(model_name=self.embedding_model)
-        self.vector_store = Chroma(
+        from backend.modules.vector_store_manager import get_vector_store_manager
+        
+        # Use the vector store manager for connection pooling
+        self.vector_manager = get_vector_store_manager()
+        self.vector_store = self.vector_manager.get_vector_store(
             collection_name=self.index_name,
-            embedding_function=self.embeddings,
-            persist_directory=self.persist_directory,
+            embedding_model=self.embedding_model,
+            persist_directory=self.persist_directory
         )
         self._retriever = self.vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 10})
 
@@ -84,6 +87,8 @@ class HansardRetriever(BaseRetriever):
         return CORPUS_OPTIONS
 
     def similar_search(self, query: str, k: int = 10, corpus_filter: Optional[str] = None) -> List[Dict[str, Any]]:
+        from backend.modules.document_pool import cleanup_documents
+        
         logger.info(f"similar_search: k={k}, corpus_filter={corpus_filter}")
         filter_dict = None
         if corpus_filter and corpus_filter != "all":
@@ -91,7 +96,9 @@ class HansardRetriever(BaseRetriever):
         
         # Use standard similarity search
         docs = self.vector_store.similarity_search(query=query, k=k, filter=filter_dict)
-        return [{
+        
+        # Convert to result format
+        results = [{
             "id": doc.metadata.get("id", "unknown"),
             "content": doc.page_content,
             "date": doc.metadata.get("date", "unknown"),
@@ -100,6 +107,11 @@ class HansardRetriever(BaseRetriever):
             "page": doc.metadata.get("page", "unknown"),
             "corpus": doc.metadata.get("corpus", "unknown")
         } for doc in docs]
+        
+        # Clean up documents to reduce memory pressure
+        cleanup_documents(docs)
+        
+        return results
     
     # LangChain-compatible async implementation
     async def _get_relevant_documents(self, query: str, config: Optional[Dict] = None, **kwargs) -> List[Document]:

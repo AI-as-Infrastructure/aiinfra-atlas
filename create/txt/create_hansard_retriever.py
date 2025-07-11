@@ -115,11 +115,14 @@ class HansardRetriever(BaseRetriever):
         self.llm = create_llm()
     
     def _initialize_vector_store(self):
-        self.embeddings = HuggingFaceEmbeddings(model_name=self.embedding_model)
-        self.vector_store = Chroma(
+        from backend.modules.vector_store_manager import get_vector_store_manager
+        
+        # Use the vector store manager for connection pooling
+        self.vector_manager = get_vector_store_manager()
+        self.vector_store = self.vector_manager.get_vector_store(
             collection_name=self.index_name,
-            embedding_function=self.embeddings,
-            persist_directory=self.persist_directory,
+            embedding_model=self.embedding_model,
+            persist_directory=self.persist_directory
         )
         self._retriever = self.vector_store.as_retriever(search_type="similarity", search_kwargs={{\"k\": 10}})
 
