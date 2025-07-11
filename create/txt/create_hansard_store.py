@@ -14,6 +14,7 @@ if str(repo_root) not in sys.path:
 import re, torch, json, nltk, time, subprocess, numpy as np, shutil
 import platform
 import psutil
+import traceback
 from dotenv import load_dotenv
 from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModel, AutoConfig
@@ -79,36 +80,35 @@ words_per_corpus = {corpus_id: 0 for corpus_id in CORPUS_IDS}
 total_chunks_processed = 0
 
 def get_target_config():
-    """Get configuration from the target file."""
+    """Get configuration from environment variables."""
     try:
-        # First get the collection name from environment
+        # Get the collection name from environment
         collection_name = os.getenv('CHROMA_COLLECTION_NAME')
         if not collection_name:
             print("Error: CHROMA_COLLECTION_NAME environment variable not set")
             sys.exit(1)
             
-        target_file = os.path.join('backend', 'targets', f'{collection_name}.txt')
-        if not os.path.exists(target_file):
-            print(f"Error: Target file {target_file} not found")
-            sys.exit(1)
-            
-        with open(target_file, 'r') as f:
-            content = f.read()
-            
-        # Extract configuration values
-        chunk_size = re.search(r'CHUNK_SIZE\s*=\s*(\d+)', content)
-        chunk_overlap = re.search(r'CHUNK_OVERLAP\s*=\s*(\d+)', content)
-        text_splitter = re.search(r'Text Splitter:\s*(\w+)', content)
+        # Get configuration from environment variables
+        chunk_size = os.getenv('CHUNK_SIZE')
+        chunk_overlap = os.getenv('CHUNK_OVERLAP')
+        text_splitter = os.getenv('TEXT_SPLITTER_TYPE')
         
         if not all([chunk_size, chunk_overlap, text_splitter]):
-            print("Error: Could not find all required configuration in target file")
+            print("Error: Could not find all required configuration in environment variables")
+            print("Missing variables:")
+            if not chunk_size:
+                print("  - CHUNK_SIZE")
+            if not chunk_overlap:
+                print("  - CHUNK_OVERLAP")
+            if not text_splitter:
+                print("  - TEXT_SPLITTER_TYPE")
             sys.exit(1)
             
         return {
             'COLLECTION_NAME': collection_name,
-            'CHUNK_SIZE': int(chunk_size.group(1)),
-            'CHUNK_OVERLAP': int(chunk_overlap.group(1)),
-            'TEXT_SPLITTER_TYPE': text_splitter.group(1)
+            'CHUNK_SIZE': int(chunk_size),
+            'CHUNK_OVERLAP': int(chunk_overlap),
+            'TEXT_SPLITTER_TYPE': text_splitter
         }
     except Exception as e:
         print(f"Error reading target configuration: {e}")
@@ -143,7 +143,6 @@ CHUNK_OVERLAP = target_config['CHUNK_OVERLAP']
 
 # Processing configuration
 BATCH_SIZE = 100  # This is a processing parameter, not a target configuration
-NUM_WORKERS = 4   # This is a processing parameter, not a target configuration
 LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS = int(os.getenv('LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS', '0'))
 LARGE_RETRIEVAL_SIZE_ALL_CORPUS = int(os.getenv('LARGE_RETRIEVAL_SIZE_ALL_CORPUS', '0'))
 
@@ -318,8 +317,8 @@ def process_corpus(directory, metadata, vector_store, tokenizer, model):
             corpus_log(f"Error adding batch to vector store: {e}")
             # If batch is small or there's a NoneType error, try verbose debugging
             if len(texts_filtered) <= 10 or "NoneType" in str(e):
-                for i, (t, m, e) in enumerate(zip(texts_filtered, metadatas_filtered, embeddings_filtered)):
-                    corpus_log(f"  Entry {i}: text={type(t)}, metadata={type(m)}, embedding={type(e)}")
+                for i, (t, m, emb) in enumerate(zip(texts_filtered, metadatas_filtered, embeddings_filtered)):
+                    corpus_log(f"  Entry {i}: text={type(t)}, metadata={type(m)}, embedding={type(emb)}")
                     if "NoneType" in str(e):
                         corpus_log(f"    Metadata: {m}")
             
@@ -379,12 +378,6 @@ def process_corpus(directory, metadata, vector_store, tokenizer, model):
                         if embedding is not None:
                             chunk_counter += 1
                             
-                            # Track statistics for this chunk
-                            chunk_counts_per_corpus[metadata] += 1
-                            total_chunks_processed += 1
-                            chars_per_corpus[metadata] += len(chunk)
-                            words_per_corpus[metadata] += len(chunk.split())
-                            
                             metadata_dict = {
                                 "date": date_info or "Unknown",
                                 "url": current_url,  # Will be None if no URL is found
@@ -441,7 +434,7 @@ def process_corpus(directory, metadata, vector_store, tokenizer, model):
                                 continue
                                 
                             # Find URL in section    
-                            for pos, url in url_info:
+                            for _, url in url_info:
                                 if section.find(url) != -1:
                                     current_url = url
                                     break
@@ -567,7 +560,7 @@ def get_machine_info():
             "gpu_available": torch.cuda.is_available(),
         }
 
-def get_model_info(model):
+def get_model_info():
     """Get information about the embedding model."""
     global model_info
     return model_info
@@ -587,7 +580,6 @@ def generate_vector_store_stats(
     chunk_overlap: int,
     text_splitter_type: str,
     batch_size: int,
-    num_workers: int,
     output_file: str
 ) -> None:
     """Generate comprehensive statistics about the vector store creation process."""
@@ -623,7 +615,7 @@ def generate_vector_store_stats(
             f"Model: {model_name}",
             f"Embedding Dimension: {embedding_dimension}",
             f"Quantized: {is_quantized}",
-            f"Model Hash: {model_hash}",
+            f"Model Hash: {model_hash if model_hash != 'unknown' else 'N/A'}",
             "",
             "Processing Configuration",
             "----------------------",
@@ -631,7 +623,6 @@ def generate_vector_store_stats(
             f"Chunk Size: {chunk_size}",
             f"Chunk Overlap: {chunk_overlap}",
             f"Batch Size: {batch_size}",
-            f"Number of Workers: {num_workers}",
             "",
             "Corpus Statistics",
             "---------------"
@@ -679,7 +670,7 @@ def generate_vector_store_stats(
             "",
             "Processing Statistics",
             "-------------------",
-            f"Total Processing Time: {processing_time:.2f} seconds",
+            f"Total Processing Time: {format_processing_time(processing_time)}",
             f"Total Chunks: {total_chunks:,}",
             f"Total Characters: {total_chars:,}",
             f"Total Words: {total_words:,}",
@@ -708,14 +699,12 @@ def generate_vector_store_stats(
 
 def verify_corpus_documents(vector_store):
     """Verify that documents from all corpora are retrievable from the vector store."""
-    print("\n=== Verifying Corpus Document Retrieval ===")
     verification_results = {}
     
     # Test query for each corpus
     test_query = "parliament"
     
     for corpus_id in CORPUS_IDS:
-        print(f"Testing retrieval from corpus: {corpus_id}")
         try:
             # Try to retrieve documents with corpus filter
             results = vector_store.similarity_search(
@@ -731,38 +720,30 @@ def verify_corpus_documents(vector_store):
                     "count": len(results),
                     "sample": results[0].page_content[:100] + "..."
                 }
-                print(f"  ✅ Successfully retrieved {len(results)} documents from {corpus_id}")
             else:
                 verification_results[corpus_id] = {
                     "status": "EMPTY",
                     "count": 0,
                     "error": "No documents found"
                 }
-                print(f"  ⚠️ No documents found for corpus: {corpus_id}")
                 
         except Exception as e:
             verification_results[corpus_id] = {
                 "status": "ERROR",
                 "error": str(e)
             }
-            print(f"  ❌ Error retrieving documents from {corpus_id}: {e}")
     
     # Write verification results to file
     verification_file = os.path.join(OUTPUT_DIR, "corpus_verification.json")
     with open(verification_file, 'w') as f:
         json.dump(verification_results, f, indent=2)
     
-    print(f"Verification results written to: {verification_file}")
-    
     # Check if any corpus failed verification
     failed_corpora = [corpus for corpus, result in verification_results.items() 
                      if result.get("status") != "SUCCESS"]
     
     if failed_corpora:
-        print(f"\n⚠️ WARNING: The following corpora may have issues: {', '.join(failed_corpora)}")
-        print("Please check the verification results and corpus logs for more details.")
-    else:
-        print("\n✅ All corpora verified successfully!")
+        print(f"⚠️ WARNING: Some corpora may have issues - check verification report")
     
     return verification_results
 
@@ -781,7 +762,7 @@ def get_corpus_document_counts(collection) -> Dict[str, int]:
         counts = {}
         for corpus_id in CORPUS_IDS:
             result = collection.get(
-                where={"corpus_id": corpus_id},
+                where={"corpus": corpus_id},
                 include=["metadatas"]
             )
             counts[corpus_id] = len(result['ids'])
@@ -801,6 +782,20 @@ def get_embedding_dimensions(collection) -> int:
     except Exception as e:
         print(f"Error getting embedding dimensions: {e}")
         return 0
+
+def format_processing_time(seconds: float) -> str:
+    """Format processing time in a human-friendly way."""
+    if seconds < 60:
+        return f"{seconds:.2f} seconds"
+    elif seconds < 3600:
+        minutes = int(seconds // 60)
+        remaining_seconds = seconds % 60
+        return f"{minutes}m {remaining_seconds:.1f}s"
+    else:
+        hours = int(seconds // 3600)
+        remaining_minutes = int((seconds % 3600) // 60)
+        remaining_seconds = seconds % 60
+        return f"{hours}h {remaining_minutes}m {remaining_seconds:.1f}s"
 
 def main():
     """Main function to create the Chroma vector store."""
@@ -848,6 +843,20 @@ def main():
     model = AutoModel.from_pretrained(EMBEDDING_MODEL)
     model.to(device)
     
+    # Update model info with actual model properties
+    model_info["model_dimensions"] = model.config.hidden_size
+    
+    # Check if model is quantized (basic check)
+    model_info["is_quantized"] = hasattr(model, 'quantization_config') and model.quantization_config is not None
+    
+    # Get model hash from config if available
+    try:
+        import hashlib
+        model_str = str(model.config.to_dict())
+        model_info["model_hash"] = hashlib.md5(model_str.encode()).hexdigest()[:8]
+    except:
+        model_info["model_hash"] = "unknown"
+    
     # Process each corpus
     start_time = time.time()
     processing_times = {}
@@ -869,7 +878,7 @@ def main():
     generate_vector_store_stats(
         collection_name=COLLECTION_NAME,
         model_name=EMBEDDING_MODEL,
-        embedding_dimension=768,
+        embedding_dimension=model_info.get('model_dimensions', 768),
         is_quantized=False,
         model_hash=None,
         total_chunks=total_chunks_processed,
@@ -881,12 +890,21 @@ def main():
         chunk_overlap=CHUNK_OVERLAP,
         text_splitter_type=TEXT_SPLITTER_TYPE,
         batch_size=BATCH_SIZE,
-        num_workers=NUM_WORKERS,
         output_file=stats_file
     )
     
-    # Verify corpus documents
+    # Verify corpus documents and create verification report
     verify_corpus_documents(vector_store)
+    
+    print(f"\n✅ Vector store creation completed successfully!")
+    print(f"📊 Statistics file: {stats_file}")
+    print(f"🗂️  Database location: {chroma_dir}")
+    print(f"📝 Verification report: {os.path.join(OUTPUT_DIR, 'corpus_verification.json')}")
+    print(f"📋 Processing logs: {OUTPUT_DIR}/*_processing.log")
+    print(f"\n📝 Next steps:")
+    print(f"   1. Run 'make r' to generate the matching hansard_retriever.py file")
+    print(f"   2. Copy the database to your target location (set by CHROMA_PERSIST_DIRECTORY)")
+    print(f"   3. Move hansard_retriever.py to backend/retrievers/ to use with the ATLAS system")
     
     return 0
 

@@ -14,11 +14,12 @@ source .venv/bin/activate
 
 # Install dependencies
 echo "Installing dependencies..."
-pip install -r requirements.txt
+pip install -r config/requirements.lock
 
 # Create retriever
 echo "Creating retriever..."
-python create/txt/create_retriever.py
+python create/txt/create_hansard_retriever.py
 
 echo "Retriever created successfully!"
-echo "Please commit the retriever file with Git LFS." 
+echo "Move hansard_retriever.py to backend/retrievers to use the file with the ATLAS system."
+echo "Ensure you have also generated a matching vector store using create_hansard_store.py." 
