@@ -1,0 +1,210 @@
+# Optimized Load Test Configuration for 15 Concurrent Users
+# Designed for 8vCPU/16GB staging environment with enhanced diversity and cache-busting
+
+environment:
+  name: "optimized-staging"
+  description: "Optimized staging environment for 15 concurrent users"
+  host: "${VITE_API_URL}"
+
+# Load test parameters optimized for 15 users
+load_test:
+  # Target 15 concurrent users with realistic spawn pattern
+  target_users: 15
+  spawn_rate: 1.5  # Spawn 1.5 users per second (10 second ramp-up)
+  
+  # Test duration for thorough evaluation
+  duration: "45m"  # 45 minutes for comprehensive testing
+  
+  # Performance targets for 8vCPU/16GB with k20 optimization
+  performance_targets:
+    # More realistic targets for optimized system
+    response_time_p50: 3000   # 3 seconds P50
+    response_time_p95: 8000   # 8 seconds P95 
+    response_time_p99: 12000  # 12 seconds P99
+    
+    # First token time targets (streaming)
+    first_token_time_p50: 1500  # 1.5 seconds P50
+    first_token_time_p95: 3000  # 3 seconds P95
+    
+    # Error rate targets
+    error_rate_threshold: 5.0     # 5% max error rate
+    timeout_rate_threshold: 2.0   # 2% max timeout rate
+    
+    # Throughput targets
+    requests_per_second: 0.8   # 0.8 RPS with 15 users (realistic for thoughtful queries)
+    successful_requests_per_minute: 45  # 45 successful requests per minute
+    
+    # Memory optimization targets
+    memory_efficiency: 85      # 85% memory utilization max
+    cache_hit_rate: 60         # 60% cache hit rate (with cache-busting)
+
+# User behavior configuration optimized for diversity
+user_behavior:
+  # Realistic user types with different patterns
+  user_types:
+    researcher:
+      weight: 35
+      questions_per_session: [2, 5]  # 2-5 questions per session
+      session_duration: [300, 1800]  # 5-30 minutes
+      corpus_preference: ["1901_au", "1901_uk", "all"]
+      
+    student:
+      weight: 25
+      questions_per_session: [1, 3]  # 1-3 questions per session
+      session_duration: [180, 900]   # 3-15 minutes
+      corpus_preference: ["all", "1901_au"]
+      
+    journalist:
+      weight: 20
+      questions_per_session: [2, 4]  # 2-4 questions per session
+      session_duration: [240, 1200]  # 4-20 minutes
+      corpus_preference: ["1901_uk", "all"]
+      
+    policy_analyst:
+      weight: 15
+      questions_per_session: [3, 6]  # 3-6 questions per session
+      session_duration: [600, 2400]  # 10-40 minutes
+      corpus_preference: ["all", "1901_au", "1901_uk"]
+      
+    librarian:
+      weight: 5
+      questions_per_session: [1, 2]  # 1-2 questions per session
+      session_duration: [120, 600]   # 2-10 minutes
+      corpus_preference: ["all"]
+
+# Cache-busting configuration
+cache_busting:
+  enabled: true
+  
+  # Question diversity parameters
+  question_pool_size: 100+
+  variation_rate: 0.4          # 40% generated variations
+  cache_bust_rate: 0.6         # 60% questions have cache-busting params
+  
+  # Parameter variation
+  corpus_rotation: true         # Rotate corpus filters
+  timestamp_variation: true     # Add timestamp variations
+  session_context: true        # Include session-specific context
+  user_agent_rotation: true    # Rotate user agents
+  
+  # Request diversity
+  provider_distribution:
+    GOOGLE: 60    # Primary (Gemini 2.0)
+    ANTHROPIC: 25 # Secondary
+    OPENAI: 15    # Tertiary
+    
+  search_type_distribution:
+    similarity: 70
+    mmr: 30
+    
+  result_count_variation: [10, 25]  # Variable result counts
+
+# Test scenarios
+scenarios:
+  # Primary scenario - optimized for 15 users
+  realistic_15_users:
+    description: "Realistic 15 concurrent users with cache-busting"
+    duration: "45m"
+    users: 15
+    spawn_rate: 1.5
+    tags: ["optimized", "cache-busting", "realistic"]
+    
+  # Stress test scenario 
+  stress_20_users:
+    description: "Stress test with 20 concurrent users"
+    duration: "20m"
+    users: 20
+    spawn_rate: 2
+    tags: ["stress", "peak-load"]
+    
+  # Burst test scenario
+  burst_25_users:
+    description: "Burst test with 25 concurrent users"
+    duration: "10m"
+    users: 25
+    spawn_rate: 5
+    tags: ["burst", "capacity"]
+    
+  # Endurance test scenario
+  endurance_12_users:
+    description: "Endurance test with 12 concurrent users"
+    duration: "90m"
+    users: 12
+    spawn_rate: 1
+    tags: ["endurance", "stability"]
+
+# Safety limits
+safety:
+  max_concurrent_users: 30
+  max_requests_per_second: 3
+  max_response_time: 30000    # 30 seconds max
+  
+  # Circuit breaker settings
+  error_rate_circuit_breaker: 15.0    # 15% error rate trips circuit breaker
+  timeout_circuit_breaker: 8.0        # 8% timeout rate trips circuit breaker
+  
+  # Resource monitoring
+  memory_usage_alert: 90      # Alert at 90% memory usage
+  cpu_usage_alert: 85         # Alert at 85% CPU usage
+
+# Monitoring and reporting
+monitoring:
+  # Metrics collection
+  collect_detailed_metrics: true
+  collect_streaming_metrics: true
+  collect_user_behavior: true
+  collect_cache_metrics: true
+  
+  # Real-time monitoring
+  realtime_updates: true
+  update_interval: 30         # 30 seconds
+  
+  # Alerting
+  enable_alerts: true
+  alert_thresholds:
+    response_time_p95: 10000  # Alert if P95 > 10s
+    error_rate: 8.0           # Alert if error rate > 8%
+    timeout_rate: 5.0         # Alert if timeout rate > 5%
+
+# Environment variables
+env_vars:
+  # Optimize for test environment
+  BACKEND_LOG_LEVEL: "warn"
+  VITE_LOG_LEVEL: "warn"
+  
+  # Cache and memory settings
+  CACHE_ENABLED: "true"
+  CACHE_TTL: "300"          # 5 minutes
+  
+  # Test identification
+  LOAD_TEST_MODE: "true"
+  LOAD_TEST_CONFIG: "optimized_staging"
+  
+  # Disable auth for testing
+  VITE_USE_COGNITO_AUTH: "false"
+
+# Evaluation criteria
+evaluation:
+  # Performance criteria
+  performance_weight: 40
+  reliability_weight: 30
+  resource_efficiency_weight: 20
+  user_experience_weight: 10
+  
+  # Pass/fail criteria
+  critical_failures:
+    - "error_rate > 10%"
+    - "response_time_p95 > 15000"
+    - "timeout_rate > 8%"
+    
+  warning_conditions:
+    - "error_rate > 5%"
+    - "response_time_p95 > 10000"
+    - "memory_usage > 85%"
+    
+  # Success criteria
+  success_criteria:
+    - "error_rate < 5%"
+    - "response_time_p95 < 8000"
+    - "first_token_time_p95 < 3000"
+    - "successful_requests_per_minute >= 40"
