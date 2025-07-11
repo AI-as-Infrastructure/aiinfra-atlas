@@ -305,13 +305,24 @@ export default {
       this.isSubmitting = true
       
       try {
-        // Start with the simple feedback data and extend it
-        console.log('EXTENDED: completeFeedbackPayload:', this.completeFeedbackPayload)
+        // Get current session data for the submission
+        const chatHistory = this.sessionStore.chatHistory
+        const currentQuestion = chatHistory[chatHistory.length - 2]?.content || ''
+        const currentAnswer = chatHistory[chatHistory.length - 1]?.content || ''
+        const fullCitations = chatHistory[chatHistory.length - 1]?.citations || []
         
+        // Build the complete feedback payload for extended feedback
         const feedbackData = {
-          ...this.completeFeedbackPayload, // Include all simple feedback data
-          feedback_type: 'extended', // Override to extended
-          timestamp: new Date().toISOString() // Update timestamp
+          qa_id: this.qaId,
+          session_id: this.sessionId,
+          feedback_type: 'extended',
+          timestamp: new Date().toISOString(),
+          question: currentQuestion,
+          answer: currentAnswer,
+          citations: fullCitations,
+          
+          // Add trace ID if available
+          trace_id: this.telemetryStore.traceId
         }
         
         console.log('EXTENDED: feedbackData after spread:', feedbackData)
