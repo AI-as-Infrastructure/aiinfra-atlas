@@ -3,7 +3,7 @@
     <div class="feedback-header">
       <h4>
         <span class="icon-text">
-          <span class="icon has-text-info">
+          <span class="icon has-text-dark">
             <i class="fas fa-robot"></i>
           </span>
           <span>AI-Enhanced Feedback</span>
@@ -12,7 +12,7 @@
       <p class="subtitle">
         Get AI validation assistance and provide comprehensive human feedback
       </p>
-      <div class="notification is-info is-light info-box">
+      <div class="notification is-light info-box">
         <p><strong>How AI Validation Works:</strong></p>
         <p>AI validation analyzes the complete response including the full answer text, all citations, and metadata. This comprehensive analysis takes 10-12 seconds as the AI processes the entire payload to provide detailed quality assessments.</p>
         <p v-if="validationConfig?.current_model">
@@ -28,14 +28,14 @@
         <div class="section-header">
           <h5 class="title is-5">
             <span class="icon-text">
-              <span class="icon has-text-primary">
+              <span class="icon has-text-dark">
                 <i class="fas fa-check-circle"></i>
               </span>
               <span>AI Validation</span>
             </span>
           </h5>
           <button 
-            class="button is-small is-primary" 
+            class="button is-small is-dark" 
             @click="runAIValidation"
             :disabled="isValidating || hasAIValidation"
             :class="{ 'is-loading': isValidating }"
@@ -53,7 +53,7 @@
             <span class="progress-message">{{ validationProgress.message }}</span>
             <span class="progress-percentage">{{ validationProgress.percentage }}%</span>
           </div>
-          <progress class="progress is-primary" :value="validationProgress.percentage" max="100">
+          <progress class="progress is-dark" :value="validationProgress.percentage" max="100">
             {{ validationProgress.percentage }}%
           </progress>
           <div class="progress-details">
@@ -74,21 +74,21 @@
           <div class="field is-grouped is-grouped-multiline">
             <div class="control">
               <div class="tags has-addons">
-                <span class="tag is-info">AI Model</span>
+                <span class="tag is-dark">AI Model</span>
                 <span class="tag is-light">{{ aiValidation.validation_provider }}/{{ aiValidation.validation_model }}</span>
               </div>
             </div>
             <div class="control">
               <div class="tags has-addons">
-                <span class="tag is-info">Mode</span>
-                <span class="tag" :class="aiValidation.validation_mode === 'alternate' ? 'is-success' : 'is-primary'">
+                <span class="tag is-dark">Mode</span>
+                <span class="tag" :class="aiValidation.validation_mode === 'alternate' ? 'is-light' : 'is-dark'">
                   {{ aiValidation.validation_mode }}
                 </span>
               </div>
             </div>
             <div class="control">
               <div class="tags has-addons">
-                <span class="tag is-info">Processing</span>
+                <span class="tag is-dark">Processing</span>
                 <span class="tag is-light">{{ aiValidation.processing_time?.toFixed(2) }}s</span>
               </div>
             </div>
@@ -132,7 +132,7 @@
           </div>
         </div>
 
-        <div v-else class="notification is-info is-light is-small">
+        <div v-else class="notification is-light is-small">
           <p>
             <strong>AI Validation:</strong> Run AI validation to get structured feedback about this response. 
             The AI will analyze factual accuracy, completeness, and citation quality to help guide your human assessment.
@@ -145,7 +145,7 @@
         <div class="section-header">
           <h5 class="title is-5">
             <span class="icon-text">
-              <span class="icon has-text-success">
+              <span class="icon has-text-dark">
                 <i class="fas fa-user"></i>
               </span>
               <span>Your Expert Assessment</span>
@@ -335,7 +335,7 @@
         </span>
         <span>Back</span>
       </button>
-      <button class="button is-primary" @click="submitFeedback" :disabled="!canSubmit" :class="{ 'is-loading': isSubmitting }">
+      <button class="button is-dark" @click="submitFeedback" :disabled="!canSubmit" :class="{ 'is-loading': isSubmitting }">
         <span class="icon is-small">
           <i class="fas fa-paper-plane"></i>
         </span>
@@ -623,8 +623,8 @@ onMounted(async () => {
 }
 
 .validation-progress {
-  background: #f8f9fa;
-  border: 1px solid #e9ecef;
+  background: #f5f5f5;
+  border: 1px solid #ddd;
   border-radius: 6px;
   padding: 1rem;
 }
@@ -643,7 +643,7 @@ onMounted(async () => {
 
 .progress-percentage {
   font-weight: 600;
-  color: #0066cc;
+  color: #333;
 }
 
 .progress-details {
@@ -687,7 +687,7 @@ onMounted(async () => {
 .export-section {
   margin-bottom: 2rem;
   padding: 1.5rem;
-  background: #f8f9fa;
+  background: #fafafa;
   border-radius: 8px;
 }
 
@@ -726,7 +726,7 @@ onMounted(async () => {
 
 .ai-comparison {
   font-size: 0.85rem;
-  color: #3273dc;
+  color: #666;
   font-weight: normal;
 }
 
@@ -757,8 +757,8 @@ onMounted(async () => {
 }
 
 .likert-circle.active {
-  background: #3273dc;
-  border-color: #3273dc;
+  background: #333;
+  border-color: #333;
 }
 
 .likert-text {
@@ -799,7 +799,7 @@ onMounted(async () => {
 
 .tooltip {
   cursor: help;
-  color: #3273dc;
+  color: #666;
 }
 
 .notification.is-small {
@@ -814,5 +814,20 @@ onMounted(async () => {
   font-size: 0.75rem;
   color: #999;
   text-align: right;
+}
+
+/* Button text centering */
+.button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.button .icon-text {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
 }
 </style>
