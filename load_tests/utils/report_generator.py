@@ -96,9 +96,17 @@ class PerformanceReportGenerator:
             timers = data.get('timers', {})
             
             # Calculate success rate
-            total_requests = sum(counters.values())
-            errors = counters.get('errors', 0)
-            success_rate = ((total_requests - errors) / total_requests * 100) if total_requests > 0 else 0
+            # Only count actual request counters, not success counters (which double the count)
+            total_requests = sum(v for k, v in counters.items() if k.endswith('_total'))
+            success_requests = sum(v for k, v in counters.items() if k.endswith('_success'))
+            
+            # Calculate semantic success rate (exclude zero-token failures)
+            streaming_sessions = counters.get('streaming_sessions', 0)
+            zero_token_failures = counters.get('streaming_zero_token_failures', 0)
+            semantic_success_rate = ((streaming_sessions - zero_token_failures) / streaming_sessions * 100) if streaming_sessions > 0 else 0
+            
+            success_rate = (success_requests / total_requests * 100) if total_requests > 0 else 0
+            errors = total_requests - success_requests
             
             # Get response time stats from response_times data structure
             response_times = data.get('response_times', {})
@@ -120,7 +128,10 @@ class PerformanceReportGenerator:
                 'first_token_time': round(avg_first_token, 1),
                 'completion_time': round(avg_completion, 1),
                 'test_duration': data.get('test_duration', 'Unknown'),
-                'timestamp': results_file.stem.split('_')[1]
+                'timestamp': results_file.stem.split('_')[1],
+                'semantic_success_rate': round(semantic_success_rate, 1),
+                'zero_token_failures': zero_token_failures,
+                'streaming_sessions': streaming_sessions
             }
         except Exception as e:
             print(f"Error parsing results file {results_file}: {e}")
@@ -244,10 +255,16 @@ Document Context Cache: {self.config.get('PROMPT_CACHE_CONTEXT', 'Unknown')}
 ## Monitoring Recommendations
 
 ### Key Metrics to Track
-1. **Streaming Success Rate** (target: >95%)
-2. **P95 Response Time** (target: <20s for research queries)
-3. **System Resource Usage** (CPU <70%, RAM <85%)
-4. **Cache Hit Rate** (monitor efficiency)
+1. **HTTP Success Rate** (target: >95% - measures basic connectivity)
+2. **Semantic Success Rate** (target: >90% - requires Phoenix/application monitoring)
+3. **P95 Response Time** (target: <20s for research queries)
+4. **System Resource Usage** (CPU <70%, RAM <85%)
+5. **Cache Hit Rate** (monitor efficiency)
+
+### Understanding Success Metrics
+- **Load Test Success Rate**: HTTP-level success (200-299 status codes)
+- **Phoenix Success Rate**: Application-level success (complete, quality responses)
+- **Recommended**: Monitor both for comprehensive system health assessment
 
 ### Scaling Triggers
 - **Scale Up**: If CPU consistently >70% or RAM >85%
@@ -287,9 +304,11 @@ Document Context Cache: {self.config.get('PROMPT_CACHE_CONTEXT', 'Unknown')}
             status = "NEEDS ATTENTION"
         
         return f"""Performance Status: **{status}**
-- Success Rate: {success_rate}% ({total_requests} total requests)
+- HTTP Success Rate: {success_rate}% ({total_requests} total requests)
 - Latest Test: {test_results.get('test_duration', 'Unknown duration')}
-- System shows {'excellent' if success_rate >= 95 else 'good' if success_rate >= 85 else 'concerning'} stability under load"""
+- System shows {'excellent' if success_rate >= 95 else 'good' if success_rate >= 85 else 'concerning'} HTTP-level stability under load
+
+**Important**: This report measures HTTP-level success rates. For comprehensive monitoring, also check Phoenix telemetry for semantic failures (incomplete responses, poor quality answers, application-level errors)."""
     
     def _generate_metrics_section(self, test_results: Dict[str, Any]) -> str:
         """Generate metrics section based on actual results"""
@@ -309,10 +328,19 @@ Run load tests with `make lts` to generate current performance metrics.
         p95_time = test_results.get('p95_response_time', 0)
         time_icon = "✅" if p95_time <= 20 else "⚠️" if p95_time <= 30 else "❌"
         
-        return f"""### {success_icon} Streaming Question Success Rate
-- **Result**: {success_rate}% success rate
-- **Details**: {test_results.get('total_requests', 0) - test_results.get('errors', 0)}/{test_results.get('total_requests', 0)} requests completed successfully
+        semantic_rate = test_results.get('semantic_success_rate', success_rate)
+        semantic_icon = "✅" if semantic_rate >= 90 else "⚠️" if semantic_rate >= 80 else "❌"
+        
+        return f"""### {success_icon} HTTP Request Success Rate
+- **Result**: {success_rate}% HTTP success rate
+- **Details**: {test_results.get('total_requests', 0) - test_results.get('errors', 0)}/{test_results.get('total_requests', 0)} requests completed with HTTP 2xx status
 - **Status**: {self._get_status_text(success_rate, 95, 85)}
+
+### {semantic_icon} Semantic Success Rate (Answer Generation)
+- **Result**: {semantic_rate}% semantic success rate
+- **Details**: {test_results.get('streaming_sessions', 0) - test_results.get('zero_token_failures', 0)}/{test_results.get('streaming_sessions', 0)} questions generated answers (>0 tokens)
+- **Zero-token failures**: {test_results.get('zero_token_failures', 0)} complete failures (no answer generated)
+- **Status**: {self._get_status_text(semantic_rate, 90, 80)}
 
 ### {time_icon} Response Times
 - **Average Response Time**: {test_results.get('avg_response_time', 0)}s

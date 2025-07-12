@@ -79,7 +79,12 @@ class MetricsCollector:
             self.metrics['streaming_first_token'].append(first_token_time)
             self.metrics['streaming_total_time'].append(total_time)
             self.metrics['streaming_tokens_per_second'].append(token_count / total_time if total_time > 0 else 0)
+            self.metrics['streaming_token_counts'].append(token_count)
             self.counters['streaming_sessions'] += 1
+            
+            # Track zero-token responses as complete failures (no answer generated)
+            if token_count == 0:
+                self.counters['streaming_zero_token_failures'] += 1
     
     def record_websocket_metrics(self, connection_time: float, message_count: int, errors: int):
         """Record WebSocket-specific metrics"""
