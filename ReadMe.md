@@ -8,7 +8,7 @@ The project is under development and makes heavy use of AI coding support.
 
 ## Environment Requirements
 
-- **Python:** 3.10.x (required for backend and all scripts)
+- **Python:** 3.10 (required for backend and all scripts)
 - **Node.js:** 22.14.0 (required for frontend; enforced via .nvmrc and package.json)
 - **requirements.lock** is used at build time. The repo version could well have been generated on a Linux GPU-based system. Delete the file and run ```make l``` if necessary for your system.
 
@@ -62,8 +62,10 @@ ATLAS uses a simplified command structure for common operations. Here are the ma
 ### Deployment
 - `make p` - Deploy to production
 - `make dp` - Delete production environment
-- `make s` - Deploy to staging
-- `make ds` - Delete staging environment
+- `make sl` - Deploy to local staging environment
+- `make sr` - Deploy to remote staging environment
+- `make dsl` - Delete local staging environment
+- `make dsr` - Delete remote staging environment
 
 ### Utilities
 - `make l` - Generate requirements.lock
@@ -125,6 +127,21 @@ Both targets will:
 - Output results to the `create/output/` directory
 
 This workflow ensures that your retrievers are always in sync with your vector store schema and configuration. 
+
+## Additional Documentation
+
+### Architecture and Configuration
+- [Configuration Guide](docs/configuration.md) - Environment files, API keys, and system configuration
+- [Test Targets](docs/test_targets.md) - LLM configurations, vector store integration, and target management
+- [Key Modules](docs/key_modules.md) - Core backend modules and their responsibilities
+
+### Development and Deployment
+- [Staging Environments](docs/staging.md) - Local and remote staging deployment processes
+- [Load Testing Framework](docs/load_testing.md) - Performance testing and optimization guidelines
+- [Vector Store Creation](docs/create_store.md) - Building and managing vector stores and retrievers
+
+### User Interface and Features
+- [FAQ](frontend/src/views/FAQView.vue) - Frequently asked questions and system limitations
 
 ## License
 - [License](LICENSE.md)

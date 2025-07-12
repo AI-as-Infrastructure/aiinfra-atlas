@@ -6,7 +6,7 @@ This document describes the staging environments and deployment processes for th
 
 We maintain two staging environments:
 
-1. **Local Staging** (`make s`): Runs on your local machine
+1. **Local Staging** (`make sl`): Runs on your local machine
 2. **Remote Staging** (`make sr`): Runs on a dedicated staging server
 
 ## Remote Staging (Recommended)
@@ -75,12 +75,12 @@ The local staging environment is useful for quick testing during development but
 
 1. Build and deploy:
 ```bash
-make s
+make sl
 ```
 
 2. Clean up environment:
 ```bash
-make ds
+make dsl
 ```
 
 ### Limitations
@@ -126,7 +126,7 @@ The cleanup process is thorough and removes:
    - When remote staging is unavailable
 
 3. Always clean up environments after testing:
-   - `make ds` for local staging
+   - `make dsl` for local staging
    - `make dsr` for remote staging
 
 ## Troubleshooting
