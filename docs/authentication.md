@@ -6,10 +6,8 @@ This application implements AWS Cognito for user authentication. The authenticat
 
 Authentication can be controlled via the `.env` file using the `VITE_USE_COGNITO_AUTH` setting:
 
-- Set to `false` to disable authentication (default for development)
+- Set to `false` to disable authentication 
 - Set to `true` to enable AWS Cognito authentication
-
-For detailed environment file setup, refer to the [Configuration Guide](configuration.md).
 
 ## AWS Cognito Setup
 
@@ -29,4 +27,4 @@ The required Cognito variables include:
 - `VITE_COGNITO_LOGOUT_ENDPOINT` - Cognito logout endpoint
 - `VITE_COGNITO_OAUTH_SCOPE` - OAuth scopes (typically "openid email profile")
 
-See [Configuration Guide](configuration.md) for complete environment setup instructions.
+For detailed environment file setup, refer to the [Configuration Guide](configuration.md).
