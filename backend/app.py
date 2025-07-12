@@ -152,22 +152,43 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Add request size limits middleware
 @app.middleware("http")
-async def limit_request_size(request: Request, call_next):
-    """Limit request body size to prevent memory exhaustion"""
+async def security_middleware(request: Request, call_next):
+    """Basic security middleware for research prototype"""
+    # Request size limit
     max_size = 10 * 1024 * 1024  # 10MB limit
-    
-    # Check content-length header
     content_length = request.headers.get("content-length")
-    if content_length:
-        if int(content_length) > max_size:
-            return JSONResponse(
-                status_code=413,
-                content={"error": "Request too large", "max_size": f"{max_size // (1024*1024)}MB"}
-            )
+    if content_length and int(content_length) > max_size:
+        return JSONResponse(
+            status_code=413,
+            content={"error": "Request too large", "max_size": f"{max_size // (1024*1024)}MB"}
+        )
     
-    # Process the request
+    # Rate limiting based on environment configuration
+    rate_limit = int(os.getenv("RATE_LIMIT_PER_MINUTE", "240"))
+    client_ip = request.client.host if request.client else "unknown"
+    
+    if not hasattr(app.state, "rate_limit_store"):
+        app.state.rate_limit_store = {}
+    
+    current_time = time.time()
+    window_start = current_time - 60  # 1 minute window
+    
+    # Clean old entries and check rate
+    if client_ip not in app.state.rate_limit_store:
+        app.state.rate_limit_store[client_ip] = []
+    
+    app.state.rate_limit_store[client_ip] = [
+        t for t in app.state.rate_limit_store[client_ip] if t > window_start
+    ]
+    
+    if len(app.state.rate_limit_store[client_ip]) >= rate_limit:
+        return JSONResponse(
+            status_code=429,
+            content={"error": "Rate limit exceeded. Please wait before making more requests."}
+        )
+    
+    app.state.rate_limit_store[client_ip].append(current_time)
     response = await call_next(request)
     return response
 
@@ -342,13 +363,21 @@ async def query(request: Request):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON in request body")
     
-    query = data.get("query")
+    query = data.get("query", "").strip()
     session_id = data.get("session_id")
     qa_id = data.get("qa_id")
     corpus_filter = data.get("corpus_filter", "all")
     
-    if not query:
-        raise HTTPException(status_code=400, detail="Query is required")
+    if not query or len(query) > 2000:
+        raise HTTPException(status_code=400, detail="Query is required and must be under 2000 characters")
+
+    # Basic injection prevention
+    dangerous_patterns = ["ignore previous", "system:", "<script", "javascript:"]
+    if any(pattern in query.lower() for pattern in dangerous_patterns):
+        raise HTTPException(status_code=400, detail="Invalid query content")
+
+    if corpus_filter not in ["all", "1901_au", "1901_nz", "1901_uk"]:
+        corpus_filter = "all"
     
     # Use our document retrieval utility with retry logic for transient failures
     max_retries = 2
@@ -464,10 +493,24 @@ async def ask_stream(data: dict = Body(...)):
     """
     Stream an answer to a question using retrieved documents and a language model.
     """
-    # Extract request data
-    question = data.get("question", "")
+    # Extract request data with input sanitization
+    question = data.get("question", "").strip()
     corpus_filter = data.get("corpus_filter", "all")
     previous_corpus_filter = data.get("previous_corpus_filter", "all")
+    
+    # Input validation and sanitization
+    if not question or len(question) > 2000:
+        raise HTTPException(status_code=400, detail="Question is required and must be under 2000 characters")
+
+    # Basic injection prevention
+    dangerous_patterns = ["ignore previous", "system:", "<script", "javascript:"]
+    if any(pattern in question.lower() for pattern in dangerous_patterns):
+        raise HTTPException(status_code=400, detail="Invalid question content")
+
+    if corpus_filter not in ["all", "1901_au", "1901_nz", "1901_uk"]:
+        corpus_filter = "all"
+    if previous_corpus_filter not in ["all", "1901_au", "1901_nz", "1901_uk"]:
+        previous_corpus_filter = "all"
     chat_history = data.get("chat_history", [])
     session_id = data.get("session_id", str(uuid.uuid4()))
     qa_id = data.get("qa_id", str(uuid.uuid4()))

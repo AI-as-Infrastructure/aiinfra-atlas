@@ -10,6 +10,8 @@ import logging
 import json
 import time
 from typing import Optional, Dict, Any, List
+
+COGNITO_SESSION_TIMEOUT = 3600  # 1 hour for research sessions
 from jose import jwk, jwt
 from jose.utils import base64url_decode
 import requests
@@ -114,6 +116,14 @@ def verify_cognito_token(token: str) -> Optional[Dict[str, Any]]:
             audience=client_id,
             issuer=f"https://cognito-idp.{region}.amazonaws.com/{user_pool_id}",
         )
+        
+        # Check token expiration
+        if 'exp' in payload:
+            exp_time = payload['exp']
+            current_time = time.time()
+            if current_time > exp_time:
+                logger.warning("Token expired")
+                return None
         
         return payload
     except Exception as e:
