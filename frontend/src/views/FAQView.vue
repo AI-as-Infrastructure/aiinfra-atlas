@@ -63,6 +63,46 @@
         </div>
       </FAQItem>
 
+      <FAQItem question="Why do some questions seem ineffective while others produce high quality results?">
+        <div>
+          <p>
+            This is probably the biggest limitation of the current LLM RAG (Retrieval Augmented Generation) architecture, which uses HNSW vector search for document retrieval and LLM inferencing for question answering.
+          </p>
+          
+          <h4>The Core Issue</h4>
+          <p>
+            There's a disconnect between what the LLM understands semantically and what the HNSW search system can find. For example:
+          </p>
+          <ul>
+            <li><strong>Query that fails:</strong> "What parliamentary discussions addressed Aboriginal affairs in 1901?" → No results found</li>
+            <li><strong>Query that succeeds:</strong> "Describe the debates related to Maori and the Treaty of Waitangi in New Zealand" → Rich, detailed results</li>
+          </ul>
+          <p>
+            Both queries ask about Indigenous peoples, but the search system performs literal matching rather than leveraging the LLM's semantic understanding that these are related topics.
+          </p>
+          
+          <h4>Why This Happens</h4>
+          <ul>
+            <li><strong>Historical Terminology:</strong> Documents use period-specific language that may not match modern search terms</li>
+            <li><strong>One-Way Communication:</strong> The LLM cannot communicate back to the search system to suggest alternative terms</li>
+            <li><strong>Lexical vs Semantic Search:</strong> The current system relies more on exact word matching than conceptual understanding</li>
+          </ul>
+          
+          <h4>Current Status & Roadmap</h4>
+          <p>
+            While this isn't a major issue for the current phase of the project (which focuses on developing our understanding of testing and evaluation), it is on our roadmap for future improvement. We're tracking this issue and potential solutions on <a href="https://github.com/AI-as-Infrastructure/aiinfra-atlas/issues/35" target="_blank" rel="noopener noreferrer">GitHub #35</a>.
+          </p>
+          
+          <h4>Tips for Better Results</h4>
+          <ul>
+            <li><strong>Try historical terminology:</strong> "Aboriginal affairs" → "Native affairs" or "Māori"</li>
+            <li><strong>Be specific about countries:</strong> "Australian Parliament" or "New Zealand Parliament"</li>
+            <li><strong>Use multiple approaches:</strong> If one query fails, try rephrasing with different terms</li>
+            <li><strong>Browse different time periods:</strong> Terminology evolved over time</li>
+          </ul>
+        </div>
+      </FAQItem>
+
       <!-- Add more FAQ items here -->
       
       <div class="faq-bottom-spacer"></div>
