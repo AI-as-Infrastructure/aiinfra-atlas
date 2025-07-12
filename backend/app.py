@@ -690,7 +690,7 @@ async def ask_stream(data: dict = Body(...)):
                     
                 except Exception as e:
                     # Log the full error details server-side
-                    logger.error(f"Error in streaming response: {e}", exc_info=True)
+                    logger.error(f"Error in streaming response: {e}")
                     # Record error in parent span
                     parent_span.record_exception(e)
                     parent_span.set_status(Status(StatusCode.ERROR, str(e)))
@@ -709,7 +709,7 @@ async def ask_stream(data: dict = Body(...)):
                     
             except Exception as e:
                 # Handle any outer exceptions
-                logger.error(f"Error in RAG pipeline: {e}", exc_info=True)
+                logger.error(f"Error in RAG pipeline: {e}")
                 parent_span.record_exception(e)
                 parent_span.set_status(Status(StatusCode.ERROR, str(e)))
                 
@@ -1012,13 +1012,13 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
                         status="error"
                     )
             except Exception as e:
-                logger.error(f"Error processing HTTP feedback: {e}", exc_info=True)
+                logger.error(f"Error processing HTTP feedback: {e}")
                 return FeedbackResponse(
                     message="Error processing feedback",
                     status="error"
                 )
     except Exception as e:
-        logger.error(f"Error in HTTP feedback endpoint: {e}", exc_info=True)
+        logger.error(f"Error in HTTP feedback endpoint: {e}")
         return FeedbackResponse(
             message="An error occurred processing your feedback",
             status="error"
@@ -1106,7 +1106,7 @@ async def validate_session(validation_request: ValidationRequest, request: Reque
         )
         
     except Exception as e:
-        logger.error(f"Error during session validation: {e}", exc_info=True)
+        logger.error(f"Error during session validation: {e}")
         return ValidationResponse(
             success=False,
             message=f"Error during session validation: {str(e)}",
