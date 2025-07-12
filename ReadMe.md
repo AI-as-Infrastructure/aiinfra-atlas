@@ -131,6 +131,7 @@ This workflow ensures that your retrievers are always in sync with your vector s
 ## Additional Documentation
 
 ### Architecture and Configuration
+- [Authentication](docs/authentication.md) - AWS Cognito setup and configuration
 - [Configuration Guide](docs/configuration.md) - Environment files, API keys, and system configuration
 - [Test Targets](docs/test_targets.md) - LLM configurations, vector store integration, and target management
 - [Key Modules](docs/key_modules.md) - Core backend modules and their responsibilities
