@@ -100,22 +100,23 @@ class PerformanceReportGenerator:
             errors = counters.get('errors', 0)
             success_rate = ((total_requests - errors) / total_requests * 100) if total_requests > 0 else 0
             
-            # Get response time stats
-            ask_stream_stats = timers.get('ask_stream', {})
-            avg_response = ask_stream_stats.get('avg', 0)
-            p95_response = ask_stream_stats.get('p95', 0)
+            # Get response time stats from response_times data structure
+            response_times = data.get('response_times', {})
+            ask_stream_stats = response_times.get('ask_stream', {})
+            avg_response = ask_stream_stats.get('50', 0)  # 50th percentile is average
+            p95_response = ask_stream_stats.get('95', 0)  # 95th percentile
             
             # Get streaming metrics
             streaming = data.get('streaming_metrics', {})
             avg_first_token = streaming.get('avg_first_token_time', 0)
-            avg_completion = streaming.get('avg_completion_time', 0)
+            avg_completion = streaming.get('avg_total_time', 0)
             
             return {
                 'success_rate': round(success_rate, 1),
                 'total_requests': total_requests,
                 'errors': errors,
-                'avg_response_time': round(avg_response / 1000, 1) if avg_response else 0,  # Convert to seconds
-                'p95_response_time': round(p95_response / 1000, 1) if p95_response else 0,
+                'avg_response_time': round(avg_response, 1) if avg_response else 0,  # Already in seconds
+                'p95_response_time': round(p95_response, 1) if p95_response else 0,  # Already in seconds
                 'first_token_time': round(avg_first_token, 1),
                 'completion_time': round(avg_completion, 1),
                 'test_duration': data.get('test_duration', 'Unknown'),
