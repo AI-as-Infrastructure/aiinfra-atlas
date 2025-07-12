@@ -337,7 +337,11 @@ async def root():
 @app.post("/api/query")  # Add an alias with /api prefix for frontend compatibility
 async def query(request: Request):
     """Simple document retrieval endpoint"""
-    data = await request.json()
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON in request body")
+    
     query = data.get("query")
     session_id = data.get("session_id")
     qa_id = data.get("qa_id")
@@ -346,16 +350,46 @@ async def query(request: Request):
     if not query:
         raise HTTPException(status_code=400, detail="Query is required")
     
-    # Use our document retrieval utility
-    documents, qa_id = retrieve_documents_with_telemetry(
-        query=query,
-        retriever=get_retriever(),
-        session_id=session_id,
-        qa_id=qa_id,
-        corpus_filter=corpus_filter
-    )
+    # Use our document retrieval utility with retry logic for transient failures
+    max_retries = 2
+    retry_delay = 1  # Start with 1 second delay
     
-    # Format documents as citations for frontend display
+    for attempt in range(max_retries + 1):
+        try:
+            documents, qa_id = retrieve_documents_with_telemetry(
+                query=query,
+                retriever=get_retriever(),
+                session_id=session_id,
+                qa_id=qa_id,
+                corpus_filter=corpus_filter
+            )
+            break  # Success, exit retry loop
+        except TimeoutError:
+            if attempt < max_retries:
+                import time
+                time.sleep(retry_delay)
+                retry_delay *= 2  # Exponential backoff
+                continue
+            raise HTTPException(status_code=503, detail="Document retrieval timed out")
+        except ConnectionError:
+            if attempt < max_retries:
+                import time
+                time.sleep(retry_delay)
+                retry_delay *= 2  # Exponential backoff
+                continue
+            raise HTTPException(status_code=503, detail="Unable to connect to document store")
+        except ValueError:
+            # Don't retry validation errors
+            raise HTTPException(status_code=400, detail="Invalid query parameters")
+        except Exception:
+            if attempt < max_retries:
+                import time
+                time.sleep(retry_delay)
+                retry_delay *= 2  # Exponential backoff
+                continue
+            raise HTTPException(status_code=503, detail="Document retrieval temporarily unavailable")
+    
+    # Format documents as citations for frontend display with graceful error handling
     citations = []
     for idx, doc in enumerate(documents):
         try:
@@ -364,8 +398,9 @@ async def query(request: Request):
             citation = format_document_for_citation(doc, idx)
             if citation:
                 citations.append(citation)
-        except Exception as e:
-            logger.error(f"Error formatting document as citation: {e}")
+        except Exception:
+            # Continue processing other documents if one citation fails
+            continue
     
     # Return both raw results and formatted citations
     return {
