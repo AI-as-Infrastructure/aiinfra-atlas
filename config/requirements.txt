@@ -6,7 +6,8 @@ python-multipart==0.0.20
 websockets==15.0.1
 
 # Vector Search Support
-chromadb==0.4.24
+chromadb==1.0.15
+langchain-chroma==0.2.4
 
 # LLM & LangChain Dependencies
 langchain==0.3.25
@@ -26,7 +27,7 @@ sounddevice==0.5.1
 google-auth==2.40.1
 
 # AI/ML Model Dependencies
-transformers==4.51.3
+transformers==4.52.1
 torch==2.7.1
 unstructured==0.17.2
 
