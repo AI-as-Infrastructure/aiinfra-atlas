@@ -7,12 +7,12 @@
     "npm": ">=10.2.0"
   },
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "build:development": "vite build --mode development",
-    "build:staging": "vite build --mode staging",
-    "build:production": "vite build --mode production",
-    "serve": "vite preview",
+    "dev": "NODE_OPTIONS='--no-deprecation' vite",
+    "build": "NODE_OPTIONS='--no-deprecation' vite build",
+    "build:development": "NODE_OPTIONS='--no-deprecation' vite build --mode development",
+    "build:staging": "NODE_OPTIONS='--no-deprecation' vite build --mode staging",
+    "build:production": "NODE_OPTIONS='--no-deprecation' vite build --mode production",
+    "serve": "NODE_OPTIONS='--no-deprecation' vite preview",
     "preinstall": "node -v | grep -q 'v22.14.0' || (echo 'Error: Node.js version 22.14.0 is required' && exit 1)"
   },
   "dependencies": {
@@ -30,5 +30,10 @@
     "@vitejs/plugin-vue": "^4.5.14",
     "path": "^0.12.7",
     "vite": "^4.5.14"
+  },
+  "overrides": {
+    "uuid": "^9.0.1",
+    "rimraf": "^5.0.0",
+    "glob": "^10.0.0"
   }
 }

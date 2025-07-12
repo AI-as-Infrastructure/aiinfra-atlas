@@ -15,19 +15,13 @@ export default ({ mode }) => {
   
   return defineConfig({
     plugins: [
-      vue(),
-      // Custom plugin to log all CSS imports during build
-      {
-        name: 'css-import-logger',
-        enforce: 'pre',
-        // Log CSS import resolution
-        resolveId(id, importer) {
-          if (id.endsWith('.css')) {
-            console.log(`CSS import detected: ${id} from ${importer}`);
-          }
-        }
-      }
+      vue()
     ],
+    build: {
+      // Reduce build output verbosity
+      reportCompressedSize: false,
+      chunkSizeWarningLimit: 1000
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, 'src'),
