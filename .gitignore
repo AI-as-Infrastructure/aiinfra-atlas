@@ -25,10 +25,15 @@ models/**
 models/bert_1890_1900_st/
 load_tests/reports/*
 
-# Chroma database directories (except reference database)
+# Chroma database directories - exclude all binary DB files
 backend/chroma_db/
 */chroma_db/
-!backend/targets/chroma_db/
+backend/targets/chroma_db/
+# Keep only the collection metadata, exclude binary data
+!backend/targets/chroma_db/.gitkeep
+backend/targets/chroma_db/*.sqlite3
+backend/targets/chroma_db/*/*.bin
+backend/targets/chroma_db/*/*.pickle
 
 
 # Byte-compiled / optimized / DLL files
