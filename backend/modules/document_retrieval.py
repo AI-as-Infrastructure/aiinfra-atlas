@@ -108,10 +108,28 @@ def retrieve_documents(
             k = get_search_k()
         
         try:
-            # Corpus-agnostic document retrieval - let the retriever handle all corpus logic
-            config = {"corpus_filter": corpus_filter, "session_id": session_id, "qa_id": qa_id} if corpus_filter or session_id or qa_id else None
-            documents = retriever.invoke(query, config=config, k=k)
-            return documents
+            # Import timeout configurations
+            from backend.modules.config import get_request_timeout
+            import signal
+            
+            # Set up timeout handling
+            timeout_seconds = get_request_timeout()
+            
+            def timeout_handler(signum, frame):
+                raise TimeoutError(f"Document retrieval timed out after {timeout_seconds} seconds")
+            
+            # Set the timeout
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(timeout_seconds)
+            
+            try:
+                # Corpus-agnostic document retrieval - let the retriever handle all corpus logic
+                config = {"corpus_filter": corpus_filter, "session_id": session_id, "qa_id": qa_id} if corpus_filter or session_id or qa_id else None
+                documents = retriever.invoke(query, config=config, k=k)
+                signal.alarm(0)  # Cancel the timeout
+                return documents
+            finally:
+                signal.alarm(0)  # Ensure timeout is always cancelled
             
         except Exception as e:
             # Log the error
@@ -151,20 +169,39 @@ def retrieve_documents(
         retrieval_span.set_attribute("corpus_filtering_at_hnsw", corpus_filter and corpus_filter.lower() != "all")
         
         try:
+            # Import timeout configurations
+            from backend.modules.config import get_request_timeout
+            import signal
+            
             start_time = None
             # Record start time for performance tracking
             start_time = datetime.now()
             
-            # Corpus-agnostic document retrieval - let the retriever handle all corpus logic
+            # Set up timeout handling
+            timeout_seconds = get_request_timeout()
             
-            # Set basic telemetry attributes
-            retrieval_span.set_attribute("actual_k", k)
-            retrieval_span.set_attribute("corpus_filter", corpus_filter or "all")
-            retrieval_span.set_attribute("retrieval_mode", "delegated_to_retriever")
+            def timeout_handler(signum, frame):
+                raise TimeoutError(f"Document retrieval timed out after {timeout_seconds} seconds")
             
-            # Simple call to retriever - it handles all corpus-specific logic internally
-            config = {"corpus_filter": corpus_filter, "session_id": session_id, "qa_id": qa_id} if corpus_filter or session_id or qa_id else None
-            documents = retriever.invoke(query, config=config, k=k)
+            # Set the timeout
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(timeout_seconds)
+            
+            try:
+                # Corpus-agnostic document retrieval - let the retriever handle all corpus logic
+                
+                # Set basic telemetry attributes
+                retrieval_span.set_attribute("actual_k", k)
+                retrieval_span.set_attribute("corpus_filter", corpus_filter or "all")
+                retrieval_span.set_attribute("retrieval_mode", "delegated_to_retriever")
+                retrieval_span.set_attribute("timeout_seconds", timeout_seconds)
+                
+                # Simple call to retriever - it handles all corpus-specific logic internally
+                config = {"corpus_filter": corpus_filter, "session_id": session_id, "qa_id": qa_id} if corpus_filter or session_id or qa_id else None
+                documents = retriever.invoke(query, config=config, k=k)
+                signal.alarm(0)  # Cancel the timeout
+            finally:
+                signal.alarm(0)  # Ensure timeout is always cancelled
             
             # Collect reranking metrics from the retriever (if available)
             try:

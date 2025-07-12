@@ -49,6 +49,8 @@ class RetrieverConfig(TypedDict):
     chunk_size: Optional[int]
     chunk_overlap: Optional[int]
     pooling: Optional[str]
+    request_timeout: Optional[int]
+    connection_timeout: Optional[int]
 
 
 class LLMConfig(TypedDict):
@@ -104,7 +106,9 @@ def _get_default_config() -> Dict[str, Any]:
             "chunk_overlap": 200,
             "pooling": os.getenv("POOLING", "mean"),
             "target_id": "default",
-            "target_version": "1.0"
+            "target_version": "1.0",
+            "request_timeout": int(os.getenv("RETRIEVER_REQUEST_TIMEOUT", "30")),
+            "connection_timeout": int(os.getenv("RETRIEVER_CONNECTION_TIMEOUT", "10"))
         }
     }
 
@@ -412,6 +416,16 @@ def get_search_score_threshold() -> float:
     """Get the search score threshold parameter."""
     retriever_config = get_retriever_config()
     return retriever_config.get("search_score_threshold", 0.0)
+
+def get_request_timeout() -> int:
+    """Get the request timeout parameter in seconds."""
+    retriever_config = get_retriever_config()
+    return retriever_config.get("request_timeout", 30)
+
+def get_connection_timeout() -> int:
+    """Get the connection timeout parameter in seconds."""
+    retriever_config = get_retriever_config()
+    return retriever_config.get("connection_timeout", 10)
 
 def get_pooling() -> str:
     """Get the pooling parameter."""
