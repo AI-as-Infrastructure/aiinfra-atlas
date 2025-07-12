@@ -355,6 +355,9 @@ export default {
         if (feedbackData.ratings) {
           const ratings = JSON.parse(JSON.stringify(feedbackData.ratings))
           
+          // Add the ratings object itself for AI-enhanced feedback processing
+          completeFeedbackPayload.ratings = ratings
+          
           // Add each rating individually (same pattern as extended feedback)
           if (ratings.factual_accuracy !== null) {
             completeFeedbackPayload.factual_accuracy = ratings.factual_accuracy
