@@ -93,7 +93,7 @@ ssr: ## Stop remote staging environment gracefully
 	@bash deploy/staging/scripts/stop_staging_remote.sh
 
 # Load Testing Targets
-.PHONY: lts ltp ltq ltweb ltasync ltpeak ltburst ltfocus lto lt15 lt20 lt25
+.PHONY: lts
 lts: ## Run realistic load test against staging environment (15 concurrent users, 30 min)
 	@echo "🧪 Running realistic load test against staging environment..."
 	@echo "📊 Optimized for 8 vCPU, 16GB RAM servers with 15-20 concurrent users"
@@ -110,195 +110,6 @@ lts: ## Run realistic load test against staging environment (15 concurrent users
 		.venv/bin/pip install -r config/requirements.txt; \
 	fi
 	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=staging ../.venv/bin/locust -f locustfile.py --host=\$$VITE_API_URL --users=15 --spawn-rate=0.2 --run-time=30m --headless"
-
-ltp: ## Run realistic load test against production environment (15 concurrent users, 30 min)
-	@echo "🚨 Running realistic load test against production environment..."
-	@echo "📊 Optimized for 8 vCPU, 16GB RAM servers with 15-20 concurrent users"
-	@if [ ! -f "config/.env.production" ]; then \
-		echo "❌ ERROR: config/.env.production file not found!"; \
-		exit 1; \
-	fi
-	@echo "⚠️  WARNING: Testing against production environment!"
-	@read -p "Are you sure you want to continue? (y/N): " confirm && [ "$$confirm" = "y" ] || exit 1
-	@if [ ! -d ".venv" ]; then \
-		echo "📦 Creating virtual environment..."; \
-		python3 -m venv .venv; \
-	fi
-	@if [ ! -f ".venv/bin/locust" ]; then \
-		echo "📥 Installing dependencies..."; \
-		.venv/bin/pip install -r config/requirements.txt; \
-	fi
-	@bash -c "cd load_tests && source ../config/.env.production && LOAD_TEST_CONFIG=production ../.venv/bin/locust -f locustfile.py --host=\$$VITE_API_URL --users=15 --spawn-rate=0.2 --run-time=30m --headless"
-
-ltq: ## Quick smoke test against staging (1 user, 3 minutes) - single session
-	@echo "💨 Running quick smoke test against staging..."
-	@if [ ! -f "config/.env.staging" ]; then \
-		echo "❌ ERROR: config/.env.staging file not found!"; \
-		exit 1; \
-	fi
-	@if [ ! -d ".venv" ]; then \
-		echo "📦 Creating virtual environment..."; \
-		python3 -m venv .venv; \
-	fi
-	@if [ ! -f ".venv/bin/locust" ]; then \
-		echo "📥 Installing dependencies..."; \
-		.venv/bin/pip install -r config/requirements.txt; \
-	fi
-	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=staging ../.venv/bin/locust -f locustfile.py --host=\$$VITE_API_URL --users=1 --spawn-rate=1 --run-time=3m --headless"
-
-ltweb: ## Interactive load test with web UI (staging)
-	@echo "🌐 Starting interactive load test with web UI against staging..."
-	@echo "📊 Open http://localhost:8089 to control the test"
-	@if [ ! -f "config/.env.staging" ]; then \
-		echo "❌ ERROR: config/.env.staging file not found!"; \
-		exit 1; \
-	fi
-	@if [ ! -d ".venv" ]; then \
-		echo "📦 Creating virtual environment..."; \
-		python3 -m venv .venv; \
-	fi
-	@if [ ! -f ".venv/bin/locust" ]; then \
-		echo "📥 Installing dependencies..."; \
-		.venv/bin/pip install -r config/requirements.txt; \
-	fi
-	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=staging ../.venv/bin/locust -f locustfile.py --host=\$$VITE_API_URL"
-
-ltasync: ## Test async processing and Redis queue (staging)
-	@echo "🔄 Running async processing load test against staging..."
-	@if [ ! -f "config/.env.staging" ]; then \
-		echo "❌ ERROR: config/.env.staging file not found!"; \
-		exit 1; \
-	fi
-	@if [ ! -d ".venv" ]; then \
-		echo "📦 Creating virtual environment..."; \
-		python3 -m venv .venv; \
-	fi
-	@if [ ! -f ".venv/bin/locust" ]; then \
-		echo "📥 Installing dependencies..."; \
-		.venv/bin/pip install -r config/requirements.txt; \
-	fi
-	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=staging ../.venv/bin/locust -f locustfile.py --host=\$$VITE_API_URL --tags=async --users=15 --spawn-rate=1 --run-time=10m --headless"
-
-ltpeak: ## Peak load test against staging (20 concurrent users, 10 min)
-	@echo "🚀 Running peak load test against staging environment..."
-	@echo "📊 Testing server capacity at 20 concurrent users (peak load)"
-	@if [ ! -f "config/.env.staging" ]; then \
-		echo "❌ ERROR: config/.env.staging file not found!"; \
-		exit 1; \
-	fi
-	@if [ ! -d ".venv" ]; then \
-		echo "📦 Creating virtual environment..."; \
-		python3 -m venv .venv; \
-	fi
-	@if [ ! -f ".venv/bin/locust" ]; then \
-		echo "📥 Installing dependencies..."; \
-		.venv/bin/pip install -r config/requirements.txt; \
-	fi
-	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=staging ../.venv/bin/locust -f locustfile.py --host=\$$VITE_API_URL --users=20 --spawn-rate=2 --run-time=10m --headless"
-
-ltburst: ## Burst load test against staging (25 concurrent users, 5 min)
-	@echo "💥 Running burst load test against staging environment..."
-	@echo "📊 Testing LLM_MAX_CONCURRENT limits (25 users, aggressive load)"
-	@if [ ! -f "config/.env.staging" ]; then \
-		echo "❌ ERROR: config/.env.staging file not found!"; \
-		exit 1; \
-	fi
-	@if [ ! -d ".venv" ]; then \
-		echo "📦 Creating virtual environment..."; \
-		python3 -m venv .venv; \
-	fi
-	@if [ ! -f ".venv/bin/locust" ]; then \
-		echo "📥 Installing dependencies..."; \
-		.venv/bin/pip install -r config/requirements.txt; \
-	fi
-	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=staging ../.venv/bin/locust -f locustfile.py --host=\$$VITE_API_URL --users=25 --spawn-rate=5 --run-time=5m --headless"
-
-ltfocus: ## Focus group simulation (18 concurrent users, 45 min)
-	@echo "👥 Running focus group simulation against staging environment..."
-	@echo "📊 Realistic focus group behavior with 18 users for 45 minutes"
-	@if [ ! -f "config/.env.staging" ]; then \
-		echo "❌ ERROR: config/.env.staging file not found!"; \
-		exit 1; \
-	fi
-	@if [ ! -d ".venv" ]; then \
-		echo "📦 Creating virtual environment..."; \
-		python3 -m venv .venv; \
-	fi
-	@if [ ! -f ".venv/bin/locust" ]; then \
-		echo "📥 Installing dependencies..."; \
-		.venv/bin/pip install -r config/requirements.txt; \
-	fi
-	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=staging ../.venv/bin/locust -f locustfile.py --host=\$$VITE_API_URL --users=18 --spawn-rate=0.2 --run-time=45m --headless"
-
-# Optimized Load Testing Targets
-lto: ## Run optimized load test (15 concurrent users, 45 min, cache-busting)
-	@echo "🚀 Running OPTIMIZED load test against staging environment..."
-	@echo "📊 Enhanced with cache-busting, expanded questions, and realistic user behavior"
-	@echo "🎯 Optimized for 8vCPU/16GB RAM with k20 fetch-k (33% memory reduction)"
-	@if [ ! -f "config/.env.staging" ]; then \
-		echo "❌ ERROR: config/.env.staging file not found!"; \
-		exit 1; \
-	fi
-	@if [ ! -d ".venv" ]; then \
-		echo "📦 Creating virtual environment..."; \
-		python3 -m venv .venv; \
-	fi
-	@if [ ! -f ".venv/bin/locust" ]; then \
-		echo "📥 Installing dependencies..."; \
-		.venv/bin/pip install -r config/requirements.txt; \
-	fi
-	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=optimized_staging ../.venv/bin/locust -f optimized_locustfile.py --host=\$$VITE_API_URL --users=15 --spawn-rate=1.5 --run-time=45m --headless"
-
-lt15: ## Optimized test for 15 concurrent users (recommended for 8vCPU/16GB)
-	@echo "🎯 Running optimized 15-user load test..."
-	@echo "📊 Perfect for 8vCPU/16GB staging environment"
-	@if [ ! -f "config/.env.staging" ]; then \
-		echo "❌ ERROR: config/.env.staging file not found!"; \
-		exit 1; \
-	fi
-	@if [ ! -d ".venv" ]; then \
-		echo "📦 Creating virtual environment..."; \
-		python3 -m venv .venv; \
-	fi
-	@if [ ! -f ".venv/bin/locust" ]; then \
-		echo "📥 Installing dependencies..."; \
-		.venv/bin/pip install -r config/requirements.txt; \
-	fi
-	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=optimized_staging ../.venv/bin/locust -f optimized_locustfile.py --host=\$$VITE_API_URL --users=15 --spawn-rate=1.5 --run-time=30m --headless"
-
-lt20: ## Stress test with 20 concurrent users
-	@echo "🔥 Running stress test with 20 concurrent users..."
-	@echo "📊 Testing peak capacity on 8vCPU/16GB"
-	@if [ ! -f "config/.env.staging" ]; then \
-		echo "❌ ERROR: config/.env.staging file not found!"; \
-		exit 1; \
-	fi
-	@if [ ! -d ".venv" ]; then \
-		echo "📦 Creating virtual environment..."; \
-		python3 -m venv .venv; \
-	fi
-	@if [ ! -f ".venv/bin/locust" ]; then \
-		echo "📥 Installing dependencies..."; \
-		.venv/bin/pip install -r config/requirements.txt; \
-	fi
-	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=optimized_staging ../.venv/bin/locust -f optimized_locustfile.py --host=\$$VITE_API_URL --users=20 --spawn-rate=2 --run-time=20m --headless"
-
-lt25: ## Burst test with 25 concurrent users (capacity limit test)
-	@echo "💥 Running burst test with 25 concurrent users..."
-	@echo "📊 Testing absolute capacity limits"
-	@if [ ! -f "config/.env.staging" ]; then \
-		echo "❌ ERROR: config/.env.staging file not found!"; \
-		exit 1; \
-	fi
-	@if [ ! -d ".venv" ]; then \
-		echo "📦 Creating virtual environment..."; \
-		python3 -m venv .venv; \
-	fi
-	@if [ ! -f ".venv/bin/locust" ]; then \
-		echo "📥 Installing dependencies..."; \
-		.venv/bin/pip install -r config/requirements.txt; \
-	fi
-	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=optimized_staging ../.venv/bin/locust -f optimized_locustfile.py --host=\$$VITE_API_URL --users=25 --spawn-rate=5 --run-time=10m --headless"
 
 # Utility Targets
 .PHONY: l c vs r xs
@@ -321,22 +132,8 @@ xs: ## Create XML vector store
 help: ## Show this help message
 	@echo "ATLAS Load Testing - Available Targets:"
 	@echo ""
-	@echo "🚀 OPTIMIZED LOAD TESTING (Recommended for 8vCPU/16GB):"
-	@echo "  make lto     - Optimized 15-user test (45min, cache-busting)"
-	@echo "  make lt15    - Optimized 15-user test (30min, recommended)"
-	@echo "  make lt20    - Stress test with 20 users (20min)"
-	@echo "  make lt25    - Burst test with 25 users (10min)"
-	@echo ""
-	@echo "📊 STANDARD LOAD TESTING:"
+	@echo "📊 LOAD TESTING:"
 	@echo "  make lts     - Staging test (15 users, 30min)"
-	@echo "  make ltq     - Quick smoke test (1 user, 3min)"
-	@echo "  make ltpeak  - Peak load test (20 users, 10min)"
-	@echo "  make ltburst - Burst load test (25 users, 5min)"
-	@echo ""
-	@echo "🎯 SPECIALIZED TESTING:"
-	@echo "  make ltfocus - Focus group simulation (18 users, 45min)"
-	@echo "  make ltasync - Async processing test (15 users, 10min)"
-	@echo "  make ltweb   - Interactive web UI test"
 	@echo ""
 	@echo "🔧 DEVELOPMENT:"
 	@echo "  make b       - Start backend development server"
