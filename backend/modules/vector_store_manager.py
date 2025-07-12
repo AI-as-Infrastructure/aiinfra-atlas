@@ -12,7 +12,11 @@ import weakref
 from typing import Dict, Any, Optional
 from contextlib import contextmanager
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores import Chroma
+try:
+    from langchain_chroma import Chroma
+except ImportError:
+    # Fallback to legacy import for compatibility
+    from langchain_community.vectorstores import Chroma
 
 logger = logging.getLogger(__name__)
 
