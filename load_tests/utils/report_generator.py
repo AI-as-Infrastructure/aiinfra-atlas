@@ -256,7 +256,7 @@ Document Context Cache: {self.config.get('PROMPT_CACHE_CONTEXT', 'Unknown')}
 
 ### Key Metrics to Track
 1. **HTTP Success Rate** (target: >95% - measures basic connectivity)
-2. **Semantic Success Rate** (target: >90% - requires Phoenix/application monitoring)
+2. **Semantic Success Rate** (target: >90% - check Phoenix telemetry, filter by token count for zero-token failures)
 3. **P95 Response Time** (target: <20s for research queries)
 4. **System Resource Usage** (CPU <70%, RAM <85%)
 5. **Cache Hit Rate** (monitor efficiency)
@@ -336,11 +336,11 @@ Run load tests with `make lts` to generate current performance metrics.
 - **Details**: {test_results.get('total_requests', 0) - test_results.get('errors', 0)}/{test_results.get('total_requests', 0)} requests completed with HTTP 2xx status
 - **Status**: {self._get_status_text(success_rate, 95, 85)}
 
-### {semantic_icon} Semantic Success Rate (Answer Generation)
-- **Result**: {semantic_rate}% semantic success rate
-- **Details**: {test_results.get('streaming_sessions', 0) - test_results.get('zero_token_failures', 0)}/{test_results.get('streaming_sessions', 0)} questions generated answers (>0 tokens)
-- **Zero-token failures**: {test_results.get('zero_token_failures', 0)} complete failures (no answer generated)
-- **Status**: {self._get_status_text(semantic_rate, 90, 80)}
+### 📊 Semantic Success Rate (Answer Generation)
+- **Monitoring**: Check Phoenix telemetry for comprehensive answer quality metrics
+- **Zero-token Analysis**: Filter Phoenix results by token count to identify incomplete responses
+- **Details**: Phoenix provides detailed token counts and response quality metrics per query
+- **Status**: Use Phoenix monitoring for semantic success rate tracking
 
 ### {time_icon} Response Times
 - **Average Response Time**: {test_results.get('avg_response_time', 0)}s
