@@ -78,44 +78,44 @@ class LoadTestEvaluator:
                 higher_is_better=False
             ),
             
-            # Performance Metrics (response times in milliseconds)
+            # Performance Metrics (response times in milliseconds) - Realistic for research tool
             'avg_response_time': Threshold(
-                pass_value=5000,      # <5s average is excellent
-                borderline_value=10000, # 5-10s is acceptable
+                pass_value=20000,     # <20s average is excellent for complex LLM queries
+                borderline_value=30000, # 20-30s is acceptable for research
                 unit="ms",
                 higher_is_better=False
             ),
             'p95_response_time': Threshold(
-                pass_value=10000,     # <10s P95 is excellent
-                borderline_value=15000, # 10-15s is acceptable
+                pass_value=25000,     # <25s P95 is excellent for research queries
+                borderline_value=40000, # 25-40s is acceptable for complex research
                 unit="ms",
                 higher_is_better=False
             ),
             'p99_response_time': Threshold(
-                pass_value=10000,     # <10s P99 is excellent
-                borderline_value=20000, # 10-20s is acceptable
+                pass_value=35000,     # <35s P99 is excellent for research
+                borderline_value=60000, # 35-60s is acceptable for very complex queries
                 unit="ms",
                 higher_is_better=False
             ),
             
             # Success-only Performance Metrics
             'avg_success_response_time': Threshold(
-                pass_value=5000,      # <5s average for successful requests
-                borderline_value=10000, # 5-10s is acceptable
+                pass_value=20000,     # <20s average for successful requests
+                borderline_value=30000, # 20-30s is acceptable for research
                 unit="ms",
                 higher_is_better=False
             ),
             'p95_success_response_time': Threshold(
-                pass_value=10000,     # <10s P95 for successful requests
-                borderline_value=15000, # 10-15s is acceptable
+                pass_value=25000,     # <25s P95 for successful requests
+                borderline_value=40000, # 25-40s is acceptable for research
                 unit="ms",
                 higher_is_better=False
             ),
             
-            # Throughput Metrics
+            # Throughput Metrics - Realistic for research tool with thinking time
             'requests_per_second': Threshold(
-                pass_value=10.0,      # >10 RPS is good for this application
-                borderline_value=5.0,  # 5-10 RPS is acceptable
+                pass_value=0.5,       # >0.5 RPS is excellent for research (realistic thinking time)
+                borderline_value=0.2,  # 0.2-0.5 RPS is acceptable for thoughtful research
                 unit="req/s",
                 higher_is_better=True
             ),

@@ -146,6 +146,16 @@ def on_test_stop(environment, **kwargs):
         
         print(f"📋 Evaluation report saved to: {eval_file}")
         
+        # Generate comprehensive performance report
+        try:
+            from utils.report_generator import PerformanceReportGenerator
+            report_generator = PerformanceReportGenerator()
+            perf_report_file = report_dir / f'performance_report_{timestamp}.md'
+            report_generator.generate_report(str(perf_report_file))
+            print(f"📄 Performance report saved to: {perf_report_file}")
+        except Exception as report_error:
+            print(f"⚠️  Failed to generate performance report: {report_error}")
+        
         # Set exit code based on results
         if evaluation['overall_result'].value == 'FAIL':
             print("\n🚨 Load test FAILED - exiting with error code")
