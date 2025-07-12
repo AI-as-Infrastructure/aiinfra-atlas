@@ -187,8 +187,8 @@ def create_llm(
         return ChatGoogleGenerativeAI(
             google_api_key=google_api_key,
             model=model or "gemini-1.5-pro",
-            temperature=temperature,
-            streaming=streaming
+            temperature=temperature
+            # Note: streaming is enabled by default, no need to specify
         )
     else:
         logger.warning(f"Unknown provider '{provider}', falling back to OpenAI")
