@@ -207,9 +207,9 @@ class DataGenerator:
         """Generate a realistic QA ID"""
         return fake.uuid4()
     
-    def generate_corpus_filter(self) -> Dict[str, Any]:
+    def generate_corpus_filter(self) -> str:
         """Generate corpus filter parameters"""
-        return random.choice(self.corpus_filters)
+        return random.choice(["all", "1901_au", "1901_nz", "1901_uk"])
     
     def generate_feedback_data(self, qa_id: str, session_id: str, question: str = None, answer: str = None) -> Dict[str, Any]:
         """Generate feedback submission data matching actual UI format exactly"""
