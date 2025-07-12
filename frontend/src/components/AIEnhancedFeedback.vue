@@ -182,24 +182,24 @@
             </div>
           </div>
 
-          <!-- Completeness -->
+          <!-- Analysis Quality -->
           <div class="feedback-section">
             <label class="section-label">
-              Completeness
-              <span class="tooltip" title="How completely does the response address the question?">ⓘ</span>
-              <span v-if="hasAIScores && aiValidation.structured_feedback.completeness" class="ai-comparison">
-                (AI: {{ aiValidation.structured_feedback.completeness.score }}/5)
+              Analysis Quality
+              <span class="tooltip" title="Quality of historical analysis">ⓘ</span>
+              <span v-if="hasAIScores && (aiValidation.structured_feedback.completeness || aiValidation.structured_feedback.analysis_quality)" class="ai-comparison">
+                (AI: {{ (aiValidation.structured_feedback.analysis_quality || aiValidation.structured_feedback.completeness)?.score }}/5)
               </span>
             </label>
             <div class="likert-scale">
               <div
                 v-for="value in 5"
-                :key="`completeness-${value}`"
+                :key="`analysis-${value}`"
                 class="likert-option"
-                @click="setRating('completeness', value)"
+                @click="setRating('analysis_quality', value)"
               >
                 <div class="likert-label">
-                  <span class="likert-circle" :class="{ active: ratings.completeness >= value }"></span>
+                  <span class="likert-circle" :class="{ active: ratings.analysis_quality >= value }"></span>
                   <span class="likert-text">{{ value }}</span>
                 </div>
               </div>
@@ -230,24 +230,24 @@
             </div>
           </div>
 
-          <!-- Citation Quality -->
+          <!-- Difficulty -->
           <div class="feedback-section">
             <label class="section-label">
-              Citation Quality
-              <span class="tooltip" title="How appropriate and accurate are the citations?">ⓘ</span>
-              <span v-if="hasAIScores && aiValidation.structured_feedback.citation_quality" class="ai-comparison">
-                (AI: {{ aiValidation.structured_feedback.citation_quality.score }}/5)
+              Difficulty
+              <span class="tooltip" title="Difficulty of the query">ⓘ</span>
+              <span v-if="hasAIScores && (aiValidation.structured_feedback.citation_quality || aiValidation.structured_feedback.difficulty)" class="ai-comparison">
+                (AI: {{ (aiValidation.structured_feedback.difficulty || aiValidation.structured_feedback.citation_quality)?.score }}/5)
               </span>
             </label>
             <div class="likert-scale">
               <div
                 v-for="value in 5"
-                :key="`citation-${value}`"
+                :key="`difficulty-${value}`"
                 class="likert-option"
-                @click="setRating('citation_quality', value)"
+                @click="setRating('difficulty', value)"
               >
                 <div class="likert-label">
-                  <span class="likert-circle" :class="{ active: ratings.citation_quality >= value }"></span>
+                  <span class="likert-circle" :class="{ active: ratings.difficulty >= value }"></span>
                   <span class="likert-text">{{ value }}</span>
                 </div>
               </div>
@@ -275,6 +275,49 @@
                   <span class="likert-text">{{ value }}</span>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Faults Section -->
+        <div class="faults-section">
+          <label class="section-label">Faults</label>
+          <div class="faults-grid">
+            <div class="fault-option">
+              <input
+                type="checkbox"
+                id="fault-hallucination"
+                v-model="faults.hallucination"
+                :disabled="disabled"
+              />
+              <label for="fault-hallucination">Hallucination</label>
+            </div>
+            <div class="fault-option">
+              <input
+                type="checkbox"
+                id="fault-off-topic"
+                v-model="faults.off_topic"
+                :disabled="disabled"
+              />
+              <label for="fault-off-topic">Off-topic</label>
+            </div>
+            <div class="fault-option">
+              <input
+                type="checkbox"
+                id="fault-inappropriate"
+                v-model="faults.inappropriate"
+                :disabled="disabled"
+              />
+              <label for="fault-inappropriate">Inappropriate</label>
+            </div>
+            <div class="fault-option">
+              <input
+                type="checkbox"
+                id="fault-bias"
+                v-model="faults.bias"
+                :disabled="disabled"
+              />
+              <label for="fault-bias">Bias</label>
             </div>
           </div>
         </div>
@@ -385,10 +428,17 @@ const validationProgress = ref({
 // Human feedback state
 const ratings = ref({
   factual_accuracy: null,
-  completeness: null,
+  analysis_quality: null,
   relevance: null,
-  citation_quality: null,
+  difficulty: null,
   clarity: null
+})
+
+const faults = ref({
+  hallucination: false,
+  off_topic: false,
+  inappropriate: false,
+  bias: false
 })
 
 const aiAgreement = ref('')
@@ -405,7 +455,8 @@ const hasAIScores = computed(() => {
 
 const canSubmit = computed(() => {
   const hasRatings = Object.values(ratings.value).some(rating => rating !== null)
-  return hasRatings && !isSubmitting.value
+  const hasFaults = Object.values(faults.value).some(fault => fault === true)
+  return (hasRatings || hasFaults) && !isSubmitting.value
 })
 
 // Methods
@@ -555,13 +606,23 @@ function getAIQualityScores() {
   if (!aiValidation.value?.structured_feedback) return {}
   
   const scores = {}
-  const scoreFields = ['factual_accuracy', 'completeness', 'relevance', 'citation_quality', 'clarity', 'historical_context']
+  const feedback = aiValidation.value.structured_feedback
   
-  scoreFields.forEach(field => {
-    if (aiValidation.value.structured_feedback[field] && 
-        typeof aiValidation.value.structured_feedback[field] === 'object' && 
-        aiValidation.value.structured_feedback[field].score) {
-      scores[field] = aiValidation.value.structured_feedback[field]
+  // Map AI validation fields to our form fields, with fallbacks for backwards compatibility
+  const fieldMappings = {
+    'factual_accuracy': 'factual_accuracy',
+    'analysis_quality': 'completeness', // AI might return 'completeness', map to 'analysis_quality'
+    'relevance': 'relevance', 
+    'difficulty': 'citation_quality', // AI might return 'citation_quality', map to 'difficulty'
+    'clarity': 'clarity',
+    'historical_context': 'historical_context'
+  }
+  
+  Object.entries(fieldMappings).forEach(([displayField, aiField]) => {
+    // Try the exact field name first, then the mapped name
+    const aiData = feedback[displayField] || feedback[aiField]
+    if (aiData && typeof aiData === 'object' && aiData.score) {
+      scores[displayField] = aiData
     }
   })
   
@@ -588,6 +649,7 @@ async function submitFeedback() {
   try {
     const feedbackData = {
       ratings: ratings.value,
+      faults: faults.value,
       ai_agreement: aiAgreement.value,
       human_comments: humanComments.value,
       ai_validation: aiValidation.value,
@@ -774,6 +836,35 @@ onMounted(async () => {
 
 .ai-agreement-section .radio {
   margin-right: 1rem;
+}
+
+.faults-section {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid #eee;
+}
+
+.faults-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 1rem;
+  margin-top: 0.75rem;
+}
+
+.fault-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.fault-option input[type="checkbox"] {
+  margin: 0;
+}
+
+.fault-option label {
+  font-size: 14px;
+  color: #495057;
+  cursor: pointer;
 }
 
 .feedback-actions {
