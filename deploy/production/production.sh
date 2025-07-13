@@ -82,8 +82,8 @@ else
 fi
 CERT_DIR="/etc/letsencrypt/live/$DOMAIN"  # Where SSL certificates are stored
 
-# SSH key settings (allow override)
-SSH_KEY="${SSH_KEY_PATH:-$HOME/atlas-prod-key-west1.pem}"    # Path to the SSH key
+# SSH key settings (read from environment or use override)
+SSH_KEY="${SSH_KEY_PATH:-${SSH_KEY:-$HOME/atlas-prod-key.pem}}"    # Path to the SSH key
 
 # ---- END CONFIGURATION ----
 
@@ -370,7 +370,28 @@ if [ ! -f "\$CERT_DIR/fullchain.pem" ] || [ ! -f "\$CERT_DIR/privkey.pem" ]; the
             echo "You may need to run 'sudo certbot --nginx -d \$DOMAIN' manually after DNS propagation"
         fi
     else
-        echo "ERROR: SSL setup script not found. Please run certbot manually."
+        echo "SSL setup script not found. Running certbot directly..."
+        # Check if certbot is installed
+        if command -v certbot >/dev/null 2>&1; then
+            echo "Running: sudo certbot --nginx -d \$DOMAIN --non-interactive --agree-tos --email admin@\$DOMAIN --redirect"
+            sudo certbot --nginx -d \$DOMAIN --non-interactive --agree-tos --email admin@\$DOMAIN --redirect
+            if [ \$? -eq 0 ]; then
+                echo "✅ SSL certificates generated successfully"
+            else
+                echo "WARNING: Certbot failed. You may need to run 'sudo certbot --nginx -d \$DOMAIN' manually after DNS propagation"
+            fi
+        else
+            echo "ERROR: certbot not installed. Installing certbot..."
+            sudo apt update
+            sudo apt install -y certbot python3-certbot-nginx
+            echo "Running: sudo certbot --nginx -d \$DOMAIN --non-interactive --agree-tos --email admin@\$DOMAIN --redirect"
+            sudo certbot --nginx -d \$DOMAIN --non-interactive --agree-tos --email admin@\$DOMAIN --redirect
+            if [ \$? -eq 0 ]; then
+                echo "✅ SSL certificates generated successfully"
+            else
+                echo "WARNING: Certbot failed. You may need to run 'sudo certbot --nginx -d \$DOMAIN' manually after DNS propagation"
+            fi
+        fi
     fi
 else
     echo "✅ SSL certificates found at \$CERT_DIR"
