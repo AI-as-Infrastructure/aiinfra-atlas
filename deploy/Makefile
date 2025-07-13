@@ -26,7 +26,7 @@ p: ## Deploy to production (run locally on server)
 		echo "Please create it from config/.env.development and modify as needed."; \
 		exit 1; \
 	fi
-	@bash deploy/production/production-local.sh
+	@bash deploy/production/production.sh
 
 dp: ## Delete production environment
 	@./deploy/production/scripts/clean_prod.sh

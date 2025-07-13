@@ -1,6 +1,6 @@
 #!/bin/bash
 #=============================================================================
-# ATLAS PRODUCTION DEPLOYMENT
+# ATLAS LOCAL PRODUCTION DEPLOYMENT
 #=============================================================================
 # 
 # PURPOSE:
@@ -8,12 +8,12 @@
 #   It sets up the application with Nginx, Gunicorn, and uses Let's Encrypt SSL.
 # 
 # USAGE:
-#   Run this script directly on the production server after copying .env.production
-#   ./deploy/production/production.sh
+#   Run this script directly on the production server from the atlas project root:
+#   ./deploy/production/production-local.sh
 # 
 # REQUIREMENTS:
 #   - config/.env.production file must exist in the current directory
-#   - Script must be run from the atlas project root directory
+#   - Script must be run from the atlas project root directory  
 #   - User must have sudo privileges
 # 
 # NOTES:
@@ -34,14 +34,13 @@ GIT_BRANCH="${GIT_BRANCH:-main}"
 # Load all environment variables from production file
 if [ -f "config/.env.production" ]; then
     echo "Loading environment from config/.env.production"
-    # Load all variables from the file
     set -a
     source config/.env.production
     set +a
     echo "Environment variables loaded successfully"
     
     # Validate critical environment variables
-    required_vars=("ENVIRONMENT" "PRODUCTION_USER" "REDIS_PASSWORD" "VITE_API_URL")
+    required_vars=("ENVIRONMENT" "REDIS_PASSWORD" "VITE_API_URL")
     for var in "${required_vars[@]}"; do
         if [ -z "${!var}" ]; then
             echo "ERROR: $var is not set in config/.env.production"
@@ -57,15 +56,10 @@ else
 fi
 
 # ---- CONFIGURATION SECTION ----
-# App settings
-APP_NAME="atlas"                    # Name of the application
-APP_DIR="/opt/$APP_NAME"            # Installation directory on server
+APP_NAME="atlas"
+APP_DIR="/opt/$APP_NAME"
 
-# Server settings (read from environment when possible)
-PRODUCTION_IP=${1:-$PRODUCTION_HOST}  # Remote production server IP address
-SSH_USER=${2:-"atlas_deploy"}        # SSH username for remote deployment (default: atlas_deploy)
-
-# Domain settings - extract from VITE_API_URL if available
+# Domain settings - extract from VITE_API_URL
 if [ -n "$VITE_API_URL" ]; then
     DOMAIN=$(echo "$VITE_API_URL" | sed -E 's|^https?://||')
     echo "Using domain from VITE_API_URL: $DOMAIN"
@@ -74,417 +68,287 @@ else
     echo "Cannot determine domain for deployment"
     exit 1
 fi
-CERT_DIR="/etc/letsencrypt/live/$DOMAIN"  # Where SSL certificates are stored
+CERT_DIR="/etc/letsencrypt/live/$DOMAIN"
 
-# SSH key settings (read from environment or use override)
-SSH_KEY="${SSH_KEY_PATH:-${SSH_KEY:-$HOME/atlas-prod-key.pem}}"    # Path to the SSH key
+# Set current user as deploy user
+export DEPLOY_USER=$(whoami)
 
-# ---- END CONFIGURATION ----
-
-if [ -z "$PRODUCTION_IP" ]; then
-    echo "ERROR: Production IP address not provided and PRODUCTION_HOST not set in config/.env.production"
-    echo "Usage: $0 [PRODUCTION_IP] [SSH_USER]"
-    exit 1
-fi
-
-echo "🚀 Deploying to $SSH_USER@$PRODUCTION_IP:$APP_DIR"
+echo "🚀 Deploying locally to $APP_DIR"
 echo "   Using git branch: $GIT_BRANCH"
 echo "   Using domain: $DOMAIN"
+echo "   Running as user: $DEPLOY_USER"
 
-# Check if SSH key exists
-if [ ! -f "$SSH_KEY" ]; then
-    echo "ERROR: SSH key not found at $SSH_KEY"
-    echo "Please ensure the key exists or update the SSH_KEY path"
+# Install system dependencies
+echo "Installing system dependencies..."
+sudo apt update
+sudo apt install -y software-properties-common
+sudo add-apt-repository ppa:deadsnakes/ppa -y
+sudo apt update
+sudo apt install -y nginx python3.10 python3.10-venv python3.10-dev git-lfs redis-server curl build-essential
+
+# Verify we're running from the application directory
+if [ ! -f "config/.env.production" ]; then
+    echo "ERROR: This script must be run from the atlas project root directory"
+    echo "Expected to find config/.env.production in current directory"
     exit 1
 fi
 
-# 1. Copy the environment file to /tmp (as in staging)
-echo "Copying environment file..."
-scp -i $SSH_KEY config/.env.production $SSH_USER@$PRODUCTION_IP:/tmp/.env.production
-
-# 2. Now run the remote setup script (which will let git clone create $APP_DIR if needed)
-echo "Setting up the application on the server..."
-ssh -i $SSH_KEY -o StrictHostKeyChecking=no $SSH_USER@$PRODUCTION_IP << ENDSSH
-# Set variables from the local script
-APP_DIR="$APP_DIR"
-GITHUB_REPO="$GITHUB_REPO"
-GIT_BRANCH="$GIT_BRANCH"
-APP_NAME="$APP_NAME"
-DOMAIN="$DOMAIN"
-CERT_DIR="$CERT_DIR"
-
-# Ensure we use sudo where needed and set proper ownership
-export DEPLOY_USER=\$(whoami)
-
-# Load environment variables from production file as early as possible
-if [ -f "/tmp/.env.production" ]; then
-    echo "Loading environment from /tmp/.env.production"
-    # More robust way to load environment variables with special characters
-    set -a
-    source /tmp/.env.production
-    set +a
-    
-    # Validate critical variables again on the server
-    for var in ENVIRONMENT PRODUCTION_USER REDIS_PASSWORD VITE_API_URL; do
-        if [ -z "\${!var}" ]; then
-            echo "ERROR: \$var is not set in .env.production"
-            exit 1
-        fi
-    done
-    echo "✅ Environment loaded and validated"
-else
-    echo "ERROR: /tmp/.env.production not found! Deployment cannot continue."
+# Ensure we're in /opt/atlas
+CURRENT_DIR=$(pwd)
+if [ "$CURRENT_DIR" != "$APP_DIR" ]; then
+    echo "ERROR: This script must be run from $APP_DIR"
+    echo "Current directory: $CURRENT_DIR"
+    echo "Please clone the repository to $APP_DIR and run from there"
     exit 1
 fi
 
-# Set up application directory with proper permissions
-echo "Setting up application directory..."
-sudo mkdir -p \$APP_DIR
-sudo chown -R \$DEPLOY_USER:\$DEPLOY_USER \$APP_DIR
-
-# Clone or update the repository
-echo "Checking for existing repository..."
-# Use the configured Git branch for deployment
-if [ -d "\$APP_DIR/.git" ]; then
-    echo "Updating existing repository from branch \$GIT_BRANCH..."
-    cd \$APP_DIR && git fetch --all && git reset --hard origin/\$GIT_BRANCH && git lfs pull
-else
-    echo "Cloning fresh repository from branch \$GIT_BRANCH..."
-    if ! git clone --branch \$GIT_BRANCH \$GITHUB_REPO \$APP_DIR; then
-        echo "ERROR: Failed to clone branch \$GIT_BRANCH from \$GITHUB_REPO"
-        exit 1
-    fi
-    cd \$APP_DIR && git lfs pull
-fi
-
-# NOW copy the environment file from /tmp to the app's config directory
-echo "Copying environment file from /tmp to app directory..."
-if [ -f "/tmp/.env.production" ]; then
-    mkdir -p "\$APP_DIR/config"
-    mv /tmp/.env.production "\$APP_DIR/config/.env.production"
-    chmod 644 "\$APP_DIR/config/.env.production"
-    echo "✅ Environment file copied successfully"
-    
-    # Clean up any remaining temporary files
-    echo "Cleaning up temporary files..."
-    rm -f /tmp/.env.production 2>/dev/null || true
-else
-    echo "ERROR: /tmp/.env.production not found! Please transfer it before running this script."
-    exit 1
-fi
+echo "✅ Running from correct directory: $APP_DIR"
 
 # Update URLs in the environment file to use the actual domain
 echo "Updating environment URLs for production deployment..."
-sed -i "s#VITE_API_URL=.*#VITE_API_URL=https://\$DOMAIN#" \$APP_DIR/config/.env.production
-sed -i "s#CORS_ORIGINS=.*#CORS_ORIGINS=https://\$DOMAIN#" \$APP_DIR/config/.env.production
-sed -i "s#API_BASE_URL=.*#API_BASE_URL=https://\$DOMAIN/api#" \$APP_DIR/config/.env.production
-sed -i "s#WS_BASE_URL=.*#WS_BASE_URL=wss://\$DOMAIN/ws#" \$APP_DIR/config/.env.production
-echo "✅ Environment file updated with domain: \$DOMAIN"
+sed -i "s#VITE_API_URL=.*#VITE_API_URL=https://$DOMAIN#" $APP_DIR/config/.env.production
+sed -i "s#CORS_ORIGINS=.*#CORS_ORIGINS=https://$DOMAIN#" $APP_DIR/config/.env.production
+sed -i "s#API_BASE_URL=.*#API_BASE_URL=https://$DOMAIN/api#" $APP_DIR/config/.env.production
+sed -i "s#WS_BASE_URL=.*#WS_BASE_URL=wss://$DOMAIN/ws#" $APP_DIR/config/.env.production
+echo "✅ Environment file updated with domain: $DOMAIN"
 
-# Set up Python environment with explicit Python 3.10
+# Set up Python environment
 echo "Setting up Python environment..."
-cd \$APP_DIR
-python3.10 -m venv \$APP_DIR/.venv
-source \$APP_DIR/.venv/bin/activate
+cd $APP_DIR
+python3.10 -m venv $APP_DIR/.venv
+source $APP_DIR/.venv/bin/activate
 pip install --upgrade pip
 
-# Install requirements - MUST exist
-if [ -f "\$APP_DIR/requirements.txt" ]; then
-    pip install -r \$APP_DIR/requirements.txt
-elif [ -f "\$APP_DIR/config/requirements.txt" ]; then
-    pip install -r \$APP_DIR/config/requirements.txt
+# Install requirements
+if [ -f "$APP_DIR/requirements.txt" ]; then
+    pip install -r $APP_DIR/requirements.txt
+elif [ -f "$APP_DIR/config/requirements.txt" ]; then
+    pip install -r $APP_DIR/config/requirements.txt
 else
-    echo "ERROR: No requirements.txt found in \$APP_DIR or \$APP_DIR/config"
-    echo "This file is required for deployment"
+    echo "ERROR: No requirements.txt found"
     exit 1
 fi
 
 # Set up Python package structure
 echo "Setting up Python package structure..."
-mkdir -p \$APP_DIR/backend
-touch \$APP_DIR/backend/__init__.py
-echo "\$APP_DIR" > \$APP_DIR/.venv/lib/python3.10/site-packages/atlas.pth
-chmod 644 \$APP_DIR/.venv/lib/python3.10/site-packages/atlas.pth
+mkdir -p $APP_DIR/backend
+touch $APP_DIR/backend/__init__.py
+echo "$APP_DIR" > $APP_DIR/.venv/lib/python3.10/site-packages/atlas.pth
+chmod 644 $APP_DIR/.venv/lib/python3.10/site-packages/atlas.pth
 
 # Set up Redis with authentication
 echo "Configuring Redis with authentication..."
-REDIS_PASSWORD=\$(grep '^REDIS_PASSWORD' "\$APP_DIR/config/.env.production" | cut -d'=' -f2 | tr -d '"')
-if [ -z "\$REDIS_PASSWORD" ]; then
-    echo "ERROR: REDIS_PASSWORD not set in \$APP_DIR/config/.env.production"
+REDIS_PASSWORD=$(grep '^REDIS_PASSWORD' "$APP_DIR/config/.env.production" | cut -d'=' -f2 | tr -d '"')
+if [ -z "$REDIS_PASSWORD" ]; then
+    echo "ERROR: REDIS_PASSWORD not set in $APP_DIR/config/.env.production"
     exit 1
 fi
 
 # Set requirepass in redis.conf (idempotent)
 sudo sed -i "/^#* *requirepass /d" /etc/redis/redis.conf
-sudo bash -c "echo 'requirepass \$REDIS_PASSWORD' >> /etc/redis/redis.conf"
+sudo bash -c "echo 'requirepass $REDIS_PASSWORD' >> /etc/redis/redis.conf"
 
 # Enable and restart Redis
 sudo systemctl enable redis-server
 sudo systemctl restart redis-server
-sudo systemctl status redis-server --no-pager
-if [ \$? -ne 0 ]; then
-    echo "ERROR: Redis failed to start"
-    exit 1
-fi
 
-# Fix the Node.js version handling - MUST use 22.14.0 exactly
-echo "Setting up Node.js environment to match frontend/.nvmrc..."
-
-# Determine desired Node version
+# Set up Node.js environment - improved version from staging
+echo "Setting up Node.js environment..."
 TARGET_NODE="22.14.0"
-if [ -f "\$APP_DIR/frontend/.nvmrc" ]; then
-    TARGET_NODE=\$(cat "\$APP_DIR/frontend/.nvmrc" | tr -d 'v\r\n')
+if [ -f "$APP_DIR/frontend/.nvmrc" ]; then
+    TARGET_NODE=$(cat "$APP_DIR/frontend/.nvmrc" | tr -d 'v\r\n')
 fi
-echo "Target Node.js version: \$TARGET_NODE"
+echo "Target Node.js version: $TARGET_NODE"
 
-# Ensure nvm is installed
-export NVM_DIR="\$HOME/.nvm"
-if [ ! -s "\$NVM_DIR/nvm.sh" ]; then
-  echo "nvm not found – installing..."
-  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+# Always try to load nvm first
+export NVM_DIR="$HOME/.nvm"
+if [ -s "$NVM_DIR/nvm.sh" ]; then
+    echo "Loading nvm..."
+    \. "$NVM_DIR/nvm.sh"  # Load nvm
+    
+    # Check if nvm is now available
+    if command -v nvm &> /dev/null || type nvm &> /dev/null; then
+        echo "Using nvm to install Node.js $TARGET_NODE..."
+        nvm install $TARGET_NODE
+        nvm use $TARGET_NODE
+        NODE_PATH=$(which node)
+        echo "Using Node.js at: $NODE_PATH"
+    else
+        echo "nvm failed to load, falling back to system installation"
+        # Install system-wide from NodeSource
+        echo "Installing Node.js $TARGET_NODE from NodeSource..."
+        curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+        sudo apt-get install -y nodejs
+    fi
+else
+    echo "nvm not found, installing system-wide Node.js..."
+    # Install system-wide from NodeSource
+    echo "Installing Node.js $TARGET_NODE from NodeSource..."
+    curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+    sudo apt-get install -y nodejs
 fi
 
-# Load nvm and install/use Node
-. "\$NVM_DIR/nvm.sh"
-nvm install "\$TARGET_NODE"
-nvm alias default "\$TARGET_NODE"
-nvm use "\$TARGET_NODE"
-
-# Verify version
-node_version=\$(node -v)
-if [[ "\$node_version" != "v\$TARGET_NODE" ]]; then
-    echo "ERROR: Node.js version mismatch! Found \$node_version but need v\$TARGET_NODE"
-    exit 1
-fi
-echo "Node.js \$node_version confirmed"
+# Verify Node.js version
+node_version=$(node -v)
+echo "Node.js version: $node_version"
 
 # Prepare embedding model if using default model
 echo "Checking embedding model configuration..."
-EMBEDDING_MODEL=\$(grep "^EMBEDDING_MODEL=" "\$APP_DIR/config/.env.production" | cut -d '"' -f 2)
-if [ "\$EMBEDDING_MODEL" = "Livingwithmachines/bert_1890_1900" ]; then
+EMBEDDING_MODEL=$(grep "^EMBEDDING_MODEL=" "$APP_DIR/config/.env.production" | cut -d '"' -f 2)
+if [ "$EMBEDDING_MODEL" = "Livingwithmachines/bert_1890_1900" ]; then
     echo "Preparing default embedding model..."
-    # Ensure we're in the app directory and virtual environment is activated
-    cd \$APP_DIR
+    cd $APP_DIR
     . .venv/bin/activate
     python create/prepare_model.py
 else
-    echo "Skipping model preparation - using custom model: \$EMBEDDING_MODEL"
+    echo "Skipping model preparation - using custom model: $EMBEDDING_MODEL"
 fi
 
 # Set up frontend environment
 echo "Setting up frontend environment..."
-cd \$APP_DIR
+cd $APP_DIR
 
-# Verify environment file exists before running the script
-if [ ! -f "config/.env.production" ]; then
-    echo "ERROR: config/.env.production not found in \$APP_DIR"
-    ls -la config/
-    exit 1
-fi
-
-# Run the Vue files generation script - MUST exist
-if [ -f "\$APP_DIR/config/generate_vue_files.sh" ]; then
-    chmod +x \$APP_DIR/config/generate_vue_files.sh
-    \$APP_DIR/config/generate_vue_files.sh
-    
-    # Check result of script execution
-    if [ \$? -ne 0 ]; then
-        echo "ERROR: Failed to generate frontend environment files"
-        exit 1
-    fi
+# Run the Vue files generation script
+if [ -f "$APP_DIR/config/generate_vue_files.sh" ]; then
+    chmod +x $APP_DIR/config/generate_vue_files.sh
+    $APP_DIR/config/generate_vue_files.sh
     echo "✅ Frontend environment configured"
 else
-    echo "ERROR: config/generate_vue_files.sh not found in \$APP_DIR"
-    echo "This script is required for frontend configuration"
+    echo "ERROR: config/generate_vue_files.sh not found"
     exit 1
 fi
 
-# Build frontend - directory MUST exist
-if [ -d "\$APP_DIR/frontend" ]; then
+# Build frontend
+if [ -d "$APP_DIR/frontend" ]; then
     echo "Building frontend..."
-    cd \$APP_DIR/frontend
+    cd $APP_DIR/frontend
     
-    # Set Node options globally for the build
     export NODE_OPTIONS="--max_old_space_size=4096"
-    echo "Building with NODE_OPTIONS=\$NODE_OPTIONS"
-    
-    # Check for .nvmrc file and use the specified Node.js version if available
-    if [ -f ".nvmrc" ]; then
-        NVMRC_VERSION=\$(cat .nvmrc)
-        echo "Found .nvmrc file specifying Node.js version: \$NVMRC_VERSION"
-        
-        # Check current Node.js version
-        CURRENT_NODE_VERSION=\$(node -v)
-        echo "Current Node.js version: \$CURRENT_NODE_VERSION"
-        
-        # Compare versions (simplified check)
-        if [[ "\$CURRENT_NODE_VERSION" != *"\$NVMRC_VERSION"* ]]; then
-            echo "WARNING: Current Node.js version doesn't match .nvmrc version"
-            echo "The deployment may proceed, but for optimal compatibility, consider updating the server's Node.js version"
-        fi
-    else
-        echo "No .nvmrc file found, using system Node.js version: \$(node -v)"
-    fi
-    
-    # Check if package.json has Node.js version requirements
-    if [ -f "package.json" ] && grep -q "preinstall" package.json; then
-        echo "Modifying package.json to bypass Node.js version check..."
-        sed -i 's/"preinstall": ".*"/"preinstall": "echo Bypassing Node.js version check"/g' package.json
-    fi
-    
-    # Install and build
     npm install && npm run build
     
-    # Check if build succeeded - dist directory MUST exist
-    if [ -d "\$APP_DIR/frontend/dist" ]; then
+    if [ -d "$APP_DIR/frontend/dist" ]; then
         echo "✅ Frontend built successfully"
     else
-        echo "ERROR: Frontend build failed, dist directory not found"
+        echo "ERROR: Frontend build failed"
         exit 1
     fi
 else
-    echo "ERROR: frontend directory not found in \$APP_DIR"
-    echo "This directory is required for deployment"
+    echo "ERROR: frontend directory not found"
     exit 1
 fi
 
-# Verify SSL certificates exist before nginx configuration
+# Verify SSL certificates exist or set them up
 echo "Verifying SSL certificates..."
-if [ ! -f "\$CERT_DIR/fullchain.pem" ] || [ ! -f "\$CERT_DIR/privkey.pem" ]; then
-    echo "WARNING: SSL certificates not found at \$CERT_DIR"
-    if [ -f "/opt/setup-ssl.sh" ]; then
-        echo "Running SSL setup script..."
-        sudo /opt/setup-ssl.sh
-        # Wait a moment for the script to complete
-        sleep 10
-        
-        # Check again
-        if [ ! -f "\$CERT_DIR/fullchain.pem" ]; then
-            echo "WARNING: SSL certificates still not found. They may be generated later."
-            echo "You may need to run 'sudo certbot --nginx -d \$DOMAIN' manually after DNS propagation"
-        fi
+if [ ! -f "$CERT_DIR/fullchain.pem" ] || [ ! -f "$CERT_DIR/privkey.pem" ]; then
+    echo "SSL certificates not found. Setting up Let's Encrypt..."
+    
+    # Check if certbot is installed
+    if ! command -v certbot >/dev/null 2>&1; then
+        echo "Installing certbot..."
+        sudo apt update
+        sudo apt install -y certbot python3-certbot-nginx
+    fi
+    
+    echo "Running: sudo certbot --nginx -d $DOMAIN --non-interactive --agree-tos --email admin@$DOMAIN --redirect"
+    sudo certbot --nginx -d $DOMAIN --non-interactive --agree-tos --email admin@$DOMAIN --redirect
+    
+    if [ $? -eq 0 ]; then
+        echo "✅ SSL certificates generated successfully"
     else
-        echo "SSL setup script not found. Running certbot directly..."
-        # Check if certbot is installed
-        if command -v certbot >/dev/null 2>&1; then
-            echo "Running: sudo certbot --nginx -d \$DOMAIN --non-interactive --agree-tos --email admin@\$DOMAIN --redirect"
-            sudo certbot --nginx -d \$DOMAIN --non-interactive --agree-tos --email admin@\$DOMAIN --redirect
-            if [ \$? -eq 0 ]; then
-                echo "✅ SSL certificates generated successfully"
-            else
-                echo "WARNING: Certbot failed. You may need to run 'sudo certbot --nginx -d \$DOMAIN' manually after DNS propagation"
-            fi
-        else
-            echo "ERROR: certbot not installed. Installing certbot..."
-            sudo apt update
-            sudo apt install -y certbot python3-certbot-nginx
-            echo "Running: sudo certbot --nginx -d \$DOMAIN --non-interactive --agree-tos --email admin@\$DOMAIN --redirect"
-            sudo certbot --nginx -d \$DOMAIN --non-interactive --agree-tos --email admin@\$DOMAIN --redirect
-            if [ \$? -eq 0 ]; then
-                echo "✅ SSL certificates generated successfully"
-            else
-                echo "WARNING: Certbot failed. You may need to run 'sudo certbot --nginx -d \$DOMAIN' manually after DNS propagation"
-            fi
-        fi
+        echo "WARNING: Certbot failed. You may need to run 'sudo certbot --nginx -d $DOMAIN' manually after DNS propagation"
     fi
 else
-    echo "✅ SSL certificates found at \$CERT_DIR"
+    echo "✅ SSL certificates found at $CERT_DIR"
 fi
 
 # Set up Nginx and Gunicorn
 echo "Setting up Nginx and Gunicorn..."
-sudo mkdir -p /var/log/\$APP_NAME
+sudo mkdir -p /var/log/$APP_NAME
 
-# Create systemd service file with atlas_deploy user
+# Create systemd service file
 echo "Creating systemd service..."
 cat > /tmp/gunicorn.service << EOL
 [Unit]
-Description=Gunicorn instance for \$APP_NAME
+Description=Gunicorn instance for $APP_NAME
 After=network.target
 
 [Service]
-User=\$DEPLOY_USER
-Group=\$DEPLOY_USER
-WorkingDirectory=\$APP_DIR
-Environment="PATH=\$APP_DIR/.venv/bin"
-Environment="PYTHONPATH=\$APP_DIR"
-EnvironmentFile=\$APP_DIR/config/.env.production
-ExecStart=/bin/bash -c 'source \$APP_DIR/config/.env.production && \$APP_DIR/.venv/bin/python -m gunicorn backend.app:app -k uvicorn.workers.UvicornWorker -w \${GUNICORN_WORKERS:-8} -b 127.0.0.1:8000 --max-requests \${GUNICORN_MAX_REQUESTS:-3000} --max-requests-jitter \${GUNICORN_MAX_REQUESTS_JITTER:-300} --timeout \${GUNICORN_TIMEOUT:-300} --keep-alive \${GUNICORN_KEEPALIVE:-30} --worker-tmp-dir /dev/shm --access-logfile /var/log/\$APP_NAME/gunicorn-access.log --error-logfile /var/log/\$APP_NAME/gunicorn-error.log'
+User=$DEPLOY_USER
+Group=$DEPLOY_USER
+WorkingDirectory=$APP_DIR
+Environment="PATH=$APP_DIR/.venv/bin"
+Environment="PYTHONPATH=$APP_DIR"
+EnvironmentFile=$APP_DIR/config/.env.production
+ExecStart=/bin/bash -c 'source $APP_DIR/config/.env.production && $APP_DIR/.venv/bin/python -m gunicorn backend.app:app -k uvicorn.workers.UvicornWorker -w \${GUNICORN_WORKERS:-8} -b 127.0.0.1:8000 --max-requests \${GUNICORN_MAX_REQUESTS:-3000} --max-requests-jitter \${GUNICORN_MAX_REQUESTS_JITTER:-300} --timeout \${GUNICORN_TIMEOUT:-300} --keep-alive \${GUNICORN_KEEPALIVE:-30} --worker-tmp-dir /dev/shm --access-logfile /var/log/$APP_NAME/gunicorn-access.log --error-logfile /var/log/$APP_NAME/gunicorn-error.log'
 Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target
 EOL
 
-# Create Nginx config from template - template MUST exist
-echo "Setting up Nginx from template..."
+# Create LLM Worker service
+echo "Creating LLM worker service..."
+cat > /tmp/llm-worker.service << EOL
+[Unit]
+Description=Atlas LLM Background Worker
+After=network.target redis-server.service
+Requires=redis-server.service
 
-# Nginx template MUST exist
-if [ ! -f "\$APP_DIR/deploy/production/nginx.conf.template" ]; then
-    echo "ERROR: nginx.conf.template not found at \$APP_DIR/deploy/production/"
-    echo "This template is required for nginx configuration"
+[Service]
+User=$DEPLOY_USER
+Group=$DEPLOY_USER
+WorkingDirectory=$APP_DIR
+Environment="PATH=$APP_DIR/.venv/bin"
+Environment="PYTHONPATH=$APP_DIR"
+Environment="ENVIRONMENT=production"
+EnvironmentFile=$APP_DIR/config/.env.production
+Environment="WORKER_ID=production-worker-1"
+ExecStart=$APP_DIR/.venv/bin/python $APP_DIR/backend/services/worker.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOL
+
+# Create Nginx config from template
+echo "Setting up Nginx from template..."
+if [ ! -f "$APP_DIR/deploy/production/nginx.conf.template" ]; then
+    echo "ERROR: nginx.conf.template not found"
     exit 1
 fi
 
 # Set variables for the template
-export SERVER_NAME="\$DOMAIN"
-export APP_DIR="\$APP_DIR"
+export SERVER_NAME="$DOMAIN"
+export APP_DIR="$APP_DIR"
 
 # Process the template and create the final config
-envsubst '\$SERVER_NAME \$APP_DIR' < \$APP_DIR/deploy/production/nginx.conf.template > /tmp/nginx.conf
+envsubst '$SERVER_NAME $APP_DIR' < $APP_DIR/deploy/production/nginx.conf.template > /tmp/nginx.conf
 echo "✅ Nginx configuration generated from template"
 
 # Copy config files to server
 sudo mv /tmp/gunicorn.service /etc/systemd/system/
-sudo mv /tmp/nginx.conf /etc/nginx/sites-available/\$APP_NAME
-sudo ln -sf /etc/nginx/sites-available/\$APP_NAME /etc/nginx/sites-enabled/
+sudo mv /tmp/llm-worker.service /etc/systemd/system/
+sudo mv /tmp/nginx.conf /etc/nginx/sites-available/$APP_NAME
+sudo ln -sf /etc/nginx/sites-available/$APP_NAME /etc/nginx/sites-enabled/
 sudo rm -f /etc/nginx/sites-enabled/default
 
 # Set permissions and restart services
 echo "Setting permissions and restarting services..."
-sudo chown -R \$DEPLOY_USER:\$DEPLOY_USER \$APP_DIR /var/log/\$APP_NAME
+sudo chown -R $DEPLOY_USER:$DEPLOY_USER $APP_DIR /var/log/$APP_NAME
 sudo systemctl daemon-reload
-sudo systemctl enable gunicorn
-sudo systemctl restart gunicorn
+sudo systemctl enable gunicorn llm-worker
+sudo systemctl restart gunicorn llm-worker
 sudo nginx -t
-if [ \$? -ne 0 ]; then
+if [ $? -ne 0 ]; then
     echo "ERROR: Nginx configuration test failed"
     exit 1
 fi
 sudo systemctl restart nginx
 
-# Set up Redis with authentication
-echo "Configuring Redis with authentication..."
-REDIS_PASSWORD=\$(grep '^REDIS_PASSWORD' "\$APP_DIR/config/.env.production" | cut -d'=' -f2 | tr -d '"')
-if [ -z "\$REDIS_PASSWORD" ]; then
-    echo "ERROR: REDIS_PASSWORD not set in \$APP_DIR/config/.env.production"
-    exit 1
-fi
-
-# Set requirepass in redis.conf (idempotent)
-sudo sed -i "/^#* *requirepass /d" /etc/redis/redis.conf
-sudo bash -c "echo 'requirepass \$REDIS_PASSWORD' >> /etc/redis/redis.conf"
-
-# Enable and restart Redis
-sudo systemctl enable redis-server
-sudo systemctl restart redis-server
-sudo systemctl status redis-server --no-pager
-if [ \$? -ne 0 ]; then
-    echo "ERROR: Redis failed to start"
-    exit 1
-fi
-
 echo "✅ Deployment complete!"
-echo "✅ Application deployed to \$APP_DIR"
-echo "✅ Service running as user: \$DEPLOY_USER"
-echo "✅ Domain configured: \$DOMAIN"
-ENDSSH
-
-echo "Deployment to production server completed successfully!"
+echo "✅ Application deployed to $APP_DIR"
+echo "✅ Service running as user: $DEPLOY_USER"
+echo "✅ Domain configured: $DOMAIN"
+echo ""
 echo "Your application is now available at https://$DOMAIN"
-echo ""
-echo "To SSH into the server:"
-echo "ssh -i $SSH_KEY $SSH_USER@$PRODUCTION_IP"
-echo ""
-echo "To view logs:"
-echo "ssh -i $SSH_KEY $SSH_USER@$PRODUCTION_IP 'sudo tail -f /var/log/$APP_NAME/gunicorn-*.log'"
