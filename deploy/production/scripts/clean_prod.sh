@@ -4,62 +4,57 @@
 #=============================================================================
 # 
 # PURPOSE:
-#   This script completely removes the production environment, including all
-#   services, files, and configurations.
+#   This script completely removes the production environment.
+#   Can be run locally on the server or remotely via SSH.
 # 
 # USAGE:
-#   ./deploy/production/scripts/clean_prod.sh
-#
-# REQUIREMENTS:
-#   - AWS CLI configured with appropriate permissions
-#   - SSH access to the production server
+#   Local (on server): ./deploy/production/scripts/clean_prod.sh
+#   Remote: ./deploy/production/scripts/clean_prod.sh --remote
 #
 #=============================================================================
 
 set -e
 
-# ---------------------------------------------------------------------------
-# Load environment file to allow PRODUCTION_HOST override and other vars
-if [ -f "config/.env.production" ]; then
-  # shellcheck disable=SC1091
-  set -a
-  source config/.env.production
-  set +a
+APP_NAME="atlas"
+APP_DIR="/opt/atlas"
+
+# Check if running remotely
+if [ "$1" = "--remote" ]; then
+    # Remote cleanup via SSH (legacy mode)
+    # Load environment file to get connection details
+    if [ -f "config/.env.production" ]; then
+      set -a
+      source config/.env.production
+      set +a
+    fi
+
+    if [ -z "$PRODUCTION_HOST" ]; then
+        echo "❌ PRODUCTION_HOST not set in config/.env.production"
+        exit 1
+    fi
+
+    SSH_KEY="${SSH_KEY:-$HOME/atlas-prod-key.pem}"
+    PRODUCTION_USER="${PRODUCTION_USER:-atlas_deploy}"
+
+    echo "🧹 This will completely remove the production environment at $PRODUCTION_HOST"
+    echo "⚠️  This action cannot be undone!"
+    read -p "Are you sure you want to proceed? (y/N) " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "❌ Cleanup cancelled"
+        exit 1
+    fi
+
+    echo "Connecting to $PRODUCTION_HOST via SSH to perform cleanup..."
+    ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no $PRODUCTION_USER@"$PRODUCTION_HOST" \
+        "cd $APP_DIR && ./deploy/production/scripts/clean_prod.sh"
+    
+    echo "✅ Remote cleanup complete"
+    exit 0
 fi
 
-# Region configuration (fallback when we need AWS lookup)
-REGION="${AWS_REGION:-us-west-1}"
-
-# Determine instance IP / host
-if [ -n "$PRODUCTION_HOST" ]; then
-  INSTANCE_IP="$PRODUCTION_HOST"
-  echo "Using PRODUCTION_HOST from .env.production: $INSTANCE_IP"
-else
-  echo "PRODUCTION_HOST not set – falling back to AWS EC2 lookup"
-  PROFILE_OPTION=""
-  if [ -n "$AWS_PROFILE" ]; then
-    PROFILE_OPTION="--profile $AWS_PROFILE"
-  fi
-
-  set +e
-  INSTANCE_IP=$(aws ec2 describe-instances $PROFILE_OPTION --region "$REGION" \
-      --filters "Name=tag:Name,Values=atlas-prod-server" "Name=instance-state-name,Values=running" \
-      --query 'Reservations[0].Instances[0].PublicIpAddress' --output text 2>&1)
-  AWS_RC=$?
-  set -e
-
-  if [ $AWS_RC -ne 0 ] || [ -z "$INSTANCE_IP" ] || [ "$INSTANCE_IP" = "None" ]; then
-    echo "❌ Could not determine production instance IP (AWS lookup failed)."
-    exit 1
-  fi
-fi
-
-# SSH key path (can be overridden via SSH_KEY_PATH)
-SSH_KEY="${SSH_KEY_PATH:-$HOME/atlas-prod-key-west1.pem}"
-# ---------------------------------------------------------------------------
-
-# Confirm with user
-echo "🧹 This will completely remove the production environment at $INSTANCE_IP"
+# Local cleanup (default mode)
+echo "🧹 This will completely remove the production environment locally"
 echo "⚠️  This action cannot be undone!"
 read -p "Are you sure you want to proceed? (y/N) " -n 1 -r
 echo
@@ -68,40 +63,27 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     exit 1
 fi
 
-# Execute cleanup on remote server using AWS SSO
-echo "Connecting to $INSTANCE_IP via SSH to perform cleanup..."
-
-ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no ubuntu@"$INSTANCE_IP" bash -s << 'ENDCLEAN'
-
-set -e
-APP_NAME="atlas"
-
 echo 'Stopping and removing services...'
-# Stop and disable Gunicorn
-sudo systemctl stop gunicorn || true
-sudo systemctl disable gunicorn || true
-sudo rm -f /etc/systemd/system/gunicorn.service
-sudo systemctl daemon-reload
 
-# Stop and disable Nginx
-sudo systemctl stop nginx || true
-sudo systemctl disable nginx || true
+# Stop and disable services
+sudo systemctl stop gunicorn llm-worker 2>/dev/null || true
+sudo systemctl disable gunicorn llm-worker 2>/dev/null || true
+sudo rm -f /etc/systemd/system/gunicorn.service /etc/systemd/system/llm-worker.service
 
-# Stop and disable Redis
-sudo systemctl stop redis-server || true
-sudo systemctl disable redis-server || true
+# Remove nginx site config
+sudo rm -f /etc/nginx/sites-available/atlas /etc/nginx/sites-enabled/atlas
+sudo systemctl restart nginx 2>/dev/null || true
 
 # Remove application directory
-sudo rm -rf /home/ubuntu/atlas /opt/atlas
+sudo rm -rf $APP_DIR
 
 # Remove logs
-sudo rm -rf /var/log/atlas
+sudo rm -rf /var/log/$APP_NAME
 
-echo 'Reloading systemd...'
+# Clean up any temp files
+sudo rm -f /tmp/.env.production /tmp/gunicorn.service /tmp/llm-worker.service /tmp/nginx.conf
+
+# Reload systemd
 sudo systemctl daemon-reload
 
-echo '✅ Remote cleanup complete'
-
-ENDCLEAN
-
-echo "✅ Production environment cleaned up successfully!" 
+echo '✅ Local cleanup complete' 
