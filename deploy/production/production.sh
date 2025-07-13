@@ -4,28 +4,22 @@
 #=============================================================================
 # 
 # PURPOSE:
-#   This script deploys the application to a production EC2 instance over SSH.
+#   This script deploys the application locally on a production server.
 #   It sets up the application with Nginx, Gunicorn, and uses Let's Encrypt SSL.
 # 
 # USAGE:
-#   ./deploy/production/production.sh [PRODUCTION_IP] [SSH_USER]
-#
-# PARAMETERS:
-#   PRODUCTION_IP - IP address of the production server (required)
-#   SSH_USER      - SSH username for the production server (default: atlas_deploy)
-# 
-# EXAMPLE:
-#   ./deploy/production/production.sh 203.0.113.10 atlas_deploy
+#   Run this script directly on the production server after copying .env.production
+#   ./deploy/production/production.sh
 # 
 # REQUIREMENTS:
-#   - SSH access to the production server using the atlas-prod-key.pem key
-#   - config/.env.production file must exist
-#   - The EC2 instance must be created using the CloudFormation template
+#   - config/.env.production file must exist in the current directory
+#   - Script must be run from the atlas project root directory
+#   - User must have sudo privileges
 # 
 # NOTES:
-#   - Let's Encrypt certificates are automatically set up by the EC2 instance
+#   - Let's Encrypt certificates are automatically set up
 #   - The script will deploy the application to /opt/atlas
-#   - The web service will run using atlas_deploy user
+#   - The web service will run using the current user
 #
 #=============================================================================
 

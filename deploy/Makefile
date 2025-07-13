@@ -20,15 +20,13 @@ d: ## Destroy development environment
 
 # Production Deployment Targets
 .PHONY: p dp up sp
-p: ## Deploy to production
+p: ## Deploy to production (run locally on server)
 	@if [ ! -f "config/.env.production" ]; then \
 		echo "ERROR: config/.env.production file not found!"; \
 		echo "Please create it from config/.env.development and modify as needed."; \
 		exit 1; \
 	fi
-	@cp config/.env.production /tmp/.env.production
-	@bash deploy/production/production.sh
-	@rm -f /tmp/.env.production
+	@bash deploy/production/production-local.sh
 
 dp: ## Delete production environment
 	@./deploy/production/scripts/clean_prod.sh
