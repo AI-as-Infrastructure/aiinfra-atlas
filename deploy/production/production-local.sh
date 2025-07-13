@@ -81,6 +81,9 @@ echo "   Running as user: $DEPLOY_USER"
 # Install system dependencies
 echo "Installing system dependencies..."
 sudo apt update
+sudo apt install -y software-properties-common
+sudo add-apt-repository ppa:deadsnakes/ppa -y
+sudo apt update
 sudo apt install -y nginx python3.10 python3.10-venv python3.10-dev git-lfs redis-server curl build-essential
 
 # Set up application directory with proper permissions
