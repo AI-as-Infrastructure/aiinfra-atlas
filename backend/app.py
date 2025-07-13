@@ -1109,7 +1109,7 @@ async def validate_session(validation_request: ValidationRequest, request: Reque
         logger.error(f"Error during session validation: {e}")
         return ValidationResponse(
             success=False,
-            message=f"Error during session validation: {str(e)}",
+            message="Error during session validation",
             validation_config=validation_service.get_validation_config_info()
         )
 
