@@ -137,7 +137,9 @@ This workflow ensures that your retrievers are always in sync with your vector s
 - [Key Modules](docs/key_modules.md) - Core backend modules and their responsibilities
 
 ### Development and Deployment
-- [Staging Environments](docs/staging.md) - Local and remote staging deployment processes
+- [Development Environment](docs/development.md) - Local development setup, workflow, and debugging
+- [Staging Environment](docs/staging.md) - Local staging deployment for development and testing
+- [Production Deployment](docs/production.md) - Complete production deployment guide with SSL, systemd services, and maintenance
 - [Load Testing Framework](docs/load_testing.md) - Performance testing and optimization guidelines
 - [Vector Store Creation](docs/create_store.md) - Building and managing vector stores and retrievers
 
