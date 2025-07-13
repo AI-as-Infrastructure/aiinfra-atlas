@@ -152,7 +152,7 @@ sudo bash -c "echo 'requirepass $REDIS_PASSWORD' >> /etc/redis/redis.conf"
 sudo systemctl enable redis-server
 sudo systemctl restart redis-server
 
-# Set up Node.js environment - improved version from staging
+# Set up Node.js environment - exact version matching
 echo "Setting up Node.js environment..."
 TARGET_NODE="22.14.0"
 if [ -f "$APP_DIR/frontend/.nvmrc" ]; then
@@ -160,37 +160,43 @@ if [ -f "$APP_DIR/frontend/.nvmrc" ]; then
 fi
 echo "Target Node.js version: $TARGET_NODE"
 
-# Always try to load nvm first
+# First, remove any existing nodejs to avoid conflicts
+sudo apt remove -y nodejs npm 2>/dev/null || true
+
+# Install nvm if not present
 export NVM_DIR="$HOME/.nvm"
-if [ -s "$NVM_DIR/nvm.sh" ]; then
-    echo "Loading nvm..."
-    \. "$NVM_DIR/nvm.sh"  # Load nvm
-    
-    # Check if nvm is now available
-    if command -v nvm &> /dev/null || type nvm &> /dev/null; then
-        echo "Using nvm to install Node.js $TARGET_NODE..."
-        nvm install $TARGET_NODE
-        nvm use $TARGET_NODE
-        NODE_PATH=$(which node)
-        echo "Using Node.js at: $NODE_PATH"
-    else
-        echo "nvm failed to load, falling back to system installation"
-        # Install system-wide from NodeSource
-        echo "Installing Node.js $TARGET_NODE from NodeSource..."
-        curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-        sudo apt-get install -y nodejs
-    fi
-else
-    echo "nvm not found, installing system-wide Node.js..."
-    # Install system-wide from NodeSource
-    echo "Installing Node.js $TARGET_NODE from NodeSource..."
-    curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-    sudo apt-get install -y nodejs
+if [ ! -s "$NVM_DIR/nvm.sh" ]; then
+    echo "Installing nvm..."
+    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+    # Source nvm immediately
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 fi
 
-# Verify Node.js version
-node_version=$(node -v)
-echo "Node.js version: $node_version"
+# Load nvm
+echo "Loading nvm..."
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
+# Verify nvm is loaded
+if command -v nvm &> /dev/null; then
+    echo "nvm loaded successfully"
+    nvm install $TARGET_NODE
+    nvm use $TARGET_NODE
+    nvm alias default $TARGET_NODE
+    
+    # Verify exact version
+    node_version=$(node -v)
+    if [[ "$node_version" == "v$TARGET_NODE" ]]; then
+        echo "✅ Node.js $TARGET_NODE installed and activated"
+    else
+        echo "ERROR: Node.js version mismatch! Found $node_version but need v$TARGET_NODE"
+        exit 1
+    fi
+else
+    echo "ERROR: nvm failed to load properly"
+    exit 1
+fi
 
 # Prepare embedding model if using default model
 echo "Checking embedding model configuration..."
