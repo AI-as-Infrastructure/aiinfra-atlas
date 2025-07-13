@@ -10,10 +10,10 @@
             Social Science (HASS) research. ATLAS is a deliverable of the 
             <a href="https://aiinfra.anu.edu.au" target="_blank" rel="noreferrer"> AI as Infrastructure (AIINFRA)</a> project. AIINFRA's primary goal is to develop an evaluation framework for LLM RAG systems designed for 
             historical research. 
-          </p>
+          </p> 
           <h1 class="title">Code</h1>
           <p>
-            This code was developed with assistance from AI tools. It is made available under the <a href="https://mit-license.org/" target="_blank" rel="noreferrer">MIT License</a>.
+            This code was developed with assistance from AI tools. It is available on <a href="https://github.com/AI-as-Infrastructure/aiinfra-atlas" target="_blank" rel="noreferrer">GitHub</a>. The code is made available under the <a href="https://mit-license.org/" target="_blank" rel="noreferrer">MIT License</a>.
           </p>
           <h1 class="title">ATLAS Hansard Data Sources</h1>
           <p>
