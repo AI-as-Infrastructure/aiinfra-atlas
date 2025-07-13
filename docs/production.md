@@ -39,95 +39,23 @@ The deployment script automatically installs:
 
 ## Production Deployment
 
-### 1. Environment Configuration
+This tool has been hardened for protoytpe use with authenticated users and small user groups for limited periods.
 
-Create your production environment file:
+**Prerequisites:**
+- Configured environment file based on `.env.template`
+- Server with SSH access and sudo privileges
+- Domain with DNS configured
 
-```bash
-cp config/.env.template config/.env.production
-```
-
-Edit `config/.env.production` with your production settings:
-
-```bash
-# Core Configuration
-ENVIRONMENT=production
-VITE_LOG_LEVEL=error
-BACKEND_LOG_LEVEL=error
-
-# Frontend Configuration
-VITE_SITE_TITLE="Your Site Title"
-VITE_API_URL=https://your-domain.com
-CORS_ORIGINS=https://your-domain.com
-
-# Security
-REDIS_PASSWORD=your-secure-redis-password
-
-# LLM API Keys (set at least one)
-ANTHROPIC_API_KEY=your-anthropic-key
-OPENAI_API_KEY=your-openai-key
-GOOGLE_API_KEY=your-google-key
-
-# Optional: AWS Bedrock Configuration
-AWS_DEFAULT_REGION=us-east-1
-AWS_ACCESS_KEY_ID=your-aws-key
-AWS_SECRET_ACCESS_KEY=your-aws-secret
-
-# Optional: Observability (Arize Phoenix)
-PHOENIX_CLIENT_HEADERS="api_key=your-phoenix-key"
-PHOENIX_PROJECT_NAME=your-project-name
-
-# Optional: Authentication (AWS Cognito)
-VITE_USE_COGNITO_AUTH=true
-VITE_COGNITO_REGION=your-region
-VITE_COGNITO_USERPOOL_ID=your-pool-id
-VITE_COGNITO_CLIENT_ID=your-client-id
-```
-
-### 2. Deploy to Server
-
-**Step 1: Clone repository to production location**
-
-SSH into your server and clone directly to `/opt/atlas`:
+**Deployment:**
+Run the production deployment script on your target server:
 
 ```bash
-ssh user@your-server.com
-sudo git clone https://github.com/AI-as-Infrastructure/aiinfra-atlas.git /opt/atlas
-sudo chown -R $(whoami):$(whoami) /opt/atlas
-cd /opt/atlas
-git lfs pull
-```
-
-**Step 2: Copy environment configuration**
-
-From your local machine, copy the production environment file:
-
-```bash
-scp config/.env.production user@your-server.com:/opt/atlas/config/.env.production
-```
-
-**Step 3: Run deployment**
-
-SSH back into the server and run the deployment:
-
-```bash
-ssh user@your-server.com
-cd /opt/atlas
 make p
 ```
 
-The deployment script will:
-- Install all system dependencies
-- Set up Python 3.10 virtual environment
-- Install Node.js 22.14.0 via nvm
-- Configure Redis with authentication
-- Build the frontend application
-- Set up Let's Encrypt SSL certificates
-- Configure Nginx reverse proxy
-- Create and start systemd services
-- Configure automatic service startup
+For enterprise deployments, we recommend additional security hardening, load testing, and security review.
 
-### 3. Verify Deployment
+### Verify Deployment
 
 After deployment completes, verify the services:
 
@@ -147,19 +75,7 @@ Your application should now be available at `https://your-domain.com`.
 
 ## Staging Deployment
 
-For staging deployments, use the staging scripts:
-
-```bash
-# Local staging (for development)
-make sl
-
-# Remote staging server
-cp config/.env.template config/.env.staging
-# Edit config/.env.staging with staging settings
-make sr
-```
-
-Staging deployments use self-signed certificates and are optimized for testing.
+For staging deployments, see the [Staging Environment Guide](staging.md).
 
 ## Environment Configuration
 
