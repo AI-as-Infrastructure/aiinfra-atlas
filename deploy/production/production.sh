@@ -84,7 +84,7 @@ sudo apt update
 sudo apt install -y software-properties-common
 sudo add-apt-repository ppa:deadsnakes/ppa -y
 sudo apt update
-sudo apt install -y nginx python3.10 python3.10-venv python3.10-dev git-lfs redis-server curl build-essential
+sudo apt install -y nginx python3.10 python3.10-venv python3.10-dev git-lfs redis-server curl build-essential make
 
 # Verify we're running from the application directory
 if [ ! -f "config/.env.production" ]; then
