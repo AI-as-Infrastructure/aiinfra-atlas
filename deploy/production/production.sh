@@ -243,7 +243,39 @@ else
     exit 1
 fi
 
-# Verify SSL certificates exist or set them up
+# Set up Nginx configuration first (before SSL)
+echo "Setting up Nginx configuration..."
+sudo mkdir -p /var/log/$APP_NAME
+
+# Create Nginx config from template
+echo "Setting up Nginx from template..."
+if [ ! -f "$APP_DIR/deploy/production/nginx.conf.template" ]; then
+    echo "ERROR: nginx.conf.template not found"
+    exit 1
+fi
+
+# Set variables for the template
+export SERVER_NAME="$DOMAIN"
+export APP_DIR="$APP_DIR"
+
+# Process the template and create the final config
+envsubst '$SERVER_NAME $APP_DIR' < $APP_DIR/deploy/production/nginx.conf.template > /tmp/nginx.conf
+echo "✅ Nginx configuration generated from template"
+
+# Install nginx config
+sudo mv /tmp/nginx.conf /etc/nginx/sites-available/$APP_NAME
+sudo ln -sf /etc/nginx/sites-available/$APP_NAME /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/default
+
+# Test nginx config
+sudo nginx -t
+if [ $? -ne 0 ]; then
+    echo "ERROR: Nginx configuration test failed"
+    exit 1
+fi
+sudo systemctl restart nginx
+
+# Now verify SSL certificates exist or set them up
 echo "Verifying SSL certificates..."
 if [ ! -f "$CERT_DIR/fullchain.pem" ] || [ ! -f "$CERT_DIR/privkey.pem" ]; then
     echo "SSL certificates not found. Setting up Let's Encrypt..."
@@ -267,9 +299,8 @@ else
     echo "✅ SSL certificates found at $CERT_DIR"
 fi
 
-# Set up Nginx and Gunicorn
-echo "Setting up Nginx and Gunicorn..."
-sudo mkdir -p /var/log/$APP_NAME
+# Set up Gunicorn
+echo "Setting up Gunicorn..."
 
 # Create systemd service file
 echo "Creating systemd service..."
@@ -317,27 +348,9 @@ RestartSec=5
 WantedBy=multi-user.target
 EOL
 
-# Create Nginx config from template
-echo "Setting up Nginx from template..."
-if [ ! -f "$APP_DIR/deploy/production/nginx.conf.template" ]; then
-    echo "ERROR: nginx.conf.template not found"
-    exit 1
-fi
-
-# Set variables for the template
-export SERVER_NAME="$DOMAIN"
-export APP_DIR="$APP_DIR"
-
-# Process the template and create the final config
-envsubst '$SERVER_NAME $APP_DIR' < $APP_DIR/deploy/production/nginx.conf.template > /tmp/nginx.conf
-echo "✅ Nginx configuration generated from template"
-
-# Copy config files to server
+# Copy service config files to server
 sudo mv /tmp/gunicorn.service /etc/systemd/system/
 sudo mv /tmp/llm-worker.service /etc/systemd/system/
-sudo mv /tmp/nginx.conf /etc/nginx/sites-available/$APP_NAME
-sudo ln -sf /etc/nginx/sites-available/$APP_NAME /etc/nginx/sites-enabled/
-sudo rm -f /etc/nginx/sites-enabled/default
 
 # Set permissions and restart services
 echo "Setting permissions and restarting services..."
