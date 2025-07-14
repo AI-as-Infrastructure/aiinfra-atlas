@@ -243,31 +243,60 @@ else
     exit 1
 fi
 
-# Set up Nginx configuration first (before SSL)
-echo "Setting up Nginx configuration..."
+# Set up initial HTTP-only Nginx configuration (before SSL)
+echo "Setting up initial HTTP Nginx configuration..."
 sudo mkdir -p /var/log/$APP_NAME
 
-# Create Nginx config from template
-echo "Setting up Nginx from template..."
-if [ ! -f "$APP_DIR/deploy/production/nginx.conf.template" ]; then
-    echo "ERROR: nginx.conf.template not found"
-    exit 1
-fi
+# Create initial HTTP-only nginx config for certbot
+cat > /tmp/nginx.conf << EOL
+server {
+    listen 80;
+    server_name $DOMAIN;
+    
+    # Let's Encrypt HTTP challenge
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+    
+    # Temporary proxy to backend for initial setup
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+    
+    location /api {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+    
+    location /ws {
+        proxy_pass http://127.0.0.1:8000/ws;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+EOL
 
-# Set variables for the template
-export SERVER_NAME="$DOMAIN"
-export APP_DIR="$APP_DIR"
-
-# Process the template and create the final config
-envsubst '$SERVER_NAME $APP_DIR' < $APP_DIR/deploy/production/nginx.conf.template > /tmp/nginx.conf
-echo "✅ Nginx configuration generated from template"
-
-# Install nginx config
+# Install initial nginx config
 sudo mv /tmp/nginx.conf /etc/nginx/sites-available/$APP_NAME
 sudo ln -sf /etc/nginx/sites-available/$APP_NAME /etc/nginx/sites-enabled/
 sudo rm -f /etc/nginx/sites-enabled/default
 
-# Test nginx config
+# Create web root for Let's Encrypt challenges
+sudo mkdir -p /var/www/html
+
+# Test and restart nginx
 sudo nginx -t
 if [ $? -ne 0 ]; then
     echo "ERROR: Nginx configuration test failed"
@@ -298,6 +327,32 @@ if [ ! -f "$CERT_DIR/fullchain.pem" ] || [ ! -f "$CERT_DIR/privkey.pem" ]; then
 else
     echo "✅ SSL certificates found at $CERT_DIR"
 fi
+
+# Now replace with the full nginx config from template (includes SSL and static files)
+echo "Setting up full Nginx configuration from template..."
+if [ ! -f "$APP_DIR/deploy/production/nginx.conf.template" ]; then
+    echo "ERROR: nginx.conf.template not found"
+    exit 1
+fi
+
+# Set variables for the template
+export SERVER_NAME="$DOMAIN"
+export APP_DIR="$APP_DIR"
+
+# Process the template and create the final config
+envsubst '$SERVER_NAME $APP_DIR' < $APP_DIR/deploy/production/nginx.conf.template > /tmp/nginx_final.conf
+echo "✅ Full Nginx configuration generated from template"
+
+# Install final nginx config
+sudo mv /tmp/nginx_final.conf /etc/nginx/sites-available/$APP_NAME
+
+# Test final nginx config
+sudo nginx -t
+if [ $? -ne 0 ]; then
+    echo "ERROR: Final Nginx configuration test failed"
+    exit 1
+fi
+sudo systemctl restart nginx
 
 # Set up Gunicorn
 echo "Setting up Gunicorn..."
