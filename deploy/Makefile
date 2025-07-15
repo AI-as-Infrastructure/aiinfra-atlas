@@ -33,12 +33,6 @@ dp: ## Delete production environment
 
 up: ## Upgrade production with minimal downtime (run on server)
 	@echo "🚀 Production upgrade using simple server-side approach"
-	@echo "📋 Usage: SSH into production server, then run 'make up'"
-	@echo ""
-	@echo "  ssh -i /path/to/key atlas_deploy@your-server"
-	@echo "  cd /opt/atlas"
-	@echo "  make up"
-	@echo ""
 	@if [ ! -f "config/.env.production" ]; then \
 		echo "ERROR: config/.env.production file not found!"; \
 		echo "Please ensure you're running this on the production server."; \
@@ -48,13 +42,7 @@ up: ## Upgrade production with minimal downtime (run on server)
 
 upf: ## Full upgrade production with complete rebuild (run on server)
 	@echo "🚀 FULL Production upgrade - complete rebuild"
-	@echo "📋 Usage: SSH into production server, then run 'make upf'"
 	@echo "⚠️  Use this when you've changed .env.production or need complete rebuild"
-	@echo ""
-	@echo "  ssh -i /path/to/key atlas_deploy@your-server"
-	@echo "  cd /opt/atlas"
-	@echo "  make upf"
-	@echo ""
 	@if [ ! -f "config/.env.production" ]; then \
 		echo "ERROR: config/.env.production file not found!"; \
 		echo "Please ensure you're running this on the production server."; \

@@ -9,7 +9,6 @@ trap 'echo "❌ Upgrade failed at line $LINENO"; exit 1' ERR
 # Configuration
 APP_NAME="atlas"
 APP_DIR="/opt/atlas"
-BACKUP_DIR="/opt/atlas_backup"
 GIT_BRANCH="${GIT_BRANCH:-main}"
 
 echo "🚀 Starting production upgrade (server-side)..."
@@ -35,70 +34,33 @@ set +a
 # Extract domain for final verification
 DOMAIN=$(echo "$VITE_API_URL" | sed -E 's|^https?://||; s|/$||')
 
-# 3. Remove old backup and create new one
-echo "📦 Creating backup..."
-sudo rm -rf "$BACKUP_DIR"
-sudo cp -r "$APP_DIR" "$BACKUP_DIR"
-echo "✅ Backup created at $BACKUP_DIR"
-
-# 4. Update code
+# 3. Update code
 echo "🔄 Updating code..."
 git stash push -m "Production upgrade stash $(date)" || true
 git fetch origin
 git reset --hard origin/$GIT_BRANCH
 git lfs pull
 
-# 5. Check if we need to rebuild frontend
-FRONTEND_REBUILD=false
-if [ -f "$BACKUP_DIR/frontend/package.json" ]; then
-    if ! diff -q frontend/package.json "$BACKUP_DIR/frontend/package.json" >/dev/null 2>&1; then
-        echo "📦 Frontend dependencies changed - rebuild required"
-        FRONTEND_REBUILD=true
-    fi
-    if ! diff -q frontend/src "$BACKUP_DIR/frontend/src" >/dev/null 2>&1; then
-        echo "📦 Frontend source changed - rebuild required"
-        FRONTEND_REBUILD=true
-    fi
-else
-    echo "📦 No previous frontend found - rebuild required"
-    FRONTEND_REBUILD=true
-fi
+# 4. Always rebuild frontend for simplicity
+echo "🏗️ Rebuilding frontend..."
+cd frontend
+npm install
+export NODE_OPTIONS="--max_old_space_size=4096"
+npm run build
+cd ..
 
-# 6. Rebuild frontend if needed
-if [ "$FRONTEND_REBUILD" = true ]; then
-    echo "🏗️ Rebuilding frontend..."
-    cd frontend
-    npm install
-    export NODE_OPTIONS="--max_old_space_size=4096"
-    npm run build
-    cd ..
-    
-    # Update frontend environment files
-    export ENVIRONMENT=production
-    chmod +x config/generate_vue_files.sh
-    ./config/generate_vue_files.sh
-else
-    echo "✅ Frontend unchanged - skipping rebuild"
-fi
+# Update frontend environment files
+export ENVIRONMENT=production
+chmod +x config/generate_vue_files.sh
+./config/generate_vue_files.sh
 
-# 7. Check if Python dependencies changed
-if [ -f "$BACKUP_DIR/config/requirements.txt" ]; then
-    if ! diff -q config/requirements.txt "$BACKUP_DIR/config/requirements.txt" >/dev/null 2>&1; then
-        echo "📦 Python dependencies changed - updating..."
-        source .venv/bin/activate
-        pip install --upgrade pip
-        pip install -r config/requirements.txt
-    else
-        echo "✅ Python dependencies unchanged"
-    fi
-else
-    echo "📦 No previous requirements found - installing dependencies..."
-    source .venv/bin/activate
-    pip install --upgrade pip
-    pip install -r config/requirements.txt
-fi
+# 5. Update Python dependencies
+echo "🐍 Updating Python dependencies..."
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r config/requirements.txt
 
-# 8. Graceful service restart
+# 6. Graceful service restart
 echo "🔄 Restarting services..."
 
 # Stop services gracefully
@@ -127,47 +89,19 @@ sudo systemctl reset-failed gunicorn llm-worker || true
 echo "Starting services..."
 sudo systemctl start gunicorn llm-worker
 
-# 9. Verify services are running
+# 7. Verify services are running
 echo "🔍 Verifying services..."
 sleep 5  # Give services time to start
 
-ROLLBACK_NEEDED=false
 for service in gunicorn llm-worker; do
     if ! sudo systemctl is-active --quiet $service; then
         echo "❌ ERROR: $service failed to start"
-        ROLLBACK_NEEDED=true
-        break
+        echo "Check logs: journalctl -u $service -n 50"
+        exit 1
     fi
 done
 
-if [ "$ROLLBACK_NEEDED" = true ]; then
-    echo "🔄 Attempting rollback..."
-    
-    # Stop current services
-    sudo systemctl stop gunicorn llm-worker || true
-    
-    # Restore backup
-    sudo rm -rf "$APP_DIR"
-    sudo mv "$BACKUP_DIR" "$APP_DIR"
-    
-    # Start services with backup
-    sudo systemctl start gunicorn llm-worker
-    
-    # Verify rollback worked
-    sleep 5
-    if sudo systemctl is-active --quiet gunicorn && sudo systemctl is-active --quiet llm-worker; then
-        echo "✅ Rollback successful - services restored"
-        echo "Check logs for upgrade failure: journalctl -u gunicorn -n 50"
-        exit 1
-    else
-        echo "❌ Rollback failed - manual intervention required"
-        echo "Check logs: journalctl -u gunicorn -n 50"
-        echo "Check logs: journalctl -u llm-worker -n 50"
-        exit 1
-    fi
-fi
-
-# 10. Restart Nginx
+# 8. Restart Nginx
 echo "🔄 Restarting Nginx..."
 sudo nginx -t
 if [ $? -ne 0 ]; then
@@ -176,7 +110,7 @@ if [ $? -ne 0 ]; then
 fi
 sudo systemctl reload nginx
 
-# 11. Verify application is responding
+# 9. Verify application is responding
 echo "🔍 Testing application response..."
 sleep 2
 if curl -s -o /dev/null -w "%{http_code}" "https://$DOMAIN" | grep -q "200\|301\|302"; then
@@ -185,10 +119,6 @@ else
     echo "⚠️ Application may not be responding correctly"
     echo "Check manually: curl -I https://$DOMAIN"
 fi
-
-# 12. Cleanup - remove backup since upgrade was successful
-echo "🧹 Cleaning up successful upgrade..."
-sudo rm -rf "$BACKUP_DIR"
 
 echo "✅ Production upgrade complete!"
 echo "✅ Application running at: https://$DOMAIN"
