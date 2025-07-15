@@ -523,8 +523,8 @@ export default {
 }
 
 .likert-circle.active {
-  background-color: #007bff;
-  border-color: #007bff;
+  background-color: #363636;
+  border-color: #363636;
 }
 
 .likert-text {
