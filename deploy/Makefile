@@ -31,15 +31,20 @@ p: ## Deploy to production (run locally on server)
 dp: ## Delete production environment
 	@./deploy/production/scripts/clean_prod.sh
 
-up: ## Upgrade production with minimal downtime
+up: ## Upgrade production with minimal downtime (run on server)
+	@echo "🚀 Production upgrade using simple server-side approach"
+	@echo "📋 Usage: SSH into production server, then run 'make up'"
+	@echo ""
+	@echo "  ssh -i /path/to/key atlas_deploy@your-server"
+	@echo "  cd /opt/atlas"
+	@echo "  make up"
+	@echo ""
 	@if [ ! -f "config/.env.production" ]; then \
 		echo "ERROR: config/.env.production file not found!"; \
-		echo "Please create it from config/.env.development and modify as needed."; \
+		echo "Please ensure you're running this on the production server."; \
 		exit 1; \
 	fi
-	@cp config/.env.production /tmp/.env.production
-	@bash deploy/production/scripts/upgrade_prod.sh
-	@rm -f /tmp/.env.production
+	@bash deploy/production/scripts/simple_upgrade.sh
 
 sp: ## Stop production environment gracefully
 	@echo "🚨 WARNING: This will stop the production environment!"
