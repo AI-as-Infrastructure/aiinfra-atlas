@@ -46,6 +46,22 @@ up: ## Upgrade production with minimal downtime (run on server)
 	fi
 	@bash deploy/production/scripts/simple_upgrade.sh
 
+upf: ## Full upgrade production with complete rebuild (run on server)
+	@echo "🚀 FULL Production upgrade - complete rebuild"
+	@echo "📋 Usage: SSH into production server, then run 'make upf'"
+	@echo "⚠️  Use this when you've changed .env.production or need complete rebuild"
+	@echo ""
+	@echo "  ssh -i /path/to/key atlas_deploy@your-server"
+	@echo "  cd /opt/atlas"
+	@echo "  make upf"
+	@echo ""
+	@if [ ! -f "config/.env.production" ]; then \
+		echo "ERROR: config/.env.production file not found!"; \
+		echo "Please ensure you're running this on the production server."; \
+		exit 1; \
+	fi
+	@bash deploy/production/scripts/full_upgrade.sh
+
 sp: ## Stop production environment gracefully
 	@echo "🚨 WARNING: This will stop the production environment!"
 	@read -p "Are you sure you want to continue? (y/N): " confirm && [ "$$confirm" = "y" ] || exit 1
