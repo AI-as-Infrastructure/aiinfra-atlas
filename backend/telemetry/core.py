@@ -10,6 +10,10 @@ import uuid
 import logging
 from contextlib import contextmanager
 from typing import Dict, Any, Optional, ContextManager
+from contextvars import ContextVar
+
+# Context variable to track user telemetry preference for the current request
+_user_telemetry_enabled: ContextVar[bool] = ContextVar('user_telemetry_enabled', default=True)
 
 # Phoenix native imports for proper span management
 try:
@@ -224,33 +228,70 @@ def using_session(session_id: str = None, metadata: Dict[str, Any] = None):
     with using_project(_project_name):
         yield session_id
 
-def is_telemetry_enabled() -> bool:
+def is_telemetry_enabled(request=None) -> bool:
     """
-    Check if telemetry is enabled via environment variable.
+    Check if telemetry is enabled based on environment variable and user preference.
     
-    The TELEMETRY_ENABLED environment variable controls whether telemetry
-    is active. When disabled, all telemetry operations become no-ops.
+    Checks both:
+    1. TELEMETRY_ENABLED environment variable (system-wide control)
+    2. User preference via context variable or request headers (user control)
     
-    Accepted values for enabling telemetry:
-    - "true", "1", "yes", "on" (case-insensitive)
-    - Empty string or unset (defaults to enabled)
+    If system telemetry is disabled, returns False regardless of user preference.
+    If system telemetry is enabled, respects user preference (no headers = privacy enabled).
     
-    Accepted values for disabling telemetry:
-    - "false", "0", "no", "off" (case-insensitive)
-    - Any other value
-    
+    Args:
+        request: Optional FastAPI/Flask request object to check for telemetry headers
+        
     Returns:
         bool: True if telemetry should be enabled, False otherwise
         
     Examples:
-        export TELEMETRY_ENABLED=false  # Disables telemetry
-        export TELEMETRY_ENABLED=true   # Enables telemetry
-        unset TELEMETRY_ENABLED         # Defaults to enabled
+        export TELEMETRY_ENABLED=false  # Disables telemetry system-wide
+        export TELEMETRY_ENABLED=true   # Enables telemetry, respects user preference
     """
+    # First check system-wide telemetry setting
     value = os.getenv("TELEMETRY_ENABLED", "true").strip()
     if not value:  # Handle empty string case
-        return True
-    return value.lower() in ("true", "1", "yes", "on")
+        system_enabled = True
+    else:
+        system_enabled = value.lower() in ("true", "1", "yes", "on")
+    
+    # If system telemetry is disabled, respect that
+    if not system_enabled:
+        return False
+    
+    # Check user preference via context variable (set by middleware) or request headers
+    try:
+        user_enabled = _user_telemetry_enabled.get()
+        if not user_enabled:
+            return False
+    except LookupError:
+        # Context variable not set, check request headers if available
+        if request:
+            trace_id = getattr(request, 'headers', {}).get("X-Trace-Id")
+            if not trace_id:
+                return False
+    
+    return True
+
+def set_user_telemetry_preference(request) -> bool:
+    """
+    Set user telemetry preference based on request headers.
+    
+    Args:
+        request: FastAPI request object
+        
+    Returns:
+        bool: True if user has enabled telemetry, False if privacy is enabled
+    """
+    # Check if user has sent telemetry headers (privacy off) or not (privacy on)
+    trace_id = getattr(request, 'headers', {}).get("X-Trace-Id")
+    user_enabled = bool(trace_id)
+    
+    # Set in context variable for this request
+    _user_telemetry_enabled.set(user_enabled)
+    
+    return user_enabled
 
 from opentelemetry.trace import SpanKind
 

@@ -7,6 +7,7 @@
 
 import { defineStore } from 'pinia';
 import { v4 as uuidv4 } from 'uuid';
+import { usePreferencesStore } from './preferences';
 
 export const useTelemetryStore = defineStore('telemetry', {
   state: () => ({
@@ -37,9 +38,22 @@ export const useTelemetryStore = defineStore('telemetry', {
     },
 
     /**
+     * Check if telemetry is enabled by user preference
+     */
+    isTelemetryEnabled() {
+      const preferencesStore = usePreferencesStore();
+      return preferencesStore.isTelemetryEnabled;
+    },
+
+    /**
      * Generate fetch headers with telemetry IDs
      */
     telemetryHeaders() {
+      // If telemetry is disabled, return empty headers
+      if (!this.isTelemetryEnabled) {
+        return {};
+      }
+
       const headers = {
         'X-Trace-Id': this.traceId
       };
@@ -77,6 +91,7 @@ export const useTelemetryStore = defineStore('telemetry', {
      * Record when user starts typing a question
      */
     startQuestion() {
+      if (!this.isTelemetryEnabled) return;
       this.interactionTimings.questionStartTime = Date.now();
     },
 
@@ -85,6 +100,14 @@ export const useTelemetryStore = defineStore('telemetry', {
      * Returns data needed for the API call
      */
     submitQuestion() {
+      if (!this.isTelemetryEnabled) {
+        return {
+          sessionId: null,
+          qaId: null,
+          traceId: null
+        };
+      }
+      
       this.interactionTimings.questionSubmitTime = Date.now();
       this.currentQaId = `qa_${this.qaIdCounter++}`;
       
@@ -99,6 +122,7 @@ export const useTelemetryStore = defineStore('telemetry', {
      * Record when response starts arriving
      */
     startResponse() {
+      if (!this.isTelemetryEnabled) return;
       this.interactionTimings.responseStartTime = Date.now();
     },
 
@@ -106,6 +130,7 @@ export const useTelemetryStore = defineStore('telemetry', {
      * Record when response is fully received
      */
     endResponse(metadata = {}) {
+      if (!this.isTelemetryEnabled) return;
       this.interactionTimings.responseEndTime = Date.now();
       this.responseMetadata = {
         ...metadata,
@@ -117,6 +142,7 @@ export const useTelemetryStore = defineStore('telemetry', {
      * Store user feedback data
      */
     setFeedback(feedbackData) {
+      if (!this.isTelemetryEnabled) return;
       this.feedback = {
         ...feedbackData,
         timestamp: new Date().toISOString()
@@ -127,6 +153,11 @@ export const useTelemetryStore = defineStore('telemetry', {
      * Submit feedback to API
      */
     async submitFeedback() {
+      if (!this.isTelemetryEnabled) {
+        console.log('Feedback submission disabled by user preference');
+        return { status: 'disabled', message: 'Telemetry disabled by user' };
+      }
+
       if (!this.feedback || !this.sessionId || !this.currentQaId) {
         console.error('Cannot submit feedback: missing session data');
         return null;

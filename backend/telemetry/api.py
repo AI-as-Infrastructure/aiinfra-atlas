@@ -36,8 +36,8 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
     session_id = feedback.session_id
     qa_id = feedback.qa_id
     
-    # Check if telemetry is enabled
-    telemetry_enabled = is_telemetry_enabled()
+    # Check if telemetry is enabled (respects both system and user preference)
+    telemetry_enabled = is_telemetry_enabled(request)
     
     if not telemetry_enabled:
         logger.info(f"Telemetry disabled - feedback submission skipped for session_id={session_id}, qa_id={qa_id}")

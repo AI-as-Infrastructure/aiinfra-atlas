@@ -95,3 +95,130 @@ Telemetry data is sent to Phoenix Arize, where you can:
 - Identify performance bottlenecks
 
 For access to the Phoenix dashboard, contact the team administrator.
+
+## Privacy Controls
+
+ATLAS provides three levels of telemetry control to balance observability needs with user privacy:
+
+### 1. System-Wide Control (Administrator)
+
+**Environment Variable**: `TELEMETRY_ENABLED`
+- **Default**: `true`
+- **Values**: `true`, `false`, `1`, `0`, `yes`, `no`, `on`, `off`
+- **Scope**: Affects all users and all telemetry operations
+- **Purpose**: Allows system administrators to disable telemetry entirely
+
+```bash
+# Disable telemetry system-wide
+export TELEMETRY_ENABLED=false
+
+# Enable telemetry system-wide (default)
+export TELEMETRY_ENABLED=true
+```
+
+When `TELEMETRY_ENABLED=false`, no telemetry data is collected or sent to Phoenix/Arize regardless of user preferences.
+
+### 2. UI Control (Administrator)
+
+**Environment Variable**: `VITE_TELEMETRY_ENABLED`
+- **Default**: `true`
+- **Values**: `true`, `false`
+- **Scope**: Controls whether users can see and use the Privacy toggle
+- **Purpose**: Allows administrators to hide privacy controls from users
+
+```bash
+# Hide privacy toggle from all users
+export VITE_TELEMETRY_ENABLED=false
+
+# Show privacy toggle to all users (default)
+export VITE_TELEMETRY_ENABLED=true
+```
+
+This setting is copied to `frontend/.env` during build via `config/generate_vue_files.sh`.
+
+### 3. Per-User Control (Individual Users)
+
+**Interface**: Privacy toggle in the application UI
+- **Default**: Off (telemetry enabled)
+- **Scope**: Affects only the individual user's requests
+- **Purpose**: Allows users to control their own data collection
+
+**Privacy Toggle Behavior**:
+- **Privacy "Off"**: User's data is collected and sent to Phoenix/Arize
+- **Privacy "On"**: User's data is not collected or sent (privacy enabled)
+
+### How Privacy Control Works
+
+#### Frontend Implementation
+1. **User Preference Storage**: Privacy setting stored in `localStorage` via Pinia store
+2. **Header Control**: When privacy is enabled, no telemetry headers (`X-Trace-Id`, `X-Session-Id`, `X-QA-Id`) are sent
+3. **Request Isolation**: Each user's preference only affects their own requests
+
+#### Backend Implementation
+1. **Middleware Detection**: Telemetry middleware checks for presence of `X-Trace-Id` header
+2. **Context Variable**: Sets per-request context variable based on header presence
+3. **Telemetry Gating**: All telemetry operations check context variable before proceeding
+
+#### Technical Flow
+```
+User toggles Privacy "On"
+    ↓
+Frontend stops sending telemetry headers
+    ↓
+Backend middleware detects missing headers
+    ↓
+Context variable set to "user telemetry disabled"
+    ↓
+All telemetry operations become no-ops for this user
+    ↓
+No data sent to Phoenix/Arize for this user
+```
+
+### Control Hierarchy
+
+The controls work in this hierarchy (each level can override the one below):
+
+1. **System Admin** (`TELEMETRY_ENABLED=false`) → No telemetry for anyone
+2. **UI Admin** (`VITE_TELEMETRY_ENABLED=false`) → Hide privacy controls from users
+3. **Individual User** (Privacy toggle) → Personal data collection choice
+
+### Examples
+
+**Scenario 1: Full user control**
+```bash
+TELEMETRY_ENABLED=true
+VITE_TELEMETRY_ENABLED=true
+```
+- Users see Privacy toggle
+- Each user can independently enable/disable their telemetry
+- Some users' data goes to Phoenix, others' doesn't
+
+**Scenario 2: Admin wants telemetry for all users**
+```bash
+TELEMETRY_ENABLED=true
+VITE_TELEMETRY_ENABLED=false
+```
+- Users don't see Privacy toggle
+- All users' data goes to Phoenix/Arize
+- Telemetry cannot be disabled by individual users
+
+**Scenario 3: No telemetry at all**
+```bash
+TELEMETRY_ENABLED=false
+VITE_TELEMETRY_ENABLED=true  # ignored
+```
+- No telemetry data collected from anyone
+- Privacy toggle may be visible but has no effect
+- System-wide override takes precedence
+
+### Implementation Files
+
+**Frontend Privacy Toggle**:
+- `frontend/src/components/TelemetryToggle.vue` - Privacy toggle UI component
+- `frontend/src/stores/preferences.js` - User preference management
+- `frontend/src/stores/telemetry.js` - Telemetry header control
+
+**Backend Privacy Enforcement**:
+- `backend/telemetry/core.py` - Core telemetry control logic
+- `backend/app.py` - Telemetry middleware implementation
+- `backend/telemetry/api.py` - Feedback API privacy checks

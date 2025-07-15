@@ -152,6 +152,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add telemetry middleware to set user preference for each request
+@app.middleware("http")
+async def telemetry_middleware(request: Request, call_next):
+    """Middleware to set user telemetry preference based on request headers."""
+    from backend.telemetry import set_user_telemetry_preference
+    
+    # Set user telemetry preference based on headers
+    user_enabled = set_user_telemetry_preference(request)
+    
+    # Log for debugging
+    if request.url.path.startswith("/api/"):
+        logger.info(f"Telemetry middleware: User telemetry {'enabled' if user_enabled else 'disabled'} for {request.url.path}")
+    
+    response = await call_next(request)
+    return response
+
 @app.middleware("http")
 async def security_middleware(request: Request, call_next):
     """Basic security middleware for research prototype"""

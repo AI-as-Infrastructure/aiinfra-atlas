@@ -22,6 +22,9 @@
 				</div>
 				<div class="column is-one-quarter sidebar-panel">
 					<div class="mb-4">
+						<TelemetryToggle />
+					</div>
+					<div class="mb-4">
 						<TestTargetBox />
 					</div>
 					<div class="export-btn-container">
@@ -36,6 +39,7 @@
 <script setup>
 import ChatHistory from './ChatHistory.vue'
 import UserInput from './UserInput.vue'
+import TelemetryToggle from './TelemetryToggle.vue'
 import TestTargetBox from './TestTargetBox.vue'
 import ExportButton from './ExportButton.vue'
 import { storeToRefs } from 'pinia'
