@@ -178,7 +178,7 @@ def format_document_for_citation(document: Document, idx: Optional[int] = None) 
     text = getattr(document, 'page_content', str(document))
 
     preview = text[:300] + ("..." if len(text) > 300 else "")
-    doc_id = meta.get("id") or (f"doc_{idx}" if idx is not None else "unknown")
+    doc_id = meta.get("id") or (f"doc_{idx + 1}" if idx is not None else "unknown")
 
     return {
         "id": doc_id,
