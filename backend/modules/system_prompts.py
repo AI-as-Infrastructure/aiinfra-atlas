@@ -33,9 +33,10 @@ CITATION_GUIDELINES = (
     "1. Write naturally without citation markers - they will be added automatically\n"
     "2. Base your answer on the provided source documents\n"
     "3. Citations will be generated automatically for referenced documents\n"
-    "4. Ensure your answer accurately reflects the source material\n"
-    "5. When using multiple sources, integrate them seamlessly\n"
-    "6. When making contemporary comparisons, clearly distinguish between historical evidence and modern context\n"
+    "4. Do not refer to documents from the context in your answer - users will rely on the citations added by the system\n"
+    "5. Ensure your answer accurately reflects the source material\n"
+    "6. When using multiple sources, integrate them seamlessly\n"
+    "7. When making contemporary comparisons, clearly distinguish between historical evidence and modern context\n"
     "8. Present information directly without unnecessary references to document access"
 )
 
