@@ -57,6 +57,7 @@ class UserFeedback(BaseModel):
     # New extended feedback fields
     analysis_quality: Optional[int] = None  # 1-5 Likert scale
     difficulty: Optional[int] = None  # 1-5 Likert scale
+    additional_comments: Optional[str] = None  # Free text field for additional user feedback
     
     # New faults structure (alternative to tags)
     faults: Optional[Dict[str, bool]] = None  # {hallucination, off_topic, inappropriate, bias}
@@ -489,6 +490,21 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
                 },
                 "metadata": {"qa_id": qa_id, "fault_type": fault_type} if qa_id else {"fault_type": fault_type}
             })
+    
+    # Add additional comments annotation if present (for Extended feedback)
+    if "additional_comments" in feedback_data and feedback_data["additional_comments"]:
+        annotation_data.append({
+            "id": f"{annotation_id}_additional_comments",
+            "name": "Additional Comments",
+            "span_id": formatted_span_id,
+            "annotator_kind": "HUMAN",
+            "result": {
+                "label": "additional_feedback",
+                "score": None,
+                "explanation": feedback_data["additional_comments"]
+            },
+            "metadata": {"qa_id": qa_id, "feedback_type": "extended"} if qa_id else {"feedback_type": "extended"}
+        })
     
     # Note: We don't need to add feedback_text here as it's already handled above as user_comment
     

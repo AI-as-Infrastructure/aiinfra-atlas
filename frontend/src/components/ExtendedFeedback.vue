@@ -2,7 +2,7 @@
   <div class="extended-feedback">
     <div class="feedback-header">
       <h4>Extended Feedback</h4>
-      <p class="subtitle">Help us improve our understanding of LLM RAG systems by providing detailed feedback</p>
+      <p class="subtitle">Help us improve our understanding of LLM RAG systems by providing detailed feedback on the LLM output. Rate each of the following, where 1 is the lowest rating, and 5 is the highest.</p>
     </div>
 
     <div class="feedback-content">
@@ -149,6 +149,20 @@
         </div>
       </div>
 
+      <!-- Additional Comments Section -->
+      <div class="comments-section">
+        <label class="section-label">Would you like to provide any additional information about your ratings?</label>
+        <textarea
+          v-model="additionalComments"
+          class="textarea"
+          placeholder="Please provide any additional feedback or context about your ratings..."
+          rows="3"
+          maxlength="500"
+          :disabled="disabled"
+        ></textarea>
+        <p class="help">{{ additionalComments.length }}/500 characters</p>
+      </div>
+
       <!-- Faults Section -->
       <div class="faults-section">
         <label class="section-label">Faults</label>
@@ -263,6 +277,7 @@ export default {
         inappropriate: false,
         bias: false
       },
+      additionalComments: '',
       isSubmitting: false,
       configData: null
     }
@@ -271,7 +286,8 @@ export default {
     hasExtendedFeedback() {
       const hasRatings = Object.values(this.ratings).some(rating => rating !== null)
       const hasFaults = Object.values(this.faults).some(fault => fault === true)
-      return hasRatings || hasFaults
+      const hasComments = this.additionalComments.trim().length > 0
+      return hasRatings || hasFaults || hasComments
     }
   },
   methods: {
@@ -360,6 +376,11 @@ export default {
           feedbackData.faults = this.faults
         }
         
+        // Include additional comments if provided
+        if (this.additionalComments.trim().length > 0) {
+          feedbackData.additional_comments = this.additionalComments.trim()
+        }
+        
         // The simple feedback data (sentiment, feedback_text, etc.) is already included from completeFeedbackPayload
         // Just need to add any additional config data if it exists
         if (this.configData && Object.keys(this.configData).length > 0) {
@@ -414,6 +435,7 @@ export default {
         inappropriate: false,
         bias: false
       }
+      this.additionalComments = ''
     }
   },
   
@@ -530,6 +552,24 @@ export default {
 .likert-text {
   font-size: 12px;
   color: #6c757d;
+}
+
+.comments-section {
+  border-top: 1px solid #e9ecef;
+  padding-top: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.comments-section .textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.comments-section .help {
+  text-align: right;
+  font-size: 12px;
+  color: #6c757d;
+  margin-top: 0.25rem;
 }
 
 .faults-section {

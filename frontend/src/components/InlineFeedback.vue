@@ -15,7 +15,7 @@
           class="button" 
           @click="selectFeedbackType('extended')"
         >
-          Enhanced Feedback
+          Extended Feedback
         </button>
         <button 
           v-if="isAIAssistedEnabled"
