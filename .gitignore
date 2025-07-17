@@ -24,6 +24,7 @@ create/output/*
 models/**
 models/bert_1890_1900_st/
 load_tests/reports/*
+reports/output/*
 
 # Chroma database directories - exclude all binary DB files
 backend/chroma_db/
