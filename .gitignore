@@ -29,12 +29,10 @@ reports/output/*
 # Chroma database directories - exclude all binary DB files
 backend/chroma_db/
 */chroma_db/
-backend/targets/chroma_db/
-# Keep only the collection metadata, exclude binary data
+# Exclude the directory but allow the specific LFS-tracked file
+backend/targets/chroma_db/*
 !backend/targets/chroma_db/.gitkeep
-backend/targets/chroma_db/*.sqlite3
-backend/targets/chroma_db/*/*.bin
-backend/targets/chroma_db/*/*.pickle
+!backend/targets/chroma_db/chroma.sqlite3
 # SQLite WAL and shared memory files
 *.sqlite3-wal
 *.sqlite3-shm
