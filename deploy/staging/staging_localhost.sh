@@ -219,17 +219,26 @@ fi
 echo "$APP_DIR" > $APP_DIR/.venv/lib/python$PYTHON_VERSION/site-packages/atlas.pth
 chmod 644 $APP_DIR/.venv/lib/python$PYTHON_VERSION/site-packages/atlas.pth
 
-# 7. Prepare embedding model
-echo "Checking embedding model configuration..."
-EMBEDDING_MODEL=$(grep "^EMBEDDING_MODEL=" "$APP_DIR/config/.env.staging" | cut -d '"' -f 2)
-if [ "$EMBEDDING_MODEL" = "Livingwithmachines/bert_1890_1900" ]; then
-    echo "Preparing default embedding model..."
-    # Ensure we're in the app directory and virtual environment is activated
+# 7. Check if models directory exists and has required models
+echo "Checking model directory..."
+if [ ! -d "$APP_DIR/models" ] || [ -z "$(ls -A $APP_DIR/models 2>/dev/null)" ]; then
+    echo "Models directory missing or empty. Generating models..."
     cd $APP_DIR
     . .venv/bin/activate
     python create/prepare_model.py
+    echo "✅ Models generated successfully"
 else
-    echo "Skipping model preparation - using custom model: $EMBEDDING_MODEL"
+    echo "✅ Models directory found with content"
+fi
+
+# Check if retriever exists
+if [ ! -f "$APP_DIR/backend/retrievers/hansard_retriever.py" ]; then
+    echo "Generating retriever..."
+    cd $APP_DIR
+    bash utils/scripts/create_retriever.sh
+    echo "✅ Retriever generated"
+else
+    echo "✅ Retriever already exists"
 fi
 
 # Create logs directory and configure logging - MOVED UP BEFORE GUNICORN SERVICE SETUP

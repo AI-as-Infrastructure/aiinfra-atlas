@@ -198,16 +198,26 @@ else
     exit 1
 fi
 
-# Prepare embedding model if using default model
-echo "Checking embedding model configuration..."
-EMBEDDING_MODEL=$(grep "^EMBEDDING_MODEL=" "$APP_DIR/config/.env.production" | cut -d '"' -f 2)
-if [ "$EMBEDDING_MODEL" = "Livingwithmachines/bert_1890_1900" ]; then
-    echo "Preparing default embedding model..."
+# Check if models directory exists and has required models
+echo "Checking model directory..."
+if [ ! -d "$APP_DIR/models" ] || [ -z "$(ls -A $APP_DIR/models 2>/dev/null)" ]; then
+    echo "Models directory missing or empty. Generating models..."
     cd $APP_DIR
     . .venv/bin/activate
     python create/prepare_model.py
+    echo "✅ Models generated successfully"
 else
-    echo "Skipping model preparation - using custom model: $EMBEDDING_MODEL"
+    echo "✅ Models directory found with content"
+fi
+
+# Check if retriever exists
+if [ ! -f "$APP_DIR/backend/retrievers/hansard_retriever.py" ]; then
+    echo "Generating retriever..."
+    cd $APP_DIR
+    bash utils/scripts/create_retriever.sh
+    echo "✅ Retriever generated"
+else
+    echo "✅ Retriever already exists"
 fi
 
 # Set up frontend environment

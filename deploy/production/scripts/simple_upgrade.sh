@@ -60,6 +60,25 @@ source .venv/bin/activate
 pip install --upgrade pip
 pip install -r config/requirements.txt
 
+# Check if models directory exists and has required models
+echo "🔍 Checking model directory..."
+if [ ! -d "$APP_DIR/models" ] || [ -z "$(ls -A $APP_DIR/models 2>/dev/null)" ]; then
+    echo "Models directory missing or empty. Generating models..."
+    python create/prepare_model.py
+    echo "✅ Models generated successfully"
+else
+    echo "✅ Models directory found with content"
+fi
+
+# Check if retriever exists
+if [ ! -f "$APP_DIR/backend/retrievers/hansard_retriever.py" ]; then
+    echo "Generating retriever..."
+    bash utils/scripts/create_retriever.sh
+    echo "✅ Retriever generated"
+else
+    echo "✅ Retriever already exists"
+fi
+
 # 6. Graceful service restart
 echo "🔄 Restarting services..."
 

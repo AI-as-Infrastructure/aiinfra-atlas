@@ -86,7 +86,7 @@ lts: ## Run realistic load test against staging environment (15 concurrent users
 	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=staging ../.venv/bin/locust -f locustfile.py --host=\$$VITE_API_URL --users=15 --spawn-rate=0.2 --run-time=30m --headless"
 
 # Utility Targets
-.PHONY: l c vs r xs
+.PHONY: l c vs r xs pm
 l: ## Generate requirements.lock file
 	@./utils/scripts/generate_lock.sh
 
@@ -102,6 +102,14 @@ r: ## Generate retriever
 xs: ## Create XML vector store
 	@./utils/scripts/create_xml_store.sh
 
+pm: ## Prepare embedding model
+	@echo "Preparing embedding model..."
+	@if [ ! -d ".venv" ]; then \
+		echo "Creating virtual environment..."; \
+		python3 -m venv .venv; \
+	fi
+	@source .venv/bin/activate && python create/prepare_model.py
+
 # Help target
 help: ## Show this help message
 	@echo "ATLAS Load Testing - Available Targets:"
@@ -112,6 +120,7 @@ help: ## Show this help message
 	@echo "🔧 DEVELOPMENT:"
 	@echo "  make b       - Start backend development server"
 	@echo "  make f       - Start frontend development server"
+	@echo "  make pm      - Prepare embedding model"
 	@echo "  make vs      - Create vector store"
 	@echo "  make r       - Generate retriever"
 	@echo ""
