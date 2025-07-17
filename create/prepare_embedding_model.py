@@ -47,25 +47,8 @@ def ensure_st_model(repo: str, output_dir: Path) -> None:
     print("📥 Preparing", repo, "→", output_dir)
     st_model = SentenceTransformer(repo)
     st_model.save(str(output_dir))
-
-    _ensure_gitattributes()
     return
 
-
-def _ensure_gitattributes() -> None:
-    """Add a models path to .gitattributes for Git LFS if not already present."""
-    gitattributes = Path(".gitattributes")
-    lfs_line = "models/** filter=lfs diff=lfs merge=lfs -text\n"
-    try:
-        if gitattributes.exists():
-            existing = gitattributes.read_text()
-            if "models/**" in existing:
-                return  # already configured
-        with gitattributes.open("a", encoding="utf-8") as f:
-            f.write("\n" + lfs_line if gitattributes.exists() else lfs_line)
-        print("🔧 Added models/** to .gitattributes for Git LFS tracking")
-    except Exception as exc:
-        print(f"[WARN] Could not update .gitattributes automatically: {exc}")
 
 
 def main() -> None:
