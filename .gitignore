@@ -35,6 +35,9 @@ backend/targets/chroma_db/
 backend/targets/chroma_db/*.sqlite3
 backend/targets/chroma_db/*/*.bin
 backend/targets/chroma_db/*/*.pickle
+# SQLite WAL and shared memory files
+*.sqlite3-wal
+*.sqlite3-shm
 
 
 # Byte-compiled / optimized / DLL files

@@ -102,6 +102,19 @@ def build_store(out_dir: Path, embedding_model: str):
         embedding_function=embeddings,
         persist_directory=str(out_dir),
     )
+    
+    # Set SQLite journal mode to DELETE to prevent WAL files
+    try:
+        import sqlite3
+        db_path = os.path.join(str(out_dir), "chroma.sqlite3")
+        if os.path.exists(db_path):
+            conn = sqlite3.connect(db_path)
+            conn.execute("PRAGMA journal_mode = DELETE;")
+            conn.commit()
+            conn.close()
+            print("Set SQLite journal mode to DELETE")
+    except Exception as e:
+        print(f"Warning: Could not set journal mode: {e}")
 
     splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
 
@@ -159,6 +172,19 @@ def build_store(out_dir: Path, embedding_model: str):
 
     print("Persisting Chroma store …")
     vector_store.persist()
+    
+    # Set journal mode to DELETE after persistence to prevent WAL files
+    try:
+        import sqlite3
+        db_path = os.path.join(str(out_dir), "chroma.sqlite3")
+        if os.path.exists(db_path):
+            conn = sqlite3.connect(db_path)
+            conn.execute("PRAGMA journal_mode = DELETE;")
+            conn.commit()
+            conn.close()
+            print("Final SQLite journal mode set to DELETE")
+    except Exception as e:
+        print(f"Warning: Could not set final journal mode: {e}")
 
     stats["total_files"] = sum(c["files"] for c in stats["corpora"].values())
 

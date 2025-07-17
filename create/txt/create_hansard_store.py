@@ -831,12 +831,25 @@ def main():
         "model_hash": None
     }
     
-    # Initialize the vector store
+    # Initialize the vector store with journal mode settings
     vector_store = Chroma(
         collection_name=COLLECTION_NAME,
         embedding_function=embeddings,
         persist_directory=chroma_dir
     )
+    
+    # Set SQLite journal mode to DELETE to prevent WAL files
+    try:
+        import sqlite3
+        db_path = os.path.join(chroma_dir, "chroma.sqlite3")
+        if os.path.exists(db_path):
+            conn = sqlite3.connect(db_path)
+            conn.execute("PRAGMA journal_mode = DELETE;")
+            conn.commit()
+            conn.close()
+            print("Set SQLite journal mode to DELETE")
+    except Exception as e:
+        print(f"Warning: Could not set journal mode: {e}")
     
     # Initialize tokenizer and model for fine-tuning
     tokenizer = AutoTokenizer.from_pretrained(EMBEDDING_MODEL)
@@ -872,6 +885,19 @@ def main():
     # Persist the vector store
     vector_store.persist()
     print("\nChroma vector store created and automatically persisted")
+    
+    # Set journal mode to DELETE after persistence to prevent WAL files
+    try:
+        import sqlite3
+        db_path = os.path.join(chroma_dir, "chroma.sqlite3")
+        if os.path.exists(db_path):
+            conn = sqlite3.connect(db_path)
+            conn.execute("PRAGMA journal_mode = DELETE;")
+            conn.commit()
+            conn.close()
+            print("Final SQLite journal mode set to DELETE")
+    except Exception as e:
+        print(f"Warning: Could not set final journal mode: {e}")
     
     # Generate statistics
     stats_file = os.path.join(OUTPUT_DIR, f"{COLLECTION_NAME}.txt")
