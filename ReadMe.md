@@ -144,7 +144,7 @@ This workflow ensures that your retrievers are always in sync with your vector s
 - [Vector Store Creation](docs/create_store.md) - Building and managing vector stores and retrievers
 
 ### User Interface and Features
-- [FAQ](frontend/src/views/FAQView.vue) - Frequently asked questions and system limitations
+- [FAQ](frontend/src/pages/FAQPage.vue) - Frequently asked questions and system limitations
 
 ## License
 - [License](LICENSE.md)
