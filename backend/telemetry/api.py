@@ -71,6 +71,7 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
             "sentiment": feedback.sentiment,
             "analysis_quality": feedback.analysis_quality,
             "difficulty": feedback.difficulty,
+            "additional_comments": feedback.additional_comments,  # Missing field added
             "faults": feedback.faults,
             
             # Include rich context data from frontend
