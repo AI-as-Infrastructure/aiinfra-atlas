@@ -709,7 +709,8 @@ async def ask_stream(data: dict = Body(...)):
                     logger.error(f"Error in streaming response: {e}")
                     # Record error in parent span
                     parent_span.record_exception(e)
-                    parent_span.set_status(Status(StatusCode.ERROR, str(e)))
+                    # Use generic error message for telemetry to avoid exposing sensitive info
+                    parent_span.set_status(Status(StatusCode.ERROR, "Streaming response error"))
                     
                     # Create a sanitized error message for the client
                     # Do not expose internal exception details to client
@@ -727,7 +728,8 @@ async def ask_stream(data: dict = Body(...)):
                 # Handle any outer exceptions
                 logger.error(f"Error in RAG pipeline: {e}")
                 parent_span.record_exception(e)
-                parent_span.set_status(Status(StatusCode.ERROR, str(e)))
+                # Use generic error message for telemetry to avoid exposing sensitive info
+                parent_span.set_status(Status(StatusCode.ERROR, "RAG pipeline error"))
                 
                 # Release LLM resource slot on error
                 llm_resource_manager.release_llm_slot()
