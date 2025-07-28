@@ -27,6 +27,9 @@
 					<div class="mb-4">
 						<TestTargetBox />
 					</div>
+					<div class="mb-4">
+						<InterRaterButton />
+					</div>
 					<div class="export-btn-container">
 						<ExportButton />
 					</div>

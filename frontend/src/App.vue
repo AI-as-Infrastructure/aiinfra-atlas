@@ -22,6 +22,9 @@
                 <div class="nav-item">
                   <router-link class="nav-link" to="/faq">FAQ</router-link>
                 </div>
+                <div class="nav-item">
+                  <InterRaterButton />
+                </div>
               </div>
               
               <!-- Right section for auth controls -->
@@ -46,6 +49,7 @@
 
 <script setup>
 import NewSessionButton from './components/NewSessionButton.vue'
+import InterRaterButton from './components/InterRaterButton.vue'
 import AuthControls from './components/AuthControls.vue'
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'

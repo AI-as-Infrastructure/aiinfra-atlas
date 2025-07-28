@@ -68,7 +68,7 @@ else:
 
 # Import core modules and telemetry utilities
 from backend.telemetry import (
-
+    using_session,
     create_span,
     log_user_feedback,
     SpanAttributes,
@@ -933,7 +933,7 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
             
             # In production (HTTPS), we should have an auth header
             if auth_header:
-                # Verify user is authenticated without recording identity
+                # Verify user is authenticated and get user ID for inter-rater functionality
                 user = await optional_user(request)
                 if not user.get("authenticated", False):
                     logger.warning("Unauthenticated feedback submission attempt")
@@ -941,6 +941,9 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
                         message="Authentication required to submit feedback",
                         status="error"
                     )
+                # Store anonymous user ID for inter-rater functionality if enabled
+                if os.getenv("INTER_RATER_ENABLED", "false").lower() == "true":
+                    feedback.rater_id = user.get("sub")  # Cognito's unique user identifier
                 logger.info("Authenticated feedback submission (identity not stored)")
             else:
                 # In dev environment (HTTP), we may not have auth headers for security reasons
@@ -952,6 +955,9 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
                 else:
                     # Expected for HTTP development environment
                     logger.info("HTTP feedback submission without authentication (development)")
+                    # For development, use a placeholder user ID if inter-rater is enabled
+                    if os.getenv("INTER_RATER_ENABLED", "false").lower() == "true":
+                        feedback.rater_id = f"dev_user_{client_ip.replace('.', '_')}"
         
         client_ip = request.client.host if request.client else "unknown"
         
@@ -1010,16 +1016,48 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
             "ai_validation": feedback.ai_validation,
             "ai_agreement": feedback.ai_agreement,
             "ratings": feedback.ratings,
+            
+            # Inter-rater reliability fields
+            "is_inter_rater": feedback.is_inter_rater,
+            "original_span_id": feedback.original_span_id,
+            "rater_id": feedback.rater_id,
         }
         
         # Use the session context to ensure spans are properly associated
         with using_session(session_id):
             try:
+                # Additional check for inter-rater duplicates at API level
+                if feedback.is_inter_rater and feedback.rater_id and feedback.original_span_id:
+                    try:
+                        from backend.services.phoenix_client import phoenix_client
+                        already_rated = await phoenix_client.check_user_already_rated(
+                            feedback.original_span_id, feedback.rater_id
+                        )
+                        if already_rated:
+                            logger.warning(f"User {feedback.rater_id} attempted to rate span {feedback.original_span_id} twice")
+                            return FeedbackResponse(
+                                message="You have already provided feedback for this session.",
+                                status="error"
+                            )
+                    except Exception as dup_check_error:
+                        logger.warning(f"Failed to check for duplicate inter-rater feedback: {dup_check_error}")
+                        # Continue with submission - don't block if duplicate check fails
+                
                 # Log user feedback
                 success = await log_user_feedback(session_id, qa_id, feedback_data)
                 
                 if success:
                     logger.info(f"HTTP Feedback recorded for session_id={session_id}, qa_id={qa_id}")
+                    
+                    # If this is inter-rater feedback, invalidate the user's session cache
+                    if feedback.is_inter_rater and feedback.rater_id:
+                        try:
+                            from backend.services.inter_rater_service import inter_rater_service
+                            inter_rater_service.invalidate_user_cache(feedback.rater_id)
+                            logger.debug(f"Invalidated inter-rater cache for user {feedback.rater_id}")
+                        except Exception as cache_error:
+                            logger.warning(f"Failed to invalidate inter-rater cache: {cache_error}")
+                    
                     return FeedbackResponse(
                         message="Feedback received successfully",
                         status="success"
@@ -1282,6 +1320,77 @@ async def get_queue_stats():
         raise HTTPException(status_code=500, detail="Failed to get queue stats")
 
 # WebSocket async status endpoint removed - use HTTP polling on /api/ask/async/{request_id} instead
+
+# --- Inter-rater reliability endpoints ---
+@app.get("/api/inter-rater/sessions")
+async def get_inter_rater_sessions(request: Request):
+    """
+    Get sessions available for inter-rating by the current user.
+    """
+    try:
+        from backend.services.inter_rater_service import inter_rater_service
+        
+        if not inter_rater_service.is_enabled():
+            raise HTTPException(status_code=404, detail="Inter-rater functionality is disabled")
+        
+        # Get user ID (similar to feedback endpoint)
+        auth_required = os.getenv("VITE_USE_COGNITO_AUTH", "false").lower() == "true"
+        user_id = None
+        
+        if auth_required:
+            auth_header = request.headers.get("Authorization")
+            if auth_header:
+                user = await optional_user(request)
+                if user.get("authenticated", False):
+                    user_id = user.get("sub")
+            
+        # For development, use placeholder user ID
+        if not user_id:
+            client_ip = request.client.host if request.client else "unknown"
+            user_id = f"dev_user_{client_ip.replace('.', '_')}"
+        
+        sessions = await inter_rater_service.get_sessions_for_inter_rating(user_id)
+        return {"sessions": sessions}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting inter-rater sessions: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve inter-rater sessions")
+
+@app.get("/api/inter-rater/stats")
+async def get_inter_rater_stats(request: Request):
+    """
+    Get inter-rater statistics for the current user.
+    """
+    try:
+        from backend.services.inter_rater_service import inter_rater_service
+        
+        if not inter_rater_service.is_enabled():
+            return {"enabled": False}
+        
+        # Get user ID (similar to feedback endpoint)
+        auth_required = os.getenv("VITE_USE_COGNITO_AUTH", "false").lower() == "true"
+        user_id = None
+        
+        if auth_required:
+            auth_header = request.headers.get("Authorization")
+            if auth_header:
+                user = await optional_user(request)
+                if user.get("authenticated", False):
+                    user_id = user.get("sub")
+        
+        # For development, use placeholder user ID
+        if not user_id:
+            client_ip = request.client.host if request.client else "unknown"
+            user_id = f"dev_user_{client_ip.replace('.', '_')}"
+        
+        stats = await inter_rater_service.get_inter_rater_stats(user_id)
+        return stats
+        
+    except Exception as e:
+        logger.error(f"Error getting inter-rater stats: {e}")
+        return {"enabled": False, "error": str(e)}
 
 @app.get("/api/vector-store-info")
 async def get_vector_store_info():

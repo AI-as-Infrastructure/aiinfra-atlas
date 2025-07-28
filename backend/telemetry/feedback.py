@@ -72,6 +72,11 @@ class UserFeedback(BaseModel):
     # Phoenix trace correlation
     trace_id: Optional[str] = None
     
+    # Inter-rater reliability fields
+    is_inter_rater: Optional[bool] = False
+    original_span_id: Optional[str] = None  # References the original span being re-rated
+    rater_id: Optional[str] = None  # Anonymous user ID from Cognito
+    
     # AI-Enhanced feedback fields (minimal addition)
     ai_validation: Optional[Dict[str, Any]] = None  # Full AI validation results
     ai_agreement: Optional[str] = None  # Agreement level with AI assessment  
@@ -265,6 +270,22 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
     # Prepare annotation data list with the formatted span ID
     annotation_data = []
     
+    # Create base metadata for all annotations including inter-rater fields
+    def get_base_metadata():
+        metadata = {}
+        if qa_id:
+            metadata["qa_id"] = qa_id
+        
+        # Add inter-rater reliability fields if present
+        if feedback_data.get("is_inter_rater"):
+            metadata["is_inter_rater"] = True
+            if feedback_data.get("original_span_id"):
+                metadata["original_span_id"] = feedback_data["original_span_id"]
+            if feedback_data.get("rater_id"):
+                metadata["rater_id"] = feedback_data["rater_id"]
+        
+        return metadata
+    
     # Add user comment annotation if present
     if feedback_data.get("feedback_text"):
         annotation_data.append({
@@ -277,10 +298,7 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
                 "score": None,
                 "explanation": feedback_data.get("feedback_text")
             },
-            # Only include qa_id in metadata
-            "metadata": {
-                "qa_id": qa_id
-            } if qa_id else {}
+            "metadata": get_base_metadata()
         })
     
     # Add answer/relevance rating annotation
@@ -295,7 +313,7 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
                 "score": feedback_data["relevance"],
                 "explanation": get_relevance_description(feedback_data['relevance'])  # Add explanation for Phoenix UI
             },
-            "metadata": {"qa_id": qa_id} if qa_id else {}
+            "metadata": get_base_metadata()
         })
     
     # Add factual accuracy annotation
@@ -321,7 +339,7 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
                 "score": score,
                 "explanation": explanation  # Add explanation for Phoenix UI
             },
-            "metadata": {"qa_id": qa_id} if qa_id else {}
+            "metadata": get_base_metadata()
         })
     
     # Add clarity rating annotation if present
@@ -337,7 +355,7 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
                 "score": clarity_score,
                 "explanation": get_clarity_description(clarity_score)  # Add detailed explanation for Phoenix UI
             },
-            "metadata": {"qa_id": qa_id} if qa_id else {}
+            "metadata": get_base_metadata()
         })
         
     # Add source quality rating annotation if present

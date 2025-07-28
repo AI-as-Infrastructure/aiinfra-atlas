@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import ChatContainer from '@/components/ChatContainer.vue'
 import AboutPage from '@/pages/AboutPage.vue'
 import FAQPage from '@/pages/FAQPage.vue'
+import InterRaterPage from '@/pages/InterRaterPage.vue'
 import AmplifyCallback from '@/pages/AmplifyCallback.vue'
 import LoginPage from '@/pages/LoginPage.vue'
 import { isCognitoEnabled, isAuthenticated } from '@/auth/amplify-auth'
@@ -10,6 +11,7 @@ const routes = [
   { path: '/', component: ChatContainer, meta: { requiresAuth: true } },
   { path: '/about', component: AboutPage },
   { path: '/faq', component: FAQPage },
+  { path: '/inter-rater', component: InterRaterPage, meta: { requiresAuth: true } },
   
   // Authentication routes
   { path: '/login', component: LoginPage, name: 'login' },
