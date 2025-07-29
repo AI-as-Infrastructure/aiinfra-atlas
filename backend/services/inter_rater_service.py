@@ -49,7 +49,8 @@ class InterRaterService:
         cache_entry = self._session_cache.get(cache_key)
         
         if self._is_cache_valid(cache_entry):
-            logger.debug(f"Returning cached sessions for user {user_id}")
+            sanitized_user_id = user_id[:8] + "..." if len(user_id) > 8 else user_id
+            logger.debug(f"Returning cached sessions for user {sanitized_user_id}")
             return cache_entry['sessions']
         
         return None
@@ -61,7 +62,8 @@ class InterRaterService:
             'sessions': sessions,
             'timestamp': datetime.now().timestamp()
         }
-        logger.debug(f"Cached {len(sessions)} sessions for user {user_id}")
+        sanitized_user_id = user_id[:8] + "..." if len(user_id) > 8 else user_id
+        logger.debug(f"Cached {len(sessions)} sessions for user {sanitized_user_id}")
     
     async def get_sessions_for_inter_rating(self, user_id: str) -> List[Dict[str, Any]]:
         """
@@ -84,7 +86,9 @@ class InterRaterService:
         try:
             from .phoenix_client import phoenix_client
             
-            logger.info(f"Querying Phoenix for inter-rater sessions for user {user_id}")
+            # Sanitize user_id for logging (show only first 8 chars + hash of rest)
+            sanitized_user_id = user_id[:8] + "..." if len(user_id) > 8 else user_id
+            logger.info(f"Querying Phoenix for inter-rater sessions for user {sanitized_user_id}")
             
             # Query Phoenix for sessions with original feedback
             sessions = await phoenix_client.query_spans_with_feedback(
@@ -114,12 +118,17 @@ class InterRaterService:
             # Cache the results
             self._cache_sessions(user_id, final_sessions)
             
-            logger.info(f"Found {len(final_sessions)} available sessions for user {user_id}")
+            logger.info(f"Found {len(final_sessions)} available sessions for user {sanitized_user_id}")
             return final_sessions
             
+        except ValueError as e:
+            # Re-raise ValueError (Phoenix data issues) to inform the user
+            logger.error(f"Phoenix data error for inter-rating: {e}")
+            raise
         except Exception as e:
-            logger.error(f"Error retrieving sessions for inter-rating: {e}")
-            return []
+            logger.error(f"Unexpected error retrieving sessions for inter-rating: {e}")
+            # For unexpected errors, still raise to inform user
+            raise ValueError(f"Failed to retrieve inter-rater sessions: {str(e)}")
     
     async def get_inter_rater_stats(self, user_id: str) -> Dict[str, Any]:
         """
@@ -148,7 +157,16 @@ class InterRaterService:
             
         except Exception as e:
             logger.error(f"Error getting inter-rater stats: {e}")
-            return {"enabled": False, "error": str(e)}
+            # Still return enabled=True since the service is configured to be enabled
+            # The error just means no sessions are available
+            return {
+                "enabled": True,
+                "available_sessions": 0,
+                "completed_sessions": 0,
+                "max_sessions_per_user": self.sessions_per_user,
+                "project_name": self.project_name,
+                "error": str(e)
+            }
     
     def invalidate_user_cache(self, user_id: str):
         """
@@ -160,7 +178,8 @@ class InterRaterService:
         cache_key = self._get_cache_key(user_id)
         if cache_key in self._session_cache:
             del self._session_cache[cache_key]
-            logger.debug(f"Invalidated cache for user {user_id}")
+            sanitized_user_id = user_id[:8] + "..." if len(user_id) > 8 else user_id
+            logger.debug(f"Invalidated cache for user {sanitized_user_id}")
 
 # Global instance
 inter_rater_service = InterRaterService()

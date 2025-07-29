@@ -20,6 +20,9 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Reduce httpx logging to avoid exposing URLs in logs
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 # Load environment variables with strict mode - fail if environment file is missing
 project_root = os.path.dirname(os.path.dirname(__file__))
 

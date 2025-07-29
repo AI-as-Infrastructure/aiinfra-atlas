@@ -7,6 +7,14 @@ echo "🔍 Checking backend environment..."
 # Set environment
 export ENVIRONMENT=development
 
+# Regenerate frontend environment variables to ensure consistency
+echo "📝 Regenerating frontend environment variables..."
+if [ -f "config/generate_vue_files.sh" ]; then
+    bash config/generate_vue_files.sh
+else
+    echo "⚠️  Warning: config/generate_vue_files.sh not found - frontend env may be outdated"
+fi
+
 # Set default Python version if not specified
 PYTHON_VERSION=${PYTHON_VERSION:-3.10}
 

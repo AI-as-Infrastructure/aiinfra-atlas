@@ -20,15 +20,20 @@
     <div v-else-if="sessions.length === 0" class="empty-state">
       <div class="has-text-centered">
         <div class="icon-container mb-4">
-          <i class="fas fa-check-circle fa-3x has-text-success"></i>
+          <i class="fas fa-info-circle fa-3x has-text-info"></i>
         </div>
-        <h3 class="title is-4">All caught up!</h3>
+        <h3 class="title is-4">No Sessions Available</h3>
         <p class="subtitle is-6">
           No sessions are currently available for inter-rating.
         </p>
-        <p class="has-text-grey">
-          Sessions become available when other users provide feedback that needs validation.
-        </p>
+        <div class="notification is-info is-light mt-4" style="text-align: left; max-width: 600px; margin: 0 auto;">
+          <h4 class="title is-6">Sessions become available when:</h4>
+          <ul>
+            <li>• Other users provide feedback that needs validation</li>
+            <li>• There are existing sessions with user feedback in Phoenix</li>
+            <li>• The Phoenix project contains data for the configured time period</li>
+          </ul>
+        </div>
         <router-link to="/" class="button is-primary mt-4">
           Return to Home
         </router-link>
@@ -87,7 +92,7 @@
     <!-- Success notification -->
     <div v-if="showSuccessMessage" class="notification is-success is-overlay">
       <button @click="showSuccessMessage = false" class="delete"></button>
-      <strong>Success!</strong> Your inter-rating feedback has been submitted.
+      <strong>Success!</strong> {{ successMessage }}
     </div>
   </div>
 </template>
@@ -110,6 +115,7 @@ export default {
     const loading = ref(true)
     const error = ref(null)
     const showSuccessMessage = ref(false)
+    const successMessage = ref('')
     const completedSessions = ref(0)
 
     const currentSession = computed(() => {
@@ -137,7 +143,14 @@ export default {
         
       } catch (err) {
         console.error('Error loading inter-rater sessions:', err)
-        error.value = err.message || 'Failed to load sessions'
+        // Provide more detailed error messages
+        if (err.message && err.message.includes('Phoenix')) {
+          error.value = `Phoenix Connection Issue: ${err.message}`
+        } else if (err.message && err.message.includes('project')) {
+          error.value = `Project Configuration Issue: ${err.message}`
+        } else {
+          error.value = err.message || 'Failed to load sessions. Please check the server logs for details.'
+        }
       } finally {
         loading.value = false
       }
@@ -160,13 +173,15 @@ export default {
         const result = await response.json()
         
         if (result.status === 'success') {
+          successMessage.value = 'Rating submitted successfully!'
           showSuccessMessage.value = true
+          
+          // Auto-hide success message and move to next session
           setTimeout(() => {
             showSuccessMessage.value = false
-          }, 3000)
+            moveToNextSession()
+          }, 1500)
           
-          // Move to next session
-          moveToNextSession()
         } else {
           throw new Error(result.message || 'Failed to submit feedback')
         }
@@ -194,9 +209,12 @@ export default {
 
     const showCompletionMessage = () => {
       // Show completion notification and redirect
+      successMessage.value = `🎉 All sessions completed! You've successfully rated ${completedSessions.value} sessions.`
+      showSuccessMessage.value = true
       setTimeout(() => {
+        showSuccessMessage.value = false
         router.push('/')
-      }, 2000)
+      }, 3000)
     }
 
     onMounted(() => {
@@ -210,6 +228,7 @@ export default {
       loading,
       error,
       showSuccessMessage,
+      successMessage,
       completedSessions,
       loadSessions,
       handleFeedbackSubmission,

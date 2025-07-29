@@ -37,7 +37,7 @@ class PhoenixAPIClient:
             self.client = None
             self.has_phoenix_client = False
             
-        self.project_name = os.getenv("INTER_RATER_PROJECT", "atlas-hansard")
+        self.project_name = os.getenv("INTER_RATER_PROJECT", "Hansard-Dev")
     
     async def query_spans_with_feedback(
         self, 
@@ -55,21 +55,40 @@ class PhoenixAPIClient:
             
         Returns:
             List of session data suitable for inter-rating
+            
+        Raises:
+            ValueError: When no Phoenix data is available for inter-rating
         """
         
-        # Try real Phoenix query first, fall back to mock if unavailable
-        if self.has_phoenix_client:
-            try:
-                real_sessions = await self._query_phoenix_with_client(exclude_user_id, limit, days_back)
-                if real_sessions:
-                    logger.info(f"Retrieved {len(real_sessions)} sessions from Phoenix")
-                    return real_sessions
-            except Exception as e:
-                logger.warning(f"Phoenix query failed, using mock data: {e}")
+        if not self.has_phoenix_client:
+            raise ValueError(
+                f"Phoenix client not available. Cannot fetch inter-rater sessions for project '{self.project_name}'. "
+                f"Please check Phoenix configuration and ensure the client is properly installed."
+            )
         
-        # Fall back to mock data for development/testing
-        logger.info("Using mock data for inter-rater sessions")
-        return await self._get_mock_sessions(exclude_user_id, limit)
+        try:
+            real_sessions = await self._query_phoenix_with_client(exclude_user_id, limit, days_back)
+            if real_sessions:
+                logger.info(f"Retrieved {len(real_sessions)} sessions from Phoenix project '{self.project_name}'")
+                return real_sessions
+            else:
+                # No sessions found - provide detailed error message
+                raise ValueError(
+                    f"No sessions with feedback found in Phoenix project '{self.project_name}' "
+                    f"for the last {days_back} days. "
+                    f"Inter-rating requires existing sessions with user feedback. "
+                    f"Please ensure: (1) Users have submitted feedback on sessions, "
+                    f"(2) The project name '{self.project_name}' is correct, "
+                    f"(3) The date range includes sessions with feedback."
+                )
+        except ValueError:
+            # Re-raise ValueError with our custom message
+            raise
+        except Exception as e:
+            raise ValueError(
+                f"Failed to query Phoenix project '{self.project_name}': {str(e)}. "
+                f"Please check Phoenix connection, API credentials, and project access."
+            )
     
     async def _query_phoenix_with_client(
         self, 
@@ -90,7 +109,7 @@ class PhoenixAPIClient:
         end_date = datetime.now()
         start_date = end_date - timedelta(days=days_back)
         
-        logger.info(f"Querying Phoenix for project '{self.project_name}' from {start_date} to {end_date}")
+        logger.info(f"Querying Phoenix for project '{self.project_name}' (last {days_back} days)")
         
         try:
             # Use the same method as your phoenix_export.py
@@ -106,48 +125,65 @@ class PhoenixAPIClient:
             
             logger.info(f"Found {len(spans_df)} total spans in Phoenix")
             
-            # Filter for spans with feedback (based on your export patterns)
-            feedback_spans = []
+            # Filter for generation response spans (these are the ones with user feedback)
+            generation_response_spans = []
             
             for _, row in spans_df.iterrows():
-                # Extract attributes (following your phoenix_export.py pattern)
-                attributes = {}
+                # Look specifically for com.atlas.rag.generation.response spans
+                span_name = row.get('name', '')
+                span_kind = row.get('attributes.openinference.span.kind')
                 
-                # Phoenix stores attributes in different column formats
+                logger.debug(f"Checking span: name='{span_name}', kind='{span_kind}'")
+                
+                if span_name != 'com.atlas.rag.generation.response' or span_kind != 'LLM':
+                    continue
+                    
+                # Must have some output (can be short metadata like "Generated response (244 words, 11.01s)")
+                output_value = row.get('attributes.output.value')
+                output_len = len(str(output_value)) if output_value else 0
+                logger.debug(f"Output length: {output_len}")
+                
+                if not output_value or output_len < 10:
+                    logger.debug(f"Skipping span - insufficient output: {output_len} chars")
+                    continue
+                    
+                generation_response_spans.append(row)
+                logger.debug(f"Added generation response span: {row.get('context.span_id', 'unknown')}")
+            
+            logger.info(f"Found {len(generation_response_spans)} generation response spans")
+            
+            # For now, assume all generation response spans have feedback since we can't reliably query annotations
+            # This is a temporary workaround for the Phoenix client version mismatch
+            feedback_spans = []
+            
+            for row in generation_response_spans:
+                span_id = row.get('context.span_id')
+                if not span_id:
+                    continue
+                
+                # Extract attributes for session data
+                attributes = {}
                 for col in spans_df.columns:
-                    if col.startswith('attributes.') or col.startswith('feedback.'):
-                        key = col.replace('attributes.', '').replace('feedback.', 'feedback.')
+                    if col.startswith('attributes.'):
+                        key = col.replace('attributes.', '')
                         attributes[key] = row[col]
                 
-                # Check if this span has feedback
-                has_feedback = any(
-                    key.startswith('feedback') or 
-                    key in ['relevance', 'clarity', 'factual_accuracy', 'source_quality']
-                    for key in attributes.keys()
-                    if pd.notna(attributes.get(key))
-                )
-                
-                if not has_feedback:
-                    continue
-                
-                # Check if this span is from the excluded user
-                span_user_id = attributes.get('user_id') or attributes.get('rater_id')
-                if exclude_user_id and span_user_id == exclude_user_id:
-                    continue
+                # Get original feedback from annotations
+                original_feedback = await self._get_span_feedback_annotations(span_id)
                 
                 # Extract session data
                 session_data = {
-                    "session_id": attributes.get('session_id', f"session_{row.get('span_id', 'unknown')[:8]}"),
-                    "qa_id": attributes.get('qa_id', f"qa_{row.get('span_id', 'unknown')[:8]}"),
-                    "span_id": row.get('span_id', row.get('context.span_id')),
+                    "session_id": attributes.get('session.id', f"session_{span_id[:8]}"),
+                    "qa_id": attributes.get('qa_id', f"qa_{span_id[:8]}"),
+                    "span_id": span_id,
                     "timestamp": row.get('start_time', datetime.now()).isoformat(),
-                    "question": attributes.get('input.value', attributes.get('question', 'Question not available')),
-                    "answer": attributes.get('output.value', attributes.get('answer', 'Answer not available')),
-                    "original_feedback": self._extract_feedback_from_attributes(attributes),
+                    "question": attributes.get('input.value', 'Question not available'),
+                    "answer": attributes.get('output', 'Answer not available'),  # Use 'output' not 'output.value'
+                    "original_feedback": original_feedback,
                     "citations": self._extract_citations_from_attributes(attributes),
                     "inter_rater_count": 0,  # Will be calculated separately
                     "project_name": self.project_name,
-                    "original_user_id": span_user_id
+                    "original_user_id": original_feedback.get('user_id', 'unknown')
                 }
                 
                 feedback_spans.append(session_data)
@@ -182,7 +218,9 @@ class PhoenixAPIClient:
         }
         
         for attr_key, feedback_key in feedback_mapping.items():
-            if attr_key in attributes and pd.notna(attributes[attr_key]):
+            if (attr_key in attributes and 
+                attributes[attr_key] is not None and 
+                str(attributes[attr_key]).strip() != ''):
                 feedback[feedback_key] = attributes[attr_key]
         
         return feedback
@@ -195,7 +233,7 @@ class PhoenixAPIClient:
         
         # Look for citation-related attributes
         for key, value in attributes.items():
-            if key.startswith('citation') and pd.notna(value):
+            if key.startswith('citation') and value is not None and str(value).strip() != '':
                 citations.append({
                     "source": str(value),
                     "relevance": "medium"  # Default relevance
@@ -203,69 +241,132 @@ class PhoenixAPIClient:
         
         return citations
     
-    async def _get_mock_sessions(
-        self, 
-        exclude_user_id: str = None,
-        limit: int = 10
-    ) -> List[Dict[str, Any]]:
-        
-        mock_sessions = [
-            {
-                "session_id": "session_001",
-                "qa_id": "qa_001", 
-                "span_id": "abcd1234efgh5678",
-                "timestamp": "2024-01-15T10:30:00Z",
-                "question": "What were the main provisions of the Parliamentary Reform Act of 1832?",
-                "answer": "The Parliamentary Reform Act of 1832, also known as the Great Reform Act, was a significant piece of legislation that reshaped the British electoral system. The main provisions included: redistributing parliamentary seats from 'rotten boroughs' to growing industrial towns, extending voting rights to middle-class property owners in boroughs, and establishing more uniform electoral qualifications across England and Wales.",
-                "original_feedback": {
-                    "relevance": 4,
-                    "clarity": 5,
-                    "factual_accuracy": 4,
-                    "source_quality": 4,
-                    "user_category": "Digital HASS Researcher",
-                    "feedback_text": "Good comprehensive answer with accurate historical detail."
-                },
-                "citations": [
-                    {"source": "Hansard 1832-03-15", "relevance": "high"},
-                    {"source": "Hansard 1832-03-22", "relevance": "medium"}
-                ],
-                "inter_rater_count": 1,
-                "project_name": self.project_name,
-                "original_user_id": "user_123"
-            },
-            {
-                "session_id": "session_002",
-                "qa_id": "qa_002",
-                "span_id": "efgh5678ijkl9012", 
-                "timestamp": "2024-01-16T14:15:00Z",
-                "question": "How did the voting patterns change after the 1867 Reform Act?",
-                "answer": "The 1867 Reform Act significantly expanded the electorate by extending voting rights to working-class men in boroughs. This led to notable changes in voting patterns: increased political participation from the working classes, strengthening of the Liberal Party in urban areas, and the emergence of more organized political campaigning to appeal to the expanded voter base.",
-                "original_feedback": {
-                    "relevance": 3,
-                    "clarity": 4,
-                    "factual_accuracy": 3,
-                    "source_quality": 3,
-                    "user_category": "Hansard Expert",
-                    "feedback_text": "Could use more specific examples from the parliamentary debates."
-                },
-                "citations": [
-                    {"source": "Hansard 1867-08-12", "relevance": "high"},
-                    {"source": "Hansard 1867-09-05", "relevance": "high"}
-                ],
-                "inter_rater_count": 0,
-                "project_name": self.project_name,
-                "original_user_id": "user_456"
+    async def _check_span_has_user_feedback(self, span_id: str) -> bool:
+        """
+        Check if a span has user feedback annotations (not inter-rater feedback).
+        """
+        try:
+            import httpx
+            
+            phoenix_endpoint = os.getenv('PHOENIX_COLLECTOR_ENDPOINT', 'https://app.phoenix.arize.com')
+            # Use correct v11.13.2 API format with project in path
+            annotations_endpoint = f"{phoenix_endpoint}/v1/projects/{self.project_name}/span_annotations"
+            
+            headers = self._get_phoenix_headers()
+            
+            # Use span_ids parameter (not span_id) as per v11.13.2 API
+            params = {
+                "span_ids": span_id,
+                "limit": 100
             }
-        ]
-        
-        # Filter out sessions from the excluded user
-        if exclude_user_id:
-            mock_sessions = [
-                session for session in mock_sessions 
-                if session.get("original_user_id") != exclude_user_id
-            ]
-        
-        return mock_sessions[:limit]
+            
+            response = httpx.get(
+                annotations_endpoint,
+                headers=headers,
+                params=params,
+                timeout=10.0
+            )
+            
+            if response.status_code == 200:
+                annotations = response.json()
+                
+                # Look for user feedback annotations (not inter-rater) (Phoenix v11.13.2 uses 'data' not 'annotations')
+                for annotation in annotations.get('data', []):
+                    metadata = annotation.get('metadata', {})
+                    # Skip inter-rater feedback
+                    if metadata.get('is_inter_rater', False):
+                        continue
+                        
+                    # Check for any user feedback annotation (not just "user feedback" name)
+                    annotation_name = annotation.get('name', '')
+                    if annotation_name in ['Relevance Rating', 'Clarity', 'Factual Accuracy', 'Analysis Quality', 'Additional Comments', 'Query Difficulty']:
+                        return True
+                        
+                return False
+            else:
+                logger.warning(f"Failed to query annotations for span {span_id[:8]}...: {response.status_code}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error checking span feedback: {e}")
+            return False
+    
+    async def _get_span_feedback_annotations(self, span_id: str) -> dict:
+        """
+        Get the original user feedback from span annotations.
+        """
+        try:
+            import httpx
+            
+            phoenix_endpoint = os.getenv('PHOENIX_COLLECTOR_ENDPOINT', 'https://app.phoenix.arize.com')
+            # Use correct v11.13.2 API format with project in path
+            annotations_endpoint = f"{phoenix_endpoint}/v1/projects/{self.project_name}/span_annotations"
+            
+            headers = self._get_phoenix_headers()
+            
+            # Use span_ids parameter (not span_id) as per v11.13.2 API
+            params = {
+                "span_ids": span_id,
+                "limit": 100
+            }
+            
+            response = httpx.get(
+                annotations_endpoint,
+                headers=headers,
+                params=params,
+                timeout=10.0
+            )
+            
+            if response.status_code == 200:
+                annotations = response.json()
+                feedback = {}
+                
+                # Extract feedback from annotations (Phoenix v11.13.2 uses 'data' not 'annotations')
+                for annotation in annotations.get('data', []):
+                    metadata = annotation.get('metadata', {})
+                    result = annotation.get('result', {})
+                    
+                    # Only get original user feedback (not inter-rater)
+                    # Skip inter-rater feedback based on metadata
+                    if metadata.get('is_inter_rater', False):
+                        continue
+                    
+                    # Map Phoenix annotation names to feedback fields
+                    annotation_name = annotation.get('name', '')
+                    label = result.get('label', '')
+                    score = result.get('score')
+                    explanation = result.get('explanation', '')
+                    
+                    # Map annotation types to our feedback structure
+                    if annotation_name == 'Relevance Rating' or label == 'relevance':
+                        feedback['relevance'] = score
+                    elif annotation_name == 'Clarity' or label == 'clarity':
+                        feedback['clarity'] = score
+                    elif annotation_name == 'Factual Accuracy' or label == 'factual_accuracy':
+                        feedback['factual_accuracy'] = score
+                    elif annotation_name == 'Analysis Quality' or label == 'analysis_quality':
+                        feedback['analysis_quality'] = score
+                    elif annotation_name == 'Additional Comments' or label == 'additional_feedback':
+                        feedback['feedback_text'] = explanation
+                    elif annotation_name == 'Query Difficulty' or label == 'query_difficulty':
+                        feedback['query_difficulty'] = score
+                        
+                    # Get QA ID and other metadata
+                    if metadata.get('qa_id'):
+                        feedback['qa_id'] = metadata['qa_id']
+                    if metadata.get('feedback_type'):
+                        feedback['feedback_type'] = metadata['feedback_type']
+                
+                return feedback
+            else:
+                logger.warning(f"Failed to get feedback annotations for span {span_id[:8]}...: {response.status_code}")
+                logger.warning(f"Response: {response.text[:200]}")
+                return {}
+                
+        except Exception as e:
+            logger.error(f"Error getting span feedback annotations: {e}")
+            return {}
+    
     
     async def get_span_details(self, span_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -298,17 +399,24 @@ class PhoenixAPIClient:
             return None
 
     def _get_phoenix_headers(self):
-        """Get authentication headers for Phoenix API calls."""
-        client_headers = os.getenv('PHOENIX_CLIENT_HEADERS')
-        headers = {"Content-Type": "application/json"}
-        
+        """Get authentication headers for Phoenix API calls (v11.13.2 format)."""
         phoenix_api_key = os.getenv('PHOENIX_API_KEY')
+        client_headers = os.getenv('PHOENIX_CLIENT_HEADERS')
+        
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json"
+        }
+        
+        # Phoenix v11.13.2 expects api_key header (not Bearer authorization)
         if phoenix_api_key:
+            # Clean up the API key if it has prefixes
             if phoenix_api_key.startswith('api_key='):
                 phoenix_api_key = phoenix_api_key[8:]
             headers['api_key'] = phoenix_api_key
             return headers
         
+        # Fallback to client headers if no API key
         if client_headers:
             try:
                 if client_headers.startswith('api_key='):
@@ -328,6 +436,7 @@ class PhoenixAPIClient:
                 headers['api_key'] = client_headers
                 return headers
         
+        logger.warning("No Phoenix API key found in PHOENIX_API_KEY or PHOENIX_CLIENT_HEADERS")
         return headers
 
     def _format_span_id(self, span_id: str) -> str:
@@ -357,32 +466,42 @@ class PhoenixAPIClient:
             import httpx
             
             phoenix_endpoint = os.getenv('PHOENIX_COLLECTOR_ENDPOINT', 'https://app.phoenix.arize.com')
-            annotations_endpoint = f"{phoenix_endpoint}/v1/span_annotations"
+            # Use correct v11.13.2 API format with project in path
+            annotations_endpoint = f"{phoenix_endpoint}/v1/projects/{self.project_name}/span_annotations"
             
             headers = self._get_phoenix_headers()
-            formatted_span_id = self._format_span_id(span_id)
+            
+            # Use span_ids parameter (not span_id) as per v11.13.2 API
+            params = {
+                "span_ids": span_id,
+                "limit": 100
+            }
             
             # Query annotations for this span
             response = httpx.get(
-                f"{annotations_endpoint}?span_id={formatted_span_id}",
+                annotations_endpoint,
                 headers=headers,
+                params=params,
                 timeout=10.0
             )
             
             if response.status_code == 200:
                 annotations = response.json()
                 
-                # Check if any annotations have inter-rater metadata for this user
+                # Check if any annotations have inter-rater metadata for this user (Phoenix v11.13.2 uses 'data' not 'annotations')
                 for annotation in annotations.get('data', []):
                     metadata = annotation.get('metadata', {})
                     if (metadata.get('is_inter_rater') and 
                         metadata.get('rater_id') == user_id):
-                        logger.debug(f"Found existing inter-rater feedback for user {user_id} on span {span_id}")
+                        sanitized_user_id = user_id[:8] + "..." if len(user_id) > 8 else user_id
+                        sanitized_span_id = span_id[:8] + "..." if len(span_id) > 8 else span_id
+                        logger.debug(f"Found existing inter-rater feedback for user {sanitized_user_id} on span {sanitized_span_id}")
                         return True
                         
                 return False
             else:
-                logger.warning(f"Failed to query annotations for span {span_id}: {response.status_code}")
+                sanitized_span_id = span_id[:8] + "..." if len(span_id) > 8 else span_id
+                logger.warning(f"Failed to query annotations for span {sanitized_span_id}: {response.status_code}")
                 return False
                 
         except Exception as e:
@@ -400,29 +519,38 @@ class PhoenixAPIClient:
             Number of inter-rater feedback entries
         """
         if not self.has_phoenix_client:
-            return 1 if span_id == "abcd1234efgh5678" else 0
+            sanitized_span_id = span_id[:8] + "..." if len(span_id) > 8 else span_id
+            logger.warning(f"Phoenix client not available - cannot get inter-rater count for span {sanitized_span_id}")
+            return 0
             
         try:
             # Query Phoenix annotations API for inter-rater feedback count
             import httpx
             
             phoenix_endpoint = os.getenv('PHOENIX_COLLECTOR_ENDPOINT', 'https://app.phoenix.arize.com')
-            annotations_endpoint = f"{phoenix_endpoint}/v1/span_annotations"
+            # Use correct v11.13.2 API format with project in path
+            annotations_endpoint = f"{phoenix_endpoint}/v1/projects/{self.project_name}/span_annotations"
             
             headers = self._get_phoenix_headers()
-            formatted_span_id = self._format_span_id(span_id)
+            
+            # Use span_ids parameter (not span_id) as per v11.13.2 API
+            params = {
+                "span_ids": span_id,
+                "limit": 100
+            }
             
             # Query annotations for this span
             response = httpx.get(
-                f"{annotations_endpoint}?span_id={formatted_span_id}",
+                annotations_endpoint,
                 headers=headers,
+                params=params,
                 timeout=10.0
             )
             
             if response.status_code == 200:
                 annotations = response.json()
                 
-                # Count unique inter-rater users (each user can only rate once)
+                # Count unique inter-rater users (each user can only rate once) (Phoenix v11.13.2 uses 'data' not 'annotations')
                 inter_rater_users = set()
                 for annotation in annotations.get('data', []):
                     metadata = annotation.get('metadata', {})
@@ -430,10 +558,12 @@ class PhoenixAPIClient:
                         inter_rater_users.add(metadata['rater_id'])
                 
                 count = len(inter_rater_users)
-                logger.debug(f"Found {count} inter-rater users for span {span_id}")
+                sanitized_span_id = span_id[:8] + "..." if len(span_id) > 8 else span_id
+                logger.debug(f"Found {count} inter-rater users for span {sanitized_span_id}")
                 return count
             else:
-                logger.warning(f"Failed to query annotations for span {span_id}: {response.status_code}")
+                sanitized_span_id = span_id[:8] + "..." if len(span_id) > 8 else span_id
+                logger.warning(f"Failed to query annotations for span {sanitized_span_id}: {response.status_code}")
                 return 0
                 
         except Exception as e:
