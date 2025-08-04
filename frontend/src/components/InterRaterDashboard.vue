@@ -28,17 +28,6 @@
         <p class="subtitle is-6">
           No sessions are currently available for inter-rating.
         </p>
-        <div class="notification is-info is-light mt-4" style="text-align: left; max-width: 600px; margin: 0 auto;">
-          <h4 class="title is-6">Sessions become available when:</h4>
-          <ul>
-            <li>• Other users provide feedback that needs validation</li>
-            <li>• There are existing sessions with user feedback in Phoenix</li>
-            <li>• The Phoenix project contains data for the configured time period</li>
-          </ul>
-        </div>
-        <router-link to="/" class="button mt-4" style="background-color: #363636; color: white; border-color: #363636;">
-          Return to Home
-        </router-link>
       </div>
     </div>
 
@@ -161,10 +150,16 @@ export default {
       } catch (err) {
         console.error('Error loading inter-rater sessions:', err)
         // Provide more detailed error messages
-        if (err.message && err.message.includes('Phoenix')) {
+        if (err.message && err.message.includes('No sessions with feedback found')) {
+          // This shouldn't happen anymore with the backend fix, but just in case
+          sessions.value = []
+          error.value = null
+        } else if (err.message && err.message.includes('Phoenix')) {
           error.value = `Phoenix Connection Issue: ${err.message}`
         } else if (err.message && err.message.includes('project')) {
           error.value = `Project Configuration Issue: ${err.message}`
+        } else if (err.message && err.message.includes('500')) {
+          error.value = 'No sessions are currently available for inter-rating. Please check back later or contact your administrator.'
         } else {
           error.value = err.message || 'Failed to load sessions. Please check the server logs for details.'
         }

@@ -72,15 +72,9 @@ class PhoenixAPIClient:
                 logger.info(f"Retrieved {len(real_sessions)} sessions from Phoenix project '{self.project_name}'")
                 return real_sessions
             else:
-                # No sessions found - provide detailed error message
-                raise ValueError(
-                    f"No sessions with feedback found in Phoenix project '{self.project_name}' "
-                    f"for the last {days_back} days. "
-                    f"Inter-rating requires existing sessions with user feedback. "
-                    f"Please ensure: (1) Users have submitted feedback on sessions, "
-                    f"(2) The project name '{self.project_name}' is correct, "
-                    f"(3) The date range includes sessions with feedback."
-                )
+                # No sessions found - return empty list instead of raising error
+                logger.info(f"No sessions with feedback found in Phoenix project '{self.project_name}' for the last {days_back} days")
+                return []
         except ValueError:
             # Re-raise ValueError with our custom message
             raise
