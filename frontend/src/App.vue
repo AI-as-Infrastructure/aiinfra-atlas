@@ -11,25 +11,27 @@
               <!-- Empty left section for spacing -->
               <div class="nav-section left-section"></div>
               
-              <!-- Center section with all navigation items grouped together -->
+              <!-- Center section with main navigation items -->
               <div class="nav-section center-section">
                 <div class="nav-item">
                   <NewSessionButton />
                 </div>
                 <div class="nav-item">
-                  <router-link class="nav-link" to="/about">About</router-link>
-                </div>
-                <div class="nav-item">
                   <router-link class="nav-link" to="/faq">FAQ</router-link>
                 </div>
                 <div class="nav-item">
-                  <InterRaterButton />
+                  <router-link class="nav-link" to="/about">About</router-link>
                 </div>
               </div>
               
-              <!-- Right section for auth controls -->
+              <!-- Right section for Inter-rate and logout buttons -->
               <div class="nav-section right-section">
-                <AuthControls class="auth-controls" />
+                <div class="nav-item">
+                  <InterRaterButton />
+                </div>
+                <div class="nav-item">
+                  <AuthControls class="auth-controls" />
+                </div>
               </div>
             </div>
           </div>
@@ -136,6 +138,7 @@ onMounted(() => {
   justify-content: space-between;
   width: 100%;
   flex: 1;
+  height: 100%;
 }
 
 .nav-section {
@@ -162,17 +165,18 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+  vertical-align: top;
+  line-height: 1;
 }
 
 .center-section .nav-item {
   margin: 0 1.25rem; /* Add consistent horizontal margins to each item */
   padding: 0;
+  display: flex;
+  align-items: center;
 }
 
-.center-section .nav-link {
-  padding: 0.5rem 0.75rem;
-  display: block;
-}
+/* Removed old nav-link padding - using consistent styling */
 
 .right-section {
   justify-content: flex-end;
@@ -180,9 +184,22 @@ onMounted(() => {
   min-width: 50px; /* Ensure minimum spacing to the right edge */
 }
 
-/* Ensure the auth controls have consistent spacing */
+.right-section .nav-item {
+  margin: 0 0.5rem; /* Add horizontal spacing between right section items */
+  padding: 0;
+  display: flex;
+  align-items: center;
+}
+
+.right-section .nav-item:last-child {
+  margin-right: 0; /* Remove right margin from last item */
+}
+
+/* Ensure the auth controls have consistent spacing and alignment */
 .auth-controls {
-  margin-left: 1rem;
+  margin-left: 0;
+  display: flex;
+  align-items: center;
 }
 
 
@@ -192,40 +209,51 @@ onMounted(() => {
   text-decoration: none !important;
 }
 
-.new-session-link {
-  color: #000;
-  text-decoration: none;
-  cursor: pointer;
-  font-weight: 500;
-  font-size: 1rem;
-  padding: 0.25rem 1.3rem;
-  transition: color 0.2s, text-decoration 0.2s;
-  background: none;
-  border: none;
-  outline: none;
-}
-.new-session-link:hover, .new-session-link:focus {
-  color: #888;
-  text-decoration: none;
-}
+/* Removed old new-session-link styling - now uses nav-link */
 
-/* Navigation link styling */
+/* Navigation link styling - matching global black button styling */
 .nav-link {
-  color: #000;
-  text-decoration: underline;
+  background-color: #000 !important;
+  color: #fff !important;
+  border: none !important;
+  text-decoration: none !important;
   cursor: pointer;
   font-weight: 500;
-  font-size: 1rem;
-  padding: 0.25rem 1.3rem;
-  transition: color 0.2s;
-  background: none;
-  border: none;
+  font-size: 0.875rem;
+  padding: 0;
+  border-radius: 2px;
   outline: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100px;
+  height: 40px;
+  transition: background-color 0.2s;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  appearance: none !important;
+  box-shadow: none !important;
 }
 
 .nav-link:hover, .nav-link:focus {
-  color: #888;
-  text-decoration: underline;
+  background-color: #888 !important;
+  color: #fff !important;
+  text-decoration: none !important;
+}
+
+/* Override any router-link specific styling */
+.nav-link.router-link-active {
+  background-color: #888 !important;
+  color: #fff !important;
+}
+
+.nav-link.router-link-exact-active {
+  background-color: #888 !important;
+  color: #fff !important;
 }
 
 /* You may add any App.vue-specific tweaks here if required. */

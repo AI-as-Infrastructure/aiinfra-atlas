@@ -264,8 +264,14 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
     # Get authentication headers
     headers = get_phoenix_headers()
     
-    # Generate a unique annotation ID based on qa_id and timestamp
-    annotation_id = f"feedback_{qa_id}_{int(time.time())}" if qa_id else f"feedback_{uuid.uuid4()}_{int(time.time())}"
+    # Generate a unique annotation ID based on qa_id, timestamp, and feedback type
+    timestamp = int(time.time())
+    if feedback_data.get("is_inter_rater"):
+        # Always use unique prefix for inter-rater feedback to ensure separation
+        rater_id = feedback_data.get("rater_id", f"rater_{timestamp}")[:8]  # First 8 chars for brevity
+        annotation_id = f"inter_rater_{rater_id}_{qa_id}_{timestamp}" if qa_id else f"inter_rater_{rater_id}_{uuid.uuid4()}_{timestamp}"
+    else:
+        annotation_id = f"feedback_{qa_id}_{timestamp}" if qa_id else f"feedback_{uuid.uuid4()}_{timestamp}"
     
     # Prepare annotation data list with the formatted span ID
     annotation_data = []
@@ -279,18 +285,38 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
         # Add inter-rater reliability fields if present
         if feedback_data.get("is_inter_rater"):
             metadata["is_inter_rater"] = True
+            metadata["feedback_type"] = "inter_rater"  # Clear identifier
             if feedback_data.get("original_span_id"):
                 metadata["original_span_id"] = feedback_data["original_span_id"]
             if feedback_data.get("rater_id"):
                 metadata["rater_id"] = feedback_data["rater_id"]
+            # Add timestamp for inter-rater submission tracking
+            metadata["inter_rater_timestamp"] = datetime.now().isoformat()
+        else:
+            metadata["feedback_type"] = "original"  # Mark original feedback
         
         return metadata
+    
+    # Helper function to get annotation name prefix - simplified approach
+    def get_annotation_name_prefix():
+        # Check if this is inter-rater feedback using multiple indicators
+        is_inter_rater_feedback = (
+            feedback_data.get("is_inter_rater") == True or
+            feedback_data.get("is_inter_rater") == "true" or
+            feedback_data.get("feedback_type") == "inter_rater" or
+            "inter_rater" in annotation_id
+        )
+        
+        if is_inter_rater_feedback:
+            return "[Inter-rater]"
+        else:
+            return "[Original]"
     
     # Add user comment annotation if present
     if feedback_data.get("feedback_text"):
         annotation_data.append({
             "id": f"{annotation_id}_user_comment",
-            "name": "User Comment",  # Required field by Phoenix API
+            "name": f"{get_annotation_name_prefix()} User Comment",  # Required field by Phoenix API
             "span_id": formatted_span_id,
             "annotator_kind": "HUMAN",  # Required field by Phoenix API
             "result": {  # Nest these fields inside result as expected by Phoenix
@@ -305,7 +331,7 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
     if "relevance" in feedback_data and feedback_data["relevance"] is not None:
         annotation_data.append({
             "id": f"{annotation_id}_relevance",
-            "name": "Relevance Rating",  # Required field by Phoenix API
+            "name": f"{get_annotation_name_prefix()} Relevance Rating",  # Required field by Phoenix API
             "span_id": formatted_span_id,
             "annotator_kind": "HUMAN",  # Required field by Phoenix API
             "result": {  # Nest these fields inside result as expected by Phoenix
@@ -331,7 +357,7 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
             
         annotation_data.append({
             "id": f"{annotation_id}_factual",
-            "name": "Factual Accuracy",  # Required field by Phoenix API
+            "name": f"{get_annotation_name_prefix()} Factual Accuracy",  # Required field by Phoenix API
             "span_id": formatted_span_id,
             "annotator_kind": "HUMAN",  # Required field by Phoenix API
             "result": {  # Nest these fields inside result as expected by Phoenix
@@ -347,7 +373,7 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
         clarity_score = feedback_data["clarity"]
         annotation_data.append({
             "id": f"{annotation_id}_clarity",
-            "name": "Clarity",  # Required field by Phoenix API
+            "name": f"{get_annotation_name_prefix()} Clarity",  # Required field by Phoenix API
             "span_id": formatted_span_id,
             "annotator_kind": "HUMAN",  # Required field by Phoenix API
             "result": {  # Nest these fields inside result as expected by Phoenix
@@ -363,7 +389,7 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
         source_quality_score = feedback_data["source_quality"]
         annotation_data.append({
             "id": f"{annotation_id}_source_quality",
-            "name": "Source Quality",  # Required field by Phoenix API
+            "name": f"{get_annotation_name_prefix()} Source Quality",  # Required field by Phoenix API
             "span_id": formatted_span_id,
             "annotator_kind": "HUMAN",  # Required field by Phoenix API
             "result": {  # Nest these fields inside result as expected by Phoenix
@@ -371,7 +397,7 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
                 "score": source_quality_score,
                 "explanation": get_source_quality_description(source_quality_score)  # Add detailed explanation for Phoenix UI
             },
-            "metadata": {"qa_id": qa_id} if qa_id else {}
+            "metadata": get_base_metadata()
         })
         
     # Add question rating annotation if present
@@ -379,7 +405,7 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
         question_rating_score = feedback_data["question_rating"]
         annotation_data.append({
             "id": f"{annotation_id}_question_rating",
-            "name": "Question Difficulty",  # Required field by Phoenix API
+            "name": f"{get_annotation_name_prefix()} Question Difficulty",  # Required field by Phoenix API
             "span_id": formatted_span_id,
             "annotator_kind": "HUMAN",  # Required field by Phoenix API
             "result": {  # Nest these fields inside result as expected by Phoenix
@@ -387,7 +413,7 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
                 "score": question_rating_score,
                 "explanation": get_question_rating_description(question_rating_score)  # Add detailed explanation for Phoenix UI
             },
-            "metadata": {"qa_id": qa_id} if qa_id else {}
+            "metadata": get_base_metadata()
         })
         
     # Add user category annotation if present
@@ -405,7 +431,7 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
         
         annotation_data.append({
             "id": f"{annotation_id}_user_category",
-            "name": "User Category",  # Required field by Phoenix API
+            "name": f"{get_annotation_name_prefix()} User Category",  # Required field by Phoenix API
             "span_id": formatted_span_id,
             "annotator_kind": "HUMAN",  # Required field by Phoenix API
             "result": {  # Nest these fields inside result as expected by Phoenix
@@ -421,7 +447,7 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
         for i, tag in enumerate(feedback_data["tags"]):
             annotation_data.append({
                 "id": f"{annotation_id}_tag_{i}",
-                "name": f"Tag: {tag}",  # Make the tag name visible
+                "name": f"{get_annotation_name_prefix()} Tag: {tag}",  # Make the tag name visible
                 "span_id": formatted_span_id,
                 "annotator_kind": "HUMAN",  # Required field by Phoenix API
                 "result": {  # Nest these fields inside result as expected by Phoenix
@@ -465,7 +491,7 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
         analysis_quality_score = feedback_data["analysis_quality"]
         annotation_data.append({
             "id": f"{annotation_id}_analysis_quality",
-            "name": "Analysis Quality",
+            "name": f"{get_annotation_name_prefix()} Analysis Quality",
             "span_id": formatted_span_id,
             "annotator_kind": "HUMAN",
             "result": {
@@ -473,7 +499,7 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
                 "score": analysis_quality_score,
                 "explanation": get_analysis_quality_description(analysis_quality_score)
             },
-            "metadata": {"qa_id": qa_id} if qa_id else {}
+            "metadata": get_base_metadata()
         })
     
     # Add difficulty annotation if present
@@ -481,7 +507,7 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
         difficulty_score = feedback_data["difficulty"]
         annotation_data.append({
             "id": f"{annotation_id}_difficulty",
-            "name": "Query Difficulty",
+            "name": f"{get_annotation_name_prefix()} Query Difficulty",
             "span_id": formatted_span_id,
             "annotator_kind": "HUMAN",
             "result": {
@@ -489,7 +515,7 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
                 "score": difficulty_score,
                 "explanation": get_difficulty_description(difficulty_score)
             },
-            "metadata": {"qa_id": qa_id} if qa_id else {}
+            "metadata": get_base_metadata()
         })
     
     # Add faults annotations if present
@@ -498,7 +524,7 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
         for fault_type in active_faults:
             annotation_data.append({
                 "id": f"{annotation_id}_fault_{fault_type}",
-                "name": f"Fault: {fault_type.replace('_', ' ').title()}",
+                "name": f"{get_annotation_name_prefix()} Fault: {fault_type.replace('_', ' ').title()}",
                 "span_id": formatted_span_id,
                 "annotator_kind": "HUMAN",
                 "result": {
@@ -513,7 +539,7 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
     if "additional_comments" in feedback_data and feedback_data["additional_comments"]:
         annotation_data.append({
             "id": f"{annotation_id}_additional_comments",
-            "name": "Additional Comments",
+            "name": f"{get_annotation_name_prefix()} Additional Comments",
             "span_id": formatted_span_id,
             "annotator_kind": "HUMAN",
             "result": {
@@ -627,7 +653,7 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
     if "model_answer" in feedback_data and feedback_data["model_answer"]:
         annotation_data.append({
             "id": f"{annotation_id}_model_answer",
-            "name": "Model Answer",
+            "name": f"{get_annotation_name_prefix()} Model Answer",
             "span_id": formatted_span_id,
             "annotator_kind": "HUMAN",
             "result": {
@@ -635,7 +661,7 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
                 "score": None,
                 "explanation": feedback_data["model_answer"]
             },
-            "metadata": {"qa_id": qa_id} if qa_id else {}
+            "metadata": get_base_metadata()
         })
     
     # Skip if no annotation data was created
@@ -678,11 +704,27 @@ async def associate_feedback_with_spans(session_id: str, qa_id: str, feedback_da
     """
     Attach feedback as an annotation to the LLM generation response span using the native API and the span registry.
     This ensures feedback is directly associated with the model's response output.
+    For inter-rater feedback, it attaches directly to the original span being rated.
     Returns True if successful, False otherwise.
     """
     import logging
     logger = logging.getLogger(__name__)
     try:
+        # Handle inter-rater feedback differently - attach directly to original span
+        if feedback_data.get('is_inter_rater') and feedback_data.get('original_span_id'):
+            original_span_id = feedback_data['original_span_id']
+            logger.info(f"Processing inter-rater feedback for original span {original_span_id}")
+            
+            # Submit annotation directly to the original span
+            success = submit_span_annotation(original_span_id, feedback_data, qa_id)
+            if success:
+                logger.info(f"Inter-rater feedback annotation submitted to original span {original_span_id}")
+                return True
+            else:
+                logger.error(f"Failed to submit inter-rater feedback annotation to original span {original_span_id}")
+                return False
+        
+        # Regular feedback processing - find the response span
         # The LLM response span is registered with a special key format of {qa_id}_response
         # Look up this response span specifically for feedback with retry logic
         

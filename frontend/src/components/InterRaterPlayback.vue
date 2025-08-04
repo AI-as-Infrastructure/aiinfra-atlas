@@ -1,25 +1,10 @@
 <template>
   <div class="inter-rater-playback">
-    <div class="session-header">
-      <div class="columns">
-        <div class="column">
-          <h3 class="title is-5">Session from {{ formatDate(session.timestamp) }}</h3>
-          <p class="subtitle is-6">Original rating provided by {{ session.original_feedback?.user_category || 'Unknown User' }}</p>
-        </div>
-        <div class="column is-narrow">
-          <div class="tags">
-            <span class="tag is-info">Session {{ currentIndex + 1 }} of {{ totalSessions }}</span>
-            <span class="tag is-light">{{ session.inter_rater_count }} previous ratings</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <div class="conversation-container">
       <!-- Prominent Question Display -->
       <div class="question-section">
         <div class="card">
-          <div class="card-header has-background-primary">
+          <div class="card-header" style="background-color: #363636;">
             <h4 class="card-header-title has-text-white">
               <i class="fas fa-question-circle mr-2"></i>
               Question
@@ -36,7 +21,7 @@
       <!-- Prominent Answer Display -->
       <div class="answer-section">
         <div class="card">
-          <div class="card-header has-background-info">
+          <div class="card-header" style="background-color: #4a4a4a;">
             <h4 class="card-header-title has-text-white">
               <i class="fas fa-comment-dots mr-2"></i>
               Answer
@@ -44,7 +29,7 @@
           </div>
           <div class="card-content">
             <div class="content" style="font-size: 1rem; line-height: 1.6;">
-              <div v-html="session.answer"></div>
+              <div v-html="renderMarkdown(session.answer)"></div>
               
               <div v-if="session.citations && session.citations.length > 0" class="citations-section">
                 <hr class="my-4">
@@ -52,174 +37,179 @@
                   <i class="fas fa-book mr-2"></i>
                   Sources Used:
                 </h6>
-                <div class="tags">
-                  <span 
-                    v-for="(citation, index) in session.citations" 
-                    :key="index"
-                    class="tag is-info is-light is-medium"
+                <ul class="citation-list">
+                  <li 
+                    v-for="(citation, cIndex) in session.citations" 
+                    :key="cIndex" 
+                    class="citation-item"
+                    @mouseover="hoveredCitation = citation"
                   >
-                    <i class="fas fa-external-link-alt mr-1"></i>
-                    {{ citation.source }}
-                  </span>
-                </div>
+                    <a 
+                      href="#" 
+                      @click.prevent="showCitationModal(citation)" 
+                      class="citation-link"
+                    >
+                      {{ getCitationLabel(citation) }}
+                    </a>
+                    <div v-if="hoveredCitation === citation" class="citation-tooltip" @mouseleave="hoveredCitation = null">
+                      <div class="citation-tooltip-content">
+                        <p class="citation-quote">{{ getCitationText(citation) }}</p>
+                        <div class="citation-meta">
+                          <p v-if="citation.source || citation.title || citation.metadata?.source"><strong>Source:</strong> {{ citation.source || citation.title || citation.metadata?.source }}</p>
+                          <p v-if="citation.date || citation.metadata?.date"><strong>Date:</strong> {{ citation.date || citation.metadata?.date }}</p>
+                          <p v-if="citation.page || citation.metadata?.page"><strong>Page:</strong> {{ citation.page || citation.metadata?.page }}</p>
+                          <p v-if="citation.url || citation.metadata?.url" class="citation-url">
+                            <strong>URL:</strong> 
+                            <a :href="citation.url || citation.metadata?.url" target="_blank" rel="noopener noreferrer" @click.stop>
+                              View source
+                            </a>
+                          </p>
+                          <p v-if="citation.corpus || citation.metadata?.corpus"><strong>Corpus:</strong> {{ citation.corpus || citation.metadata?.corpus }}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </li>
+                  <li class="citation-item view-all-item" v-if="session.citations.length > 1">
+                    <a 
+                      @click.prevent="showAllCitationsModal()" 
+                      class="view-all-link"
+                    >
+                      View all {{ session.citations.length }} citations
+                    </a>
+                  </li>
+                </ul>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Original Feedback Display -->
-      <div class="original-feedback-section">
-        <div class="card">
-          <div class="card-header has-background-success">
-            <h4 class="card-header-title has-text-white">
-              <i class="fas fa-user-check mr-2"></i>
-              Original User Feedback
-            </h4>
-            <span class="tag is-light">{{ session.original_feedback?.user_category || 'Unknown User' }}</span>
-          </div>
-          <div class="card-content">
-            <div class="columns is-multiline">
-              <div v-if="session.original_feedback?.relevance" class="column is-6">
-                <div class="feedback-metric">
-                  <span class="metric-label">Relevance:</span>
-                  <span class="metric-value">{{ session.original_feedback.relevance }}/5</span>
-                  <div class="metric-stars">
-                    <span v-for="i in 5" :key="i" 
-                          :class="['star', i <= session.original_feedback.relevance ? 'filled' : 'empty']">
-                      ★
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <div v-if="session.original_feedback?.clarity" class="column is-6">
-                <div class="feedback-metric">
-                  <span class="metric-label">Clarity:</span>
-                  <span class="metric-value">{{ session.original_feedback.clarity }}/5</span>
-                  <div class="metric-stars">
-                    <span v-for="i in 5" :key="i" 
-                          :class="['star', i <= session.original_feedback.clarity ? 'filled' : 'empty']">
-                      ★
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <div v-if="session.original_feedback?.factual_accuracy" class="column is-6">
-                <div class="feedback-metric">
-                  <span class="metric-label">Factual Accuracy:</span>
-                  <span class="metric-value">{{ session.original_feedback.factual_accuracy }}/5</span>
-                  <div class="metric-stars">
-                    <span v-for="i in 5" :key="i" 
-                          :class="['star', i <= session.original_feedback.factual_accuracy ? 'filled' : 'empty']">
-                      ★
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <div v-if="session.original_feedback?.source_quality" class="column is-6">
-                <div class="feedback-metric">
-                  <span class="metric-label">Source Quality:</span>
-                  <span class="metric-value">{{ session.original_feedback.source_quality }}/5</span>
-                  <div class="metric-stars">
-                    <span v-for="i in 5" :key="i" 
-                          :class="['star', i <= session.original_feedback.source_quality ? 'filled' : 'empty']">
-                      ★
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div v-if="session.original_feedback?.feedback_text" class="mt-4">
-              <strong class="has-text-grey-dark">Comments:</strong>
-              <p class="mt-2 has-background-light p-3" style="border-radius: 4px; font-style: italic;">
-                "{{ session.original_feedback.feedback_text }}"
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
 
     <!-- Inter-rater Feedback Form -->
     <div class="inter-rater-feedback-section">
       <div class="card">
-        <div class="card-header has-background-warning">
+        <div class="card-header" style="background-color: #363636;">
           <h4 class="card-header-title">
             <i class="fas fa-star mr-2"></i>
             Your Inter-rater Assessment
           </h4>
         </div>
         <div class="card-content">
-          <div class="notification is-info is-light mb-4">
-            <p><strong>Instructions:</strong> Rate this question-answer interaction independently, without being influenced by the original feedback above.</p>
-          </div>
           
-          <!-- Streamlined Rating Grid -->
-          <div class="columns is-multiline">
-            <div class="column is-6">
-              <div class="field">
-                <label class="label has-text-weight-bold">Relevance</label>
-                <div class="control">
-                  <div class="rating-buttons">
-                    <button 
-                      v-for="n in 5" :key="n"
-                      @click="feedback.relevance = n"
-                      :class="['button', 'rating-btn', feedback.relevance == n ? 'is-primary' : 'is-light']"
-                    >
-                      {{ n }}
-                    </button>
-                  </div>
+          <!-- Likert-style Rating Grid -->
+          <div class="rating-sections">
+            <div class="feedback-section">
+              <label class="section-label">Factual Accuracy</label>
+              <div class="likert-scale">
+                <div
+                  v-for="value in 5"
+                  :key="`factual_accuracy-${value}`"
+                  class="likert-option"
+                  @click="feedback.factual_accuracy = value"
+                >
+                  <input
+                    type="radio"
+                    :id="`factual_accuracy-${value}`"
+                    :value="value"
+                    v-model="feedback.factual_accuracy"
+                  />
+                  <label :for="`factual_accuracy-${value}`" class="likert-label">
+                    <span class="likert-circle" :class="{ active: feedback.factual_accuracy >= value }"></span>
+                    <span class="likert-text">{{ value }}</span>
+                  </label>
                 </div>
               </div>
             </div>
             
-            <div class="column is-6">
-              <div class="field">
-                <label class="label has-text-weight-bold">Clarity</label>
-                <div class="control">
-                  <div class="rating-buttons">
-                    <button 
-                      v-for="n in 5" :key="n"
-                      @click="feedback.clarity = n"
-                      :class="['button', 'rating-btn', feedback.clarity == n ? 'is-primary' : 'is-light']"
-                    >
-                      {{ n }}
-                    </button>
-                  </div>
+            <div class="feedback-section">
+              <label class="section-label">Analysis Quality</label>
+              <div class="likert-scale">
+                <div
+                  v-for="value in 5"
+                  :key="`analysis_quality-${value}`"
+                  class="likert-option"
+                  @click="feedback.analysis_quality = value"
+                >
+                  <input
+                    type="radio"
+                    :id="`analysis_quality-${value}`"
+                    :value="value"
+                    v-model="feedback.analysis_quality"
+                  />
+                  <label :for="`analysis_quality-${value}`" class="likert-label">
+                    <span class="likert-circle" :class="{ active: feedback.analysis_quality >= value }"></span>
+                    <span class="likert-text">{{ value }}</span>
+                  </label>
                 </div>
               </div>
             </div>
             
-            <div class="column is-6">
-              <div class="field">
-                <label class="label has-text-weight-bold">Factual Accuracy</label>
-                <div class="control">
-                  <div class="rating-buttons">
-                    <button 
-                      v-for="n in 5" :key="n"
-                      @click="feedback.factual_accuracy = n"
-                      :class="['button', 'rating-btn', feedback.factual_accuracy == n ? 'is-primary' : 'is-light']"
-                    >
-                      {{ n }}
-                    </button>
-                  </div>
+            <div class="feedback-section">
+              <label class="section-label">Relevance</label>
+              <div class="likert-scale">
+                <div
+                  v-for="value in 5"
+                  :key="`relevance-${value}`"
+                  class="likert-option"
+                  @click="feedback.relevance = value"
+                >
+                  <input
+                    type="radio"
+                    :id="`relevance-${value}`"
+                    :value="value"
+                    v-model="feedback.relevance"
+                  />
+                  <label :for="`relevance-${value}`" class="likert-label">
+                    <span class="likert-circle" :class="{ active: feedback.relevance >= value }"></span>
+                    <span class="likert-text">{{ value }}</span>
+                  </label>
                 </div>
               </div>
             </div>
             
-            <div class="column is-6">
-              <div class="field">
-                <label class="label has-text-weight-bold">Source Quality</label>
-                <div class="control">
-                  <div class="rating-buttons">
-                    <button 
-                      v-for="n in 5" :key="n"
-                      @click="feedback.source_quality = n"
-                      :class="['button', 'rating-btn', feedback.source_quality == n ? 'is-primary' : 'is-light']"
-                    >
-                      {{ n }}
-                    </button>
-                  </div>
+            <div class="feedback-section">
+              <label class="section-label">Difficulty</label>
+              <div class="likert-scale">
+                <div
+                  v-for="value in 5"
+                  :key="`difficulty-${value}`"
+                  class="likert-option"
+                  @click="feedback.difficulty = value"
+                >
+                  <input
+                    type="radio"
+                    :id="`difficulty-${value}`"
+                    :value="value"
+                    v-model="feedback.difficulty"
+                  />
+                  <label :for="`difficulty-${value}`" class="likert-label">
+                    <span class="likert-circle" :class="{ active: feedback.difficulty >= value }"></span>
+                    <span class="likert-text">{{ value }}</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+            
+            <div class="feedback-section">
+              <label class="section-label">Clarity</label>
+              <div class="likert-scale">
+                <div
+                  v-for="value in 5"
+                  :key="`clarity-${value}`"
+                  class="likert-option"
+                  @click="feedback.clarity = value"
+                >
+                  <input
+                    type="radio"
+                    :id="`clarity-${value}`"
+                    :value="value"
+                    v-model="feedback.clarity"
+                  />
+                  <label :for="`clarity-${value}`" class="likert-label">
+                    <span class="likert-circle" :class="{ active: feedback.clarity >= value }"></span>
+                    <span class="likert-text">{{ value }}</span>
+                  </label>
                 </div>
               </div>
             </div>
@@ -238,48 +228,225 @@
             </div>
           </div>
 
+          <!-- Faults Section -->
+          <div class="faults-section">
+            <label class="section-label">Faults</label>
+            <div class="faults-grid">
+              <div class="fault-option">
+                <input
+                  type="checkbox"
+                  id="fault-hallucination"
+                  v-model="feedback.faults.hallucination"
+                />
+                <label for="fault-hallucination">Hallucination</label>
+              </div>
+              <div class="fault-option">
+                <input
+                  type="checkbox"
+                  id="fault-off-topic"
+                  v-model="feedback.faults.off_topic"
+                />
+                <label for="fault-off-topic">Off-topic</label>
+              </div>
+              <div class="fault-option">
+                <input
+                  type="checkbox"
+                  id="fault-inappropriate"
+                  v-model="feedback.faults.inappropriate"
+                />
+                <label for="fault-inappropriate">Inappropriate</label>
+              </div>
+              <div class="fault-option">
+                <input
+                  type="checkbox"
+                  id="fault-bias"
+                  v-model="feedback.faults.bias"
+                />
+                <label for="fault-bias">Bias</label>
+              </div>
+            </div>
+          </div>
+
           <!-- Action Buttons -->
-          <div class="field is-grouped is-grouped-centered mt-5">
-            <div class="control">
-              <button 
-                @click="submitFeedback" 
-                class="button is-success is-large"
-                :disabled="!isFormValid || isSubmitting"
-              >
-                <span class="icon">
-                  <i class="fas fa-check"></i>
-                </span>
-                <span>{{ isSubmitting ? 'Submitting...' : 'Submit Rating' }}</span>
-              </button>
-            </div>
-            <div class="control">
-              <button @click="skipSession" class="button is-light is-large">
-                <span class="icon">
-                  <i class="fas fa-forward"></i>
-                </span>
-                <span>Skip Session</span>
-              </button>
-            </div>
+          <div class="feedback-actions">
+            <button
+              @click="submitFeedback"
+              class="submit-btn"
+              :disabled="!isFormValid || isSubmitting"
+            >
+              <span v-if="isSubmitting">
+                <i class="fas fa-spinner fa-spin mr-2"></i>
+                Submitting Inter-rating...
+              </span>
+              <span v-else>Submit Inter-rating</span>
+            </button>
           </div>
           
           <!-- Progress Indicator -->
           <div class="has-text-centered mt-4">
-            <p class="has-text-grey">
-              <i class="fas fa-info-circle mr-1"></i>
-              Session {{ currentIndex + 1 }} of {{ totalSessions }}
-            </p>
-            <div v-if="!isFormValid" class="has-text-danger mt-2">
-              <small>Please rate all four criteria to continue</small>
+            <div v-if="!isFormValid" class="has-text-danger">
+              <small>Please rate all five criteria to continue</small>
             </div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Citation Modal for single citation -->
+    <div class="modal" :class="{ 'is-active': selectedCitation }">
+      <div class="modal-background" @click="selectedCitation = null"></div>
+      <div class="modal-card">
+        <header class="modal-card-head">
+          <p class="modal-card-title">Citation Details</p>
+          <button class="delete" aria-label="close" @click="selectedCitation = null"></button>
+        </header>
+        <section class="modal-card-body" v-if="selectedCitation">
+          <div class="citation-details">
+            <div class="citation-content">
+              <p class="citation-text">{{ getCitationText(selectedCitation) }}</p>
+            </div>
+            
+            <div class="citation-metadata">
+              <div v-if="selectedCitation.title || selectedCitation.metadata?.title" class="metadata-item">
+                <strong>Title:</strong> {{ selectedCitation.title || selectedCitation.metadata?.title }}
+              </div>
+              
+              <div v-if="selectedCitation.date || selectedCitation.metadata?.date" class="metadata-item">
+                <strong>Date:</strong> {{ selectedCitation.date || selectedCitation.metadata?.date }}
+              </div>
+              
+              <div v-if="selectedCitation.source || selectedCitation.metadata?.source" class="metadata-item">
+                <strong>Source:</strong> {{ selectedCitation.source || selectedCitation.metadata?.source }}
+              </div>
+              
+              <div v-if="selectedCitation.corpus || selectedCitation.metadata?.corpus" class="metadata-item">
+                <strong>Corpus:</strong> {{ selectedCitation.corpus || selectedCitation.metadata?.corpus }}
+              </div>
+              
+              <div v-if="selectedCitation.page || selectedCitation.metadata?.page" class="metadata-item">
+                <strong>Page:</strong> {{ selectedCitation.page || selectedCitation.metadata?.page }}
+              </div>
+            </div>
+            
+            <div v-if="selectedCitation.url || selectedCitation.metadata?.url" class="citation-actions">
+              <a 
+                :href="selectedCitation.url || selectedCitation.metadata?.url" 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                class="button is-primary"
+              >
+                <span class="icon">
+                  <i class="fas fa-external-link-alt"></i>
+                </span>
+                <span>View Source</span>
+              </a>
+            </div>
+          </div>
+        </section>
+        <footer class="modal-card-foot">
+          <button class="button" @click="selectedCitation = null">Close</button>
+        </footer>
+      </div>
+    </div>
+
+    <!-- All Citations Modal -->
+    <div class="modal" :class="{ 'is-active': showAllCitations }">
+      <div class="modal-background" @click="showAllCitations = false"></div>
+      <div class="modal-card">
+        <header class="modal-card-head">
+          <p class="modal-card-title">All Citations ({{ session.citations ? session.citations.length : 0 }})</p>
+          <button class="delete" aria-label="close" @click="showAllCitations = false"></button>
+        </header>
+        <section class="modal-card-body">
+          <div class="all-citations-list">
+            <div 
+              v-for="(citation, index) in session.citations" 
+              :key="index" 
+              class="citation-card"
+            >
+              <div class="citation-header">
+                <h6 class="citation-title">{{ getCitationLabel(citation) }}</h6>
+                <span class="citation-index">#{{ index + 1 }}</span>
+              </div>
+              <div class="citation-content">
+                <p>{{ getCitationText(citation) }}</p>
+              </div>
+              <div class="citation-metadata">
+                <p v-if="citation.source || citation.metadata?.source"><strong>Source:</strong> {{ citation.source || citation.metadata?.source }}</p>
+                <p v-if="citation.date || citation.metadata?.date"><strong>Date:</strong> {{ citation.date || citation.metadata?.date }}</p>
+                <p v-if="citation.url || citation.metadata?.url">
+                  <a :href="citation.url || citation.metadata?.url" target="_blank" rel="noopener noreferrer">
+                    View Source <i class="fas fa-external-link-alt"></i>
+                  </a>
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+        <footer class="modal-card-foot">
+          <button class="button" @click="showAllCitations = false">Close</button>
+        </footer>
       </div>
     </div>
   </div>
 </template>
 
 <script>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
+import { marked } from 'marked'
+
+// Configure marked for consistent markdown rendering
+marked.setOptions({
+  breaks: true,
+  gfm: true,
+  mangle: false,
+  sanitize: false
+})
+
+// Function to render markdown content
+function renderMarkdown(content) {
+  if (!content) return ''
+  return marked(content)
+}
+
+// Function to truncate text
+function truncateText(text, maxLength) {
+  if (!text) return ''
+  if (text.length <= maxLength) return text
+  return text.substring(0, maxLength) + '...'
+}
+
+// Function to get citation label for display
+function getCitationLabel(citation) {
+  // Try to find the best label in this order of preference
+  if (citation.date) return citation.date
+  if (citation.metadata?.date) return citation.metadata.date
+  if (citation.title) return truncateText(citation.title, 25)
+  if (citation.metadata?.title) return truncateText(citation.metadata.title, 25)
+  if (citation.source) return truncateText(citation.source, 25)
+  if (citation.metadata?.source) return truncateText(citation.metadata.source, 25)
+  if (citation.id) return truncateText(citation.id, 15)
+  return "Source"
+}
+
+// Function to get citation text (for tooltip and modal display)
+function getCitationText(citation) {
+  if (!citation) return "View citation"
+  
+  // Try to get the best text content
+  if (citation.text) return citation.text
+  if (citation.quote) return citation.quote
+  if (citation.content) return citation.content
+  if (citation.metadata?.text) return citation.metadata.text
+  if (citation.metadata?.content) return citation.metadata.content
+  if (citation.metadata?.quote) return citation.metadata.quote
+  
+  // Fallback to other fields
+  if (citation.title) return citation.title
+  if (citation.source) return citation.source
+  
+  return "View citation"
+}
 
 export default {
   name: 'InterRaterPlayback',
@@ -297,23 +464,36 @@ export default {
       required: true
     }
   },
-  emits: ['submit-feedback', 'skip-session'],
+  emits: ['submit-feedback'],
   setup(props, { emit }) {
     const feedback = ref({
-      relevance: '',
-      clarity: '',
       factual_accuracy: '',
-      source_quality: '',
-      feedback_text: ''
+      analysis_quality: '',
+      relevance: '',
+      difficulty: '',
+      clarity: '',
+      feedback_text: '',
+      faults: {
+        hallucination: false,
+        off_topic: false,
+        inappropriate: false,
+        bias: false
+      }
     })
     
     const isSubmitting = ref(false)
+    
+    // Citation modal states
+    const selectedCitation = ref(null)
+    const showAllCitations = ref(false)
+    const hoveredCitation = ref(null)
 
     const isFormValid = computed(() => {
-      return feedback.value.relevance && 
-             feedback.value.clarity && 
-             feedback.value.factual_accuracy && 
-             feedback.value.source_quality
+      return feedback.value.factual_accuracy && 
+             feedback.value.analysis_quality && 
+             feedback.value.relevance && 
+             feedback.value.difficulty && 
+             feedback.value.clarity
     })
 
     const formatDate = (dateString) => {
@@ -331,17 +511,27 @@ export default {
       isSubmitting.value = true
       
       try {
+        // Generate a simple rater ID for inter-rater identification
+        const raterId = Date.now().toString().slice(-8) // Use last 8 digits of timestamp as simple ID
+        
         const feedbackData = {
           session_id: props.session.session_id,
           qa_id: props.session.qa_id,
-          relevance: parseInt(feedback.value.relevance),
-          clarity: parseInt(feedback.value.clarity),
           factual_accuracy: parseInt(feedback.value.factual_accuracy),
-          source_quality: parseInt(feedback.value.source_quality),
+          analysis_quality: parseInt(feedback.value.analysis_quality),
+          relevance: parseInt(feedback.value.relevance),
+          difficulty: parseInt(feedback.value.difficulty),
+          clarity: parseInt(feedback.value.clarity),
           feedback_text: feedback.value.feedback_text,
+          faults: feedback.value.faults,
           is_inter_rater: true,
+          rater_id: raterId,
           original_span_id: props.session.span_id,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          question: props.session.question,
+          answer: props.session.answer,
+          citations: props.session.citations || [],
+          feedback_type: 'inter_rater'
         }
 
         emit('submit-feedback', feedbackData)
@@ -352,9 +542,42 @@ export default {
       }
     }
 
-    const skipSession = () => {
-      emit('skip-session')
+
+    // Citation modal functions
+    const showCitationModal = (citation) => {
+      selectedCitation.value = citation
     }
+
+    const showAllCitationsModal = () => {
+      showAllCitations.value = true
+    }
+
+    // Reset form when session changes
+    watch(() => props.session, () => {
+      // Reset all feedback fields
+      feedback.value = {
+        factual_accuracy: '',
+        analysis_quality: '',
+        relevance: '',
+        difficulty: '',
+        clarity: '',
+        feedback_text: '',
+        faults: {
+          hallucination: false,
+          off_topic: false,
+          inappropriate: false,
+          bias: false
+        }
+      }
+      
+      // Reset submission state
+      isSubmitting.value = false
+      
+      // Reset modal states
+      selectedCitation.value = null
+      showAllCitations.value = false
+      hoveredCitation.value = null
+    }, { immediate: false })
 
     return {
       feedback,
@@ -362,7 +585,14 @@ export default {
       isFormValid,
       formatDate,
       submitFeedback,
-      skipSession
+      renderMarkdown,
+      getCitationLabel,
+      getCitationText,
+      selectedCitation,
+      showAllCitations,
+      hoveredCitation,
+      showCitationModal,
+      showAllCitationsModal
     }
   }
 }
@@ -380,7 +610,7 @@ export default {
   padding: 1.5rem;
   background-color: #f8f9fa;
   border-radius: 8px;
-  border-left: 4px solid #3273dc;
+  border-left: 4px solid #6c757d;
 }
 
 .conversation-container {
@@ -395,11 +625,9 @@ export default {
 }
 
 .question-section .card {
-  border-left: 4px solid #3273dc;
 }
 
 .answer-section .card {
-  border-left: 4px solid #209cee;
 }
 
 .original-feedback-section .card {
@@ -411,6 +639,192 @@ export default {
   border-radius: 6px;
   padding: 1rem;
   margin-top: 1rem;
+}
+
+/* Citation List Styling (matching ChatHistory.vue) */
+.citation-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.citation-item {
+  position: relative;
+  padding: 0.25rem 0;
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 0.9rem;
+  display: inline-block;
+}
+
+.citation-link {
+  text-decoration: underline;
+  color: #111;
+  cursor: pointer;
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 0.9rem;
+}
+
+.citation-link:hover {
+  color: #666;
+  text-decoration: underline;
+}
+
+.view-all-link {
+  text-decoration: underline;
+  color: #111;
+  cursor: pointer;
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 0.9rem;
+  margin-left: 0.5rem;
+}
+
+.view-all-link:hover {
+  color: #666;
+  text-decoration: underline;
+}
+
+/* Citation Tooltip */
+.citation-tooltip {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 0.5rem;
+  z-index: 1000;
+  min-width: 300px;
+  max-width: 400px;
+}
+
+.citation-tooltip-content {
+  background: white;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  padding: 1rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.citation-quote {
+  font-style: italic;
+  color: #495057;
+  margin-bottom: 0.75rem;
+  padding: 0.5rem;
+  background-color: #f8f9fa;
+  border-radius: 4px;
+  border-left: 3px solid #6c757d;
+}
+
+.citation-meta p {
+  margin-bottom: 0.25rem;
+  font-size: 0.875rem;
+}
+
+.citation-url a {
+  color: #495057;
+  text-decoration: underline;
+}
+
+.citation-url a:hover {
+  color: #212529;
+}
+
+/* Modal Styling */
+.citation-details {
+  max-width: 100%;
+}
+
+.citation-text {
+  font-style: italic;
+  color: #495057;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background-color: #f8f9fa;
+  border-radius: 6px;
+  border-left: 4px solid #6c757d;
+  line-height: 1.6;
+}
+
+.citation-metadata {
+  margin-bottom: 1.5rem;
+}
+
+.metadata-item {
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #f1f3f4;
+}
+
+.metadata-item:last-child {
+  border-bottom: none;
+}
+
+.citation-actions {
+  text-align: center;
+}
+
+/* All Citations Modal */
+.all-citations-list {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.citation-card {
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  background-color: white;
+}
+
+.citation-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #f1f3f4;
+}
+
+.citation-title {
+  font-weight: 600;
+  color: #495057;
+  margin: 0;
+}
+
+.citation-index {
+  background-color: #6c757d;
+  color: white;
+  padding: 0.25rem 0.5rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.citation-card .citation-content {
+  margin-bottom: 0.75rem;
+}
+
+.citation-card .citation-content p {
+  font-style: italic;
+  color: #495057;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.citation-card .citation-metadata p {
+  margin-bottom: 0.25rem;
+  font-size: 0.875rem;
+}
+
+.citation-card .citation-metadata a {
+  color: #495057;
+  text-decoration: none;
+}
+
+.citation-card .citation-metadata a:hover {
+  text-decoration: underline;
 }
 
 /* Original Feedback Metrics */
@@ -428,7 +842,7 @@ export default {
 
 .metric-value {
   font-weight: bold;
-  color: #3273dc;
+  color: #495057;
 }
 
 .metric-stars {
@@ -441,7 +855,7 @@ export default {
 }
 
 .star.filled {
-  color: #ffdd57;
+  color: #6c757d;
 }
 
 .star.empty {
@@ -454,31 +868,126 @@ export default {
 }
 
 .inter-rater-feedback-section .card {
-  border-left: 4px solid #ffdd57;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+  border: 2px solid #e9ecef;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background-color: white;
 }
 
-/* Rating Buttons */
-.rating-buttons {
+.inter-rater-feedback-section .card-content {
+  padding: 1.5rem;
+}
+
+/* Likert Scale Styling (matching ExtendedFeedback.vue) */
+.rating-sections {
+  margin-bottom: 2rem;
+}
+
+.feedback-section {
+  margin-bottom: 1.5rem;
+}
+
+.section-label {
   display: flex;
+  align-items: center;
   gap: 0.5rem;
-  justify-content: flex-start;
+  font-weight: 600;
+  color: #495057;
+  margin-bottom: 0.75rem;
+  font-size: 14px;
 }
 
-.rating-btn {
-  min-width: 50px;
-  font-weight: bold;
+.likert-scale {
+  display: flex;
+  justify-content: space-between;
+  max-width: 300px;
+  margin: 0 auto;
+}
+
+.likert-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+}
+
+.likert-option input[type="radio"] {
+  display: none;
+}
+
+.likert-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  padding: 0.25rem;
+}
+
+.likert-circle {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #dee2e6;
+  border-radius: 50%;
+  background-color: white;
   transition: all 0.2s ease;
+  margin-bottom: 0.25rem;
 }
 
-.rating-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+.likert-circle.active {
+  background-color: #363636;
+  border-color: #363636;
 }
 
-.rating-btn.is-primary {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(50, 115, 220, 0.3);
+.likert-text {
+  font-size: 12px;
+  color: #6c757d;
+}
+
+/* Action Buttons (matching ExtendedFeedback.vue) */
+.feedback-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  border-top: 1px solid #e9ecef;
+  padding-top: 1rem;
+  margin-top: 1.5rem;
+}
+
+.cancel-btn {
+  background-color: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s ease;
+}
+
+.cancel-btn:hover:not(:disabled) {
+  background-color: #545b62;
+}
+
+.submit-btn {
+  background-color: #28a745;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s ease;
+}
+
+.submit-btn:hover:not(:disabled) {
+  background-color: #218838;
+}
+
+.submit-btn:disabled,
+.cancel-btn:disabled {
+  background-color: #6c757d;
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 /* Responsive Design */
@@ -491,16 +1000,48 @@ export default {
     padding: 1rem;
   }
   
-  .rating-buttons {
-    justify-content: center;
+  .likert-scale {
+    max-width: 250px;
   }
   
-  .field.is-grouped.is-grouped-centered {
+  .feedback-actions {
     flex-direction: column;
   }
-  
-  .field.is-grouped.is-grouped-centered .control {
-    margin-bottom: 0.5rem;
+}
+
+/* Faults Section (matching ExtendedFeedback.vue) */
+.faults-section {
+  border-top: 1px solid #e9ecef;
+  padding-top: 1.5rem;
+  margin-top: 1.5rem;
+}
+
+.faults-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 1rem;
+  margin-top: 0.75rem;
+}
+
+.fault-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.fault-option input[type="checkbox"] {
+  margin: 0;
+}
+
+.fault-option label {
+  font-size: 14px;
+  color: #495057;
+  cursor: pointer;
+}
+
+@media (max-width: 768px) {
+  .faults-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 

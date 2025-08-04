@@ -22,7 +22,6 @@ export default {
 
 <style scoped>
 .inter-rater-page {
-  background-color: #fafafa;
   min-height: 100vh;
   padding-top: 2rem;
 }

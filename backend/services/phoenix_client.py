@@ -171,16 +171,21 @@ class PhoenixAPIClient:
                 # Get original feedback from annotations
                 original_feedback = await self._get_span_feedback_annotations(span_id)
                 
+                # Look for citations in related reference spans
+                session_id = attributes.get('session.id', f"session_{span_id[:8]}")
+                qa_id = attributes.get('qa_id', f"qa_{span_id[:8]}")
+                citations = await self._get_citations_for_session(session_id, qa_id, spans_df)
+                
                 # Extract session data
                 session_data = {
-                    "session_id": attributes.get('session.id', f"session_{span_id[:8]}"),
-                    "qa_id": attributes.get('qa_id', f"qa_{span_id[:8]}"),
+                    "session_id": session_id,
+                    "qa_id": qa_id,
                     "span_id": span_id,
                     "timestamp": row.get('start_time', datetime.now()).isoformat(),
                     "question": attributes.get('input.value', 'Question not available'),
                     "answer": attributes.get('output', 'Answer not available'),  # Use 'output' not 'output.value'
                     "original_feedback": original_feedback,
-                    "citations": self._extract_citations_from_attributes(attributes),
+                    "citations": citations,
                     "inter_rater_count": 0,  # Will be calculated separately
                     "project_name": self.project_name,
                     "original_user_id": original_feedback.get('user_id', 'unknown')
@@ -227,17 +232,93 @@ class PhoenixAPIClient:
     
     def _extract_citations_from_attributes(self, attributes: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Extract citations from span attributes."""
-        import pandas as pd
+        import json
         
         citations = []
         
-        # Look for citation-related attributes
-        for key, value in attributes.items():
-            if key.startswith('citation') and value is not None and str(value).strip() != '':
-                citations.append({
-                    "source": str(value),
-                    "relevance": "medium"  # Default relevance
-                })
+        # First, try to get citations from the 'citations' attribute (JSON string)
+        citations_json = attributes.get('citations')
+        if citations_json and str(citations_json).strip() != '':
+            try:
+                citations_data = json.loads(str(citations_json))
+                if isinstance(citations_data, list):
+                    citations = citations_data
+                    logger.debug(f"Extracted {len(citations)} citations from JSON")
+                    return citations
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.warning(f"Failed to parse citations JSON: {e}")
+        
+        # Try to get from 'all_citations' if 'citations' didn't work
+        all_citations_json = attributes.get('all_citations')
+        if all_citations_json and str(all_citations_json).strip() != '':
+            try:
+                citations_data = json.loads(str(all_citations_json))
+                if isinstance(citations_data, list):
+                    citations = citations_data
+                    logger.debug(f"Extracted {len(citations)} citations from all_citations JSON")
+                    return citations
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.warning(f"Failed to parse all_citations JSON: {e}")
+        
+        # Fallback: look for individual citation attributes (citation_0_title, citation_0_source, etc.)
+        citation_indices = set()
+        for key in attributes.keys():
+            if key.startswith('citation_') and '_' in key[9:]:  # citation_X_field format
+                try:
+                    idx = int(key.split('_')[1])
+                    citation_indices.add(idx)
+                except (ValueError, IndexError):
+                    continue
+        
+        # Build citations from individual attributes
+        for idx in sorted(citation_indices):
+            citation = {}
+            title = attributes.get(f'citation_{idx}_title')
+            source = attributes.get(f'citation_{idx}_source')
+            date = attributes.get(f'citation_{idx}_date')
+            
+            if title:
+                citation['title'] = str(title)
+            if source:
+                citation['source'] = str(source)
+            if date:
+                citation['date'] = str(date)
+            
+            if citation:  # Only add if we have at least one field
+                citations.append(citation)
+        
+        logger.debug(f"Extracted {len(citations)} citations from individual attributes")
+        return citations
+    
+    async def _get_citations_for_session(self, session_id: str, qa_id: str, spans_df) -> List[Dict[str, Any]]:
+        """
+        Find citations for a session by looking for com.atlas.rag.references spans.
+        """
+        citations = []
+        
+        # Look for reference spans with matching session and qa_id
+        for _, row in spans_df.iterrows():
+            span_name = row.get('name', '')
+            if span_name != 'com.atlas.rag.references':
+                continue
+            
+            # Check if this reference span belongs to our session/qa
+            span_session_id = row.get('attributes.session.id')
+            span_qa_id = row.get('attributes.qa_id')
+            
+            if span_session_id == session_id and span_qa_id == qa_id:
+                # Extract attributes for this reference span
+                ref_attributes = {}
+                for col in spans_df.columns:
+                    if col.startswith('attributes.'):
+                        key = col.replace('attributes.', '')
+                        ref_attributes[key] = row[col]
+                
+                # Extract citations from this reference span
+                ref_citations = self._extract_citations_from_attributes(ref_attributes)
+                citations.extend(ref_citations)
+                logger.debug(f"Found {len(ref_citations)} citations in reference span for session {session_id}")
+                break  # Usually only one reference span per session/qa
         
         return citations
     

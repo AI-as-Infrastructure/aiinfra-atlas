@@ -2,8 +2,8 @@
   <div class="inter-rater-dashboard">
     <div v-if="loading" class="loading-state">
       <div class="has-text-centered">
-        <button class="button is-loading is-large">Loading</button>
-        <p class="mt-3">Loading sessions for inter-rating...</p>
+        <div class="loading-spinner"></div>
+        <p class="mt-3">Loading inter-ratings...</p>
       </div>
     </div>
 
@@ -11,9 +11,11 @@
       <div class="notification is-danger">
         <h4 class="title is-4">Error Loading Sessions</h4>
         <p>{{ error }}</p>
-        <button @click="loadSessions" class="button is-danger is-outlined mt-3">
-          Try Again
-        </button>
+        <div class="buttons mt-3">
+          <button @click="loadSessions" class="button is-danger is-outlined">
+            Try Again
+          </button>
+        </div>
       </div>
     </div>
 
@@ -34,7 +36,7 @@
             <li>• The Phoenix project contains data for the configured time period</li>
           </ul>
         </div>
-        <router-link to="/" class="button is-primary mt-4">
+        <router-link to="/" class="button mt-4" style="background-color: #363636; color: white; border-color: #363636;">
           Return to Home
         </router-link>
       </div>
@@ -42,10 +44,17 @@
 
     <div v-else class="active-sessions">
       <div class="dashboard-header mb-5">
-        <h2 class="title is-3">Inter-rater Reliability</h2>
-        <p class="subtitle is-5">
-          Please review these sessions and provide your independent feedback assessment.
-        </p>
+        <div class="level">
+          <div class="level-left">
+            <div class="level-item">
+              <div>
+                <p class="subtitle is-5">
+                  Please review these sessions and provide your independent feedback assessment.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
         
         <div class="stats-bar">
           <div class="columns">
@@ -57,13 +66,13 @@
             </div>
             <div class="column">
               <div class="stat-item">
-                <span class="stat-number">{{ sessions.length }}</span>
+                <span class="stat-number">{{ totalAllocatedSessions }}</span>
                 <span class="stat-label">Total Sessions</span>
               </div>
             </div>
             <div class="column">
               <div class="stat-item">
-                <span class="stat-number">{{ completedSessions }}</span>
+                <span class="stat-number">{{ totalCompletedSessions }}</span>
                 <span class="stat-label">Completed</span>
               </div>
             </div>
@@ -71,11 +80,11 @@
         </div>
 
         <progress 
-          class="progress is-primary" 
-          :value="completedSessions" 
-          :max="sessions.length"
+          class="progress" style="background-color: #e9ecef;" :style="{ '--progress-value': (totalCompletedSessions / totalAllocatedSessions) * 100 + '%' }" 
+          :value="totalCompletedSessions" 
+          :max="totalAllocatedSessions"
         >
-          {{ Math.round((completedSessions / sessions.length) * 100) }}%
+          {{ Math.round((totalCompletedSessions / totalAllocatedSessions) * 100) }}%
         </progress>
       </div>
 
@@ -85,14 +94,15 @@
         :current-index="currentSessionIndex"
         :total-sessions="sessions.length"
         @submit-feedback="handleFeedbackSubmission"
-        @skip-session="handleSkipSession"
       />
     </div>
 
-    <!-- Success notification -->
-    <div v-if="showSuccessMessage" class="notification is-success is-overlay">
-      <button @click="showSuccessMessage = false" class="delete"></button>
-      <strong>Success!</strong> {{ successMessage }}
+    <!-- Success notification - small popup like NewSessionButton -->
+    <div v-if="showSuccessMessage" class="inter-rater-success-message">
+      <div class="success-content">
+        <span class="check-icon">✓</span>
+        <span class="success-text">{{ successMessage }}</span>
+      </div>
     </div>
   </div>
 </template>
@@ -117,6 +127,8 @@ export default {
     const showSuccessMessage = ref(false)
     const successMessage = ref('')
     const completedSessions = ref(0)
+    const totalCompletedSessions = ref(0) // Track total completed across all batches
+    const totalAllocatedSessions = ref(0) // Total sessions allocated to this user
 
     const currentSession = computed(() => {
       return sessions.value[currentSessionIndex.value] || null
@@ -135,6 +147,11 @@ export default {
         
         const data = await response.json()
         sessions.value = data.sessions || []
+        
+        // On first load, set total allocated sessions (this is the user's full allocation)
+        if (totalAllocatedSessions.value === 0) {
+          totalAllocatedSessions.value = sessions.value.length
+        }
         
         // Reset session index if we have sessions
         if (sessions.value.length > 0) {
@@ -158,6 +175,8 @@ export default {
 
     const handleFeedbackSubmission = async (feedbackData) => {
       try {
+        console.log('Submitting inter-rater feedback:', feedbackData)
+        
         const response = await fetch('/api/feedback', {
           method: 'POST',
           headers: {
@@ -167,55 +186,81 @@ export default {
         })
 
         if (!response.ok) {
+          const errorText = await response.text()
+          console.error('API Error Response:', errorText)
           throw new Error(`HTTP ${response.status}: ${response.statusText}`)
         }
 
         const result = await response.json()
+        console.log('API Response:', result)
         
         if (result.status === 'success') {
-          successMessage.value = 'Rating submitted successfully!'
+          successMessage.value = 'Inter-rating submitted successfully!'
           showSuccessMessage.value = true
           
           // Auto-hide success message and move to next session
           setTimeout(() => {
             showSuccessMessage.value = false
             moveToNextSession()
-          }, 1500)
+          }, 2000)  // Increased to 2 seconds for better UX
           
         } else {
-          throw new Error(result.message || 'Failed to submit feedback')
+          throw new Error(result.message || 'Failed to submit inter-rating')
         }
 
       } catch (err) {
         console.error('Error submitting inter-rater feedback:', err)
-        error.value = `Failed to submit feedback: ${err.message}`
+        
+        // Provide more specific error messages
+        let errorMsg = 'Failed to submit inter-rating'
+        if (err.message.includes('Unable to associate')) {
+          errorMsg = 'Unable to associate feedback with the session. The session may have expired. Please try refreshing the page.'
+        } else if (err.message.includes('HTTP 500')) {
+          errorMsg = 'Server error occurred. Please try again in a moment.'
+        } else if (err.message.includes('HTTP 400')) {
+          errorMsg = 'Invalid feedback data. Please check all fields are completed.'
+        } else {
+          errorMsg = `${errorMsg}: ${err.message}`
+        }
+        
+        error.value = errorMsg
+        
+        // Clear error after 10 seconds
+        setTimeout(() => {
+          error.value = null
+        }, 10000)
       }
     }
 
-    const handleSkipSession = () => {
-      moveToNextSession()
-    }
 
-    const moveToNextSession = () => {
+    const moveToNextSession = async () => {
       completedSessions.value++
+      totalCompletedSessions.value++
+      
+      // Check if user has completed all allocated sessions
+      if (totalCompletedSessions.value >= totalAllocatedSessions.value) {
+        showCompletionMessage()
+        return
+      }
       
       if (currentSessionIndex.value < sessions.value.length - 1) {
         currentSessionIndex.value++
       } else {
-        // All sessions completed
+        // All sessions completed - should not happen since we have exact allocation
         showCompletionMessage()
       }
     }
 
     const showCompletionMessage = () => {
       // Show completion notification and redirect
-      successMessage.value = `🎉 All sessions completed! You've successfully rated ${completedSessions.value} sessions.`
+      successMessage.value = `🎉 All sessions completed! You've successfully rated ${totalCompletedSessions.value} sessions.`
       showSuccessMessage.value = true
       setTimeout(() => {
         showSuccessMessage.value = false
         router.push('/')
       }, 3000)
     }
+
 
     onMounted(() => {
       loadSessions()
@@ -230,9 +275,10 @@ export default {
       showSuccessMessage,
       successMessage,
       completedSessions,
+      totalCompletedSessions,
+      totalAllocatedSessions,
       loadSessions,
-      handleFeedbackSubmission,
-      handleSkipSession
+      handleFeedbackSubmission
     }
   }
 }
@@ -253,6 +299,21 @@ export default {
   min-height: 60vh;
 }
 
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #6c757d;
+  border-radius: 50%;
+  margin: 0 auto 1rem auto;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
 .icon-container {
   opacity: 0.7;
 }
@@ -263,7 +324,6 @@ export default {
 }
 
 .stats-bar {
-  background-color: #f8f9fa;
   border-radius: 8px;
   padding: 1.5rem;
   margin: 1rem 0;
@@ -279,8 +339,17 @@ export default {
 .stat-number {
   font-size: 2rem;
   font-weight: bold;
-  color: #3273dc;
+  color: #495057;
   line-height: 1;
+}
+
+/* Custom progress bar styling */
+.progress::-webkit-progress-value {
+  background-color: #6c757d;
+}
+
+.progress::-moz-progress-bar {
+  background-color: #6c757d;
 }
 
 .stat-label {
@@ -291,12 +360,54 @@ export default {
   margin-top: 0.25rem;
 }
 
-.notification.is-overlay {
+/* Success notification styling - matching NewSessionButton */
+.inter-rater-success-message {
   position: fixed;
   top: 20px;
   right: 20px;
   z-index: 1000;
-  max-width: 400px;
+  padding: 1rem;
+  background-color: #d4edda;
+  border: 1px solid #c3e6cb;
+  border-radius: 8px;
+  animation: slideInFade 0.3s ease-in-out;
+}
+
+.success-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  color: #155724;
+  font-weight: 500;
+}
+
+.check-icon {
+  background-color: #28a745;
+  color: white;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.success-text {
+  font-size: 14px;
+}
+
+@keyframes slideInFade {
+  from { 
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to { 
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 @media (max-width: 768px) {

@@ -1395,6 +1395,51 @@ async def get_inter_rater_stats(request: Request):
         logger.error(f"Error getting inter-rater stats: {e}")
         return {"enabled": False, "error": str(e)}
 
+@app.post("/api/inter-rater/refresh-cache")
+async def refresh_inter_rater_cache(request: Request):
+    """
+    Force refresh of inter-rater session cache. Useful when Phoenix data has been modified.
+    """
+    try:
+        from backend.services.inter_rater_service import inter_rater_service
+        
+        if not inter_rater_service.is_enabled():
+            raise HTTPException(status_code=404, detail="Inter-rater functionality is disabled")
+        
+        # Get user ID (same logic as other endpoints)
+        auth_required = os.getenv("VITE_USE_COGNITO_AUTH", "false").lower() == "true"
+        user_id = None
+        
+        if auth_required:
+            auth_header = request.headers.get("Authorization")
+            if auth_header:
+                user = await optional_user(request)
+                if user.get("authenticated", False):
+                    user_id = user.get("sub")
+        
+        # For development, use placeholder user ID
+        if not user_id:
+            client_ip = request.client.host if request.client else "unknown"
+            user_id = f"dev_user_{client_ip.replace('.', '_')}"
+        
+        # Clear cache for this user and force fresh fetch
+        inter_rater_service.invalidate_user_cache(user_id)
+        
+        # Fetch fresh sessions
+        sessions = await inter_rater_service.get_sessions_for_inter_rating(user_id)
+        
+        return {
+            "message": "Cache refreshed successfully",
+            "sessions_found": len(sessions),
+            "status": "success"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error refreshing inter-rater cache: {e}")
+        raise HTTPException(status_code=500, detail="Failed to refresh inter-rater cache")
+
 @app.get("/api/vector-store-info")
 async def get_vector_store_info():
     try:

@@ -10,6 +10,7 @@ import os
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import json
+import hashlib
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,7 @@ class InterRaterService:
         
         # Simple in-memory cache for sessions (could be Redis in production)
         self._session_cache = {}
-        self._cache_timeout = 300  # 5 minutes
+        self._cache_timeout = 60  # 1 minute - shorter cache for better responsiveness to Phoenix changes
     
     def is_enabled(self) -> bool:
         """Check if inter-rater functionality is enabled."""
@@ -42,6 +43,80 @@ class InterRaterService:
         cache_time = cache_entry.get('timestamp', 0)
         current_time = datetime.now().timestamp()
         return (current_time - cache_time) < self._cache_timeout
+    
+    def _allocate_sessions_to_user(self, available_sessions: List[Dict[str, Any]], user_id: str) -> List[Dict[str, Any]]:
+        """
+        Allocate sessions to a specific user using their Cognito user ID.
+        This ensures different users get different non-overlapping sessions.
+        
+        Args:
+            available_sessions: All sessions available for inter-rating
+            user_id: The Cognito user ID (UUID) or dev user ID
+            
+        Returns:
+            List of sessions allocated to this user
+        """
+        if not available_sessions:
+            return []
+        
+        # Sort sessions by span_id for consistent ordering across users
+        sorted_sessions = sorted(available_sessions, key=lambda x: x.get('span_id', ''))
+        
+        # Use the user_id to determine which sessions this user gets
+        # For Cognito UUIDs, use the last few characters to get a number
+        if user_id.startswith('dev_user_'):
+            # For dev users, use IP-based allocation
+            user_hash = hash(user_id) % len(sorted_sessions)
+        else:
+            # For Cognito UUIDs, use the hex characters to create a starting point
+            try:
+                # Take last 8 characters of UUID and convert from hex to int
+                user_hash = int(user_id[-8:].replace('-', ''), 16) % len(sorted_sessions)
+            except (ValueError, TypeError):
+                # Fallback to simple hash if UUID format is unexpected
+                user_hash = hash(user_id) % len(sorted_sessions)
+        
+        # Handle edge cases for uneven distribution
+        total_sessions = len(sorted_sessions)
+        max_sessions_to_allocate = min(self.sessions_per_user, total_sessions)
+        
+        # If we have fewer sessions than users * sessions_per_user, 
+        # some users might get fewer sessions or none at all
+        allocated_sessions = []
+        
+        if total_sessions == 0:
+            return []
+        
+        # Calculate how many users could potentially get sessions
+        potential_users = max(1, total_sessions // max_sessions_to_allocate)
+        
+        # If we have more sessions than one user can handle, distribute them
+        if total_sessions >= self.sessions_per_user:
+            # Normal case: allocate sessions starting from user's hash position
+            for i in range(max_sessions_to_allocate):
+                session_index = (user_hash + i) % total_sessions
+                allocated_sessions.append(sorted_sessions[session_index])
+        else:
+            # Edge case: fewer sessions than sessions_per_user
+            # Give this user sessions based on their position in the hash order
+            user_position = user_hash % potential_users
+            sessions_per_position = total_sessions // potential_users
+            remainder_sessions = total_sessions % potential_users
+            
+            # Calculate start and end indices for this user
+            start_idx = user_position * sessions_per_position
+            # Some users get one extra session if there's a remainder
+            if user_position < remainder_sessions:
+                start_idx += user_position
+                end_idx = start_idx + sessions_per_position + 1
+            else:
+                start_idx += remainder_sessions
+                end_idx = start_idx + sessions_per_position
+            
+            # Allocate the sessions for this user
+            allocated_sessions = sorted_sessions[start_idx:end_idx]
+        
+        return allocated_sessions
     
     async def _get_cached_sessions(self, user_id: str) -> Optional[List[Dict[str, Any]]]:
         """Get sessions from cache if valid."""
@@ -78,10 +153,25 @@ class InterRaterService:
         if not self.enabled:
             return []
         
-        # Try cache first
+        # Try cache first, but validate sessions still exist in Phoenix
         cached_sessions = await self._get_cached_sessions(user_id)
         if cached_sessions is not None:
-            return cached_sessions
+            # Validate cached sessions still exist in Phoenix
+            validated_sessions = await self._validate_sessions_in_phoenix(cached_sessions)
+            
+            # If validation removed sessions, update cache or refresh if too many were removed
+            if len(validated_sessions) != len(cached_sessions):
+                if len(validated_sessions) == 0:
+                    # All cached sessions were deleted, clear cache and fetch fresh
+                    self.invalidate_user_cache(user_id)
+                    logger.info(f"All cached sessions were deleted, fetching fresh sessions for user {user_id[:8]}...")
+                else:
+                    # Some sessions were deleted, update cache with validated sessions
+                    self._cache_sessions(user_id, validated_sessions)
+                    return validated_sessions
+            else:
+                # All cached sessions are still valid
+                return validated_sessions
         
         try:
             from .phoenix_client import phoenix_client
@@ -90,15 +180,15 @@ class InterRaterService:
             sanitized_user_id = user_id[:8] + "..." if len(user_id) > 8 else user_id
             logger.info(f"Querying Phoenix for inter-rater sessions for user {sanitized_user_id}")
             
-            # Query Phoenix for sessions with original feedback
-            sessions = await phoenix_client.query_spans_with_feedback(
+            # Query Phoenix for sessions with original feedback (get more to allow for allocation)
+            all_sessions = await phoenix_client.query_spans_with_feedback(
                 exclude_user_id=user_id,
-                limit=self.sessions_per_user
+                limit=self.sessions_per_user * 10  # Get more sessions to allow for proper allocation
             )
             
             # Filter sessions that haven't reached max ratings and user hasn't already rated
-            filtered_sessions = []
-            for session in sessions:
+            available_sessions = []
+            for session in all_sessions:
                 # Check if user has already rated this session
                 already_rated = await phoenix_client.check_user_already_rated(
                     session['span_id'], user_id
@@ -111,9 +201,10 @@ class InterRaterService:
                 
                 if not already_rated and inter_rater_count < self.max_ratings:
                     session['inter_rater_count'] = inter_rater_count
-                    filtered_sessions.append(session)
+                    available_sessions.append(session)
             
-            final_sessions = filtered_sessions[:self.sessions_per_user]
+            # Allocate sessions to this specific user using their user ID
+            final_sessions = self._allocate_sessions_to_user(available_sessions, user_id)
             
             # Cache the results
             self._cache_sessions(user_id, final_sessions)
@@ -180,6 +271,50 @@ class InterRaterService:
             del self._session_cache[cache_key]
             sanitized_user_id = user_id[:8] + "..." if len(user_id) > 8 else user_id
             logger.debug(f"Invalidated cache for user {sanitized_user_id}")
+    
+    def clear_all_cache(self):
+        """
+        Clear all cached sessions. Useful when Phoenix data changes significantly.
+        """
+        self._session_cache.clear()
+        logger.info("Cleared all inter-rater session cache")
+    
+    async def _validate_sessions_in_phoenix(self, sessions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Validate that cached sessions still exist in Phoenix and filter out deleted ones.
+        
+        Args:
+            sessions: List of cached session data
+            
+        Returns:
+            List of sessions that still exist in Phoenix
+        """
+        if not sessions:
+            return []
+        
+        try:
+            from .phoenix_client import phoenix_client
+            
+            # Get current spans from Phoenix to validate against
+            current_spans = await phoenix_client.query_spans_with_feedback(limit=100)  # Get more spans for validation
+            current_span_ids = {session['span_id'] for session in current_spans}
+            
+            # Filter cached sessions to only include those that still exist
+            valid_sessions = []
+            for session in sessions:
+                if session.get('span_id') in current_span_ids:
+                    valid_sessions.append(session)
+                else:
+                    logger.debug(f"Session with span_id {session.get('span_id')} no longer exists in Phoenix, removing from cache")
+            
+            if len(valid_sessions) != len(sessions):
+                logger.info(f"Filtered out {len(sessions) - len(valid_sessions)} deleted sessions from cache")
+            
+            return valid_sessions
+            
+        except Exception as e:
+            logger.warning(f"Failed to validate sessions in Phoenix: {e}, returning cached sessions as-is")
+            return sessions
 
 # Global instance
 inter_rater_service = InterRaterService()

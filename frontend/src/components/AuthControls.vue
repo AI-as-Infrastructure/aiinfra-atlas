@@ -34,7 +34,11 @@ async function logout() {
 .auth-controls {
   display: flex;
   align-items: center;
-  margin-left: auto;
+  margin: 0;
+  padding: 0;
+  vertical-align: top;
+  line-height: 1;
+  height: 40px;
 }
 
 .user-info {
@@ -49,29 +53,32 @@ async function logout() {
 }
 
 .auth-button {
-  padding: 6px 12px;
-  border-radius: 4px;
-  font-size: 0.9rem;
+  background-color: #000 !important;
+  color: #fff !important;
+  border: none !important;
+  padding: 0;
+  border-radius: 2px;
+  font-size: 0.875rem;
+  font-weight: 500;
   cursor: pointer;
-  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100px;
+  height: 40px;
   transition: background-color 0.2s;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  appearance: none !important;
+  box-shadow: none !important;
 }
 
-.login-button {
-  background-color: #2c3e50;
-  color: white;
-}
-
-.login-button:hover {
-  background-color: #1a252f;
-}
-
-.logout-button {
-  background-color: #e74c3c;
-  color: white;
-}
-
-.logout-button:hover {
-  background-color: #c0392b;
+.auth-button:hover {
+  background-color: #888 !important;
+  color: #fff !important;
 }
 </style>

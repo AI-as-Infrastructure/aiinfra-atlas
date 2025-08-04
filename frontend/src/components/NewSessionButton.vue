@@ -6,25 +6,28 @@
         <span class="refreshed-text">Session refreshed!</span>
       </div>
     </div>
-    <a class="new-session-link nav-link" @click.prevent="newSession">New Session</a>
+    <button class="nav-link" @click="newSession">New Session</button>
   </div>
 </template>
 
 <script setup>
 import { useSessionStore } from '@/stores/session'
+import { useRouter } from 'vue-router'
 import { ref } from 'vue'
 
 const session = useSessionStore()
+const router = useRouter()
 const showRefreshedMessage = ref(false)
 
 function newSession() {
   session.newSession()
   showRefreshedMessage.value = true
   
-  // Hide the message after 3 seconds
+  // Hide the message after 2 seconds and redirect to homepage
   setTimeout(() => {
     showRefreshedMessage.value = false
-  }, 3000)
+    router.push('/')
+  }, 2000)
 }
 </script>
 
@@ -32,6 +35,11 @@ function newSession() {
 .session-button-container {
   display: flex;
   align-items: center;
+  margin: 0;
+  padding: 0;
+  vertical-align: top;
+  line-height: 1;
+  height: 40px;
 }
 
 .session-refreshed-message {
