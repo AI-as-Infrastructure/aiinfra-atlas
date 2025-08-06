@@ -22,6 +22,13 @@ server {
     ssl_session_cache shared:SSL:10m;
     ssl_session_timeout 1d;
     
+    # OCSP Stapling
+    ssl_stapling on;
+    ssl_stapling_verify on;
+    ssl_trusted_certificate $CERT_DIR/$APP_NAME.chain.pem;
+    resolver 8.8.8.8 1.1.1.1 valid=300s;
+    resolver_timeout 5s;
+    
     # Security headers
     add_header Strict-Transport-Security "max-age=63072000" always;
     add_header X-Content-Type-Options "nosniff";
