@@ -20,10 +20,8 @@ server {
     ssl_prefer_server_ciphers on;
     ssl_ciphers "EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH";
     ssl_session_cache shared:SSL:10m;
-    ssl_session_timeout 1d;
-    
-    # Note: OCSP Stapling disabled for staging (self-signed certificates)
-    
+    ssl_session_timeout 1d;    
+  
     # Security headers
     add_header Strict-Transport-Security "max-age=63072000" always;
     add_header X-Content-Type-Options "nosniff";
