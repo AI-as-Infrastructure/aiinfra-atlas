@@ -28,8 +28,8 @@
         <h3 v-if="hasCompletedAllSessions" class="title is-4">Thank You!</h3>
         <h3 v-else class="title is-4">No Sessions Available</h3>
         <p v-if="hasCompletedAllSessions" class="subtitle is-6">
-          You have successfully completed all your assigned inter-rating sessions. 
-          Your contributions help improve the reliability of our feedback system.
+          You have successfully completed all your assigned inter-rating sessions. <br></br>
+          Your contributions help us explore whether Large Language Models can be safely used in the research and cultural sectors.
         </p>
         <p v-else class="subtitle is-6">
           No sessions are currently available for inter-rating.
@@ -195,7 +195,15 @@ export default {
         console.log('API Response:', result)
         
         if (result.status === 'success') {
-          successMessage.value = 'Inter-rating submitted successfully!'
+          // Check if this is the last session to show appropriate message
+          const isLastSession = (totalCompletedSessions.value + 1) >= totalAllocatedSessions.value
+          
+          if (isLastSession) {
+            successMessage.value = 'Inter-rating submitted successfully!'
+          } else {
+            successMessage.value = 'Inter-rating submitted! Loading next session...'
+          }
+          
           showSuccessMessage.value = true
           
           // Auto-hide success message and move to next session
@@ -245,6 +253,14 @@ export default {
       
       if (currentSessionIndex.value < sessions.value.length - 1) {
         currentSessionIndex.value++
+        
+        // Scroll to top to show the new question (small delay for better UX)
+        setTimeout(() => {
+          window.scrollTo({
+            top: 0,
+            behavior: 'smooth'
+          })
+        }, 300) // 300ms delay allows success message to fully disappear first
       } else {
         // All sessions completed - should not happen since we have exact allocation
         showCompletionMessage()
@@ -256,13 +272,22 @@ export default {
       hasCompletedAllSessions.value = true
       successMessage.value = `All sessions completed! You've successfully rated ${totalCompletedSessions.value} sessions.`
       showSuccessMessage.value = true
+      
+      // Clear sessions to prevent showing old content
+      sessions.value = []
+      currentSessionIndex.value = 0
+      
       setTimeout(() => {
         showSuccessMessage.value = false
-        // Reload sessions to show the thank you state and update the button counter
-        loadSessions()
         
-        // Emit event to update button counter
+        // Emit event to update button counter (don't reload sessions - keep them empty)
         window.dispatchEvent(new CustomEvent('inter-rater-completed'))
+        
+        // Scroll to top to show the thank you message properly
+        window.scrollTo({
+          top: 0,
+          behavior: 'smooth'
+        })
       }, 3000)
     }
 
