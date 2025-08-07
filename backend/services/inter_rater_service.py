@@ -25,11 +25,11 @@ class InterRaterService:
         
         # Simple in-memory cache for sessions (could be Redis in production)
         self._session_cache = {}
-        self._cache_timeout = 300  # 5 minutes - balance between performance and data freshness
+        self._cache_timeout = 60  # 1 minute - faster updates for development
         
         # Stats cache to avoid duplicate API calls during the same request
         self._stats_cache = {}
-        self._stats_cache_timeout = 30  # 30 seconds for stats
+        self._stats_cache_timeout = 10  # 10 seconds for stats - faster updates
     
     def is_enabled(self) -> bool:
         """Check if inter-rater functionality is enabled."""

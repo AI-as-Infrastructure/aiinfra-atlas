@@ -280,14 +280,16 @@ export default {
       setTimeout(() => {
         showSuccessMessage.value = false
         
-        // Emit event to update button counter (don't reload sessions - keep them empty)
-        window.dispatchEvent(new CustomEvent('inter-rater-completed'))
-        
         // Scroll to top to show the thank you message properly
         window.scrollTo({
           top: 0,
           behavior: 'smooth'
         })
+        
+        // Emit event to update button counter after additional delay to ensure backend processing is complete
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('inter-rater-completed'))
+        }, 2000) // Additional 2 second delay for backend processing
       }, 3000)
     }
 

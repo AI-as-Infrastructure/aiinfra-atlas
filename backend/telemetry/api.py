@@ -135,6 +135,17 @@ async def submit_feedback(feedback: Union[UserFeedback, InterRaterFeedback if IN
         if success:
             # Success - we've successfully submitted the annotation
             logger.info(f"{feedback_type.title()} feedback annotation recorded for session_id={session_id}, qa_id={qa_id}")
+            
+            # For regular (non-inter-rater) feedback, clear inter-rater cache so new sessions become available
+            if not is_inter_rater and INTER_RATER_AVAILABLE:
+                try:
+                    inter_rater_service = get_inter_rater_service()
+                    if inter_rater_service and inter_rater_service.is_enabled():
+                        inter_rater_service.clear_all_cache()
+                        logger.debug("Cleared inter-rater cache after new regular feedback submission")
+                except Exception as cache_error:
+                    logger.warning(f"Failed to clear inter-rater cache after regular feedback: {cache_error}")
+            
             return FeedbackResponse(
                 message=f"{feedback_type.title()} feedback recorded successfully",
                 status="success"
