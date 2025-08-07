@@ -340,11 +340,11 @@ export default {
 
 /* Custom progress bar styling */
 .progress::-webkit-progress-value {
-  background-color: #6c757d;
+  background-color: #28a745;
 }
 
 .progress::-moz-progress-bar {
-  background-color: #6c757d;
+  background-color: #28a745;
 }
 
 .stat-label {

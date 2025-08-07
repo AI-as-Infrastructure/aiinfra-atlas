@@ -1067,8 +1067,16 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
                     )
                 else:
                     logger.error(f"Failed to record HTTP feedback for session_id={session_id}, qa_id={qa_id}")
+                    
+                    # Provide more specific error for inter-rater feedback
+                    if feedback.is_inter_rater:
+                        error_msg = "Unable to submit inter-rater feedback. This may be due to a Phoenix API issue or the original session may no longer be available."
+                        logger.error(f"Inter-rater feedback submission failed for original_span_id={feedback.original_span_id}")
+                    else:
+                        error_msg = "Unable to associate your feedback with this conversation. This may happen if the conversation data has expired."
+                    
                     return FeedbackResponse(
-                        message="Unable to associate your feedback with this conversation. This may happen if the conversation data has expired.",
+                        message=error_msg,
                         status="error"
                     )
             except Exception as e:

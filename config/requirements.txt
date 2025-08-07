@@ -47,8 +47,8 @@ pydantic==2.11.4
 pydantic-compat==0.1.2
 lark==1.2.2
 
-# Observability
-arize-phoenix==10.7.0
+# Observability - Updated to match Phoenix server version 11.19.0
+arize-phoenix==11.19.0
 arize-phoenix-client==1.10.0
 arize-phoenix-otel==0.10.3
 arize-phoenix-evals==0.20.8

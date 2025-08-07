@@ -3,7 +3,7 @@
     <router-link 
       v-if="!isLoading"
       to="/inter-rater" 
-      class="nav-link inter-rater-link"
+      class="nav-text-link inter-rater-link"
       :class="{ 'has-sessions': availableSessions > 0 }"
     >
       Inter-rate ({{ availableSessions }})
@@ -30,11 +30,33 @@ export default {
         
         isEnabled.value = data.enabled || false
         availableSessions.value = data.available_sessions || 0
+        
+        // Pre-load sessions if there are any available (improves UX when user clicks button)
+        if (data.enabled && data.available_sessions > 0) {
+          console.log('Pre-loading inter-rater sessions for better UX...')
+          preloadInterRaterSessions()
+        }
       } catch (error) {
         console.error('Error checking inter-rater status:', error)
         isEnabled.value = false
       } finally {
         isLoading.value = false
+      }
+    }
+
+    const preloadInterRaterSessions = async () => {
+      try {
+        // Pre-load the sessions data in the background
+        const response = await fetch('/api/inter-rater/sessions')
+        if (response.ok) {
+          console.log('Inter-rater sessions pre-loaded successfully')
+          // Data will be cached by the backend for faster access when user navigates
+        } else {
+          console.warn('Failed to pre-load inter-rater sessions:', response.status)
+        }
+      } catch (error) {
+        console.warn('Error pre-loading inter-rater sessions:', error)
+        // Non-critical error, don't show to user
       }
     }
 
@@ -68,47 +90,10 @@ export default {
 }
 
 .inter-rater-link {
-  background-color: #000 !important;
-  color: #fff !important;
-  border: none !important;
-  text-decoration: none !important;
-  padding: 0;
-  border-radius: 2px;
-  font-weight: 500;
-  font-size: 0.875rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 100px;
-  height: 40px;
-  cursor: pointer;
-  outline: none;
-  transition: background-color 0.2s;
-  text-align: center;
+  /* Use underlined text style - inherits from nav-text-link in App.vue */
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  -webkit-appearance: none !important;
-  -moz-appearance: none !important;
-  appearance: none !important;
-  box-shadow: none !important;
-}
-
-.inter-rater-link:hover {
-  background-color: #888 !important;
-  color: #fff !important;
-  text-decoration: none !important;
-}
-
-.inter-rater-link.router-link-active {
-  background-color: #888 !important;
-  color: #fff !important;
-  font-weight: 600;
-}
-
-.inter-rater-link.router-link-exact-active {
-  background-color: #888 !important;
-  color: #fff !important;
+  min-width: auto;
+  width: auto;
 }
 
 /* Removed session-count styling - now integrated into main button text */
@@ -121,7 +106,7 @@ export default {
   content: '';
   position: absolute;
   top: 8px;
-  right: 8px;
+  right: 5px;
   width: 6px;
   height: 6px;
   background-color: #ff3860;

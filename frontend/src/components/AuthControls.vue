@@ -1,10 +1,10 @@
 <template>
   <div v-if="showAuthUI" class="auth-controls">
     <div v-if="isLoggedIn">
-      <button @click="logout" class="auth-button logout-button">Logout</button>
+      <button @click="logout" class="auth-text-button logout-button">Logout</button>
     </div>
     <div v-else>
-      <button @click="login" class="auth-button login-button">Login</button>
+      <button @click="login" class="auth-text-button login-button">Login</button>
     </div>
   </div>
 </template>
@@ -41,6 +41,14 @@ async function logout() {
   height: 40px;
 }
 
+.auth-controls > div {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
 .user-info {
   display: flex;
   align-items: center;
@@ -52,33 +60,38 @@ async function logout() {
   color: #666;
 }
 
-.auth-button {
-  background-color: #000 !important;
-  color: #fff !important;
+.auth-text-button {
+  color: #181818 !important;
+  background: none !important;
   border: none !important;
-  padding: 0;
-  border-radius: 2px;
-  font-size: 0.875rem;
-  font-weight: 500;
+  text-decoration: none !important;
   cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 100px;
-  height: 40px;
-  transition: background-color 0.2s;
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-family: inherit;
+  font-weight: 500;
+  font-size: 0.875rem;
+  padding: 8px 12px;
+  border-radius: 0;
+  transition: color 0.2s;
+  border-bottom: 2px solid transparent;
+  position: relative;
   -webkit-appearance: none !important;
   -moz-appearance: none !important;
   appearance: none !important;
   box-shadow: none !important;
+  outline: none;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  height: 40px;
+  margin: 0;
+  vertical-align: top;
+  line-height: 1;
 }
 
-.auth-button:hover {
-  background-color: #888 !important;
-  color: #fff !important;
+.auth-text-button:hover, .auth-text-button:focus {
+  color: #111 !important;
+  text-decoration: underline !important;
+  border-bottom: none;
+  background: none !important;
 }
 </style>

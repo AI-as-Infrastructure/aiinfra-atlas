@@ -3,15 +3,15 @@
     <div class="conversation-container">
       <!-- Prominent Question Display -->
       <div class="question-section">
-        <div class="card">
-          <div class="card-header" style="background-color: #363636;">
-            <h4 class="card-header-title has-text-white">
+        <div class="message-style-container">
+          <div class="section-header">
+            <h4 class="section-title">
               <i class="fas fa-question-circle mr-2"></i>
               Question
             </h4>
           </div>
-          <div class="card-content">
-            <div class="content has-text-weight-medium" style="font-size: 1.1rem; line-height: 1.6;">
+          <div class="section-content">
+            <div class="content-text">
               {{ session.question }}
             </div>
           </div>
@@ -20,20 +20,20 @@
 
       <!-- Prominent Answer Display -->
       <div class="answer-section">
-        <div class="card">
-          <div class="card-header" style="background-color: #4a4a4a;">
-            <h4 class="card-header-title has-text-white">
+        <div class="message-style-container">
+          <div class="section-header">
+            <h4 class="section-title">
               <i class="fas fa-comment-dots mr-2"></i>
               Answer
             </h4>
           </div>
-          <div class="card-content">
-            <div class="content" style="font-size: 1rem; line-height: 1.6;">
-              <div v-html="renderMarkdown(session.answer)"></div>
+          <div class="section-content">
+            <div class="content-text">
+              <div class="content" v-html="renderMarkdown(session.answer)"></div>
               
               <div v-if="session.citations && session.citations.length > 0" class="citations-section">
                 <hr class="my-4">
-                <h6 class="title is-6 has-text-grey-dark">
+                <h6 class="citations-title">
                   <i class="fas fa-book mr-2"></i>
                   Sources Used:
                 </h6>
@@ -88,14 +88,12 @@
 
     <!-- Inter-rater Feedback Form -->
     <div class="inter-rater-feedback-section">
-      <div class="card">
-        <div class="card-header" style="background-color: #363636;">
-          <h4 class="card-header-title">
-            <i class="fas fa-star mr-2"></i>
-            Your Inter-rater Assessment
-          </h4>
+      <div class="feedback-container">
+        <div class="feedback-header">
+          <h4>Inter-rater Assessment</h4>
+          <p class="subtitle">Provide an independent evaluation of this LLM response to help us measure inter-rater reliability. Rate each of the following, where 1 is the lowest rating, and 5 is the highest.</p>
         </div>
-        <div class="card-content">
+        <div class="feedback-content">
           
           <!-- Likert-style Rating Grid -->
           <div class="rating-sections">
@@ -285,7 +283,6 @@
           <!-- Progress Indicator -->
           <div class="has-text-centered mt-4">
             <div v-if="!isFormValid" class="has-text-danger">
-              <small>Please rate all five criteria to continue</small>
             </div>
           </div>
         </div>
@@ -617,27 +614,142 @@ export default {
   margin-bottom: 2rem;
 }
 
-/* Question and Answer Sections */
+/* Question and Answer Sections - Chat Interface Style */
 .question-section,
 .answer-section,
 .original-feedback-section {
   margin-bottom: 1.5rem;
 }
 
-.question-section .card {
+.message-style-container {
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+  width: 100%;
+  overflow: hidden;
 }
 
-.answer-section .card {
+.section-header {
+  background: #f8f9fa;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid #e9ecef;
 }
 
-.original-feedback-section .card {
-  border-left: 4px solid #48c774;
+.section-title {
+  color: #111;
+  font-size: 1.3rem;
+  font-weight: 600;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  text-align: left;
+}
+
+.section-content {
+  background: white;
+  padding: 1.5rem;
+}
+
+.content-text {
+  color: #111;
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+.content-text .content {
+  color: #111 !important;
+}
+
+/* Markdown styling for rendered content */
+.content :deep(h1),
+.content :deep(h2),
+.content :deep(h3),
+.content :deep(h4),
+.content :deep(h5),
+.content :deep(h6) {
+  color: #111;
+  font-weight: 600;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.content :deep(h1) { font-size: 1.5rem; }
+.content :deep(h2) { font-size: 1.3rem; }
+.content :deep(h3) { font-size: 1.1rem; }
+.content :deep(h4) { font-size: 1rem; }
+
+.content :deep(p) {
+  margin-bottom: 1rem;
+  color: #111;
+  line-height: 1.6;
+}
+
+.content :deep(ul),
+.content :deep(ol) {
+  margin-bottom: 1rem;
+  padding-left: 1.5rem;
+  color: #111;
+}
+
+.content :deep(li) {
+  margin-bottom: 0.25rem;
+  color: #111;
+}
+
+.content :deep(strong) {
+  font-weight: 600;
+  color: #111;
+}
+
+.content :deep(em) {
+  font-style: italic;
+  color: #111;
+}
+
+.content :deep(blockquote) {
+  border-left: 3px solid #ddd;
+  padding-left: 1rem;
+  margin: 1rem 0;
+  color: #666;
+  font-style: italic;
+}
+
+.content :deep(code) {
+  background-color: #f5f5f5;
+  padding: 0.2em 0.4em;
+  border-radius: 3px;
+  font-size: 0.9em;
+  color: #111;
+}
+
+.content :deep(pre) {
+  background-color: #f5f5f5;
+  padding: 1em;
+  border-radius: 4px;
+  overflow-x: auto;
+  margin: 1rem 0;
+}
+
+.content :deep(pre code) {
+  background-color: transparent;
+  padding: 0;
+  font-size: 0.9em;
+  color: #111;
+}
+
+.citations-title {
+  color: #111;
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
 }
 
 .citations-section {
-  background-color: #fafafa;
+  background-color: transparent;
   border-radius: 6px;
-  padding: 1rem;
+  padding: 0;
   margin-top: 1rem;
 }
 
@@ -657,6 +769,7 @@ export default {
   font-family: 'Times New Roman', Times, serif;
   font-size: 0.9rem;
   display: inline-block;
+  vertical-align: top;
 }
 
 .citation-link {
@@ -862,20 +975,40 @@ export default {
   color: #ddd;
 }
 
-/* Inter-rater Feedback Form */
+/* Inter-rater Feedback Form - Chat Interface Style */
 .inter-rater-feedback-section {
   margin-top: 3rem;
 }
 
-.inter-rater-feedback-section .card {
+.feedback-container {
+  background: white;
   border: 2px solid #e9ecef;
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  background-color: white;
+  padding: 0;
 }
 
-.inter-rater-feedback-section .card-content {
-  padding: 1.5rem;
+.feedback-header {
+  margin-bottom: 1.5rem;
+  text-align: center;
+  padding: 1.5rem 1.5rem 0 1.5rem;
+}
+
+.feedback-header h4 {
+  margin: 0 0 0.5rem 0;
+  color: #495057;
+  font-size: 18px;
+}
+
+.feedback-header .subtitle {
+  margin: 0;
+  color: #6c757d;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.feedback-content {
+  padding: 0 1.5rem 1.5rem 1.5rem;
 }
 
 /* Likert Scale Styling (matching ExtendedFeedback.vue) */

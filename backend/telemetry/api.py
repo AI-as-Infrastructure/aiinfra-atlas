@@ -83,7 +83,12 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
             # AI-Enhanced feedback fields
             "ai_validation": feedback.ai_validation,
             "ai_agreement": feedback.ai_agreement,
-            "ratings": feedback.ratings
+            "ratings": feedback.ratings,
+            
+            # Inter-rater reliability fields
+            "is_inter_rater": feedback.is_inter_rater,
+            "original_span_id": feedback.original_span_id,
+            "rater_id": feedback.rater_id
         }
         
         # Use Phoenix native feedback association

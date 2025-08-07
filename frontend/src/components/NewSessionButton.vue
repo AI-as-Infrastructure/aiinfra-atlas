@@ -6,7 +6,7 @@
         <span class="refreshed-text">Session refreshed!</span>
       </div>
     </div>
-    <button class="nav-link" @click="newSession">New Session</button>
+    <button class="nav-text-button" @click="newSession">New Session</button>
   </div>
 </template>
 
@@ -89,5 +89,34 @@ function newSession() {
     opacity: 1;
     transform: translateX(0);
   }
+}
+
+/* Underlined text button style to match FAQ and About links */
+.nav-text-button {
+  color: #181818 !important;
+  background: none !important;
+  border: none !important;
+  text-decoration: none !important;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 500;
+  font-size: 0.875rem;
+  padding: 8px 12px;
+  border-radius: 0;
+  transition: color 0.2s;
+  border-bottom: 2px solid transparent;
+  position: relative;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  appearance: none !important;
+  box-shadow: none !important;
+  outline: none;
+}
+
+.nav-text-button:hover, .nav-text-button:focus {
+  color: #111 !important;
+  text-decoration: underline !important;
+  border-bottom: none;
+  background: none !important;
 }
 </style>

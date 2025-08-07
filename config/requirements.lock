@@ -31,7 +31,7 @@ anyio==4.9.0
     #   openai
     #   starlette
     #   watchfiles
-arize-phoenix==10.7.0
+arize-phoenix==11.19.0
     # via -r config/requirements.txt
 arize-phoenix-client==1.10.0
     # via
@@ -387,6 +387,43 @@ numpy==1.26.4
     #   sentence-transformers
     #   transformers
     #   unstructured
+nvidia-cublas-cu12==12.6.4.1
+    # via
+    #   nvidia-cudnn-cu12
+    #   nvidia-cusolver-cu12
+    #   torch
+nvidia-cuda-cupti-cu12==12.6.80
+    # via torch
+nvidia-cuda-nvrtc-cu12==12.6.77
+    # via torch
+nvidia-cuda-runtime-cu12==12.6.77
+    # via torch
+nvidia-cudnn-cu12==9.5.1.17
+    # via torch
+nvidia-cufft-cu12==11.3.0.4
+    # via torch
+nvidia-cufile-cu12==1.11.1.6
+    # via torch
+nvidia-curand-cu12==10.3.7.77
+    # via torch
+nvidia-cusolver-cu12==11.7.1.2
+    # via torch
+nvidia-cusparse-cu12==12.5.4.2
+    # via
+    #   nvidia-cusolver-cu12
+    #   torch
+nvidia-cusparselt-cu12==0.6.3
+    # via torch
+nvidia-nccl-cu12==2.26.2
+    # via torch
+nvidia-nvjitlink-cu12==12.6.85
+    # via
+    #   nvidia-cufft-cu12
+    #   nvidia-cusolver-cu12
+    #   nvidia-cusparse-cu12
+    #   torch
+nvidia-nvtx-cu12==12.6.77
+    # via torch
 oauthlib==3.2.2
     # via
     #   kubernetes
@@ -493,6 +530,8 @@ pillow==11.2.1
     # via sentence-transformers
 posthog==4.8.0
     # via chromadb
+prometheus-client==0.22.1
+    # via arize-phoenix
 propcache==0.3.2
     # via
     #   aiohttp
@@ -564,6 +603,7 @@ pyproject-hooks==1.2.0
     # via build
 python-dateutil==2.9.0.post0
     # via
+    #   arize-phoenix
     #   botocore
     #   faker
     #   kubernetes
@@ -750,6 +790,8 @@ transformers==4.52.1
     #   -r config/requirements.txt
     #   langchain-huggingface
     #   sentence-transformers
+triton==3.3.1
+    # via torch
 typer==0.16.0
     # via chromadb
 types-requests==2.32.4.20250611

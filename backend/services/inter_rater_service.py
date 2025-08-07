@@ -25,7 +25,11 @@ class InterRaterService:
         
         # Simple in-memory cache for sessions (could be Redis in production)
         self._session_cache = {}
-        self._cache_timeout = 60  # 1 minute - shorter cache for better responsiveness to Phoenix changes
+        self._cache_timeout = 300  # 5 minutes - balance between performance and data freshness
+        
+        # Stats cache to avoid duplicate API calls during the same request
+        self._stats_cache = {}
+        self._stats_cache_timeout = 30  # 30 seconds for stats
     
     def is_enabled(self) -> bool:
         """Check if inter-rater functionality is enabled."""
@@ -234,11 +238,22 @@ class InterRaterService:
         if not self.enabled:
             return {"enabled": False}
         
+        # Check stats cache first
+        stats_cache_key = f"stats_{user_id}"
+        if stats_cache_key in self._stats_cache:
+            cache_entry = self._stats_cache[stats_cache_key]
+            cache_time = cache_entry.get('timestamp', 0)
+            current_time = datetime.now().timestamp()
+            if (current_time - cache_time) < self._stats_cache_timeout:
+                sanitized_user_id = user_id[:8] + "..." if len(user_id) > 8 else user_id
+                logger.debug(f"Returning cached stats for user {sanitized_user_id}")
+                return cache_entry['stats']
+        
         try:
             # Get available sessions for this user
             available_sessions = await self.get_sessions_for_inter_rating(user_id)
             
-            return {
+            stats = {
                 "enabled": True,
                 "available_sessions": len(available_sessions),
                 "completed_sessions": 0,  # This could be tracked if needed
@@ -246,11 +261,19 @@ class InterRaterService:
                 "project_name": self.project_name
             }
             
+            # Cache the stats
+            self._stats_cache[stats_cache_key] = {
+                'stats': stats,
+                'timestamp': datetime.now().timestamp()
+            }
+            
+            return stats
+            
         except Exception as e:
             logger.error(f"Error getting inter-rater stats: {e}")
             # Still return enabled=True since the service is configured to be enabled
             # The error just means no sessions are available
-            return {
+            error_stats = {
                 "enabled": True,
                 "available_sessions": 0,
                 "completed_sessions": 0,
@@ -258,6 +281,14 @@ class InterRaterService:
                 "project_name": self.project_name,
                 "error": str(e)
             }
+            
+            # Cache the error response for a shorter time
+            self._stats_cache[stats_cache_key] = {
+                'stats': error_stats,
+                'timestamp': datetime.now().timestamp()
+            }
+            
+            return error_stats
     
     def invalidate_user_cache(self, user_id: str):
         """
@@ -267,17 +298,24 @@ class InterRaterService:
             user_id: The anonymous user ID from Cognito
         """
         cache_key = self._get_cache_key(user_id)
+        stats_cache_key = f"stats_{user_id}"
+        
+        # Clear both session and stats cache
         if cache_key in self._session_cache:
             del self._session_cache[cache_key]
-            sanitized_user_id = user_id[:8] + "..." if len(user_id) > 8 else user_id
-            logger.debug(f"Invalidated cache for user {sanitized_user_id}")
+        if stats_cache_key in self._stats_cache:
+            del self._stats_cache[stats_cache_key]
+            
+        sanitized_user_id = user_id[:8] + "..." if len(user_id) > 8 else user_id
+        logger.debug(f"Invalidated cache for user {sanitized_user_id}")
     
     def clear_all_cache(self):
         """
         Clear all cached sessions. Useful when Phoenix data changes significantly.
         """
         self._session_cache.clear()
-        logger.info("Cleared all inter-rater session cache")
+        self._stats_cache.clear()
+        logger.info("Cleared all inter-rater session and stats cache")
     
     async def _validate_sessions_in_phoenix(self, sessions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """

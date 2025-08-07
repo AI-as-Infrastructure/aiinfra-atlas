@@ -202,11 +202,18 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
         
     # Convert span_id to the required 16-character lowercase hexadecimal format
     try:
-        # First, try to convert the span_id to an integer if it's a string
-        span_id_int = int(span_id) if isinstance(span_id, str) else span_id
-        
-        # Convert to 16-character lowercase hexadecimal string - this is the format required by Phoenix
-        formatted_span_id = format(span_id_int, '016x')
+        if isinstance(span_id, str):
+            # Check if it's already a hex string (like from Phoenix)
+            if all(c in '0123456789abcdefABCDEF' for c in span_id):
+                # Already hex format, ensure it's lowercase and properly padded
+                formatted_span_id = span_id.lower().zfill(16)
+            else:
+                # Try to convert string to integer, then to hex
+                span_id_int = int(span_id)
+                formatted_span_id = format(span_id_int, '016x')
+        else:
+            # Already an integer
+            formatted_span_id = format(span_id, '016x')
         
     except (ValueError, TypeError) as e:
         logger.warning(f"Failed to convert span_id to hex: {e}. Using original format.")
@@ -693,6 +700,12 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
             logger.error(f"Failed to submit annotation: {response.status_code} - {response.text}")
             logger.error(f"Headers used: {headers}")
             logger.error(f"Full annotation payload: {payload_json}")
+            logger.error(f"Phoenix endpoint: {annotation_endpoint}")
+            
+            # Log additional context for debugging
+            if feedback_data.get('is_inter_rater'):
+                logger.error(f"Inter-rater feedback submission failed for span_id={span_id}, original_span_id={feedback_data.get('original_span_id')}")
+            
             return False
     except Exception as e:
         logger.error(f"Exception submitting annotation: {e}", exc_info=True)
@@ -710,18 +723,35 @@ async def associate_feedback_with_spans(session_id: str, qa_id: str, feedback_da
     import logging
     logger = logging.getLogger(__name__)
     try:
-        # Handle inter-rater feedback differently - attach directly to original span
-        if feedback_data.get('is_inter_rater') and feedback_data.get('original_span_id'):
-            original_span_id = feedback_data['original_span_id']
-            logger.info(f"Processing inter-rater feedback for original span {original_span_id}")
+        # Handle inter-rater feedback differently - use the span_id from Phoenix directly
+        # Inter-rater sessions come from Phoenix and include the span_id, so we don't need local registry lookup
+        if feedback_data.get('is_inter_rater'):
+            # Check if we have the original_span_id (preferred) or fall back to session data
+            target_span_id = feedback_data.get('original_span_id')
             
-            # Submit annotation directly to the original span
-            success = submit_span_annotation(original_span_id, feedback_data, qa_id)
-            if success:
-                logger.info(f"Inter-rater feedback annotation submitted to original span {original_span_id}")
-                return True
+            # If no original_span_id, this might be from InterRaterPlayback which should provide the span_id
+            # Check for any span_id in the feedback data
+            if not target_span_id:
+                # Look for span_id in various possible fields from inter-rater session data
+                target_span_id = (
+                    feedback_data.get('span_id') or 
+                    feedback_data.get('target_span_id') or 
+                    feedback_data.get('session_span_id')
+                )
+            
+            if target_span_id:
+                logger.info(f"Processing inter-rater feedback for span {target_span_id}")
+                
+                # Submit annotation directly to Phoenix using the span ID
+                success = submit_span_annotation(target_span_id, feedback_data, qa_id)
+                if success:
+                    logger.info(f"Inter-rater feedback annotation submitted to span {target_span_id}")
+                    return True
+                else:
+                    logger.error(f"Failed to submit inter-rater feedback annotation to span {target_span_id}")
+                    return False
             else:
-                logger.error(f"Failed to submit inter-rater feedback annotation to original span {original_span_id}")
+                logger.error(f"No span ID found in inter-rater feedback data: {list(feedback_data.keys())}")
                 return False
         
         # Regular feedback processing - find the response span

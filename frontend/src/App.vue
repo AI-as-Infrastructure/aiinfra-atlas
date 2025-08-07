@@ -17,10 +17,10 @@
                   <NewSessionButton />
                 </div>
                 <div class="nav-item">
-                  <router-link class="nav-link" to="/faq">FAQ</router-link>
+                  <router-link class="nav-text-link" to="/faq">FAQ</router-link>
                 </div>
                 <div class="nav-item">
-                  <router-link class="nav-link" to="/about">About</router-link>
+                  <router-link class="nav-text-link" to="/about">About</router-link>
                 </div>
               </div>
               
@@ -254,6 +254,37 @@ onMounted(() => {
 .nav-link.router-link-exact-active {
   background-color: #888 !important;
   color: #fff !important;
+}
+
+/* Simple underlined text links for navigation */
+.nav-text-link {
+  color: #181818 !important;
+  text-decoration: none !important;
+  font-weight: 500;
+  font-size: 0.875rem;
+  padding: 8px 12px;
+  border-radius: 0;
+  transition: color 0.2s;
+  border-bottom: 2px solid transparent;
+  position: relative;
+}
+
+.nav-text-link:hover, .nav-text-link:focus {
+  color: #111 !important;
+  text-decoration: underline !important;
+  border-bottom: none;
+}
+
+.nav-text-link.router-link-active {
+  color: #111 !important;
+  text-decoration: underline !important;
+  border-bottom: none;
+}
+
+.nav-text-link.router-link-exact-active {
+  color: #111 !important;
+  text-decoration: underline !important;
+  border-bottom: none;
 }
 
 /* You may add any App.vue-specific tweaks here if required. */
