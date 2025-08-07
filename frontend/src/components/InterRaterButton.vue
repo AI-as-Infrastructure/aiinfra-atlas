@@ -22,18 +22,14 @@ export default {
     const availableSessions = ref(0)
     const isLoading = ref(true)
 
-    const checkInterRaterStatus = async (forceUpdate = false) => {
+    const checkInterRaterStatus = async () => {
       isLoading.value = true
       try {
         const response = await fetch('/api/inter-rater/stats')
         const data = await response.json()
         
         isEnabled.value = data.enabled || false
-        
-        // Don't override if we already set it to 0 due to completion, unless forced
-        if (forceUpdate || availableSessions.value !== 0) {
-          availableSessions.value = data.available_sessions || 0
-        }
+        availableSessions.value = data.available_sessions || 0
         
         // Pre-load sessions if there are any available (improves UX when user clicks button)
         if (data.enabled && data.available_sessions > 0) {
@@ -74,19 +70,14 @@ export default {
       
       // Listen for completion events to refresh immediately
       window.addEventListener('inter-rater-completed', () => {
-        // Immediately set counter to 0 for instant feedback
-        availableSessions.value = 0
-        
-        // No need to check backend - user has completed all their sessions
-        // Backend state might be inconsistent briefly, but user experience is more important
+        checkInterRaterStatus()
       })
     })
 
     return {
       isEnabled,
       availableSessions,
-      isLoading,
-      checkInterRaterStatus
+      isLoading
     }
   }
 }
