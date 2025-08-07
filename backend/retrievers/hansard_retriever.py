@@ -133,32 +133,20 @@ class HansardRetriever(BaseRetriever):
     # Public API methods required by LangChain
     def invoke(self, input: str, config: Optional[Dict] = None, **kwargs) -> List[Document]:
         """Synchronous invoke method required by LangChain."""
-        import asyncio
+        # Always use synchronous approach to avoid event loop conflicts
+        k = kwargs.get("k", 10)
+        corpus_filter = None
         
-        # Check if we're already in an event loop
-        try:
-            loop = asyncio.get_running_loop()
-            # If we're in a running loop, we need to handle this differently
-            if loop.is_running():
-                # Run synchronously by calling the vector store directly
-                k = kwargs.get("k", 10)
-                corpus_filter = None
-                
-                # Extract corpus filter from config if present
-                if config and isinstance(config, dict):
-                    corpus_filter = config.get("corpus_filter")
-                
-                filter_dict = None
-                if corpus_filter and corpus_filter != "all":
-                    filter_dict = {"corpus": corpus_filter}
-                
-                # Use standard similarity search
-                return self.vector_store.similarity_search(query=input, k=k, filter=filter_dict)
-        except RuntimeError:
-            # No event loop running, safe to use asyncio.run()
-            pass
+        # Extract corpus filter from config if present
+        if config and isinstance(config, dict):
+            corpus_filter = config.get("corpus_filter")
         
-        return asyncio.run(self._get_relevant_documents(input, config, **kwargs))
+        filter_dict = None
+        if corpus_filter and corpus_filter != "all":
+            filter_dict = {"corpus": corpus_filter}
+        
+        # Use standard similarity search directly
+        return self.vector_store.similarity_search(query=input, k=k, filter=filter_dict)
     
     async def ainvoke(self, input: str, config: Optional[Dict] = None, **kwargs) -> List[Document]:
         """Asynchronous invoke method required by LangChain."""
