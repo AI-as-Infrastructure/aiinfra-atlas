@@ -725,7 +725,7 @@ async def associate_feedback_with_spans(session_id: str, qa_id: str, feedback_da
     try:
         # Handle inter-rater feedback differently - use the span_id from Phoenix directly
         # Inter-rater sessions come from Phoenix and include the span_id, so we don't need local registry lookup
-        if feedback_data.get('is_inter_rater'):
+        if feedback_data.get('is_inter_rater') and feedback_data.get('original_span_id'):
             # Check if we have the original_span_id (preferred) or fall back to session data
             target_span_id = feedback_data.get('original_span_id')
             
