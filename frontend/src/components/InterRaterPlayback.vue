@@ -98,7 +98,10 @@
           <!-- Likert-style Rating Grid -->
           <div class="rating-sections">
             <div class="feedback-section">
-              <label class="section-label">Factual Accuracy</label>
+              <label class="section-label">
+                Factual Accuracy
+                <span class="tooltip" title="Factual accuracy of LLM output">ⓘ</span>
+              </label>
               <div class="likert-scale">
                 <div
                   v-for="value in 5"
@@ -121,7 +124,10 @@
             </div>
             
             <div class="feedback-section">
-              <label class="section-label">Analysis Quality</label>
+              <label class="section-label">
+                Analysis Quality
+                <span class="tooltip" title="Quality of historical analysis">ⓘ</span>
+              </label>
               <div class="likert-scale">
                 <div
                   v-for="value in 5"
@@ -144,7 +150,10 @@
             </div>
             
             <div class="feedback-section">
-              <label class="section-label">Relevance</label>
+              <label class="section-label">
+                Relevance
+                <span class="tooltip" title="Relevance of retrieved sources to query">ⓘ</span>
+              </label>
               <div class="likert-scale">
                 <div
                   v-for="value in 5"
@@ -167,7 +176,10 @@
             </div>
             
             <div class="feedback-section">
-              <label class="section-label">Difficulty</label>
+              <label class="section-label">
+                Difficulty
+                <span class="tooltip" title="Difficulty of the query">ⓘ</span>
+              </label>
               <div class="likert-scale">
                 <div
                   v-for="value in 5"
@@ -190,7 +202,10 @@
             </div>
             
             <div class="feedback-section">
-              <label class="section-label">Clarity</label>
+              <label class="section-label">
+                Clarity
+                <span class="tooltip" title="Clarity of the response">ⓘ</span>
+              </label>
               <div class="likert-scale">
                 <div
                   v-for="value in 5"
@@ -1028,6 +1043,13 @@ export default {
   color: #495057;
   margin-bottom: 0.75rem;
   font-size: 14px;
+}
+
+.tooltip {
+  color: #6c757d;
+  cursor: help;
+  font-size: 12px;
+  margin-left: 0.25rem;
 }
 
 .likert-scale {
