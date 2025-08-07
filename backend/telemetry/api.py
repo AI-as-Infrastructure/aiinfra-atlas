@@ -6,12 +6,26 @@ including Phoenix native feedback submission and debugging endpoints.
 """
 
 import logging
-from typing import Dict, Any, Optional
+import os
+from typing import Dict, Any, Optional, Union
 from datetime import datetime
 from fastapi import APIRouter, Request, HTTPException
 
 from .core import get_tracer, _phoenix_session, PHOENIX_AVAILABLE, is_telemetry_enabled
 from .feedback import UserFeedback, FeedbackResponse, associate_feedback_with_spans
+
+# Conditionally import inter-rater functionality
+_inter_rater_enabled = os.getenv("INTER_RATER_ENABLED", "false").lower() == "true"
+
+if _inter_rater_enabled:
+    try:
+        from .inter_rater_feedback import InterRaterFeedback, get_inter_rater_service
+        INTER_RATER_AVAILABLE = True
+    except ImportError as e:
+        logger.warning(f"Inter-rater functionality requested but failed to import: {e}")
+        INTER_RATER_AVAILABLE = False
+else:
+    INTER_RATER_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +33,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 @router.post("/api/feedback", response_model=FeedbackResponse)
-async def submit_feedback(feedback: UserFeedback, request: Request):
+async def submit_feedback(feedback: Union[UserFeedback, InterRaterFeedback if INTER_RATER_AVAILABLE else UserFeedback], request: Request):
     """
     Submit user feedback for a session and question using Phoenix native evaluation system.
     """
@@ -47,8 +61,18 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
         )
     
     try:
+        # Detect if this is inter-rater feedback
+        is_inter_rater = (
+            INTER_RATER_AVAILABLE and 
+            hasattr(feedback, 'is_inter_rater') and
+            feedback.is_inter_rater and
+            hasattr(feedback, 'original_span_id') and
+            feedback.original_span_id
+        )
+        
         # Log reception of feedback
-        logger.info(f"Received feedback for session {session_id}, qa {qa_id} from {client_ip}")
+        feedback_type = "inter-rater" if is_inter_rater else "regular"
+        logger.info(f"Received {feedback_type} feedback for session {session_id}, qa {qa_id} from {client_ip}")
         
         # Format feedback data for Phoenix native evaluation system
         feedback_data = {
@@ -83,31 +107,50 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
             # AI-Enhanced feedback fields
             "ai_validation": feedback.ai_validation,
             "ai_agreement": feedback.ai_agreement,
-            "ratings": feedback.ratings,
-            
-            # Inter-rater reliability fields
-            "is_inter_rater": feedback.is_inter_rater,
-            "original_span_id": feedback.original_span_id,
-            "rater_id": feedback.rater_id
+            "ratings": feedback.ratings
         }
         
-        # Use Phoenix native feedback association
-        success = await associate_feedback_with_spans(session_id, qa_id, feedback_data)
+        # Add inter-rater specific fields if this is inter-rater feedback
+        if is_inter_rater:
+            feedback_data.update({
+                "is_inter_rater": True,
+                "original_span_id": feedback.original_span_id,
+                "rater_id": feedback.rater_id
+            })
+        
+        # Route to appropriate feedback processing
+        if is_inter_rater:
+            # Use specialized inter-rater service
+            inter_rater_service = get_inter_rater_service()
+            if inter_rater_service:
+                success = await inter_rater_service.submit_inter_rater_feedback(session_id, qa_id, feedback_data)
+            else:
+                logger.error("Inter-rater service not available")
+                success = False
+        else:
+            # Use regular feedback association
+            success = await associate_feedback_with_spans(session_id, qa_id, feedback_data)
         
         # Respond with success
         if success:
             # Success - we've successfully submitted the annotation
-            logger.info(f"Feedback annotation recorded for session_id={session_id}, qa_id={qa_id}")
+            logger.info(f"{feedback_type.title()} feedback annotation recorded for session_id={session_id}, qa_id={qa_id}")
             return FeedbackResponse(
-                message="Feedback recorded successfully",
+                message=f"{feedback_type.title()} feedback recorded successfully",
                 status="success"
             )
         else:
-            logger.error(f"Failed to record feedback for session_id={session_id}, qa_id={qa_id}")
-            return FeedbackResponse(
-                message="Unable to associate your feedback with this conversation. This may happen if the conversation data has expired. Please try again or contact support if this issue persists.",
-                status="error"
-            )
+            logger.error(f"Failed to record {feedback_type} feedback for session_id={session_id}, qa_id={qa_id}")
+            if is_inter_rater:
+                return FeedbackResponse(
+                    message="Unable to submit inter-rater feedback. Please check that the original conversation is available and try again.",
+                    status="error"
+                )
+            else:
+                return FeedbackResponse(
+                    message="Unable to associate your feedback with this conversation. This may happen if the conversation data has expired. Please try again or contact support if this issue persists.",
+                    status="error"
+                )
     except Exception as e:
         logger.error(f"Error processing feedback: {e}", exc_info=True)
         return FeedbackResponse(

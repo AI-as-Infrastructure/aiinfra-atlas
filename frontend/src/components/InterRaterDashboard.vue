@@ -124,27 +124,37 @@ export default {
     })
 
     const loadSessions = async () => {
+      console.log('InterRaterDashboard: Starting to load sessions...')
       loading.value = true
       error.value = null
       
       try {
+        console.log('InterRaterDashboard: Fetching /api/inter-rater/sessions...')
         const response = await fetch('/api/inter-rater/sessions')
+        console.log('InterRaterDashboard: Response status:', response.status)
         
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`)
         }
         
         const data = await response.json()
+        console.log('InterRaterDashboard: Sessions data received:', data)
+        console.log('InterRaterDashboard: Number of sessions:', data.sessions?.length || 0)
+        
         sessions.value = data.sessions || []
         
         // On first load, set total allocated sessions (this is the user's full allocation)
         if (totalAllocatedSessions.value === 0) {
           totalAllocatedSessions.value = sessions.value.length
+          console.log('InterRaterDashboard: Set total allocated sessions:', totalAllocatedSessions.value)
         }
         
         // Reset session index if we have sessions
         if (sessions.value.length > 0) {
           currentSessionIndex.value = 0
+          console.log('InterRaterDashboard: Sessions loaded successfully, starting with index 0')
+        } else {
+          console.log('InterRaterDashboard: No sessions available for inter-rating')
         }
         
       } catch (err) {
