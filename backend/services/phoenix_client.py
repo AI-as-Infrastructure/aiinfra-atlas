@@ -569,9 +569,8 @@ class PhoenixAPIClient:
                 logger.debug(f"Checking user {sanitized_user_id} for span {sanitized_span_id} - found {len(annotations.get('data', []))} annotations")
                 
                 # Check if any annotations have inter-rater metadata for this user (Phoenix v11.13.2 uses 'data' not 'annotations')
-                for i, annotation in enumerate(annotations.get('data', [])):
+                for annotation in annotations.get('data', []):
                     metadata = annotation.get('metadata', {})
-                    logger.debug(f"Annotation {i}: metadata keys: {list(metadata.keys())}, is_inter_rater: {metadata.get('is_inter_rater')}, rater_id: {metadata.get('rater_id', 'None')[:8] + '...' if metadata.get('rater_id') else 'None'}")
                     
                     if (metadata.get('is_inter_rater') and 
                         metadata.get('rater_id') == user_id):
@@ -636,15 +635,13 @@ class PhoenixAPIClient:
                 
                 # Count unique inter-rater users (each user can only rate once) (Phoenix v11.13.2 uses 'data' not 'annotations')
                 inter_rater_users = set()
-                for i, annotation in enumerate(annotations.get('data', [])):
+                for annotation in annotations.get('data', []):
                     metadata = annotation.get('metadata', {})
-                    logger.debug(f"Annotation {i}: metadata keys: {list(metadata.keys())}, is_inter_rater: {metadata.get('is_inter_rater')}, rater_id: {metadata.get('rater_id', 'None')[:8] + '...' if metadata.get('rater_id') else 'None'}")
                     
                     if metadata.get('is_inter_rater') and metadata.get('rater_id'):
                         inter_rater_users.add(metadata['rater_id'])
                 
                 count = len(inter_rater_users)
-                logger.debug(f"Found {count} unique inter-rater users for span {sanitized_span_id}: {[uid[:8] + '...' for uid in inter_rater_users]}")
                 sanitized_span_id = span_id[:8] + "..." if len(span_id) > 8 else span_id
                 logger.debug(f"Found {count} inter-rater users for span {sanitized_span_id}")
                 return count

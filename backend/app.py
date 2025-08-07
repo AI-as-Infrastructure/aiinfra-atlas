@@ -1037,7 +1037,9 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
                             feedback.original_span_id, feedback.rater_id
                         )
                         if already_rated:
-                            logger.warning(f"User {feedback.rater_id} attempted to rate span {feedback.original_span_id} twice")
+                            sanitized_rater_id = feedback.rater_id[:8] + "..." if len(feedback.rater_id) > 8 else feedback.rater_id
+                            sanitized_span_id = feedback.original_span_id[:8] + "..." if len(feedback.original_span_id) > 8 else feedback.original_span_id
+                            logger.warning(f"User {sanitized_rater_id} attempted to rate span {sanitized_span_id} twice")
                             return FeedbackResponse(
                                 message="You have already provided feedback for this session.",
                                 status="error"
@@ -1057,7 +1059,8 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
                         try:
                             from backend.services.inter_rater_service import inter_rater_service
                             inter_rater_service.invalidate_user_cache(feedback.rater_id)
-                            logger.debug(f"Invalidated inter-rater cache for user {feedback.rater_id}")
+                            sanitized_rater_id = feedback.rater_id[:8] + "..." if len(feedback.rater_id) > 8 else feedback.rater_id
+                            logger.debug(f"Invalidated inter-rater cache for user {sanitized_rater_id}")
                         except Exception as cache_error:
                             logger.warning(f"Failed to invalidate inter-rater cache: {cache_error}")
                     
