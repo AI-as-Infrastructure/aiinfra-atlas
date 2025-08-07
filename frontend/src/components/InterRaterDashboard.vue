@@ -22,10 +22,16 @@
     <div v-else-if="sessions.length === 0" class="empty-state">
       <div class="has-text-centered">
         <div class="icon-container mb-4">
-          <i class="fas fa-info-circle fa-3x has-text-info"></i>
+          <i v-if="hasCompletedAllSessions" class="fas fa-check-circle fa-3x has-text-success"></i>
+          <i v-else class="fas fa-info-circle fa-3x has-text-info"></i>
         </div>
-        <h3 class="title is-4">No Sessions Available</h3>
-        <p class="subtitle is-6">
+        <h3 v-if="hasCompletedAllSessions" class="title is-4">Thank You!</h3>
+        <h3 v-else class="title is-4">No Sessions Available</h3>
+        <p v-if="hasCompletedAllSessions" class="subtitle is-6">
+          You have successfully completed all your assigned inter-rating sessions. 
+          Your contributions help improve the reliability of our feedback system.
+        </p>
+        <p v-else class="subtitle is-6">
           No sessions are currently available for inter-rating.
         </p>
       </div>
@@ -98,7 +104,6 @@
 
 <script>
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
 import InterRaterPlayback from './InterRaterPlayback.vue'
 
 export default {
@@ -107,7 +112,6 @@ export default {
     InterRaterPlayback
   },
   setup() {
-    const router = useRouter()
     
     const sessions = ref([])
     const currentSessionIndex = ref(0)
@@ -118,43 +122,34 @@ export default {
     const completedSessions = ref(0)
     const totalCompletedSessions = ref(0) // Track total completed across all batches
     const totalAllocatedSessions = ref(0) // Total sessions allocated to this user
+    const hasCompletedAllSessions = ref(false) // Track if user has completed all their assigned sessions
 
     const currentSession = computed(() => {
       return sessions.value[currentSessionIndex.value] || null
     })
 
     const loadSessions = async () => {
-      console.log('InterRaterDashboard: Starting to load sessions...')
       loading.value = true
       error.value = null
       
       try {
-        console.log('InterRaterDashboard: Fetching /api/inter-rater/sessions...')
         const response = await fetch('/api/inter-rater/sessions')
-        console.log('InterRaterDashboard: Response status:', response.status)
         
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`)
         }
         
         const data = await response.json()
-        console.log('InterRaterDashboard: Sessions data received:', data)
-        console.log('InterRaterDashboard: Number of sessions:', data.sessions?.length || 0)
-        
         sessions.value = data.sessions || []
         
         // On first load, set total allocated sessions (this is the user's full allocation)
         if (totalAllocatedSessions.value === 0) {
           totalAllocatedSessions.value = sessions.value.length
-          console.log('InterRaterDashboard: Set total allocated sessions:', totalAllocatedSessions.value)
         }
         
         // Reset session index if we have sessions
         if (sessions.value.length > 0) {
           currentSessionIndex.value = 0
-          console.log('InterRaterDashboard: Sessions loaded successfully, starting with index 0')
-        } else {
-          console.log('InterRaterDashboard: No sessions available for inter-rating')
         }
         
       } catch (err) {
@@ -257,12 +252,17 @@ export default {
     }
 
     const showCompletionMessage = () => {
-      // Show completion notification and redirect
-      successMessage.value = `🎉 All sessions completed! You've successfully rated ${totalCompletedSessions.value} sessions.`
+      // Show completion notification and set completion flag
+      hasCompletedAllSessions.value = true
+      successMessage.value = `All sessions completed! You've successfully rated ${totalCompletedSessions.value} sessions.`
       showSuccessMessage.value = true
       setTimeout(() => {
         showSuccessMessage.value = false
-        router.push('/')
+        // Reload sessions to show the thank you state and update the button counter
+        loadSessions()
+        
+        // Emit event to update button counter
+        window.dispatchEvent(new CustomEvent('inter-rater-completed'))
       }, 3000)
     }
 
@@ -282,6 +282,7 @@ export default {
       completedSessions,
       totalCompletedSessions,
       totalAllocatedSessions,
+      hasCompletedAllSessions,
       loadSessions,
       handleFeedbackSubmission
     }

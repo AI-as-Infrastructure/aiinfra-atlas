@@ -23,20 +23,13 @@ export default {
     const isLoading = ref(true)
 
     const checkInterRaterStatus = async () => {
-      console.log('InterRaterButton: Starting status check...')
       isLoading.value = true
       try {
-        console.log('InterRaterButton: Fetching /api/inter-rater/stats...')
         const response = await fetch('/api/inter-rater/stats')
-        console.log('InterRaterButton: Response status:', response.status)
-        
         const data = await response.json()
-        console.log('InterRaterButton: Stats data received:', data)
         
         isEnabled.value = data.enabled || false
         availableSessions.value = data.available_sessions || 0
-        
-        console.log('InterRaterButton: Set enabled =', isEnabled.value, ', available_sessions =', availableSessions.value)
         
         // Pre-load sessions if there are any available (improves UX when user clicks button)
         if (data.enabled && data.available_sessions > 0) {
@@ -48,7 +41,6 @@ export default {
         isEnabled.value = false
       } finally {
         isLoading.value = false
-        console.log('InterRaterButton: Status check completed. Final values: enabled =', isEnabled.value, ', sessions =', availableSessions.value)
       }
     }
 
@@ -75,6 +67,11 @@ export default {
       if (isEnabled.value) {
         setInterval(checkInterRaterStatus, 300000) // Every 5 minutes
       }
+      
+      // Listen for completion events to refresh immediately
+      window.addEventListener('inter-rater-completed', () => {
+        checkInterRaterStatus()
+      })
     })
 
     return {
