@@ -8,15 +8,15 @@ aiofiles==24.1.0
     # via unstructured-client
 aiohappyeyeballs==2.6.1
     # via aiohttp
-aiohttp==3.12.12
+aiohttp==3.12.15
     # via langchain-community
 aioitertools==0.12.0
     # via arize-phoenix
-aiosignal==1.3.2
+aiosignal==1.4.0
     # via aiohttp
 aiosqlite==0.21.0
     # via arize-phoenix
-alembic==1.16.1
+alembic==1.16.4
     # via arize-phoenix
 annotated-types==0.7.0
     # via pydantic
@@ -24,7 +24,7 @@ anthropic[vertex]==0.51.0
     # via
     #   -r config/requirements.txt
     #   langchain-anthropic
-anyio==4.9.0
+anyio==4.10.0
     # via
     #   anthropic
     #   httpx
@@ -52,7 +52,7 @@ attrs==25.3.0
     #   aiohttp
     #   jsonschema
     #   referencing
-authlib==1.6.0
+authlib==1.6.1
     # via arize-phoenix
 backoff==2.2.1
     # via
@@ -64,21 +64,21 @@ beautifulsoup4==4.13.4
     # via unstructured
 blinker==1.9.0
     # via flask
-boto3==1.39.3
+boto3==1.40.5
     # via langchain-aws
-botocore==1.39.3
+botocore==1.40.5
     # via
     #   boto3
     #   s3transfer
 brotli==1.1.0
     # via geventhttpclient
-build==1.2.2.post1
+build==1.3.0
     # via chromadb
 cachetools==5.5.2
     # via
     #   arize-phoenix
     #   google-auth
-certifi==2025.4.26
+certifi==2025.8.3
     # via
     #   geventhttpclient
     #   httpcore
@@ -108,7 +108,7 @@ coloredlogs==15.0.1
     # via onnxruntime
 configargparse==1.7.1
     # via locust
-cryptography==45.0.4
+cryptography==45.0.6
     # via
     #   authlib
     #   python-jose
@@ -164,7 +164,7 @@ frozenlist==1.7.0
     # via
     #   aiohttp
     #   aiosignal
-fsspec==2025.5.1
+fsspec==2025.7.0
     # via
     #   huggingface-hub
     #   torch
@@ -193,13 +193,13 @@ googleapis-common-protos==1.70.0
     #   opentelemetry-exporter-otlp-proto-http
 graphql-core==3.2.6
     # via strawberry-graphql
-greenlet==3.2.3
+greenlet==3.2.4
     # via
     #   gevent
     #   sqlalchemy
 grpc-interceptor==0.15.4
     # via arize-phoenix
-grpcio==1.73.0
+grpcio==1.74.0
     # via
     #   arize-phoenix
     #   chromadb
@@ -215,12 +215,14 @@ h11==0.16.0
     # via
     #   httpcore
     #   uvicorn
-hf-xet==1.1.3
+hf-xet==1.1.7
     # via huggingface-hub
 html5lib==1.1
     # via unstructured
 httpcore==1.0.9
-    # via httpx
+    # via
+    #   httpx
+    #   unstructured-client
 httptools==0.6.4
     # via uvicorn
 httpx==0.27.2
@@ -234,9 +236,9 @@ httpx==0.27.2
     #   ollama
     #   openai
     #   unstructured-client
-httpx-sse==0.4.0
+httpx-sse==0.4.1
     # via langchain-community
-huggingface-hub==0.33.0
+huggingface-hub==0.34.3
     # via
     #   langchain-huggingface
     #   sentence-transformers
@@ -278,7 +280,7 @@ jsonpatch==1.33
     # via langchain-core
 jsonpointer==3.0.0
     # via jsonpatch
-jsonschema==4.24.0
+jsonschema==4.25.0
     # via chromadb
 jsonschema-specifications==2025.4.1
     # via jsonschema
@@ -332,11 +334,11 @@ langsmith==0.3.45
     #   langchain-core
 lark==1.2.2
     # via -r config/requirements.txt
-limits==5.2.0
+limits==5.5.0
     # via slowapi
 locust==2.20.0
     # via -r config/requirements.txt
-lxml==5.4.0
+lxml==6.0.0
     # via unstructured
 mako==1.3.10
     # via alembic
@@ -352,21 +354,19 @@ marshmallow==3.26.1
     # via dataclasses-json
 mdurl==0.1.2
     # via markdown-it-py
-mmh3==5.1.0
+mmh3==5.2.0
     # via chromadb
 mpmath==1.3.0
     # via sympy
 msgpack==1.1.1
     # via locust
-multidict==6.4.4
+multidict==6.6.3
     # via
     #   aiohttp
     #   yarl
 mypy-extensions==1.1.0
     # via typing-inspect
-nest-asyncio==1.6.0
-    # via unstructured-client
-networkx==3.4.2
+networkx==3.5
     # via torch
 nltk==3.9.1
     # via
@@ -424,28 +424,28 @@ nvidia-nvjitlink-cu12==12.6.85
     #   torch
 nvidia-nvtx-cu12==12.6.77
     # via torch
-oauthlib==3.2.2
+oauthlib==3.3.1
     # via
     #   kubernetes
     #   requests-oauthlib
 olefile==0.47
     # via python-oxmsg
-ollama==0.5.1
+ollama==0.5.3
     # via langchain-ollama
-onnxruntime==1.22.0
+onnxruntime==1.22.1
     # via chromadb
 openai==1.78.0
     # via
     #   -r config/requirements.txt
     #   langchain-openai
-openinference-instrumentation==0.1.33
+openinference-instrumentation==0.1.37
     # via
     #   arize-phoenix
     #   arize-phoenix-otel
     #   openinference-instrumentation-langchain
 openinference-instrumentation-langchain==0.1.43
     # via -r config/requirements.txt
-openinference-semantic-conventions==0.1.20
+openinference-semantic-conventions==0.1.21
     # via
     #   arize-phoenix
     #   arize-phoenix-otel
@@ -501,7 +501,7 @@ opentelemetry-semantic-conventions==0.55b0
     #   openinference-instrumentation-langchain
     #   opentelemetry-instrumentation
     #   opentelemetry-sdk
-orjson==3.10.18
+orjson==3.11.1
     # via
     #   chromadb
     #   langsmith
@@ -521,14 +521,14 @@ packaging==24.2
     #   opentelemetry-instrumentation
     #   strawberry-graphql
     #   transformers
-pandas==2.3.0
+pandas==2.3.1
     # via
     #   -r config/requirements.txt
     #   arize-phoenix
     #   arize-phoenix-evals
-pillow==11.2.1
+pillow==11.3.0
     # via sentence-transformers
-posthog==4.8.0
+posthog==5.4.0
     # via chromadb
 prometheus-client==0.22.1
     # via arize-phoenix
@@ -556,16 +556,16 @@ psutil==5.9.8
     #   arize-phoenix
     #   locust
     #   unstructured
-pyarrow==20.0.0
+pyarrow==21.0.0
     # via arize-phoenix
-pyasn1==0.4.8
+pyasn1==0.6.1
     # via
     #   pyasn1-modules
     #   python-jose
     #   rsa
-pyasn1-modules==0.4.1
+pyasn1-modules==0.4.2
     # via google-auth
-pybase64==1.4.1
+pybase64==1.4.2
     # via chromadb
 pycparser==2.22
     # via cffi
@@ -591,11 +591,11 @@ pydantic-compat==0.1.2
     # via -r config/requirements.txt
 pydantic-core==2.33.2
     # via pydantic
-pydantic-settings==2.9.1
+pydantic-settings==2.10.1
     # via langchain-community
-pygments==2.19.1
+pygments==2.19.2
     # via rich
-pypdf==5.6.0
+pypdf==5.9.0
     # via unstructured-client
 pypika==0.48.9
     # via chromadb
@@ -617,7 +617,7 @@ python-dotenv==1.1.0
     #   uvicorn
 python-iso639==2025.2.18
     # via unstructured
-python-jose[cryptography]==3.4.0
+python-jose[cryptography]==3.5.0
     # via -r config/requirements.txt
 python-magic==0.4.27
     # via unstructured
@@ -640,7 +640,7 @@ pyyaml==6.0.1
     #   langchain-core
     #   transformers
     #   uvicorn
-pyzmq==27.0.0
+pyzmq==27.0.1
     # via locust
 rapidfuzz==3.13.0
     # via unstructured
@@ -650,7 +650,7 @@ referencing==0.36.2
     # via
     #   jsonschema
     #   jsonschema-specifications
-regex==2024.11.6
+regex==2025.7.34
     # via
     #   nltk
     #   tiktoken
@@ -680,13 +680,13 @@ requests-toolbelt==1.0.0
     # via
     #   langsmith
     #   unstructured-client
-rich==14.0.0
+rich==14.1.0
     # via
     #   chromadb
     #   typer
 roundrobin==0.0.4
     # via locust
-rpds-py==0.26.0
+rpds-py==0.27.0
     # via
     #   jsonschema
     #   referencing
@@ -694,15 +694,15 @@ rsa==4.9.1
     # via
     #   google-auth
     #   python-jose
-s3transfer==0.13.0
+s3transfer==0.13.1
     # via boto3
-safetensors==0.5.3
+safetensors==0.6.1
     # via transformers
-scikit-learn==1.7.0
+scikit-learn==1.7.1
     # via
     #   arize-phoenix
     #   sentence-transformers
-scipy==1.15.3
+scipy==1.16.1
     # via
     #   arize-phoenix
     #   scikit-learn
@@ -733,7 +733,7 @@ sounddevice==0.5.1
     # via -r config/requirements.txt
 soupsieve==2.7
     # via beautifulsoup4
-sqlalchemy[asyncio]==2.0.41
+sqlalchemy[asyncio]==2.0.42
     # via
     #   alembic
     #   arize-phoenix
@@ -764,7 +764,7 @@ tiktoken==0.9.0
     # via
     #   -r config/requirements.txt
     #   langchain-openai
-tokenizers==0.21.1
+tokenizers==0.21.4
     # via
     #   chromadb
     #   langchain-huggingface
@@ -796,8 +796,9 @@ typer==0.16.0
     # via chromadb
 types-requests==2.32.4.20250611
     # via langchainhub
-typing-extensions==4.14.0
+typing-extensions==4.14.1
     # via
+    #   aiosignal
     #   aiosqlite
     #   alembic
     #   anthropic
@@ -839,9 +840,9 @@ tzdata==2025.2
     # via pandas
 unstructured==0.17.2
     # via -r config/requirements.txt
-unstructured-client==0.36.0
+unstructured-client==0.42.2
     # via unstructured
-urllib3==2.4.0
+urllib3==2.5.0
     # via
     #   botocore
     #   geventhttpclient
@@ -855,7 +856,7 @@ uvicorn[standard]==0.34.2
     #   chromadb
 uvloop==0.21.0
     # via uvicorn
-watchfiles==1.0.5
+watchfiles==1.1.0
     # via uvicorn
 webencodings==0.5.1
     # via html5lib
@@ -884,7 +885,7 @@ yarl==1.20.1
     # via aiohttp
 zipp==3.23.0
     # via importlib-metadata
-zope-event==5.1
+zope-event==5.1.1
     # via gevent
 zope-interface==7.2
     # via gevent
