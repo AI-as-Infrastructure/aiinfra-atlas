@@ -1,7 +1,7 @@
 # LFS tracking for large files  
-# Exclude chromadb from LFS (too large for GitHub)
-backend/targets/chroma_db/** -text
-targets/chroma_db/** -text
+# Track chromadb with LFS (required for large files)
+backend/targets/chroma_db/** filter=lfs diff=lfs merge=lfs -text
+targets/chroma_db/** filter=lfs diff=lfs merge=lfs -text
 # Explicitly exclude BERT model files
 models/bert_1890_1900_st/** -text
 models/bert_1890_1900_st/* -text
