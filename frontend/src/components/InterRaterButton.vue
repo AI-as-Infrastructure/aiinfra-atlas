@@ -14,6 +14,7 @@
 
 <script>
 import { ref, onMounted } from 'vue'
+import { get } from '../utils/api'
 
 export default {
   name: 'InterRaterButton',
@@ -25,8 +26,7 @@ export default {
     const checkInterRaterStatus = async () => {
       isLoading.value = true
       try {
-        const response = await fetch('/api/inter-rater/stats')
-        const data = await response.json()
+        const data = await get('/inter-rater/stats')
         
         isEnabled.value = data.enabled || false
         availableSessions.value = data.available_sessions || 0
@@ -47,13 +47,9 @@ export default {
     const preloadInterRaterSessions = async () => {
       try {
         // Pre-load the sessions data in the background
-        const response = await fetch('/api/inter-rater/sessions')
-        if (response.ok) {
-          console.log('Inter-rater sessions pre-loaded successfully')
-          // Data will be cached by the backend for faster access when user navigates
-        } else {
-          console.warn('Failed to pre-load inter-rater sessions:', response.status)
-        }
+        await get('/inter-rater/sessions')
+        console.log('Inter-rater sessions pre-loaded successfully')
+        // Data will be cached by the backend for faster access when user navigates
       } catch (error) {
         console.warn('Error pre-loading inter-rater sessions:', error)
         // Non-critical error, don't show to user

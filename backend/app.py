@@ -15,6 +15,7 @@ import weakref
 from typing import Dict, List, Optional
 import uuid
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from datetime import datetime
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -105,7 +106,7 @@ from backend.modules.streaming import (
 )
 from backend.modules.llm import generate_response_with_telemetry
 from backend.telemetry.feedback import UserFeedback, FeedbackResponse
-from backend.modules.auth import get_current_user, optional_user
+from backend.modules.auth import get_current_user, optional_user, verify_cognito_token, is_cognito_enabled
 from backend.services.validation_service import validation_service, SessionData
 from pydantic import BaseModel
 from typing import Dict, List, Optional, Any
@@ -182,32 +183,6 @@ async def security_middleware(request: Request, call_next):
             status_code=413,
             content={"error": "Request too large", "max_size": f"{max_size // (1024*1024)}MB"}
         )
-    
-    # Rate limiting based on environment configuration
-    rate_limit = int(os.getenv("RATE_LIMIT_PER_MINUTE", "240"))
-    client_ip = request.client.host if request.client else "unknown"
-    
-    if not hasattr(app.state, "rate_limit_store"):
-        app.state.rate_limit_store = {}
-    
-    current_time = time.time()
-    window_start = current_time - 60  # 1 minute window
-    
-    # Clean old entries and check rate
-    if client_ip not in app.state.rate_limit_store:
-        app.state.rate_limit_store[client_ip] = []
-    
-    app.state.rate_limit_store[client_ip] = [
-        t for t in app.state.rate_limit_store[client_ip] if t > window_start
-    ]
-    
-    if len(app.state.rate_limit_store[client_ip]) >= rate_limit:
-        return JSONResponse(
-            status_code=429,
-            content={"error": "Rate limit exceeded. Please wait before making more requests."}
-        )
-    
-    app.state.rate_limit_store[client_ip].append(current_time)
     response = await call_next(request)
     return response
 
@@ -506,6 +481,113 @@ def get_config_endpoint():
     return JSONResponse(content=config_data)
 
 
+# --- Filter capabilities endpoint ---
+@app.get("/api/retriever/filters")
+def get_retriever_filters():
+    """Return available filter capabilities for the current retriever."""
+    try:
+        retriever = get_retriever_instance()
+        
+        # Check if retriever supports the new filter capabilities interface
+        if hasattr(retriever, 'get_filter_capabilities'):
+            filter_capabilities = retriever.get_filter_capabilities()
+        else:
+            # Fallback for retrievers that haven't implemented the new interface yet
+            filter_capabilities = {
+                "corpus_filtering": {
+                    "supported": retriever.supports_corpus_filtering if hasattr(retriever, 'supports_corpus_filtering') else False,
+                    "options": retriever.get_corpus_options() if hasattr(retriever, 'get_corpus_options') else []
+                },
+                "time_period_filtering": {
+                    "supported": False,
+                    "options": []
+                },
+                "direction_filtering": {
+                    "supported": False,
+                    "options": []
+                }
+            }
+        
+        return JSONResponse(content=filter_capabilities)
+        
+    except Exception as e:
+        logger.error(f"Error getting filter capabilities: {e}")
+        # Return minimal fallback response
+        return JSONResponse(content={
+            "corpus_filtering": {
+                "supported": False,
+                "options": []
+            },
+            "time_period_filtering": {
+                "supported": False,
+                "options": []
+            },
+            "direction_filtering": {
+                "supported": False,
+                "options": []
+            }
+        })
+
+
+# --- Debug endpoint for user ID extraction ---
+@app.get("/api/debug/user-id")
+def debug_user_id_extraction(request: Request):
+    """Debug endpoint to verify user ID extraction is working correctly."""
+    from backend.modules.auth import is_cognito_enabled, verify_cognito_token
+    from backend.services.anonymous_id_service import anonymous_id_service
+    
+    result = {
+        "timestamp": datetime.now().isoformat(),
+        "environment": os.getenv("ENVIRONMENT", "unknown"),
+        "cognito_settings": {
+            "VITE_USE_COGNITO_AUTH": os.getenv("VITE_USE_COGNITO_AUTH", "false"),
+            "cognito_enabled": is_cognito_enabled(),
+            "inter_rater_enabled": os.getenv("INTER_RATER_ENABLED", "false"),
+        },
+        "anonymous_id_service": anonymous_id_service.validate_environment_isolation()
+    }
+    
+    # Try to extract user ID from current request
+    try:
+        auth_header = request.headers.get("Authorization")
+        if auth_header:
+            token = auth_header.split(" ", 1)[1] if " " in auth_header else auth_header
+            payload = verify_cognito_token(token)
+            
+            if payload and payload.get("sub"):
+                cognito_sub = payload.get("sub")
+                user = {"sub": cognito_sub, "authenticated": True}
+                anon_user_id = anonymous_id_service.get_anonymous_id_from_user_data(user)
+                
+                result["extraction_result"] = {
+                    "success": True,
+                    "cognito_sub_prefix": cognito_sub[:8] + "..." if len(cognito_sub) > 8 else cognito_sub,
+                    "anonymous_id_format": anon_user_id[:12] + "..." if anon_user_id else None,
+                    "anonymous_id_length": len(anon_user_id) if anon_user_id else 0
+                }
+            else:
+                result["extraction_result"] = {
+                    "success": False,
+                    "error": "Token verified but no 'sub' in payload",
+                    "payload_keys": list(payload.keys()) if payload else []
+                }
+        else:
+            result["extraction_result"] = {
+                "success": False,
+                "error": "No Authorization header present",
+                "headers_present": list(request.headers.keys())
+            }
+            
+    except Exception as e:
+        result["extraction_result"] = {
+            "success": False,
+            "error": f"Exception during extraction: {str(e)}",
+            "exception_type": type(e).__name__
+        }
+    
+    return JSONResponse(content=result)
+
+
 # --- Streaming Q&A endpoint ---
 @app.post("/api/ask/stream")
 async def ask_stream(data: dict = Body(...)):
@@ -514,8 +596,13 @@ async def ask_stream(data: dict = Body(...)):
     """
     # Extract request data with input sanitization
     question = data.get("question", "").strip()
-    corpus_filter = data.get("corpus_filter", "all")
-    previous_corpus_filter = data.get("previous_corpus_filter", "all")
+    
+    # Get filters from new dynamic format
+    filters = data.get("filters", {})
+    previous_filters = data.get("previous_filters", {})
+    
+    # Extract corpus filter for backward compatibility with existing retrieval logic
+    corpus_filter = filters.get("corpus_filtering", "all")
     
     # Input validation and sanitization
     if not question or len(question) > 2000:
@@ -528,8 +615,6 @@ async def ask_stream(data: dict = Body(...)):
 
     if corpus_filter not in ["all", "1901_au", "1901_nz", "1901_uk"]:
         corpus_filter = "all"
-    if previous_corpus_filter not in ["all", "1901_au", "1901_nz", "1901_uk"]:
-        previous_corpus_filter = "all"
     chat_history = data.get("chat_history", [])
     session_id = data.get("session_id", str(uuid.uuid4()))
     qa_id = data.get("qa_id", str(uuid.uuid4()))
@@ -558,7 +643,7 @@ async def ask_stream(data: dict = Body(...)):
             "user_query": question,  # Store original question in attributes (not conflicting with input.value)
             "is_streaming": True,
             "corpus_filter": corpus_filter,
-            "previous_corpus_filter": previous_corpus_filter,
+            "filters": filters,
             "llm_provider": provider,
             # Use flat structure for OpenInference attributes
             "openinference.span.kind": OpenInferenceSpanKind.AGENT,
@@ -931,39 +1016,26 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
     try:
         # Authentication check - only enforce in environments with auth enabled
         if auth_required:
-            # Get the authorization header - will be present in HTTPS environments
+            # Require Authorization header when auth is enabled
             auth_header = request.headers.get("Authorization")
-            
-            # In production (HTTPS), we should have an auth header
-            if auth_header:
-                # Verify user is authenticated and get user ID for inter-rater functionality
-                user = await optional_user(request)
-                if not user.get("authenticated", False):
-                    logger.warning("Unauthenticated feedback submission attempt")
-                    return FeedbackResponse(
-                        message="Authentication required to submit feedback",
-                        status="error"
-                    )
-                # Store anonymous user ID for inter-rater functionality if enabled
-                if os.getenv("INTER_RATER_ENABLED", "false").lower() == "true":
-                    feedback.rater_id = user.get("sub")  # Cognito's unique user identifier
-                logger.info("Authenticated feedback submission (identity not stored)")
-            else:
-                # In dev environment (HTTP), we may not have auth headers for security reasons
-                # Log this but allow the submission to proceed
-                protocol = request.headers.get("x-forwarded-proto", "http")
-                if protocol.lower() == "https":
-                    # Should have auth in HTTPS but doesn't - log warning
-                    logger.warning("Missing authentication for HTTPS feedback submission")
-                else:
-                    # Expected for HTTP development environment
-                    logger.info("HTTP feedback submission without authentication (development)")
-                    # For development, use a placeholder user ID if inter-rater is enabled
-                    if os.getenv("INTER_RATER_ENABLED", "false").lower() == "true":
-                        feedback.rater_id = f"dev_user_{client_ip.replace('.', '_')}"
-        
-        client_ip = request.client.host if request.client else "unknown"
-        
+            if not auth_header:
+                logger.warning("Missing authentication for feedback submission")
+                return FeedbackResponse(
+                    message="Authentication required to submit feedback",
+                    status="error"
+                )
+            # Verify user is authenticated
+            user = await optional_user(request)
+            if not user.get("authenticated", False):
+                logger.warning("Unauthenticated feedback submission attempt")
+                return FeedbackResponse(
+                    message="Authentication required to submit feedback",
+                    status="error"
+                )
+            # If inter-rater is enabled, set rater_id from authenticated user
+            if os.getenv("INTER_RATER_ENABLED", "false").lower() == "true":
+                feedback.rater_id = user.get("sub")
+
         # Get session ID and QA ID from the feedback
         session_id = feedback.session_id
         qa_id = feedback.qa_id
@@ -976,14 +1048,11 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
                 status="error"
             )
         
-        # Log reception of feedback
-        logger.info(f"Received HTTP feedback for session {session_id}, qa {qa_id} from {client_ip}")
+        # Log reception of feedback (IP excluded for simplicity/privacy)
+        logger.info(f"Received HTTP feedback for session {session_id}, qa {qa_id}")
         
-        # Debug: Log what we received from frontend
-        logger.info(f"Raw feedback data received: {feedback.model_dump()}")
-        logger.info(f"Sentiment field from Pydantic model: {feedback.sentiment}")
-        logger.info(f"AI validation field from Pydantic model: {feedback.ai_validation}")
-        logger.info(f"AI agreement field from Pydantic model: {feedback.ai_agreement}")
+        # Avoid logging raw payload or potentially sensitive fields
+        logger.info("Feedback metadata received (ids only)")
         
         # Format feedback data for telemetry using the correct field names
         feedback_data = {
@@ -1351,17 +1420,19 @@ async def get_inter_rater_sessions(request: Request):
         auth_required = os.getenv("VITE_USE_COGNITO_AUTH", "false").lower() == "true"
         user_id = None
         
-        if auth_required:
+        if auth_required and is_cognito_enabled():
             auth_header = request.headers.get("Authorization")
             if auth_header:
-                user = await optional_user(request)
-                if user.get("authenticated", False):
-                    user_id = user.get("sub")
+                token = auth_header.split(" ", 1)[1] if " " in auth_header else auth_header
+                payload = verify_cognito_token(token)
+                if payload and payload.get("sub"):
+                    from backend.services.anonymous_id_service import anonymous_id_service
+                    user = {"sub": payload.get("sub"), "authenticated": True}
+                    user_id = anonymous_id_service.get_anonymous_id_from_user_data(user)
             
-        # For development, use placeholder user ID
+        # If no authenticated user, return empty/0 (no IP fallback)
         if not user_id:
-            client_ip = request.client.host if request.client else "unknown"
-            user_id = f"dev_user_{client_ip.replace('.', '_')}"
+            return {"sessions": []} if "sessions" in request.url.path else {"enabled": True, "available_sessions": 0, "completed_sessions": 0}
         
         sessions = await inter_rater_service.get_sessions_for_inter_rating(user_id)
         return {"sessions": sessions}
@@ -1387,24 +1458,27 @@ async def get_inter_rater_stats(request: Request):
         auth_required = os.getenv("VITE_USE_COGNITO_AUTH", "false").lower() == "true"
         user_id = None
         
-        if auth_required:
+        if auth_required and is_cognito_enabled():
             auth_header = request.headers.get("Authorization")
             if auth_header:
-                user = await optional_user(request)
-                if user.get("authenticated", False):
-                    user_id = user.get("sub")
+                token = auth_header.split(" ", 1)[1] if " " in auth_header else auth_header
+                payload = verify_cognito_token(token)
+                if payload and payload.get("sub"):
+                    from backend.services.anonymous_id_service import anonymous_id_service
+                    user = {"sub": payload.get("sub"), "authenticated": True}
+                    user_id = anonymous_id_service.get_anonymous_id_from_user_data(user)
         
-        # For development, use placeholder user ID
+        # If no authenticated user, return empty/0 (no IP fallback)
         if not user_id:
-            client_ip = request.client.host if request.client else "unknown"
-            user_id = f"dev_user_{client_ip.replace('.', '_')}"
+            return {"sessions": []} if "sessions" in request.url.path else {"enabled": True, "available_sessions": 0, "completed_sessions": 0}
         
         stats = await inter_rater_service.get_inter_rater_stats(user_id)
         return stats
         
     except Exception as e:
         logger.error(f"Error getting inter-rater stats: {e}")
-        return {"enabled": False, "error": str(e)}
+        # Return a generic message to avoid exposing internal details
+        return {"enabled": False, "error": "Failed to retrieve inter-rater stats"}
 
 @app.post("/api/inter-rater/refresh-cache")
 async def refresh_inter_rater_cache(request: Request):
@@ -1421,17 +1495,19 @@ async def refresh_inter_rater_cache(request: Request):
         auth_required = os.getenv("VITE_USE_COGNITO_AUTH", "false").lower() == "true"
         user_id = None
         
-        if auth_required:
+        if auth_required and is_cognito_enabled():
             auth_header = request.headers.get("Authorization")
             if auth_header:
-                user = await optional_user(request)
-                if user.get("authenticated", False):
-                    user_id = user.get("sub")
+                token = auth_header.split(" ", 1)[1] if " " in auth_header else auth_header
+                payload = verify_cognito_token(token)
+                if payload and payload.get("sub"):
+                    from backend.services.anonymous_id_service import anonymous_id_service
+                    user = {"sub": payload.get("sub"), "authenticated": True}
+                    user_id = anonymous_id_service.get_anonymous_id_from_user_data(user)
         
-        # For development, use placeholder user ID
+        # If no authenticated user, return empty/0 (no IP fallback)
         if not user_id:
-            client_ip = request.client.host if request.client else "unknown"
-            user_id = f"dev_user_{client_ip.replace('.', '_')}"
+            return {"sessions": []} if "sessions" in request.url.path else {"enabled": True, "available_sessions": 0, "completed_sessions": 0}
         
         # Clear cache for this user and force fresh fetch
         inter_rater_service.invalidate_user_cache(user_id)

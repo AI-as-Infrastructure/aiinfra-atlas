@@ -109,12 +109,14 @@ def verify_cognito_token(token: str) -> Optional[Dict[str, Any]]:
         user_pool_id = cognito_config.get("user_pool_id")
         client_id = cognito_config.get("client_id")
         
+        # Decode without at_hash verification since we don't pass the access_token here.
         payload = jwt.decode(
             token,
             rsa_key,
             algorithms=["RS256"],
             audience=client_id,
             issuer=f"https://cognito-idp.{region}.amazonaws.com/{user_pool_id}",
+            options={"verify_at_hash": False}
         )
         
         # Check token expiration
@@ -183,5 +185,6 @@ async def optional_user(credentials: Optional[HTTPAuthorizationCredentials] = De
             "groups": payload.get("cognito:groups", []),
             "authenticated": True
         }
-    except:
+    except Exception as e:
+        logger.error(f"Authentication error in optional_user: {e}")
         return {"sub": "anonymous", "username": "anonymous", "authenticated": False}

@@ -31,6 +31,7 @@
 
 <script>
 import { useTelemetryStore } from '@/stores/telemetry';
+import { post } from '../utils/api';
 
 export default {
   name: 'FeedbackForm',
@@ -73,7 +74,6 @@ export default {
         
         // Headers with telemetry information
         const headers = {
-          'Content-Type': 'application/json',
           'X-Trace-Id': this.telemetryStore.traceId
         };
         
@@ -81,18 +81,8 @@ export default {
           headers['X-Session-Id'] = this.telemetryStore.sessionId;
         }
         
-        // Submit feedback with telemetry headers
-        const response = await fetch('/api/feedback', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(feedbackPayload)
-        });
-        
-        if (!response.ok) {
-          throw new Error(`Server responded with ${response.status}: ${response.statusText}`);
-        }
-        
-        const data = await response.json();
+        // Submit feedback with proper authentication using api utility
+        await post('/feedback', feedbackPayload, { headers });
         this.feedbackMessage = 'Thank you for your feedback!';
         this.feedbackData.message = ''; // Clear form
       } catch (error) {

@@ -62,6 +62,7 @@
 <script>
 import { useSessionStore } from '@/stores/session'
 import { useTelemetryStore } from '@/stores/telemetry'
+import { post } from '../utils/api'
 
 export default {
   name: 'SimpleFeedback',
@@ -203,19 +204,12 @@ export default {
     async submitFeedbackToAPI(feedbackData) {
       // This method can be called by parent to actually submit the data
       try {
-        const response = await fetch('/api/feedback', {
-          method: 'POST',
+        await post('/feedback', feedbackData, {
           headers: {
-            'Content-Type': 'application/json',
             'X-Trace-Id': this.telemetryStore.traceId,
             'X-Session-Id': this.sessionId
-          },
-          body: JSON.stringify(feedbackData)
+          }
         })
-        
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`)
-        }
         
         return true
       } catch (error) {

@@ -42,10 +42,12 @@ class UserFeedback(BaseModel):
     # Existing fields (for backward compatibility)
     relevance: Optional[int] = None
     factual_accuracy: Optional[int] = None  # Now accepts numeric ratings (1-5)
+    corpus_fidelity: Optional[int] = None  # 1-5 Likert: groundedness in retrieved corpus
     source_quality: Optional[int] = None
     clarity: Optional[int] = None
     question_rating: Optional[int] = None
     user_category: Optional[str] = None
+    user_type: Optional[str] = None  # 'expert' | 'non_expert'
     tags: Optional[List[str]] = []
     feedback_text: Optional[str] = None
     model_answer: Optional[str] = None
@@ -114,6 +116,17 @@ def get_source_quality_description(score: int) -> str:
         5: "5/5: Excellent sources - Authoritative and perfectly matched"
     }
     return descriptions.get(score, f"Source quality score: {score}/5")
+
+def get_corpus_fidelity_description(score: int) -> str:
+    """Return a description for a corpus fidelity score (groundedness in the retrieved corpus)."""
+    descriptions = {
+        1: "1/5: Not grounded - Cites no sources or contradicts them",
+        2: "2/5: Weak grounding - Sparse or weak support from sources",
+        3: "3/5: Moderate grounding - Some support but gaps or overreach",
+        4: "4/5: Strong grounding - Well supported by retrieved sources",
+        5: "5/5: Excellent grounding - Directly supported and faithful to sources"
+    }
+    return descriptions.get(score, f"Corpus fidelity score: {score}/5")
 
 def get_question_rating_description(score: int) -> str:
     """Return a description for a question difficulty/challenge rating score"""
@@ -209,7 +222,7 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
     
     
     phoenix_endpoint = os.getenv('PHOENIX_COLLECTOR_ENDPOINT', 'https://app.phoenix.arize.com')
-    # Use synchronous processing to get immediate feedback
+    # Use synchronous processing to get immediate feedback. For POST, use non-project path.
     annotation_endpoint = f"{phoenix_endpoint}/v1/span_annotations?sync=true"
     
     def get_phoenix_headers():
@@ -295,6 +308,9 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
         else:
             # Regular feedback metadata
             metadata["feedback_type"] = "original"
+            # Attach anonymized original user id when present
+            if feedback_data.get("user_id"):
+                metadata["user_id"] = feedback_data["user_id"]
         
         return metadata
     
@@ -357,6 +373,22 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
                 "label": "factual_accuracy",
                 "score": score,
                 "explanation": explanation  # Add explanation for Phoenix UI
+            },
+            "metadata": get_annotation_metadata()
+        })
+    
+    # Add corpus fidelity annotation (new)
+    if "corpus_fidelity" in feedback_data and feedback_data["corpus_fidelity"] is not None:
+        fidelity_score = feedback_data["corpus_fidelity"]
+        annotation_data.append({
+            "id": f"{annotation_id}_corpus_fidelity",
+            "name": get_annotation_name("Corpus Fidelity"),
+            "span_id": formatted_span_id,
+            "annotator_kind": "HUMAN",
+            "result": {
+                "label": "corpus_fidelity",
+                "score": fidelity_score,
+                "explanation": get_corpus_fidelity_description(fidelity_score)
             },
             "metadata": get_annotation_metadata()
         })
@@ -433,6 +465,30 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
                 "explanation": get_user_category_description(user_category)  # Add detailed explanation for Phoenix UI
             },
             "metadata": {"qa_id": qa_id, "user_category": user_category} if qa_id else {"user_category": user_category}
+        })
+
+    # Add user type annotation if present (expert vs non_expert)  
+    if "user_type" in feedback_data and feedback_data["user_type"]:
+        user_type = feedback_data["user_type"]
+        
+        # Assign numeric scores to user types for Phoenix compatibility
+        type_scores = {
+            "expert": 2,
+            "non_expert": 1
+        }
+        type_score = type_scores.get(user_type, 1)  # Default to 1 (non_expert)
+        
+        annotation_data.append({
+            "id": f"{annotation_id}_user_type",
+            "name": get_annotation_name("User Type"),
+            "span_id": formatted_span_id,
+            "annotator_kind": "HUMAN",
+            "result": {
+                "label": "user_type", 
+                "score": type_score,
+                "explanation": f"User identified as: {user_type}"
+            },
+            "metadata": {"qa_id": qa_id, "user_type": user_type} if qa_id else {"user_type": user_type}
         })
     
     # Add tags as separate annotations if present
@@ -659,7 +715,8 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
     
     # Skip if no annotation data was created
     if not annotation_data:
-        logger.warning(f"No annotation data created for feedback: {feedback_data}")
+        # Do not log raw feedback payload to avoid capturing PII
+        logger.warning("No annotation data created for feedback (payload omitted)")
         return False
     
     # Prepare the payload
@@ -683,14 +740,16 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
             logger.info(f"Successfully submitted annotation for span {span_id}")
             return True
         else:
-            logger.error(f"Failed to submit annotation: {response.status_code} - {response.text}")
-            logger.error(f"Headers used: {headers}")
-            logger.error(f"Full annotation payload: {payload_json}")
+            # Redact secrets and avoid logging full payload
+            redacted_headers = {k: ('***' if k.lower() == 'api_key' else v) for k, v in headers.items()}
+            logger.error(f"Failed to submit annotation: {response.status_code}")
+            logger.error(f"Headers used (redacted): {redacted_headers}")
             return False
     except Exception as e:
         logger.error(f"Exception submitting annotation: {e}", exc_info=True)
         logger.error(f"Attempted endpoint: {annotation_endpoint}")
-        logger.error(f"Headers: {headers}")
+        redacted_headers = {k: ('***' if k.lower() == 'api_key' else v) for k, v in headers.items()}
+        logger.error(f"Headers (redacted): {redacted_headers}")
         return False
 
 async def associate_feedback_with_spans(session_id: str, qa_id: str, feedback_data: Dict[str, Any]) -> bool:

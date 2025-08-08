@@ -123,6 +123,34 @@
               </div>
             </div>
             
+            
+
+            <div class="feedback-section">
+              <label class="section-label">
+                Corpus Fidelity
+                <span class="tooltip" title="How well the answer is grounded in the retrieved corpus (citations, quotes, provenance)">ⓘ</span>
+              </label>
+              <div class="likert-scale">
+                <div
+                  v-for="value in 5"
+                  :key="`corpus_fidelity-${value}`"
+                  class="likert-option"
+                  @click="feedback.corpus_fidelity = value"
+                >
+                  <input
+                    type="radio"
+                    :id="`corpus_fidelity-${value}`"
+                    :value="value"
+                    v-model="feedback.corpus_fidelity"
+                  />
+                  <label :for="`corpus_fidelity-${value}`" class="likert-label">
+                    <span class="likert-circle" :class="{ active: feedback.corpus_fidelity >= value }"></span>
+                    <span class="likert-text">{{ value }}</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
             <div class="feedback-section">
               <label class="section-label">
                 Analysis Quality
@@ -226,6 +254,23 @@
                 </div>
               </div>
             </div>
+
+            
+          </div>
+
+          <!-- User Type -->
+          <div class="field mt-4">
+            <label class="label has-text-weight-bold">User Type</label>
+            <div class="control">
+              <label class="radio" title="Expert user: you have substantial domain knowledge relevant to this content">
+                <input type="radio" value="expert" v-model="feedback.user_type" />
+                Expert User
+              </label>
+              <label class="radio ml-3" title="Non-expert user: you do not have substantial domain expertise for this content">
+                <input type="radio" value="non_expert" v-model="feedback.user_type" />
+                Non-expert User
+              </label>
+            </div>
           </div>
 
           <!-- Comments Section -->
@@ -239,6 +284,8 @@
                 rows="3"
               ></textarea>
             </div>
+
+            
           </div>
 
           <!-- Faults Section -->
@@ -480,10 +527,12 @@ export default {
   setup(props, { emit }) {
     const feedback = ref({
       factual_accuracy: '',
+      corpus_fidelity: '',
       analysis_quality: '',
       relevance: '',
       difficulty: '',
       clarity: '',
+      user_type: '',
       feedback_text: '',
       faults: {
         hallucination: false,
@@ -502,10 +551,12 @@ export default {
 
     const isFormValid = computed(() => {
       return feedback.value.factual_accuracy && 
+             feedback.value.corpus_fidelity && 
              feedback.value.analysis_quality && 
              feedback.value.relevance && 
              feedback.value.difficulty && 
-             feedback.value.clarity
+             feedback.value.clarity &&
+             feedback.value.user_type
     })
 
     const formatDate = (dateString) => {
@@ -523,21 +574,20 @@ export default {
       isSubmitting.value = true
       
       try {
-        // Generate a simple rater ID for inter-rater identification
-        const raterId = Date.now().toString().slice(-8) // Use last 8 digits of timestamp as simple ID
-        
         const feedbackData = {
           session_id: props.session.session_id,
           qa_id: props.session.qa_id,
           factual_accuracy: parseInt(feedback.value.factual_accuracy),
+            corpus_fidelity: parseInt(feedback.value.corpus_fidelity),
           analysis_quality: parseInt(feedback.value.analysis_quality),
           relevance: parseInt(feedback.value.relevance),
           difficulty: parseInt(feedback.value.difficulty),
           clarity: parseInt(feedback.value.clarity),
+            user_type: feedback.value.user_type || null,
           feedback_text: feedback.value.feedback_text,
           faults: feedback.value.faults,
           is_inter_rater: true,
-          rater_id: raterId,
+          // rater_id is assigned by backend from the authenticated user; do not set on client
           original_span_id: props.session.span_id,
           timestamp: new Date().toISOString(),
           question: props.session.question,

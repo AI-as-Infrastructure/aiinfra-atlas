@@ -37,7 +37,8 @@ class PhoenixAPIClient:
             self.client = None
             self.has_phoenix_client = False
             
-        self.project_name = os.getenv("INTER_RATER_PROJECT", "Hansard-Dev")
+        # Align default with telemetry project if env not provided
+        self.project_name = os.getenv("INTER_RATER_PROJECT", os.getenv("PHOENIX_PROJECT_NAME", "atlas-telemetry"))
     
     async def query_spans_with_feedback(
         self, 
@@ -146,8 +147,7 @@ class PhoenixAPIClient:
             
             logger.info(f"Found {len(generation_response_spans)} generation response spans")
             
-            # For now, assume all generation response spans have feedback since we can't reliably query annotations
-            # This is a temporary workaround for the Phoenix client version mismatch
+            # Filter generation response spans to only include those with user feedback annotations
             feedback_spans = []
             
             for row in generation_response_spans:
@@ -164,6 +164,11 @@ class PhoenixAPIClient:
                 
                 # Get original feedback from annotations
                 original_feedback = await self._get_span_feedback_annotations(span_id)
+                
+                # Skip spans without any user feedback annotations
+                if not original_feedback or len(original_feedback) == 0:
+                    logger.debug(f"Skipping span {span_id[:8]}... - no user feedback annotations found")
+                    continue
                 
                 # Look for citations in related reference spans
                 session_id = attributes.get('session.id', f"session_{span_id[:8]}")
@@ -187,6 +192,37 @@ class PhoenixAPIClient:
                 
                 feedback_spans.append(session_data)
             
+            # Exclude sessions created by requesting user if we have a user_id captured
+            if exclude_user_id:
+                try:
+                    original_count = len(feedback_spans)
+                    # Filter out sessions created by the requesting user
+                    filtered_spans = []
+                    excluded_count = 0
+                    missing_user_id_count = 0
+                    
+                    for session in feedback_spans:
+                        original_user_id = session.get("original_user_id")
+                        if not original_user_id:
+                            missing_user_id_count += 1
+                            logger.warning(f"Session {session.get('span_id', 'unknown')[:8]}... has no original_user_id - cannot exclude properly")
+                            filtered_spans.append(session)  # Include it since we can't exclude it
+                        elif original_user_id == exclude_user_id:
+                            excluded_count += 1
+                            logger.debug(f"Excluding session {session.get('span_id', 'unknown')[:8]}... created by requesting user")
+                        else:
+                            filtered_spans.append(session)
+                    
+                    feedback_spans = filtered_spans
+                    logger.info(f"User exclusion results: {original_count} total → {len(feedback_spans)} available, {excluded_count} excluded (own), {missing_user_id_count} missing user_id")
+                    
+                    if missing_user_id_count > 0:
+                        logger.warning(f"INTER-RATER ISSUE: {missing_user_id_count} sessions have no user_id - user may see their own ratings!")
+                        
+                except Exception as e:
+                    logger.error(f"Error during user exclusion filtering: {e}")
+                    pass
+
             # Sort by timestamp (most recent first) and limit
             feedback_spans.sort(key=lambda x: x['timestamp'], reverse=True)
             result = feedback_spans[:limit]
@@ -431,6 +467,16 @@ class PhoenixAPIClient:
                         feedback['qa_id'] = metadata['qa_id']
                     if metadata.get('feedback_type'):
                         feedback['feedback_type'] = metadata['feedback_type']
+                    # Capture original rater anon user id
+                    if metadata.get('user_id'):
+                        feedback['user_id'] = metadata['user_id']
+                        logger.debug(f"Found user_id in annotation metadata: {metadata['user_id'][:12]}...")
+                    else:
+                        logger.debug(f"No user_id in annotation metadata for span {span_id[:8]}... - metadata keys: {list(metadata.keys())}")
+                
+                # Log final feedback extraction result for debugging
+                user_id_present = 'user_id' in feedback
+                logger.debug(f"Extracted feedback for span {span_id[:8]}...: user_id_present={user_id_present}, feedback_keys={list(feedback.keys())}")
                 
                 return feedback
             else:

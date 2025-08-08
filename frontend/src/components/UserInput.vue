@@ -5,11 +5,11 @@
 	  </div>
 	  <form v-if="!isGenerating" @submit.prevent="onSend">
 		<div class="field has-addons">
-		  <!-- Only show corpus selector if there are valid corpus options -->
-		  <div v-if="hasCorpusOptions" class="control is-corpus-selector">
+		  <!-- Dynamic filter rendering -->
+		  <div v-for="filter in availableFilters" :key="filter.type" class="control is-filter-selector">
 			<div class="select">
-			  <select v-model="selectedCorpus">
-				<option v-for="option in corpusOptions" :key="option.value" :value="option.value">
+			  <select :value="filter.value" @change="handleFilterChange(filter.type, $event.target.value)">
+				<option v-for="option in filter.options" :key="option.value" :value="option.value">
 				  {{ option.label }}
 				</option>
 			  </select>
@@ -56,19 +56,45 @@
   const input = ref('')
   const isGenerating = ref(false)
   const session = useSessionStore()
-  const corpusOptions = ref([])
-  const selectedCorpus = ref('all')
+  const filterCapabilities = ref({})
+  const selectedFilters = ref({
+    corpus_filtering: 'all',
+    time_period_filtering: 'all', 
+    direction_filtering: 'all'
+  })
   const inputActive = ref(false)
   const errorMessage = ref('')
   const selectedProvider = ref(null)
   const eventSource = ref(null)
   
-  // Computed property to determine if corpus options are available
-  const hasCorpusOptions = computed(() => {
-    return corpusOptions.value && 
-         corpusOptions.value.length > 0 && 
-         corpusOptions.value.length > 1  // Only show if we have more than just the 'all' option
+  // Computed property to get available filters dynamically
+  const availableFilters = computed(() => {
+    const filters = []
+    
+    // Add each filter type if it's supported and has multiple options
+    Object.entries(filterCapabilities.value).forEach(([filterType, config]) => {
+      if (config.supported && config.options && config.options.length > 1) {
+        filters.push({
+          type: filterType,
+          label: getFilterLabel(filterType),
+          options: config.options,
+          value: selectedFilters.value[filterType] || 'all'
+        })
+      }
+    })
+    
+    return filters
   })
+
+  // Helper function to get user-friendly filter labels
+  const getFilterLabel = (filterType) => {
+    const labels = {
+      'corpus_filtering': 'Corpus',
+      'time_period_filtering': 'Time Period',
+      'direction_filtering': 'Direction'
+    }
+    return labels[filterType] || filterType.replace('_', ' ')
+  }
   
   // Helper function to build API URLs correctly
   function getApiUrl(path) {
@@ -89,43 +115,51 @@
     return normalizedPath;
   }
   
-  // Fetch corpus options and config from API
-  async function fetchCorpusOptions() {
+  // Fetch filter capabilities from the new dynamic API
+  async function fetchFilterCapabilities() {
     try {
-      // Construct the correct API URL
-      const apiUrl = import.meta.env.VITE_API_URL || '';
-      const configUrl = apiUrl ? 
-        (apiUrl.endsWith('/') ? `${apiUrl}api/config` : `${apiUrl}/api/config`) : 
-        '/api/config';
+      const filtersUrl = getApiUrl('/api/retriever/filters')
+      console.log('Fetching filter capabilities from:', filtersUrl)
       
-      console.log('Fetching configuration from:', configUrl);
-      const response = await fetch(configUrl);
+      const response = await fetch(filtersUrl)
       
       if (response.ok) {
         const data = await response.json()
-        if (data.CORPUS_OPTIONS && Array.isArray(data.CORPUS_OPTIONS)) {
-          corpusOptions.value = data.CORPUS_OPTIONS
-        }
+        filterCapabilities.value = data
         
-        // Check if there's a provider in the config
-        if (data.llm_provider) {
-          selectedProvider.value = data.llm_provider
-        }
+        // Initialize selected filters from capabilities
+        Object.entries(data).forEach(([filterType, config]) => {
+          if (config.supported && config.options && config.options.length > 0) {
+            // Default to 'all' if available, otherwise first option
+            const defaultValue = config.options.find(opt => opt.value === 'all')?.value || config.options[0].value
+            selectedFilters.value[filterType] = defaultValue
+          }
+        })
+        
+        // Sync with session store
+        session.selectedFilters = { ...selectedFilters.value }
       }
     } catch (error) {
-      console.error('Error fetching corpus options:', error)
-      // Set to empty array on error
-      corpusOptions.value = []
-      errorMessage.value = 'Failed to load configuration. Please refresh the page or try again later.'
+      console.error('Error fetching filter capabilities:', error)
+      errorMessage.value = 'Failed to load filter configuration. Please refresh the page or try again later.'
     }
   }
   
   onMounted(() => {
-    fetchCorpusOptions()
-    // Restore selected corpus from session store if available
-    if (session.corpusFilter) {
-      selectedCorpus.value = session.corpusFilter
+    // Load dynamic filter capabilities
+    fetchFilterCapabilities()
+    
+    // Restore filters from session store if available
+    if (session.selectedFilters) {
+      selectedFilters.value = { ...session.selectedFilters }
     }
+  })
+
+  // Watch for session changes to reload filters
+  watch(() => session.sessionId, async () => {
+    // When session ID changes (new session), re-fetch filter capabilities
+    console.log('Session ID changed, reloading filter capabilities')
+    await fetchFilterCapabilities()
   })
   
   // Clean up EventSource on component unmount
@@ -137,11 +171,18 @@
     }
   })
   
-  // Keep session store in sync with dropdown
-  watch(selectedCorpus, (newVal) => {
-    // Simply update the corpus filter without affecting chat history
-    session.setCorpusFilter(newVal)
-  })
+  // Watch for changes in dynamic filters
+  watch(selectedFilters, (newFilters) => {
+    // Update session store with new filters
+    Object.entries(newFilters).forEach(([filterType, value]) => {
+      session.setFilter(filterType, value)
+    })
+  }, { deep: true })
+
+  // Function to handle filter changes from UI
+  const handleFilterChange = (filterType, value) => {
+    selectedFilters.value[filterType] = value
+  }
   
   // Watch for changes in the input field to emit input-active-change event
   watch(input, (newVal) => {
@@ -493,9 +534,9 @@
     // Log the question we're sending
     console.log('[UserInput] Sending question:', input.value)
     
-    // Get the current and previous corpus filters
-    const corpusFilter = selectedCorpus.value
-    const previousCorpusFilter = session.corpusFilter
+    // Get the current and previous filters
+    const allFilters = session.getActiveFilters()
+    const previousFilters = session.previousSelectedFilters
     
     // Set some state for the session
     session.setResponseComplete(false)
@@ -518,8 +559,8 @@
           role: msg.role,
           content: msg.content
         })),
-        corpus_filter: corpusFilter,
-        previous_corpus_filter: previousCorpusFilter
+        filters: allFilters,
+        previous_filters: previousFilters
       }
       
       // Add provider if specified
@@ -582,11 +623,16 @@
   margin-bottom: 0;
 }
 
-.control.is-corpus-selector {
+.control.is-filter-selector {
   min-width: 120px;
   max-width: 220px;
   flex: 0 1 220px;
   overflow: hidden;
+  margin-right: 0.5rem;
+}
+
+.control.is-filter-selector:last-of-type {
+  margin-right: 0;
 }
 
 .select {

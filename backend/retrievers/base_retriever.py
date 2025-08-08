@@ -103,6 +103,46 @@ class BaseRetriever(ABC):
         """
         pass
     
+    def get_filter_capabilities(self) -> Dict[str, Any]:
+        """Get all available filter capabilities for this retriever.
+        
+        This method provides a unified interface for discovering what filters
+        are available. Retrievers can override this to provide additional
+        filter types beyond corpus filtering.
+        
+        Returns:
+            A dictionary containing filter capabilities:
+            {
+                "corpus_filtering": {
+                    "supported": bool,
+                    "options": List[Dict[str, str]]
+                },
+                "time_period_filtering": {
+                    "supported": bool,
+                    "options": List[Dict[str, str]]
+                },
+                "direction_filtering": {
+                    "supported": bool,
+                    "options": List[Dict[str, str]]
+                }
+            }
+        """
+        # Default implementation provides only corpus filtering
+        return {
+            "corpus_filtering": {
+                "supported": self.supports_corpus_filtering,
+                "options": self.get_corpus_options() if self.supports_corpus_filtering else []
+            },
+            "time_period_filtering": {
+                "supported": False,
+                "options": []
+            },
+            "direction_filtering": {
+                "supported": False,
+                "options": []
+            }
+        }
+    
     @staticmethod
     def get_available_retrievers() -> List[str]:
         """Get a list of all available retriever implementations.

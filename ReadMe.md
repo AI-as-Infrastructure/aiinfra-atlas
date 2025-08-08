@@ -133,6 +133,7 @@ This workflow ensures that your retrievers are always in sync with your vector s
 ### Architecture and Configuration
 - [Authentication](docs/authentication.md) - AWS Cognito setup and configuration
 - [Configuration Guide](docs/configuration.md) - Environment files, API keys, and system configuration
+- [Data Privacy](docs/data_privacy.md) - Anonymity, telemetry, and PII avoidance
 - [GPU Compatibility](docs/gpu_compatibility.md) - Optional NVIDIA GPU setup for performance enhancement (RTX 50-series compatibility notes)
 - [Test Targets](docs/test_targets.md) - LLM configurations, vector store integration, and target management
 - [Key Modules](docs/key_modules.md) - Core backend modules and their responsibilities
@@ -146,6 +147,7 @@ This workflow ensures that your retrievers are always in sync with your vector s
 
 ### User Interface and Features
 - [FAQ](frontend/src/pages/FAQPage.vue) - Frequently asked questions and system limitations
+- [Inter-rater Ratings](docs/inter_rater.md) - End-to-end flow, configuration, privacy
 
 ## License
 - [License](LICENSE.md)

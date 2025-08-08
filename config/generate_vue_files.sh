@@ -35,13 +35,13 @@ if [ ! -f "$ENV_TEMPLATE" ]; then
 fi
 
 # Extract environment variables needed for the logout page
-VITE_API_URL=$(grep "VITE_API_URL" $ENV_TEMPLATE | cut -d "=" -f2)
+VITE_API_URL=$(grep "^VITE_API_URL=" $ENV_TEMPLATE | cut -d "=" -f2)
 
 # Extract Cognito variables if they exist
-VITE_USE_COGNITO_AUTH=$(grep "VITE_USE_COGNITO_AUTH" $ENV_TEMPLATE | cut -d "=" -f2 || echo "false")
-VITE_COGNITO_LOGOUT_ENDPOINT=$(grep "VITE_COGNITO_LOGOUT_ENDPOINT" $ENV_TEMPLATE | cut -d "=" -f2 || echo "")
-VITE_COGNITO_CLIENT_ID=$(grep "VITE_COGNITO_CLIENT_ID" $ENV_TEMPLATE | cut -d "=" -f2 || echo "")
-VITE_COGNITO_LOGOUT_REDIRECT_URI=$(grep "VITE_COGNITO_LOGOUT_REDIRECT_URI" $ENV_TEMPLATE | cut -d "=" -f2 || echo "")
+VITE_USE_COGNITO_AUTH=$(grep "^VITE_USE_COGNITO_AUTH=" $ENV_TEMPLATE | cut -d "=" -f2 || echo "false")
+VITE_COGNITO_LOGOUT_ENDPOINT=$(grep "^VITE_COGNITO_LOGOUT_ENDPOINT=" $ENV_TEMPLATE | cut -d "=" -f2 || echo "")
+VITE_COGNITO_CLIENT_ID=$(grep "^VITE_COGNITO_CLIENT_ID=" $ENV_TEMPLATE | cut -d "=" -f2 || echo "")
+VITE_COGNITO_LOGOUT_REDIRECT_URI=$(grep "^VITE_COGNITO_LOGOUT_REDIRECT_URI=" $ENV_TEMPLATE | cut -d "=" -f2 || echo "")
 
 # Generate frontend/.env file - only extract VITE_ variables
 echo "Generating frontend environment file from $ENV_TEMPLATE..."

@@ -36,6 +36,34 @@
           </div>
         </div>
 
+        <!-- Corpus Fidelity -->
+        <div class="feedback-section">
+          <label class="section-label">
+            Corpus Fidelity
+            <span class="tooltip" title="How well the answer is grounded in, supported by, and faithful to the retrieved corpus">ⓘ</span>
+          </label>
+          <div class="likert-scale">
+            <div
+              v-for="value in 5"
+              :key="`corpus_fidelity-${value}`"
+              class="likert-option"
+              @click="setRating('corpus_fidelity', value)"
+            >
+              <input
+                type="radio"
+                :id="`corpus_fidelity-${value}`"
+                :value="value"
+                v-model="ratings.corpus_fidelity"
+                :disabled="disabled"
+              />
+              <label :for="`corpus_fidelity-${value}`" class="likert-label">
+                <span class="likert-circle" :class="{ active: ratings.corpus_fidelity >= value }"></span>
+                <span class="likert-text">{{ value }}</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
         <!-- Analysis Quality -->
         <div class="feedback-section">
           <label class="section-label">
@@ -150,6 +178,19 @@
       </div>
 
       <!-- Additional Comments Section -->
+      <div class="field mt-4">
+        <label class="label has-text-weight-bold">User Type</label>
+        <div class="control">
+          <label class="radio" title="Expert user: you have substantial domain knowledge relevant to this content">
+            <input type="radio" value="expert" v-model="userType" :disabled="disabled" />
+            Expert User
+          </label>
+          <label class="radio ml-3" title="Non-expert user: you do not have substantial domain expertise for this content">
+            <input type="radio" value="non_expert" v-model="userType" :disabled="disabled" />
+            Non-expert User
+          </label>
+        </div>
+      </div>
       <div class="comments-section">
         <label class="section-label">Would you like to provide any additional information about your ratings?</label>
         <textarea
@@ -231,6 +272,7 @@
 <script>
 import { useSessionStore } from '@/stores/session'
 import { useTelemetryStore } from '@/stores/telemetry'
+import { post } from '../utils/api'
 
 export default {
   name: 'ExtendedFeedback',
@@ -266,6 +308,7 @@ export default {
     return {
       ratings: {
         factual_accuracy: null,
+        corpus_fidelity: null,
         analysis_quality: null,
         relevance: null,
         difficulty: null,
@@ -278,6 +321,7 @@ export default {
         bias: false
       },
       additionalComments: '',
+      userType: '',
       isSubmitting: false,
       configData: null
     }
@@ -350,6 +394,9 @@ export default {
         if (this.ratings.factual_accuracy !== null) {
           feedbackData.factual_accuracy = this.ratings.factual_accuracy
         }
+        if (this.ratings.corpus_fidelity !== null) {
+          feedbackData.corpus_fidelity = this.ratings.corpus_fidelity
+        }
         
         if (this.ratings.analysis_quality !== null) {
           feedbackData.analysis_quality = this.ratings.analysis_quality
@@ -380,6 +427,9 @@ export default {
         if (this.additionalComments.trim().length > 0) {
           feedbackData.additional_comments = this.additionalComments.trim()
         }
+        if (this.userType) {
+          feedbackData.user_type = this.userType
+        }
         
         // The simple feedback data (sentiment, feedback_text, etc.) is already included from completeFeedbackPayload
         // Just need to add any additional config data if it exists
@@ -390,20 +440,13 @@ export default {
         
         console.log('EXTENDED: Final payload being sent:', feedbackData)
         
-        // Submit to API with telemetry headers
-        const response = await fetch('/api/feedback', {
-          method: 'POST',
+        // Submit to API with proper authentication using api utility
+        await post('/feedback', feedbackData, {
           headers: {
-            'Content-Type': 'application/json',
             'X-Trace-Id': this.telemetryStore.traceId,
             'X-Session-Id': this.sessionId
-          },
-          body: JSON.stringify(feedbackData)
+          }
         })
-        
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`)
-        }
         
         console.log('EXTENDED: API call completed successfully')
         
@@ -424,6 +467,7 @@ export default {
     resetForm() {
       this.ratings = {
         factual_accuracy: null,
+        corpus_fidelity: null,
         analysis_quality: null,
         relevance: null,
         difficulty: null,
@@ -436,6 +480,7 @@ export default {
         bias: false
       }
       this.additionalComments = ''
+      this.userType = ''
     }
   },
   

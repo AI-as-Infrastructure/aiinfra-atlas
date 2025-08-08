@@ -182,6 +182,27 @@
             </div>
           </div>
 
+          <!-- Corpus Fidelity -->
+          <div class="feedback-section">
+            <label class="section-label">
+              Corpus Fidelity
+              <span class="tooltip" title="How well the answer is grounded in the retrieved corpus (citations, quotes, provenance)">ⓘ</span>
+            </label>
+            <div class="likert-scale">
+              <div
+                v-for="value in 5"
+                :key="`corpus_fidelity-${value}`"
+                class="likert-option"
+                @click="setRating('corpus_fidelity', value)"
+              >
+                <div class="likert-label">
+                  <span class="likert-circle" :class="{ active: ratings.corpus_fidelity >= value }"></span>
+                  <span class="likert-text">{{ value }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- Analysis Quality -->
           <div class="feedback-section">
             <label class="section-label">
@@ -428,6 +449,7 @@ const validationProgress = ref({
 // Human feedback state
 const ratings = ref({
   factual_accuracy: null,
+  corpus_fidelity: null,
   analysis_quality: null,
   relevance: null,
   difficulty: null,

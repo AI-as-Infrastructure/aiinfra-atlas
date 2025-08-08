@@ -26,13 +26,13 @@ models/bert_1890_1900_st/
 load_tests/reports/*
 reports/output/*
 
-# Chroma database directories - exclude all binary DB files
+# Chroma database directories - exclude all binary DB files (too large for git)
 backend/chroma_db/
 */chroma_db/
-# Exclude the directory but allow the specific LFS-tracked file
-backend/targets/chroma_db/*
+# Exclude chromadb completely (not suitable for git/LFS)
+backend/targets/chroma_db/
+targets/chroma_db/
 !backend/targets/chroma_db/.gitkeep
-!backend/targets/chroma_db/chroma.sqlite3
 # SQLite WAL and shared memory files
 *.sqlite3-wal
 *.sqlite3-shm

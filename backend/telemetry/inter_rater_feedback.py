@@ -19,7 +19,8 @@ class InterRaterFeedback(UserFeedback):
     # Inter-rater specific fields
     is_inter_rater: bool = True
     original_span_id: str  # Required - references the original span being re-rated
-    rater_id: str  # Required - anonymous user ID from Cognito
+    # Optional here; backend derives from authenticated user and fills it in
+    rater_id: Optional[str] = None
 
 class InterRaterService:
     """Service for handling inter-rater feedback submissions."""

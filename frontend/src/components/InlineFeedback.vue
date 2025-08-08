@@ -89,6 +89,7 @@ import AIEnhancedFeedback from './AIEnhancedFeedback.vue'
 import FeedbackPrompt from './FeedbackPrompt.vue'
 import { useSessionStore } from '../stores/session'
 import { useTelemetryStore } from '../stores/telemetry'
+import { post } from '../utils/api'
 
 export default {
   name: 'InlineFeedback',
@@ -362,6 +363,9 @@ export default {
           if (ratings.factual_accuracy !== null) {
             completeFeedbackPayload.factual_accuracy = ratings.factual_accuracy
           }
+          if (ratings.corpus_fidelity !== null) {
+            completeFeedbackPayload.corpus_fidelity = ratings.corpus_fidelity
+          }
           if (ratings.completeness !== null) {
             completeFeedbackPayload.completeness = ratings.completeness
           }
@@ -378,19 +382,13 @@ export default {
         
         console.log('INLINE: Submitting AI-Enhanced feedback:', completeFeedbackPayload)
         
-        const response = await fetch('/api/feedback', {
-          method: 'POST',
+        // Submit with proper authentication using api utility
+        await post('/feedback', completeFeedbackPayload, {
           headers: {
-            'Content-Type': 'application/json',
             'X-Trace-Id': this.telemetryStore.traceId,
             'X-Session-Id': this.sessionId
-          },
-          body: JSON.stringify(completeFeedbackPayload)
+          }
         })
-        
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`)
-        }
         
         console.log('INLINE: AI-Enhanced feedback submission SUCCESS')
         this.currentStep = 'thankyou'
@@ -411,20 +409,13 @@ export default {
         console.log('INLINE: Submitting SIMPLE feedback only:', this.completeFeedbackPayload)
         
         try {
-          // Submit the simple feedback directly from here since SimpleFeedback component is no longer rendered
-          const response = await fetch('/api/feedback', {
-            method: 'POST',
+          // Submit the simple feedback with proper authentication using api utility
+          await post('/feedback', this.completeFeedbackPayload, {
             headers: {
-              'Content-Type': 'application/json',
               'X-Trace-Id': this.telemetryStore.traceId,
               'X-Session-Id': this.sessionId
-            },
-            body: JSON.stringify(this.completeFeedbackPayload)
+            }
           })
-          
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`)
-          }
           
           console.log('INLINE: Simple feedback submission SUCCESS')
           return true

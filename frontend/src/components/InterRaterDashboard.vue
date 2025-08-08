@@ -105,6 +105,7 @@
 <script>
 import { ref, computed, onMounted } from 'vue'
 import InterRaterPlayback from './InterRaterPlayback.vue'
+import { get, post } from '../utils/api'
 
 export default {
   name: 'InterRaterDashboard',
@@ -133,13 +134,7 @@ export default {
       error.value = null
       
       try {
-        const response = await fetch('/api/inter-rater/sessions')
-        
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-        }
-        
-        const data = await response.json()
+        const data = await get('/inter-rater/sessions')
         sessions.value = data.sessions || []
         
         // On first load, set total allocated sessions (this is the user's full allocation)
@@ -177,21 +172,7 @@ export default {
       try {
         console.log('Submitting inter-rater feedback:', feedbackData)
         
-        const response = await fetch('/api/feedback', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(feedbackData)
-        })
-
-        if (!response.ok) {
-          const errorText = await response.text()
-          console.error('API Error Response:', errorText)
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-        }
-
-        const result = await response.json()
+        const result = await post('/feedback', feedbackData)
         console.log('API Response:', result)
         
         if (result.status === 'success') {

@@ -8,12 +8,16 @@ export const useSessionStore = defineStore('session', {
     traceparent: null,
     tracestate: null,
     chatHistory: [],
-    corpusFilter: 'all', // Current corpus filter
-    previousCorpusFilter: null, // Store previous corpus filter for context changes
+    selectedFilters: { // Dynamic filter system
+      corpus_filtering: 'all',
+      time_period_filtering: 'all',
+      direction_filtering: 'all'
+    },
+    previousSelectedFilters: null, // Store previous filters for context changes
     isResponseComplete: false,
     isNewQuestionAsked: false,
     feedbackSubmitted: {}, // Track feedback status by message_id
-    contextChangeNotification: null // Added for context change notification
+    contextChangeNotification: null
   }),
   actions: {
     /**
@@ -26,7 +30,10 @@ export const useSessionStore = defineStore('session', {
       this.feedbackSubmitted = {}
       this.isResponseComplete = false
       this.isNewQuestionAsked = false
-      this.previousCorpusFilter = null
+      // Reset filters to defaults for new session
+      this.resetFilters()
+      // Clear context change notification
+      this.contextChangeNotification = null
     },
     
     /**
@@ -93,13 +100,36 @@ export const useSessionStore = defineStore('session', {
     },
     
     /**
-     * Set the corpus filter and record the previous value for context change detection
+     * Set a specific filter type in the dynamic filter system
      */
-    setCorpusFilter(filter) {
-      if (this.corpusFilter !== filter) {
-        this.previousCorpusFilter = this.corpusFilter
-        this.corpusFilter = filter
+    setFilter(filterType, value) {
+      if (this.selectedFilters[filterType] !== value) {
+        // Store previous state for context change detection
+        if (!this.previousSelectedFilters) {
+          this.previousSelectedFilters = { ...this.selectedFilters }
+        }
+        
+        this.selectedFilters[filterType] = value
       }
+    },
+
+    /**
+     * Get all currently applied filters
+     */
+    getActiveFilters() {
+      return { ...this.selectedFilters }
+    },
+
+    /**
+     * Reset all filters to default values
+     */
+    resetFilters() {
+      this.selectedFilters = {
+        corpus_filtering: 'all',
+        time_period_filtering: 'all',
+        direction_filtering: 'all'
+      }
+      this.previousSelectedFilters = null
     },
     
     /**
