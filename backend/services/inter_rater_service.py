@@ -279,7 +279,7 @@ class InterRaterService:
                 "completed_sessions": 0,
                 "max_sessions_per_user": self.sessions_per_user,
                 "project_name": self.project_name,
-                "error": str(e)
+                "error": "Failed to retrieve inter-rater stats"
             }
             
             # Cache the error response for a shorter time
