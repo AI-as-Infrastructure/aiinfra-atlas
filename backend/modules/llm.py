@@ -32,6 +32,7 @@ from opentelemetry.trace import SpanKind, Status, StatusCode
 from backend.modules.config import get_system_prompt, get_llm_config
 from backend.modules.system_prompts import get_qa_prompt_template, system_prompt
 from backend.modules.prompt_cache import optimize_prompt_for_provider
+from backend.modules.streaming import create_error_message, format_sse_message
 logger = logging.getLogger(__name__)
 
 def format_documents(documents: List[Document]) -> str:
@@ -369,7 +370,8 @@ def generate_response(
             except Exception as e:
                 logger.error(f"Error during streaming: {e}")
                 if not full_response:
-                    full_response = "Error generating response"
+                    error_data = create_error_message("streaming_error", "An error occurred during response generation")
+                    full_response = format_sse_message(error_data)
                     yield full_response
                 
             return
@@ -627,9 +629,9 @@ def generate_response(
         # Handle any exceptions outside of span context
         logger.error(f"Error creating LLM span: {e}", exc_info=True)
         
-        # Yield error message
-        error_msg = "Error generating response"
-        yield error_msg
+        # Yield generic error message
+        error_data = create_error_message("span_creation_error", "An error occurred while processing your request")
+        yield format_sse_message(error_data)
 
 def generate_response_with_telemetry(
     question: str,
@@ -807,7 +809,8 @@ def generate_response_with_telemetry(
                     llm_span.set_attribute("generation_error", str(generation_error))
                     llm_span.set_attribute("generation_complete", False)
                     logger.error(f"Error generating response: {generation_error}")
-                    yield f"Error generating response: {generation_error}"
+                    error_data = create_error_message("generation_error", "An error occurred while generating the response")
+                    yield format_sse_message(error_data)
 
         # Return the generator and qa_id
         return telemetry_wrapped_generator(), qa_id
@@ -820,12 +823,10 @@ def generate_response_with_telemetry(
         if not qa_id:
             qa_id = str(uuid.uuid4())
         
-        # Capture error message before defining nested function
-        error_message = f"Error generating response: {str(span_error)}"
-        
-        # Return an error generator
+        # Return an error generator with generic message
         def error_generator():
-            yield error_message
+            error_data = create_error_message("span_error", "An error occurred while processing your request")
+            yield format_sse_message(error_data)
         
         return error_generator(), qa_id
 

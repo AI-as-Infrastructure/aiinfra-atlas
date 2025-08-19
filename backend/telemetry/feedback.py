@@ -740,24 +740,11 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
             logger.info(f"Successfully submitted annotation for span {span_id}")
             return True
         else:
-            # Redact secrets and avoid logging full payload
-            try:
-                redacted_headers = {k: ('***' if k.lower() == 'api_key' else v) for k, v in headers.items()}
-                logger.error(f"Failed to submit annotation: {response.status_code}")
-                logger.error(f"Headers used (redacted): {redacted_headers}")
-            except (NameError, UnboundLocalError):
-                logger.error(f"Failed to submit annotation: {response.status_code}")
-                logger.error("Headers not available for logging")
+            logger.error(f"Failed to submit annotation: {response.status_code}")
             return False
     except Exception as e:
         logger.error(f"Exception submitting annotation: {e}", exc_info=True)
         logger.error(f"Attempted endpoint: {annotation_endpoint}")
-        # Only log headers if they exist and are accessible
-        try:
-            redacted_headers = {k: ('***' if k.lower() == 'api_key' else v) for k, v in headers.items()}
-            logger.error(f"Headers (redacted): {redacted_headers}")
-        except (NameError, UnboundLocalError):
-            logger.error("Headers not available for logging")
         return False
 
 async def associate_feedback_with_spans(session_id: str, qa_id: str, feedback_data: Dict[str, Any]) -> bool:
