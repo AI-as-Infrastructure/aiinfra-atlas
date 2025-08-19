@@ -21,19 +21,9 @@ export: venv ## Export unified Phoenix session report (default: last 7 days)
 
 # Production-only backups (uses config/.env.production)
 .PHONY: backup-prod
-backup-prod: venv ## Backup prod projects only (env loaded from config/.env.production)
+backup-prod: venv ## Backup full prod project contents (env loaded from config/.env.production)
 	PHOENIX_ENV_FILE=config/.env.production \
-	PHOENIX_PROJECTS=$$(grep -E '^PHOENIX_PROJECTS=' config/.env.production | sed 's/PHOENIX_PROJECTS=//') \
-	PHOENIX_PROJECT_NAME=$$(grep -E '^PHOENIX_PROJECT_NAME=' config/.env.production | sed 's/PHOENIX_PROJECT_NAME=//') \
 	$(VENV_DIR)/bin/python utils/scripts/phoenix_backup_prod.py
-
-.PHONY: backup-prod-since
-backup-prod-since: venv ## Backup prod since N days ago (usage: make backup-prod-since N=1)
-	N?=1; \
-	PHOENIX_ENV_FILE=config/.env.production \
-	PHOENIX_PROJECTS=$$(grep -E '^PHOENIX_PROJECTS=' config/.env.production | sed 's/PHOENIX_PROJECTS=//') \
-	PHOENIX_PROJECT_NAME=$$(grep -E '^PHOENIX_PROJECT_NAME=' config/.env.production | sed 's/PHOENIX_PROJECT_NAME=//') \
-	$(VENV_DIR)/bin/python utils/scripts/phoenix_backup_prod.py --since-days $$N
 
 # Virtual environment setup
 .PHONY: venv
