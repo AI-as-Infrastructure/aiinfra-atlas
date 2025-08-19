@@ -42,4 +42,4 @@ pip install -r config/requirements.lock
 
 # Start FastAPI app with Uvicorn
 echo "🚀 Starting backend server..."
-uvicorn backend.app:app --reload --host 0.0.0.0 --port 8000 
+uvicorn backend.app:app --reload --host 0.0.0.0 --port 8000 --reload-exclude=".venv/*" --reload-exclude="*.pyc" --reload-exclude="__pycache__/*" 
