@@ -269,3 +269,36 @@ scenarios:
     natural_pauses_enabled: true
     extended_sessions: true
     tags: ["realistic", "mixed"]
+  
+  # Infrastructure-focused scenarios for 30-user focus group
+  focus_group_ramp:
+    description: "Focus Group Ramp Test - 30 users with infrastructure monitoring"
+    duration: "20m"
+    users: 30
+    spawn_rate: 2.5  # Gradual 30-user ramp over 12 minutes
+    user_types: ["question_users", "mixed_users"]
+    think_time_enabled: true
+    reduced_think_time: true
+    infrastructure_focus: true
+    tags: ["focus_group", "infrastructure", "ramp"]
+  
+  focus_group_sustained:
+    description: "Focus Group Sustained Load - 30 users sustained load test"
+    duration: "30m"
+    users: 30
+    spawn_rate: 3.0  # Faster ramp to 30 users over 10 minutes
+    user_types: ["question_users", "feedback_users", "mixed_users"]
+    think_time_enabled: true
+    natural_pauses_enabled: true
+    infrastructure_focus: true
+    tags: ["focus_group", "infrastructure", "sustained"]
+  
+  infrastructure_stress:
+    description: "Infrastructure Stress Test - Push to breaking point"
+    duration: "15m"
+    users: 40
+    spawn_rate: 4.0  # Aggressive ramp to find limits
+    user_types: ["question_users"]
+    think_time_enabled: false  # Maximum stress
+    infrastructure_focus: true
+    tags: ["stress", "infrastructure", "breaking_point"]

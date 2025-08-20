@@ -1,5 +1,7 @@
 import time
 import json
+import psutil
+import os
 from typing import Dict, Any, List
 from collections import defaultdict, deque
 import threading
@@ -13,6 +15,19 @@ class MetricsCollector:
         self.timers = defaultdict(deque)
         self.errors = defaultdict(list)
         self._lock = threading.Lock()
+        
+        # Infrastructure metrics
+        self.infrastructure_metrics = {
+            'memory_usage': deque(maxlen=500),
+            'cpu_usage': deque(maxlen=500),
+            'disk_io': deque(maxlen=500),
+            'network_io': deque(maxlen=500),
+            'process_count': deque(maxlen=500),
+            'file_descriptors': deque(maxlen=500)
+        }
+        self.infrastructure_start_time = time.time()
+        self.baseline_memory = None
+        self.baseline_cpu = None
         
         # Response time windows for percentile calculation
         self.response_times = {
@@ -103,6 +118,143 @@ class MetricsCollector:
             })
             self.metrics['redis_processing_time'].append(processing_time)
     
+    def record_infrastructure_metrics(self):
+        """Record current system infrastructure metrics"""
+        try:
+            timestamp = time.time()
+            
+            # Memory metrics
+            memory = psutil.virtual_memory()
+            memory_percent = memory.percent
+            memory_available_gb = memory.available / (1024**3)
+            memory_used_gb = memory.used / (1024**3)
+            
+            # CPU metrics
+            cpu_percent = psutil.cpu_percent(interval=0.1)
+            cpu_count = psutil.cpu_count()
+            
+            # Disk I/O (system-wide)
+            disk_io = psutil.disk_io_counters()
+            disk_read_mb = disk_io.read_bytes / (1024**2) if disk_io else 0
+            disk_write_mb = disk_io.write_bytes / (1024**2) if disk_io else 0
+            
+            # Network I/O (system-wide)
+            net_io = psutil.net_io_counters()
+            net_sent_mb = net_io.bytes_sent / (1024**2) if net_io else 0
+            net_recv_mb = net_io.bytes_recv / (1024**2) if net_io else 0
+            
+            # Process count
+            process_count = len(psutil.pids())
+            
+            # File descriptors (current process)
+            try:
+                current_process = psutil.Process()
+                fd_count = current_process.num_fds()
+            except:
+                fd_count = 0
+            
+            # Set baseline on first measurement
+            if self.baseline_memory is None:
+                self.baseline_memory = memory_percent
+                self.baseline_cpu = cpu_percent
+            
+            with self._lock:
+                self.infrastructure_metrics['memory_usage'].append({
+                    'timestamp': timestamp,
+                    'percent': memory_percent,
+                    'used_gb': memory_used_gb,
+                    'available_gb': memory_available_gb,
+                    'baseline_delta': memory_percent - self.baseline_memory
+                })
+                
+                self.infrastructure_metrics['cpu_usage'].append({
+                    'timestamp': timestamp,
+                    'percent': cpu_percent,
+                    'core_count': cpu_count,
+                    'baseline_delta': cpu_percent - self.baseline_cpu
+                })
+                
+                self.infrastructure_metrics['disk_io'].append({
+                    'timestamp': timestamp,
+                    'read_mb': disk_read_mb,
+                    'write_mb': disk_write_mb
+                })
+                
+                self.infrastructure_metrics['network_io'].append({
+                    'timestamp': timestamp,
+                    'sent_mb': net_sent_mb,
+                    'recv_mb': net_recv_mb
+                })
+                
+                self.infrastructure_metrics['process_count'].append({
+                    'timestamp': timestamp,
+                    'count': process_count
+                })
+                
+                self.infrastructure_metrics['file_descriptors'].append({
+                    'timestamp': timestamp,
+                    'count': fd_count
+                })
+                
+        except Exception as e:
+            # Don't let infrastructure monitoring break the test
+            print(f"Warning: Infrastructure monitoring failed: {e}")
+    
+    def get_infrastructure_summary(self) -> Dict[str, Any]:
+        """Get infrastructure metrics summary"""
+        if not self.infrastructure_metrics['memory_usage']:
+            return {}
+        
+        # Get latest readings
+        latest_memory = list(self.infrastructure_metrics['memory_usage'])[-1]
+        latest_cpu = list(self.infrastructure_metrics['cpu_usage'])[-1]
+        
+        # Calculate averages over the test
+        memory_readings = [m['percent'] for m in self.infrastructure_metrics['memory_usage']]
+        cpu_readings = [c['percent'] for c in self.infrastructure_metrics['cpu_usage']]
+        
+        # Calculate peak usage
+        peak_memory = max(memory_readings) if memory_readings else 0
+        peak_cpu = max(cpu_readings) if cpu_readings else 0
+        
+        # Calculate infrastructure load percentage (assuming 16GB RAM, 8 CPU capacity)
+        memory_load_percent = (peak_memory / 90.0) * 100  # 90% memory as max safe usage
+        cpu_load_percent = (peak_cpu / 85.0) * 100        # 85% CPU as max safe usage
+        
+        return {
+            'test_duration_minutes': (time.time() - self.infrastructure_start_time) / 60,
+            'memory': {
+                'current_percent': latest_memory['percent'],
+                'current_used_gb': latest_memory['used_gb'],
+                'peak_percent': peak_memory,
+                'avg_percent': sum(memory_readings) / len(memory_readings),
+                'baseline_delta': latest_memory['baseline_delta'],
+                'load_percentage': min(memory_load_percent, 100)  # Cap at 100%
+            },
+            'cpu': {
+                'current_percent': latest_cpu['percent'],
+                'peak_percent': peak_cpu,
+                'avg_percent': sum(cpu_readings) / len(cpu_readings),
+                'baseline_delta': latest_cpu['baseline_delta'],
+                'core_count': latest_cpu['core_count'],
+                'load_percentage': min(cpu_load_percent, 100)  # Cap at 100%
+            },
+            'overall_infrastructure_load': max(memory_load_percent, cpu_load_percent),
+            'infrastructure_status': self._get_infrastructure_status(memory_load_percent, cpu_load_percent)
+        }
+    
+    def _get_infrastructure_status(self, memory_load: float, cpu_load: float) -> str:
+        """Determine infrastructure status based on load percentages"""
+        max_load = max(memory_load, cpu_load)
+        if max_load < 50:
+            return "LOW_LOAD"
+        elif max_load < 75:
+            return "MODERATE_LOAD" 
+        elif max_load < 90:
+            return "HIGH_LOAD"
+        else:
+            return "CRITICAL_LOAD"
+    
     def get_percentiles(self, endpoint: str, percentiles: List[int] = [50, 95, 99]) -> Dict[int, float]:
         """Calculate response time percentiles (all requests)"""
         if endpoint not in self.response_times:
@@ -171,7 +323,8 @@ class MetricsCollector:
             'error_rates': {},
             'streaming_metrics': {},
             'websocket_metrics': {},
-            'redis_metrics': {}
+            'redis_metrics': {},
+            'infrastructure_metrics': self.get_infrastructure_summary()
         }
         
         # Response time percentiles (all requests and successful only)
@@ -230,6 +383,11 @@ class MetricsCollector:
             self.errors.clear()
             for endpoint in self.response_times:
                 self.response_times[endpoint].clear()
+            for metric in self.infrastructure_metrics:
+                self.infrastructure_metrics[metric].clear()
+            self.infrastructure_start_time = time.time()
+            self.baseline_memory = None
+            self.baseline_cpu = None
 
 # Global metrics collector instance
 metrics_collector = MetricsCollector()

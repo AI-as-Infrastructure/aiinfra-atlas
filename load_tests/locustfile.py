@@ -38,6 +38,7 @@ from locust import events
 from locust.env import Environment
 from utils.metrics import metrics_collector
 from utils.evaluator import LoadTestEvaluator, format_evaluation_report
+from utils.infrastructure_monitor import infrastructure_monitor
 
 # Import core user classes (removed WebSocket and feedback testing)
 from tasks.question_tasks import QuestionSubmissionUser
@@ -101,6 +102,9 @@ def on_test_start(environment, **kwargs):
     # Reset metrics collector
     metrics_collector.reset()
     
+    # Start infrastructure monitoring
+    infrastructure_monitor.start_monitoring()
+    
     # Set up environment variables based on config
     if config.get('env_vars'):
         for key, value in config['env_vars'].items():
@@ -111,6 +115,9 @@ def on_test_start(environment, **kwargs):
 def on_test_stop(environment, **kwargs):
     """Clean up and export results"""
     print("🛑 Load Test Completed")
+    
+    # Stop infrastructure monitoring
+    infrastructure_monitor.stop_monitoring()
     
     # Export metrics
     timestamp = int(time.time())
@@ -125,6 +132,15 @@ def on_test_stop(environment, **kwargs):
     # Print basic summary
     summary = metrics_collector.get_summary()
     print(f"\n📈 Basic Summary: {sum(summary['counters'].values())} total requests")
+    
+    # Print infrastructure summary
+    infra_summary = summary.get('infrastructure_metrics', {})
+    if infra_summary:
+        print(f"\n🖥️  Infrastructure Summary:")
+        print(f"   Memory Peak: {infra_summary['memory']['peak_percent']:.1f}% ({infra_summary['memory']['load_percentage']:.1f}% of capacity)")
+        print(f"   CPU Peak: {infra_summary['cpu']['peak_percent']:.1f}% ({infra_summary['cpu']['load_percentage']:.1f}% of capacity)")
+        print(f"   Overall Load: {infra_summary['overall_infrastructure_load']:.1f}% ({infra_summary['infrastructure_status']})")
+        print(f"   Test Duration: {infra_summary['test_duration_minutes']:.1f} minutes")
     
     # Evaluate results and generate actionable report
     try:
