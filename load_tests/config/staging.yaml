@@ -23,32 +23,26 @@ load_test:
     question_users: 70      # Users primarily asking questions
     feedback_users: 20      # Users primarily giving feedback
     mixed_users: 10         # Users doing both
-    websocket_users: 0      # WebSocket connections (disabled for realistic test)
-    async_users: 0          # Async processing users (disabled for realistic test)
   
-  # Load Patterns - Optimized for 15 concurrent users with realistic behavior
+  # Load Patterns - Active test configurations
   load_patterns:
-    ramp_up:
-      start_users: 1
-      end_users: 15
-      duration: "3m"        # Gradual ramp up to prevent overwhelming
-    
+    # Used by 'make lts' - realistic baseline
     sustained:
       users: 15
-      duration: "30m"       # Sustained realistic load for 15 users
+      spawn_rate: 0.2
+      duration: "30m"
     
-    peak:
-      users: 20             # Peak load stress testing
-      duration: "10m"       # Longer peak period for stress testing
+    # Used by 'make ltfg' - focus group ramp
+    focus_group_ramp:
+      users: 30
+      spawn_rate: 2.5
+      duration: "20m"
     
-    burst:
-      users: 25             # Burst load testing limits
-      duration: "5m"        # Short burst to test breaking point
-    
-    ramp_down:
-      start_users: 15
-      end_users: 0
-      duration: "2m"
+    # Used by 'make ltfgs' - focus group sustained
+    focus_group_sustained:
+      users: 30
+      spawn_rate: 3.0
+      duration: "30m"
   
   # Realistic User Behavior Patterns - Optimized for 15 concurrent users
   user_behavior:
@@ -93,13 +87,9 @@ load_test:
     streaming_total_time_p50: 14000   # ms (14s P50 for complete response)
     streaming_total_time_p95: 20000   # ms (20s P95 for complete response)
     
-    # WebSocket targets
-    websocket_connection_time_max: 1000  # ms
-    websocket_error_rate_max: 2.0        # percentage
-    
-    # Redis/Async targets
-    async_processing_time_max: 30000     # ms
-    redis_queue_depth_max: 100           # requests
+    # Infrastructure targets
+    memory_usage_max: 85.0              # percentage
+    cpu_usage_max: 85.0                 # percentage
     
     # Evaluation thresholds for pass/fail/borderline assessment
     # Realistic thresholds for 15 concurrent users with proper behavior
@@ -160,9 +150,8 @@ monitoring:
   # Custom metrics collection
   custom_metrics:
     - "streaming_performance"
-    - "redis_queue_stats"
-    - "websocket_stability"
     - "user_journey_completion"
+    - "infrastructure_monitoring"
 
 # Infrastructure Assumptions - 8 vCPU, 16GB RAM servers
 infrastructure:
@@ -177,8 +166,7 @@ infrastructure:
   expected_bottlenecks:
     - "llm_inference"
     - "vector_search"
-    - "redis_queue"
-    - "memory_pressure"           # Added for higher concurrency
+    - "memory_pressure"
 
 # Safety Limits
 safety:
@@ -202,103 +190,30 @@ env_vars:
   BACKEND_LOG_LEVEL: "${BACKEND_LOG_LEVEL}"
   CORS_ORIGINS: "${CORS_ORIGINS}"
 
-# Test Scenarios - 4-Phase Rollout for Realistic Usage Patterns
+# Active Test Scenarios (used by Makefile targets)
 scenarios:
-  # Phase 1: Baseline Testing (5 users, 10 min)
-  phase1_baseline:
-    description: "Phase 1: Baseline performance with 5 users - establish performance baseline"
-    duration: "10m"
-    users: 5
-    spawn_rate: 1
-    user_types: ["question_users"]
-    think_time_enabled: true
-    natural_pauses_enabled: true
-    tags: ["baseline", "phase1"]
-  
-  # Phase 2: Target Load Testing (15 users, 30 min)
-  phase2_target_load:
-    description: "Phase 2: Target load with 15 concurrent users - main test scenario"
+  # Used by 'make lts' - realistic baseline test
+  baseline_test:
+    description: "Realistic baseline test with 15 concurrent users"
     duration: "30m"
     users: 15
-    spawn_rate: 1.5
+    spawn_rate: 0.2
     user_types: ["question_users", "feedback_users", "mixed_users"]
-    think_time_enabled: true
-    natural_pauses_enabled: true
-    tags: ["target", "phase2", "main"]
-  
-  # Phase 3: Stress Testing (20 users, 10 min)
-  phase3_stress_test:
-    description: "Phase 3: Stress test with 20 users - find breaking point"
-    duration: "10m"
-    users: 20
-    spawn_rate: 2
-    user_types: ["question_users", "mixed_users"]
-    think_time_enabled: true
-    reduced_think_time: true
-    tags: ["stress", "phase3"]
-  
-  # Phase 4: Endurance Testing (15 users, 60 min)
-  phase4_endurance:
-    description: "Phase 4: Endurance test with 15 users - long-term stability"
-    duration: "60m"
-    users: 15
-    spawn_rate: 1
-    user_types: ["question_users", "feedback_users", "mixed_users"]
-    think_time_enabled: true
-    natural_pauses_enabled: true
-    extended_sessions: true
-    tags: ["endurance", "phase4", "stability"]
-  
-  # Additional scenarios for specific testing
-  burst_test:
-    description: "Burst load test (25 users) - maximum capacity testing"
-    duration: "5m"
-    users: 25
-    spawn_rate: 5
-    user_types: ["question_users"]
-    think_time_enabled: false
-    tags: ["burst", "capacity"]
-  
-  realistic_usage:
-    description: "Realistic usage simulation - mixed user behavior"
-    duration: "45m"
-    users: 15
-    spawn_rate: 1.5
-    user_types: ["question_users", "feedback_users", "mixed_users"]
-    think_time_enabled: true
-    natural_pauses_enabled: true
-    extended_sessions: true
-    tags: ["realistic", "mixed"]
-  
-  # Infrastructure-focused scenarios for 30-user focus group
+    
+  # Used by 'make ltfg' - focus group ramp test
   focus_group_ramp:
-    description: "Focus Group Ramp Test - 30 users with infrastructure monitoring"
+    description: "Focus group ramp test - 30 users with infrastructure monitoring"
     duration: "20m"
     users: 30
-    spawn_rate: 2.5  # Gradual 30-user ramp over 12 minutes
+    spawn_rate: 2.5
     user_types: ["question_users", "mixed_users"]
-    think_time_enabled: true
-    reduced_think_time: true
     infrastructure_focus: true
-    tags: ["focus_group", "infrastructure", "ramp"]
   
+  # Used by 'make ltfgs' - focus group sustained test
   focus_group_sustained:
-    description: "Focus Group Sustained Load - 30 users sustained load test"
+    description: "Focus group sustained load - 30 users sustained load test"
     duration: "30m"
     users: 30
-    spawn_rate: 3.0  # Faster ramp to 30 users over 10 minutes
+    spawn_rate: 3.0
     user_types: ["question_users", "feedback_users", "mixed_users"]
-    think_time_enabled: true
-    natural_pauses_enabled: true
     infrastructure_focus: true
-    tags: ["focus_group", "infrastructure", "sustained"]
-  
-  infrastructure_stress:
-    description: "Infrastructure Stress Test - Push to breaking point"
-    duration: "15m"
-    users: 40
-    spawn_rate: 4.0  # Aggressive ramp to find limits
-    user_types: ["question_users"]
-    think_time_enabled: false  # Maximum stress
-    infrastructure_focus: true
-    tags: ["stress", "infrastructure", "breaking_point"]

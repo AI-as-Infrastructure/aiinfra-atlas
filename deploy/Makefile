@@ -67,10 +67,9 @@ ds: ## Delete local staging environment
 	@bash deploy/staging/scripts/clean_staging_localhost.sh
 
 # Load Testing Targets
-.PHONY: lts ltfg ltfgs
-lts: ## Run realistic load test against staging environment (15 concurrent users, 30 min)
-	@echo "🧪 Running realistic load test against staging environment..."
-	@echo "📊 Optimized for 8 vCPU, 16GB RAM servers with 15-20 concurrent users"
+.PHONY: lts ltfg ltfgs clean-tests
+# Load test setup - shared function
+define setup_load_test
 	@if [ ! -f "config/.env.staging" ]; then \
 		echo "❌ ERROR: config/.env.staging file not found!"; \
 		exit 1; \
@@ -80,44 +79,38 @@ lts: ## Run realistic load test against staging environment (15 concurrent users
 		python3 -m venv .venv; \
 	fi
 	@if [ ! -f ".venv/bin/locust" ]; then \
-		echo "📥 Installing dependencies..."; \
-		.venv/bin/pip install -r config/requirements.txt; \
+		echo "📥 Installing load test dependencies..."; \
+		.venv/bin/pip install -r config/requirements.txt psutil; \
 	fi
+endef
+
+lts: ## Run realistic load test against staging environment (15 concurrent users, 30 min)
+	@echo "🧪 Running realistic load test against staging environment..."
+	@echo "📊 Optimized for 8 vCPU, 16GB RAM servers with 15-20 concurrent users"
+	$(call setup_load_test)
 	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=staging ../.venv/bin/locust -f locustfile.py --host=\$$VITE_API_URL --users=15 --spawn-rate=0.2 --run-time=30m --headless"
 
 ltfg: ## Focus group ramp test - 30 users with infrastructure monitoring (20 min)
 	@echo "🎯 Running Focus Group Ramp Test (30 users, infrastructure monitoring)..."
 	@echo "🖥️  Monitoring memory/CPU usage to determine infrastructure load"
-	@if [ ! -f "config/.env.staging" ]; then \
-		echo "❌ ERROR: config/.env.staging file not found!"; \
-		exit 1; \
-	fi
-	@if [ ! -d ".venv" ]; then \
-		echo "📦 Creating virtual environment..."; \
-		python3 -m venv .venv; \
-	fi
-	@if [ ! -f ".venv/bin/locust" ]; then \
-		echo "📥 Installing dependencies (including psutil for infrastructure monitoring)..."; \
-		.venv/bin/pip install -r config/requirements.txt psutil; \
-	fi
+	$(call setup_load_test)
 	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=staging ../.venv/bin/locust -f locustfile.py --host=\$$VITE_API_URL --users=30 --spawn-rate=2.5 --run-time=20m --headless"
 
 ltfgs: ## Focus group sustained test - 30 users sustained load (30 min) 
 	@echo "🎯 Running Focus Group Sustained Test (30 users, sustained load)..."
 	@echo "🖥️  Monitoring infrastructure under sustained 30-user load"
-	@if [ ! -f "config/.env.staging" ]; then \
-		echo "❌ ERROR: config/.env.staging file not found!"; \
-		exit 1; \
-	fi
-	@if [ ! -d ".venv" ]; then \
-		echo "📦 Creating virtual environment..."; \
-		python3 -m venv .venv; \
-	fi
-	@if [ ! -f ".venv/bin/locust" ]; then \
-		echo "📥 Installing dependencies (including psutil for infrastructure monitoring)..."; \
-		.venv/bin/pip install -r config/requirements.txt psutil; \
-	fi
+	$(call setup_load_test)
 	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=staging ../.venv/bin/locust -f locustfile.py --host=\$$VITE_API_URL --users=30 --spawn-rate=3.0 --run-time=30m --headless"
+
+clean-tests: ## Clean load test artifacts and old reports
+	@echo "🧹 Cleaning load test artifacts..."
+	@find load_tests -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	@find load_tests -name "*.pyc" -delete 2>/dev/null || true
+	@echo "🗑️  Removing reports older than 7 days..."
+	@find load_tests/reports -name "*.json" -mtime +7 -delete 2>/dev/null || true
+	@find load_tests/reports -name "*.md" -mtime +7 -delete 2>/dev/null || true
+	@find load_tests/reports -name "*.txt" -mtime +7 -delete 2>/dev/null || true
+	@echo "✅ Load test cleanup complete"
 
 # Utility Targets
 .PHONY: l c vs r xs pm
