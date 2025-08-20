@@ -131,14 +131,20 @@ class DataGenerator:
     
     def generate_question_and_filter(self) -> tuple[str, str]:
         """Generate a question with its optimal filter for better HNSW search results"""
-        # 10% chance for sub-optimal questions (for edge case testing)
-        if random.random() < 0.1:
+        # 15% chance for sub-optimal questions (for edge case testing)
+        if random.random() < 0.15:
             question = random.choice(self.suboptimal_questions)
             # Random filter for sub-optimal questions to test mismatches
             filter_choice = random.choice(["1901_au", "1901_nz", "1901_uk", "all"])
             return question, filter_choice
         
-        # 90% optimal question-filter matching
+        # 35% chance for custom generated questions (massive variety)
+        if random.random() < 0.35:
+            question = self.generate_custom_question()
+            filter_choice = random.choice(["1901_au", "1901_nz", "1901_uk", "all"])
+            return question, filter_choice
+        
+        # 50% optimal question-filter matching from predefined sets
         choice = random.random()
         if choice < 0.3:  # 30% Australian questions
             question = random.choice(self.australian_questions)
@@ -160,15 +166,29 @@ class DataGenerator:
     
     def generate_custom_question(self) -> str:
         """Generate a more varied question using Faker"""
-        topics = ["federation", "colonial administration", "tariff policy", "imperial relations", "land settlement", "mining", "railway construction", "labor disputes", "public works", "military defense", "public health", "education", "postal services", "Aboriginal affairs", "agricultural development", "banking", "women's suffrage", "immigration"]
+        topics = ["federation", "colonial administration", "tariff policy", "imperial relations", "land settlement", "mining", "railway construction", "labor disputes", "public works", "military defense", "public health", "education", "postal services", "Aboriginal affairs", "agricultural development", "banking", "women's suffrage", "immigration", "drought relief", "temperance", "Chinese exclusion", "old age pensions", "factory conditions", "telegraph", "shipping", "currency", "arbitration", "patents", "copyright", "customs", "excise", "lighthouses", "quarantine", "naturalization", "bankruptcy", "companies", "marriage", "divorce", "electoral", "redistribution", "franchise", "ballot", "corruption", "bribery", "royal commission", "public service", "civil service"]
         topic = random.choice(topics)
         
+        years = ["1900", "1901", "1902", "1903", "1904", "1905"]
+        year = random.choice(years)
+        
+        contexts = ["colonial", "federal", "imperial", "dominion", "legislative", "parliamentary"]
+        context = random.choice(contexts)
+        
+        actors = ["Parliament", "the government", "MPs", "ministers", "the opposition", "backbenchers", "committees", "premiers", "colonial governments"]
+        actor = random.choice(actors)
+        
         patterns = [
-            f"What did Parliament discuss about {topic} in 1901?",
-            f"Can you find debates on {topic} policy in 1901?",
-            f"How did the government address {topic} concerns in 1901?",
-            f"What was the opposition's stance on {topic} legislation in 1901?",
-            f"Can you provide details about {topic} discussions in 1901?"
+            f"What did {actor} discuss about {topic} in {year}?",
+            f"Can you find debates on {topic} policy in {year}?",
+            f"How did {context} authorities address {topic} concerns in {year}?",
+            f"What was the opposition's stance on {topic} legislation in {year}?",
+            f"Can you provide details about {topic} discussions in {context} {year}?",
+            f"How did {actor} debate {topic} reforms in {year}?",
+            f"What parliamentary speeches addressed {topic} in {year}?",
+            f"What committee reports covered {topic} in {year}?",
+            f"How did ministers justify {topic} policy in {year}?",
+            f"What was said about {topic} implementation in {year}?"
         ]
         
         pattern = random.choice(patterns)

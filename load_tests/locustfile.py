@@ -141,6 +141,12 @@ def on_test_stop(environment, **kwargs):
         print(f"   CPU Peak: {infra_summary['cpu']['peak_percent']:.1f}% ({infra_summary['cpu']['load_percentage']:.1f}% of capacity)")
         print(f"   Overall Load: {infra_summary['overall_infrastructure_load']:.1f}% ({infra_summary['infrastructure_status']})")
         print(f"   Test Duration: {infra_summary['test_duration_minutes']:.1f} minutes")
+        
+        # Write infrastructure summary to separate file
+        infra_file = report_dir / f'infrastructure_{timestamp}.json'
+        with open(infra_file, 'w') as f:
+            json.dump(infra_summary, f, indent=2)
+        print(f"🖥️  Infrastructure metrics saved to: {infra_file}")
     
     # Evaluate results and generate actionable report
     try:
@@ -171,6 +177,57 @@ def on_test_stop(environment, **kwargs):
             print(f"📄 Performance report saved to: {perf_report_file}")
         except Exception as report_error:
             print(f"⚠️  Failed to generate performance report: {report_error}")
+        
+        # Write summary report with all key metrics
+        summary_file = report_dir / f'test_summary_{timestamp}.txt'
+        with open(summary_file, 'w') as f:
+            f.write("=" * 80 + "\n")
+            f.write(f"LOAD TEST SUMMARY - {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timestamp))}\n")
+            f.write("=" * 80 + "\n\n")
+            
+            # Test Configuration
+            f.write("📋 TEST CONFIGURATION:\n")
+            f.write(f"   Duration: {infra_summary.get('test_duration_minutes', 'N/A'):.1f} minutes\n")
+            f.write(f"   Total Requests: {sum(summary['counters'].values())}\n")
+            f.write(f"   Target Users: 30 (Focus Group Test)\n")
+            f.write(f"   Test Result: {evaluation['overall_result'].value}\n\n")
+            
+            # Infrastructure Results
+            if infra_summary:
+                f.write("🖥️  INFRASTRUCTURE LOAD:\n")
+                f.write(f"   Memory Peak: {infra_summary['memory']['peak_percent']:.1f}% ({infra_summary['memory']['load_percentage']:.1f}% of capacity)\n")
+                f.write(f"   CPU Peak: {infra_summary['cpu']['peak_percent']:.1f}% ({infra_summary['cpu']['load_percentage']:.1f}% of capacity)\n")
+                f.write(f"   Overall Load: {infra_summary['overall_infrastructure_load']:.1f}% ({infra_summary['infrastructure_status']})\n")
+                f.write(f"   Status: {'✅ INFRASTRUCTURE CAN HANDLE 30 USERS' if infra_summary['overall_infrastructure_load'] < 90 else '⚠️  INFRASTRUCTURE AT CAPACITY LIMIT'}\n\n")
+            
+            # Performance Results
+            f.write("📈 PERFORMANCE RESULTS:\n")
+            for eval_result in evaluation['evaluations']:
+                status_icon = "✅" if eval_result.result.value == "PASS" else "⚠️" if eval_result.result.value == "BORDERLINE" else "❌"
+                f.write(f"   {status_icon} {eval_result.message}\n")
+            f.write("\n")
+            
+            # Scaling Recommendation
+            f.write("💡 SCALING RECOMMENDATION:\n")
+            if infra_summary and infra_summary['overall_infrastructure_load'] < 75:
+                f.write("   ✅ CURRENT 16GB/8CPU SETUP IS SUFFICIENT\n")
+                f.write("   💰 No need to scale hardware for 30-user focus group\n")
+            elif infra_summary and infra_summary['overall_infrastructure_load'] < 90:
+                f.write("   ⚠️  CURRENT SETUP IS ADEQUATE BUT MONITOR CLOSELY\n")
+                f.write("   🔄 Consider scaling to 32GB/16CPU if sustained high load\n")
+            else:
+                f.write("   🚨 SCALING RECOMMENDED\n")
+                f.write("   📈 Scale to 32GB/16CPU for 30-user focus group\n")
+            f.write("\n")
+            
+            # File References
+            f.write("📁 DETAILED REPORTS:\n")
+            f.write(f"   📊 Full metrics: metrics_{timestamp}.json\n")
+            f.write(f"   📋 Evaluation: evaluation_{timestamp}.json\n")
+            f.write(f"   🖥️  Infrastructure: infrastructure_{timestamp}.json\n")
+            f.write(f"   📄 Performance: performance_report_{timestamp}.md\n")
+            
+        print(f"📄 Test summary saved to: {summary_file}")
         
         # Set exit code based on results
         if evaluation['overall_result'].value == 'FAIL':
