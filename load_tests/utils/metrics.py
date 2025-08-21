@@ -124,9 +124,9 @@ class MetricsCollector:
         try:
             for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
                 try:
-                    # Look for gunicorn worker processes
-                    if proc.info['name'] and 'gunicorn' in proc.info['name'].lower():
-                        cmdline = proc.info['cmdline'] or []
+                    cmdline = proc.info['cmdline'] or []
+                    # Look for processes running gunicorn with backend.app:app
+                    if any('gunicorn' in str(arg) for arg in cmdline):
                         # Check if it's a worker process (not master)
                         if any('backend.app:app' in arg or 'uvicorn.workers' in arg for arg in cmdline):
                             workers.append(psutil.Process(proc.info['pid']))
