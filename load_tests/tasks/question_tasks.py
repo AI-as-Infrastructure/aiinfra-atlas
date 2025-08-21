@@ -107,8 +107,8 @@ class QuestionSubmissionUser(HttpUser):
                                 
                                 # Extract content from chunks
                                 chunk = data.get("chunk", {})
-                                if chunk.get("type") == "content":
-                                    content = chunk.get("content", "")
+                                if chunk.get("type") == "text":
+                                    content = chunk.get("text", "")
                                     answer_content += content
                                     token_count += len(content.split())
                                 elif chunk.get("type") == "citations":
@@ -131,12 +131,24 @@ class QuestionSubmissionUser(HttpUser):
                 
                 total_time = time.time() - start_time
                 
-                # Record metrics
-                metrics_collector.record_request("ask_stream", total_time, response.status_code)
-                if first_token_time:
-                    metrics_collector.record_streaming_metrics(
-                        self.session_id, first_token_time, total_time, token_count
-                    )
+                # Record metrics with better completion tracking
+                if response_complete and token_count > 0:
+                    # Successful completion with content
+                    metrics_collector.record_request("ask_stream", total_time, response.status_code)
+                    if first_token_time:
+                        metrics_collector.record_streaming_metrics(
+                            self.session_id, first_token_time, total_time, token_count
+                        )
+                elif token_count > 0:
+                    # Got content but maybe not marked complete (partial success)
+                    metrics_collector.record_request("ask_stream", total_time, response.status_code)
+                    if first_token_time:
+                        metrics_collector.record_streaming_metrics(
+                            self.session_id, first_token_time, total_time, token_count
+                        )
+                else:
+                    # No content received (failure case)
+                    metrics_collector.record_request("ask_stream", total_time, response.status_code, "No content generated")
                 
                 response.success()
                 

@@ -97,8 +97,10 @@ class MetricsCollector:
             self.metrics['streaming_token_counts'].append(token_count)
             self.counters['streaming_sessions'] += 1
             
-            # Track zero-token responses as complete failures (no answer generated)
-            if token_count == 0:
+            # Track completion success vs failures
+            if token_count > 0:
+                self.counters['streaming_successful_completions'] = self.counters.get('streaming_successful_completions', 0) + 1
+            else:
                 self.counters['streaming_zero_token_failures'] += 1
     
     def record_websocket_metrics(self, connection_time: float, message_count: int, errors: int):
@@ -417,11 +419,19 @@ class MetricsCollector:
         
         # Streaming metrics
         if self.metrics['streaming_first_token']:
+            successful_completions = self.counters.get('streaming_successful_completions', 0)
+            total_sessions = self.counters.get('streaming_sessions', 0)
+            zero_token_failures = self.counters.get('streaming_zero_token_failures', 0)
+            
             summary['streaming_metrics'] = {
                 'avg_first_token_time': sum(self.metrics['streaming_first_token']) / len(self.metrics['streaming_first_token']),
                 'avg_total_time': sum(self.metrics['streaming_total_time']) / len(self.metrics['streaming_total_time']),
                 'avg_tokens_per_second': sum(self.metrics['streaming_tokens_per_second']) / len(self.metrics['streaming_tokens_per_second']),
-                'total_sessions': self.counters['streaming_sessions']
+                'total_sessions': total_sessions,
+                'successful_completions': successful_completions,
+                'zero_token_failures': zero_token_failures,
+                'completion_success_rate': (successful_completions / total_sessions * 100) if total_sessions > 0 else 0,
+                'avg_token_count': sum(self.metrics['streaming_token_counts']) / len(self.metrics['streaming_token_counts']) if self.metrics['streaming_token_counts'] else 0
             }
         
         # WebSocket metrics
