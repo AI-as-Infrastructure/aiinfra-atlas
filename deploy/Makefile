@@ -96,6 +96,13 @@ ltfg: ## Focus group ramp test - 30 users with infrastructure monitoring (20 min
 	$(call setup_load_test)
 	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=staging ../.venv/bin/locust -f locustfile.py --host=\$$VITE_API_URL --users=30 --spawn-rate=2.5 --run-time=20m --headless"
 
+ltfg-prod: ## Focus group ramp test against PRODUCTION (30 users, 20 min) - REQUIRES AUTH OFF
+	@echo "🚨 Running Focus Group Ramp Test against PRODUCTION..."
+	@echo "⚠️  Ensure VITE_USE_COGNITO_AUTH=false on production server!"
+	@echo "🖥️  Monitoring memory/CPU usage to determine infrastructure load"
+	$(call setup_load_test)
+	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=staging ../.venv/bin/locust -f locustfile.py --host=https://atlas-hansard.org --users=30 --spawn-rate=2.5 --run-time=20m --headless"
+
 ltfgs: ## Focus group sustained test - 30 users sustained load (30 min) 
 	@echo "🎯 Running Focus Group Sustained Test (30 users, sustained load)..."
 	@echo "🖥️  Monitoring infrastructure under sustained 30-user load"
