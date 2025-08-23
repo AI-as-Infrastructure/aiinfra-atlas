@@ -179,8 +179,7 @@ class HansardRetriever(BaseRetriever):
             # Resolve default corpus path relative to the backend directory to avoid CWD issues
             backend_dir = Path(__file__).resolve().parents[1]
             default_path = backend_dir / "targets" / "bm25_corpus.jsonl"
-            # Support both legacy HANSARD_BM25_CORPUS and shorter BM25_CORPUS
-            bm25_env = os.getenv("HANSARD_BM25_CORPUS") or os.getenv("BM25_CORPUS")
+            bm25_env = os.getenv("BM25_CORPUS")
             corpus_path = Path(bm25_env) if bm25_env else default_path
             if not corpus_path.exists():
                 logger.warning(f"BM25 corpus not found: {corpus_path} (dense-only mode)")
