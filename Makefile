@@ -29,11 +29,12 @@ backup-prod: venv ## Backup full prod project contents (env loaded from config/.
 .PHONY: venv
 venv: $(VENV_DIR)/bin/activate
 
-$(VENV_DIR)/bin/activate: config/requirements.txt
+$(VENV_DIR)/bin/activate: config/requirements.lock
 	@if [ ! -d "$(VENV_DIR)" ]; then \
 		python3 -m venv $(VENV_DIR); \
 	fi
-	$(VENV_DIR)/bin/pip install -r config/requirements.txt
+	@if [ ! -f "config/requirements.lock" ]; then echo "❌ Missing config/requirements.lock. Run 'make l' first."; exit 1; fi
+	$(VENV_DIR)/bin/pip install -r config/requirements.lock
 	@touch $(VENV_DIR)/bin/activate
 
 # Help target

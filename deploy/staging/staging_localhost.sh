@@ -205,7 +205,11 @@ cd $APP_DIR
 python$PYTHON_VERSION -m venv .venv
 . .venv/bin/activate
 pip install --upgrade pip
-pip install -r config/requirements.txt gunicorn
+if [ ! -f "config/requirements.lock" ]; then
+    echo "❌ Error: config/requirements.lock not found. Run 'make l' first."
+    exit 1
+fi
+pip install -r config/requirements.lock gunicorn
 
 # Ensure Python can find the application modules - improved version
 echo "Setting up Python path..."
@@ -263,6 +267,7 @@ WorkingDirectory=$APP_DIR
 Environment="PATH=$APP_DIR/.venv/bin"
 Environment="PYTHONPATH=$APP_DIR"
 Environment="ENVIRONMENT=staging"
+Environment="CUDA_VISIBLE_DEVICES="
 
 # Environment settings come from .env.staging
 EnvironmentFile=$APP_DIR/config/.env.staging

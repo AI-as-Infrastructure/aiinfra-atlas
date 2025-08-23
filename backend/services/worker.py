@@ -18,10 +18,41 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Import after path setup
+# Load environment variables early and strictly
+def _load_env_file(env_file: Path, override: bool = True) -> None:
+    """Minimal .env loader to avoid external dependency."""
+    try:
+        with env_file.open("r") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.startswith("export "):
+                    line = line[len("export "):]
+                if "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if override or key not in os.environ:
+                    os.environ[key] = value
+    except Exception as e:
+        raise RuntimeError(f"Failed to load environment file {env_file}: {e}")
+
+# Require ENVIRONMENT and load matching env file
+env_name = os.getenv("ENVIRONMENT")
+if not env_name:
+    raise EnvironmentError("ENVIRONMENT must be set (e.g., 'development', 'staging', 'production') in your .env file")
+
+env_path = project_root / "config" / f".env.{env_name.lower()}"
+if not env_path.exists():
+    raise FileNotFoundError(f"Cannot find environment file: {env_path}. Deployment is misconfigured.")
+
+_load_env_file(env_path, override=True)
+
+# Import after env is loaded
 from backend.services.queue_manager import get_queue_manager
 from backend.services.llm_service import process_query_async
-import backend.load_env  # Load environment variables
 
 class LLMWorker:
     """Background worker for processing LLM requests"""
