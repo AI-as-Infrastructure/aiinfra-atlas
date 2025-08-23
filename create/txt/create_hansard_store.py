@@ -60,24 +60,138 @@ try:
 except Exception as e:
     print(f"Warning: NLTK download failed: {e}")
 
-VECTOR_SOURCES_BASE = "../../../vector_sources"
+# =====================
+# Data source locations
+# =====================
+#
+# Set the base directory where your Hansard sources live. You can:
+# - export HANSARD_SOURCES_ROOT=/abs/path
+# - or set VECTOR_SOURCES_BASE=/abs/path
+# - or edit DEFAULT_VECTOR_SOURCES_BASE below
+#
+# Prefer the in-repo TXT snapshot if available
+DEFAULT_VECTOR_SOURCES_BASE = str((Path(__file__).resolve().parents[2] / "hansard_sources_FULL_TXT").resolve())
+VECTOR_SOURCES_BASE = os.environ.get("HANSARD_SOURCES_ROOT", os.environ.get("VECTOR_SOURCES_BASE", DEFAULT_VECTOR_SOURCES_BASE))
+print(f"[vs] Vector sources base: {VECTOR_SOURCES_BASE}")
+
+"""
+Corpus discovery
+----------------
+We prefer the external hansard_sources_FULL_TXT layout, but users may have
+nested directories where AU/NZ/UK appear deeper in the tree. To keep this
+robust and corpus-agnostic, we:
+  1) Try the simple AU/NZ/UK directories directly under the base.
+  2) If missing, auto-discover any directories named AU/NZ/UK anywhere under
+      the base and map them to 1901_au/1901_nz/1901_uk respectively.
+  3) If nothing matches but *.txt files exist, index the entire base as a
+      single corpus (1901_all).
+"""
+USE_HANSARD_SOURCES_FULL_LAYOUT = True
 
 # Helper to resolve relative paths based on this script's directory
-def resolve_path(relative_path):
+def resolve_path(path_str: str) -> str:
+    """Resolve a path string relative to this script, unless it's absolute."""
+    p = Path(path_str)
+    if p.is_absolute():
+        return str(p)
     script_dir = Path(__file__).resolve().parent
-    return str((script_dir / relative_path).resolve())
+    return str((script_dir / path_str).resolve())
 
-corpora = {
-    resolve_path(f"{VECTOR_SOURCES_BASE}/1901/au/hofreps/txt"): "1901_au",
-    resolve_path(f"{VECTOR_SOURCES_BASE}/1901/nz/hofreps/txt"): "1901_nz",
-    resolve_path(f"{VECTOR_SOURCES_BASE}/1901/uk/hofcoms/txt"): "1901_uk",
-}
-CORPUS_IDS = ["1901_au", "1901_nz", "1901_uk"]
-corpus_file_counts = {corpus_id: 0 for corpus_id in CORPUS_IDS}
-chunk_counts_per_corpus = {corpus_id: 0 for corpus_id in CORPUS_IDS}
-chars_per_corpus = {corpus_id: 0 for corpus_id in CORPUS_IDS}
-words_per_corpus = {corpus_id: 0 for corpus_id in CORPUS_IDS}
+def _discover_corpora(base: str) -> Dict[str, str]:
+    base_path = Path(base)
+    region_map = {"au": "1901_au", "nz": "1901_nz", "uk": "1901_uk"}
+    discovered: Dict[str, str] = {}
+
+    # Step 1: look for AU/NZ/UK directly under base
+    for region, cid in region_map.items():
+        p = base_path / region.upper()
+        if p.exists() and p.is_dir():
+            discovered[str(p.resolve())] = cid
+
+    # Step 2: if not found, look anywhere under base for directories named exactly AU/NZ/UK
+    if not discovered:
+        for region, cid in region_map.items():
+            # Find the first directory named region (case-insensitive)
+            try:
+                match = next((d for d in base_path.rglob("*") if d.is_dir() and d.name.lower() == region), None)
+            except Exception:
+                match = None
+            if match:
+                discovered[str(match.resolve())] = cid
+
+    # Step 3: if still nothing, but there are .txt files under base, index whole base
+    if not discovered:
+        try:
+            has_txt = any(base_path.rglob("*.txt"))
+        except Exception:
+            has_txt = False
+        if has_txt:
+            discovered[str(base_path.resolve())] = "1901_all"
+
+    return discovered
+
+if USE_HANSARD_SOURCES_FULL_LAYOUT:
+    # Try canonical AU/NZ/UK under base first
+    au_path = resolve_path(f"{VECTOR_SOURCES_BASE}/AU")
+    nz_path = resolve_path(f"{VECTOR_SOURCES_BASE}/NZ")
+    uk_path = resolve_path(f"{VECTOR_SOURCES_BASE}/UK")
+    corpora: Dict[str, str] = {
+        au_path: "1901_au",
+        nz_path: "1901_nz",
+        uk_path: "1901_uk",
+    }
+    # Check existence; if missing, auto-discover
+    if not any(Path(p).exists() for p in corpora.keys()):
+        print("[vs] Canonical AU/NZ/UK dirs not found; auto-discovering corpus roots…")
+        corpora = _discover_corpora(VECTOR_SOURCES_BASE)
+else:
+    # Legacy local layout under repo_root/vector_sources
+    corpora = {
+        resolve_path(f"{VECTOR_SOURCES_BASE}/1901/au/hofreps/txt"): "1901_au",
+        resolve_path(f"{VECTOR_SOURCES_BASE}/1901/nz/hofreps/txt"): "1901_nz",
+        resolve_path(f"{VECTOR_SOURCES_BASE}/1901/uk/hofcoms/txt"): "1901_uk",
+    }
+
+# Log what we're using
+for path, cid in corpora.items():
+    state = "OK" if Path(path).exists() else "MISSING"
+    print(f"[vs] corpus={cid} dir={path} [{state}]")
+if not corpora:
+    print(f"[vs] No corpus roots discovered under {VECTOR_SOURCES_BASE}. Nothing to index.")
+
+def _init_counters(corpora_map: Dict[str, str]):
+    ids = sorted(set(corpora_map.values())) if corpora_map else ["1901_all"]
+    return (
+        {cid: 0 for cid in ids},  # corpus_file_counts
+        {cid: 0 for cid in ids},  # chunk_counts_per_corpus
+        {cid: 0 for cid in ids},  # chars_per_corpus
+        {cid: 0 for cid in ids},  # words_per_corpus
+        ids,
+    )
+
+# This TXT builder will ignore XML files; it operates only on *.txt recursively.
+corpus_file_counts, chunk_counts_per_corpus, chars_per_corpus, words_per_corpus, CORPUS_IDS = _init_counters(corpora)
 total_chunks_processed = 0
+field_values = defaultdict(set)  # for manifest field schema discovery
+
+# BM25 JSONL output under create/output
+BM25_JSONL_PATH = str((Path(__file__).resolve().parents[2] / "create/output/bm25_corpus.jsonl").resolve())
+MANIFEST_JSON_PATH = str((Path(__file__).resolve().parents[2] / "create/output/manifest.json").resolve())
+
+def guess_field_type(values):
+    try:
+        if not values:
+            return "string"
+        if all(str(v).isdigit() and len(str(v)) == 4 for v in values):
+            return "year"
+        import re as _re
+        if all(_re.match(r"\d{4}-\d{2}-\d{2}", str(v)) for v in values):
+            return "date"
+        if len(values) <= 50:
+            return "enum"
+        return "string"
+    except Exception:
+        return "string"
 
 def get_target_config():
     """Get configuration from environment variables."""
@@ -158,14 +272,12 @@ LARGE_RETRIEVAL_SIZE_ALL_CORPUS = int(os.getenv('LARGE_RETRIEVAL_SIZE_ALL_CORPUS
 # -------------------------------------------------------------
 POOLING = os.getenv("POOLING", "mean").lower()
 
-# Define output directories
-OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
+# Define output directories under repo_root/create/output
+OUTPUT_DIR = str((Path(__file__).resolve().parents[2] / "create" / "output").resolve())
 OUTPUT_CHROMA_DIR = os.path.join(OUTPUT_DIR, "chroma_db")
 
-# Get Chroma directory from environment variable
+# Optional: CHROMA_PERSIST_DIRECTORY can be used by deployments, but we do not require it here
 FINAL_CHROMA_DIR = os.environ.get("CHROMA_PERSIST_DIRECTORY")
-if not FINAL_CHROMA_DIR:
-    raise ValueError("CHROMA_PERSIST_DIRECTORY environment variable is not set")
 
 def ensure_chroma_directory(chroma_dir):
     """Ensure the Chroma directory exists and is empty."""
@@ -189,9 +301,9 @@ def get_text_splitter(splitter_type, chunk_size, chunk_overlap):
     else:
         raise ValueError(f"Unsupported text splitter type: {splitter_type}")
 
-def document_generator(directory, glob_pattern="*.txt"):
+def document_generator(directory, glob_pattern="**/*.txt"):
     loader = DirectoryLoader(
-        directory, 
+        directory,
         glob=glob_pattern,
         loader_cls=TextLoader,
         loader_kwargs={"autodetect_encoding": True}
@@ -251,10 +363,12 @@ def extract_page_number(text):
     matches = re.finditer(r'<page>(\d+)</page>', text)
     return [(match.start(), match.group(1)) for match in matches]
 
-def generate_unique_key(base_key, chunk_idx, corpus_metadata):
-    return f"{base_key}:{corpus_metadata}:{chunk_idx}"
+def generate_unique_key(base_key, chunk_idx, corpus_metadata, page=None):
+    # Deterministic ID used by both Chroma and BM25 JSONL
+    p = f"p{page}" if page is not None else "p0"
+    return f"{corpus_metadata}::{base_key}::{p}::c{chunk_idx}"
 
-def process_corpus(directory, metadata, vector_store, tokenizer, model):
+def process_corpus(directory, metadata, vector_store, tokenizer, model, bm25_out):
     # Set up corpus-specific logging
     corpus_log_file = os.path.join(OUTPUT_DIR, f"{metadata}_processing.log")
     print(f"Starting processing for corpus: {metadata} (Logging to {corpus_log_file})")
@@ -274,14 +388,14 @@ def process_corpus(directory, metadata, vector_store, tokenizer, model):
     global corpus_file_counts, chunk_counts_per_corpus, chars_per_corpus, words_per_corpus, total_chunks_processed
     # Counters are already initialised globally; do not reset here to avoid wiping
     # results when the same corpus directory is processed multiple times.
-    texts, metadatas, embeddings = [], [], []
+    texts, metadatas, embeddings, ids = [], [], [], []
     chunk_counter = 0
     skipped_chunks = 0
     successful_batches = 0
     
     # Helper function to add batches to vector store with validation
-    def add_batch_to_store(texts_batch, metadatas_batch, embeddings_batch, add_debug_info=False):
-        nonlocal texts, metadatas, embeddings, successful_batches
+    def add_batch_to_store(texts_batch, metadatas_batch, embeddings_batch, ids_batch, add_debug_info=False):
+        nonlocal texts, metadatas, embeddings, ids, successful_batches
         
         if not texts_batch:
             corpus_log("Empty batch, skipping")
@@ -289,28 +403,28 @@ def process_corpus(directory, metadata, vector_store, tokenizer, model):
         
         # Filter out any entries with None or empty values
         valid_entries = []
-        for i, (text, meta, emb) in enumerate(zip(texts_batch, metadatas_batch, embeddings_batch)):
+        for i, (text, meta, emb, _id) in enumerate(zip(texts_batch, metadatas_batch, embeddings_batch, ids_batch)):
             if text and meta and emb is not None:
                 # Convert any potential None values in metadata to strings
                 for key in meta:
                     if meta[key] is None:
                         meta[key] = "None"
-                valid_entries.append((text, meta, emb))
+                valid_entries.append((text, meta, emb, _id))
             elif add_debug_info:
                 corpus_log(f"  Skipping index {i}: missing {'text' if not text else ''}{' metadata' if not meta else ''}{' embedding' if emb is None else ''}")
         
         if not valid_entries:
             corpus_log("No valid entries in batch after filtering, skipping")
             return True
-            
+
         # Unpack the valid entries
-        texts_filtered, metadatas_filtered, embeddings_filtered = zip(*valid_entries)
-        texts_filtered, metadatas_filtered, embeddings_filtered = list(texts_filtered), list(metadatas_filtered), list(embeddings_filtered)
-        
+        texts_filtered, metadatas_filtered, embeddings_filtered, ids_filtered = zip(*valid_entries)
+        texts_filtered, metadatas_filtered, embeddings_filtered, ids_filtered = list(texts_filtered), list(metadatas_filtered), list(embeddings_filtered), list(ids_filtered)
+
         try:
             corpus_log(f"Adding batch with {len(texts_filtered)} valid entries")
-            vector_store.add_texts(texts_filtered, metadatas=metadatas_filtered, embeddings=embeddings_filtered)
-            texts, metadatas, embeddings = [], [], []
+            vector_store.add_texts(texts_filtered, metadatas=metadatas_filtered, embeddings=embeddings_filtered, ids=ids_filtered)
+            texts, metadatas, embeddings, ids = [], [], [], []
             successful_batches += 1
             return True
         except Exception as e:
@@ -328,13 +442,15 @@ def process_corpus(directory, metadata, vector_store, tokenizer, model):
                 corpus_log(f"Trying with reduced batch size ({half_size})")
                 try:
                     vector_store.add_texts(
-                        texts_filtered[:half_size], 
-                        metadatas=metadatas_filtered[:half_size], 
-                        embeddings=embeddings_filtered[:half_size]
+                        texts_filtered[:half_size],
+                        metadatas=metadatas_filtered[:half_size],
+                        embeddings=embeddings_filtered[:half_size],
+                        ids=ids_filtered[:half_size]
                     )
                     texts = texts_filtered[half_size:]
                     metadatas = metadatas_filtered[half_size:]
                     embeddings = embeddings_filtered[half_size:]
+                    ids = ids_filtered[half_size:]
                     successful_batches += 1
                     return True
                 except Exception as e2:
@@ -378,6 +494,8 @@ def process_corpus(directory, metadata, vector_store, tokenizer, model):
                         if embedding is not None:
                             chunk_counter += 1
                             
+                            base_file = Path(doc.metadata.get('source', '')).name
+                            doc_id = generate_unique_key(base_file, chunk_idx, metadata, page=None)
                             metadata_dict = {
                                 "date": date_info or "Unknown",
                                 "url": current_url,  # Will be None if no URL is found
@@ -388,14 +506,28 @@ def process_corpus(directory, metadata, vector_store, tokenizer, model):
                                         "to": (chunk_idx + 1) * CHUNK_SIZE
                                     }
                                 }),
-                                "corpus": metadata 
+                                "corpus": metadata,
+                                "id": doc_id,
+                                "source_path": doc.metadata.get('source', ''),
+                                "source_relpath": str(Path(doc.metadata.get('source', '')).relative_to(directory)) if doc.metadata.get('source') else base_file,
                             }
+                            # Update field schema
+                            for k, v in metadata_dict.items():
+                                field_values[k].add(str(v))
                             
                             # Validate embedding before adding
                             if isinstance(embedding, np.ndarray) and not np.isnan(embedding).any() and not np.isinf(embedding).any():
                                 texts.append(chunk)
                                 metadatas.append(metadata_dict)
                                 embeddings.append(embedding.tolist())
+                                ids.append(doc_id)
+
+                                # Stream to BM25 JSONL
+                                bm25_out.write(json.dumps({
+                                    "id": doc_id,
+                                    "text": chunk,
+                                    "metadata": metadata_dict,
+                                }, ensure_ascii=False) + "\n")
 
                                 # Update corpus-level statistics for this chunk
                                 chunk_counts_per_corpus[metadata] += 1
@@ -409,7 +541,7 @@ def process_corpus(directory, metadata, vector_store, tokenizer, model):
                                 
                             # Process batch when we reach the batch size
                             if len(texts) >= BATCH_SIZE:
-                                success = add_batch_to_store(texts, metadatas, embeddings)
+                                success = add_batch_to_store(texts, metadatas, embeddings, ids)
                                 if success:
                                     corpus_log(f"Added batch to vector store. Total: {chunk_counter} (Skipped: {skipped_chunks})")
                         else:
@@ -453,6 +585,8 @@ def process_corpus(directory, metadata, vector_store, tokenizer, model):
                                     embedding = compute_embedding(chunk, tokenizer, model)
                                     if embedding is not None:
                                         chunk_counter += 1
+                                        base_file = Path(doc.metadata.get('source', '')).name
+                                        doc_id = generate_unique_key(base_file, chunk_idx, metadata, page=current_page)
                                         metadata_dict = {
                                             "date": date_info or "Unknown",
                                             "url": current_url,  # Will be None if no URL is found
@@ -463,14 +597,28 @@ def process_corpus(directory, metadata, vector_store, tokenizer, model):
                                                     "to": (chunk_idx + 1) * CHUNK_SIZE
                                                 }
                                             }),
-                                            "corpus": metadata 
+                                            "corpus": metadata,
+                                            "id": doc_id,
+                                            "source_path": doc.metadata.get('source', ''),
+                                            "source_relpath": str(Path(doc.metadata.get('source', '')).relative_to(directory)) if doc.metadata.get('source') else base_file,
                                         }
+                                        # Update field schema
+                                        for k, v in metadata_dict.items():
+                                            field_values[k].add(str(v))
                                         
                                         # Validate embedding before adding
                                         if isinstance(embedding, np.ndarray) and not np.isnan(embedding).any() and not np.isinf(embedding).any():
                                             texts.append(chunk)
                                             metadatas.append(metadata_dict)
                                             embeddings.append(embedding.tolist())
+                                            ids.append(doc_id)
+
+                                            # Stream to BM25 JSONL
+                                            bm25_out.write(json.dumps({
+                                                "id": doc_id,
+                                                "text": chunk,
+                                                "metadata": metadata_dict,
+                                            }, ensure_ascii=False) + "\n")
 
                                             # Update corpus-level statistics for this chunk
                                             chunk_counts_per_corpus[metadata] += 1
@@ -484,7 +632,7 @@ def process_corpus(directory, metadata, vector_store, tokenizer, model):
                                             
                                         # Process batch when we reach the batch size
                                         if len(texts) >= BATCH_SIZE:
-                                            success = add_batch_to_store(texts, metadatas, embeddings)
+                                            success = add_batch_to_store(texts, metadatas, embeddings, ids)
                                             if success:
                                                 corpus_log(f"Added batch to vector store. Total: {chunk_counter} (Skipped: {skipped_chunks})")
                                     else:
@@ -580,9 +728,13 @@ def generate_vector_store_stats(
     chunk_overlap: int,
     text_splitter_type: str,
     batch_size: int,
-    output_file: str
-) -> None:
-    """Generate comprehensive statistics about the vector store creation process."""
+    output_file: str,
+    created_iso: Optional[str] = None,
+) -> Tuple[str, Dict[str, Any]]:
+    """Generate comprehensive statistics about the vector store creation process.
+
+    Returns a tuple of (human_readable_report_text, structured_report_dict).
+    """
     try:
         # Get system information
         system_info = {
@@ -603,12 +755,13 @@ def generate_vector_store_stats(
         total_corpus_words = sum(stats['words'] for stats in corpus_stats.values())
 
         # Start building the statistics string
+        created_display = created_iso if created_iso else datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         stats_lines = [
             "Vector Store Creation Statistics",
             "=====================================",
             "",
             f"Collection: {collection_name}",
-            f"Created: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"Created: {created_display}",
             "",
             "Model Information",
             "---------------",
@@ -629,6 +782,7 @@ def generate_vector_store_stats(
         ]
 
         # Add corpus-specific statistics
+        composition: Dict[str, Dict[str, float]] = {}
         for corpus_id, stats in corpus_stats.items():
             stats_lines.extend([
                 f"\n{corpus_id}:",
@@ -653,10 +807,17 @@ def generate_vector_store_stats(
 
         # Add percentage breakdown for each corpus
         for corpus_id, stats in corpus_stats.items():
-            files_pct = (stats['files'] / total_files * 100) if total_files > 0 else 0
-            chunks_pct = (stats['chunks'] / total_corpus_chunks * 100) if total_corpus_chunks > 0 else 0
-            chars_pct = (stats['chars'] / total_corpus_chars * 100) if total_corpus_chars > 0 else 0
-            words_pct = (stats['words'] / total_corpus_words * 100) if total_corpus_words > 0 else 0
+            files_pct = (stats['files'] / total_files * 100) if total_files > 0 else 0.0
+            chunks_pct = (stats['chunks'] / total_corpus_chunks * 100) if total_corpus_chunks > 0 else 0.0
+            chars_pct = (stats['chars'] / total_corpus_chars * 100) if total_corpus_chars > 0 else 0.0
+            words_pct = (stats['words'] / total_corpus_words * 100) if total_corpus_words > 0 else 0.0
+
+            composition[corpus_id] = {
+                "files_pct": round(files_pct, 1),
+                "chunks_pct": round(chunks_pct, 1),
+                "characters_pct": round(chars_pct, 1),
+                "words_pct": round(words_pct, 1),
+            }
 
             stats_lines.extend([
                 f"\n{corpus_id}:",
@@ -692,10 +853,54 @@ def generate_vector_store_stats(
             f.write(stats)
             
         print(f"\nStatistics written to: {output_file}")
+
+        # Build a structured report dict mirroring the text file
+        report_dict: Dict[str, Any] = {
+            "collection": collection_name,
+            "created": created_display,
+            "model": {
+                "name": model_name,
+                "embedding_dimension": embedding_dimension,
+                "quantized": is_quantized,
+                "hash": model_hash if model_hash not in (None, "unknown") else None,
+            },
+            "processing_config": {
+                "text_splitter": text_splitter_type,
+                "chunk_size": chunk_size,
+                "chunk_overlap": chunk_overlap,
+                "batch_size": batch_size,
+            },
+            "corpus_stats": {
+                cid: {
+                    "files": s["files"],
+                    "chunks": s["chunks"],
+                    "characters": s["chars"],
+                    "words": s["words"],
+                }
+                for cid, s in corpus_stats.items()
+            },
+            "totals": {
+                "total_files": total_files,
+                "total_chunks": total_corpus_chunks,
+                "total_characters": total_corpus_chars,
+                "total_words": total_corpus_words,
+            },
+            "composition": composition,
+            "processing_stats": {
+                "total_processing_time": format_processing_time(processing_time),
+                "total_chunks": total_chunks,
+                "total_characters": total_chars,
+                "total_words": total_words,
+            },
+            "system": system_info,
+        }
+
+        return stats, report_dict
         
     except Exception as e:
         print(f"Error generating statistics: {e}")
         traceback.print_exc()
+        return "", {}
 
 def verify_corpus_documents(vector_store):
     """Verify that documents from all corpora are retrievable from the vector store."""
@@ -803,7 +1008,8 @@ def main():
     
     # Prepare output directories
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    chroma_dir = OUTPUT_CHROMA_DIR
+    # Persist the Chroma DB only to create/output/chroma_db (avoid overwriting a working store)
+    chroma_dir = os.path.join(OUTPUT_DIR, "chroma_db")
     
     # Ensure Chroma directory is ready
     if not ensure_chroma_directory(chroma_dir):
@@ -870,6 +1076,10 @@ def main():
     except:
         model_info["model_hash"] = "unknown"
     
+    # Prepare BM25 JSONL
+    Path(BM25_JSONL_PATH).parent.mkdir(parents=True, exist_ok=True)
+    bm25_out = open(BM25_JSONL_PATH, 'w', encoding='utf-8')
+
     # Process each corpus
     start_time = time.time()
     processing_times = {}
@@ -877,7 +1087,7 @@ def main():
     for directory, corpus_id in corpora.items():
         corpus_start_time = time.time()
         print(f"\nProcessing corpus: {corpus_id}")
-        process_corpus(directory, corpus_id, vector_store, tokenizer, model)
+        process_corpus(directory, corpus_id, vector_store, tokenizer, model, bm25_out)
         processing_times[corpus_id] = time.time() - corpus_start_time
     
     total_time = time.time() - start_time
@@ -898,10 +1108,21 @@ def main():
             print("Final SQLite journal mode set to DELETE")
     except Exception as e:
         print(f"Warning: Could not set final journal mode: {e}")
+
+    # Note: we persist only to create/output/chroma_db to prevent accidental overwrite of a live store
     
+    # Close BM25 JSONL
+    try:
+        bm25_out.close()
+        print(f"BM25 JSONL written to: {BM25_JSONL_PATH}")
+    except Exception:
+        pass
+
     # Generate statistics
     stats_file = os.path.join(OUTPUT_DIR, f"{COLLECTION_NAME}.txt")
-    generate_vector_store_stats(
+    # Prepare a single created timestamp for both the text report and manifest
+    created_iso = datetime.utcnow().isoformat() + "Z"
+    report_text, report_struct = generate_vector_store_stats(
         collection_name=COLLECTION_NAME,
         model_name=EMBEDDING_MODEL,
         embedding_dimension=model_info.get('model_dimensions', 768),
@@ -916,7 +1137,8 @@ def main():
         chunk_overlap=CHUNK_OVERLAP,
         text_splitter_type=TEXT_SPLITTER_TYPE,
         batch_size=BATCH_SIZE,
-        output_file=stats_file
+        output_file=stats_file,
+        created_iso=created_iso,
     )
     
     # Verify corpus documents and create verification report
@@ -932,6 +1154,58 @@ def main():
     print(f"   2. Copy the database to your target location (set by CHROMA_PERSIST_DIRECTORY)")
     print(f"   3. Move hansard_retriever.py to backend/retrievers/ to use with the ATLAS system")
     
+    # Build standardized manifest.json
+    try:
+        # Prepare schema
+        schema = {}
+        for field, values in field_values.items():
+            ftype = guess_field_type(values)
+            entry = {"type": ftype}
+            if ftype == "enum":
+                entry["values"] = sorted(set(values))
+            schema[field] = entry
+
+        # Standardized stats structure
+        # Compute DB size from the freshly built output directory
+        try:
+            db_size_mb = round(sum(p.stat().st_size for p in Path(chroma_dir).rglob('*') if p.is_file()) / (1024*1024), 2)
+        except Exception:
+            db_size_mb = 0.0
+
+        stats = {
+            "total_chunks": total_chunks_processed,
+            "total_files": sum(corpus_file_counts.values()),
+            "db_size_mb": db_size_mb,
+            "corpora": {
+                cid: {
+                    "files": corpus_file_counts[cid],
+                    "chunks": chunk_counts_per_corpus[cid],
+                    "chars": chars_per_corpus[cid],
+                    "words": words_per_corpus[cid],
+                }
+                for cid in CORPUS_IDS
+            }
+        }
+
+        manifest = {
+            "schema_version": "1.1",
+            "index_name": COLLECTION_NAME,
+            "embedding_model": EMBEDDING_MODEL,
+            "created": created_iso,
+            "fields": schema,
+            "stats": stats,
+            # Include a structured report and the raw text mirroring blert_XXXX.txt
+            "report": report_struct,
+            "report_text": report_text,
+        }
+
+        Path(MANIFEST_JSON_PATH).parent.mkdir(parents=True, exist_ok=True)
+        with open(MANIFEST_JSON_PATH, 'w', encoding='utf-8') as f:
+            json.dump(manifest, f, indent=2)
+        print(f"Manifest written to: {MANIFEST_JSON_PATH}")
+    except Exception as e:
+        print(f"Warning: could not write manifest.json: {e}")
+
     return 0
 
 if __name__ == "__main__":

@@ -55,7 +55,7 @@
                       <div class="citation-tooltip-content">
                         <p class="citation-quote">{{ getCitationText(citation) }}</p>
                         <div class="citation-meta">
-                          <p v-if="citation.source || citation.title || citation.metadata?.source"><strong>Source:</strong> {{ citation.source || citation.title || citation.metadata?.source }}</p>
+                          <p v-if="citation.retrieval_id || citation.source_id || citation.source || citation.title || citation.metadata?.source"><strong>Retrieval ID:</strong> {{ citation.retrieval_id || citation.source_id || citation.source || citation.title || citation.metadata?.source }}</p>
                           <p v-if="citation.date || citation.metadata?.date"><strong>Date:</strong> {{ citation.date || citation.metadata?.date }}</p>
                           <p v-if="citation.page || citation.metadata?.page"><strong>Page:</strong> {{ citation.page || citation.metadata?.page }}</p>
                           <p v-if="citation.url || citation.metadata?.url" class="citation-url">
@@ -375,7 +375,7 @@
               </div>
               
               <div v-if="selectedCitation.source || selectedCitation.metadata?.source" class="metadata-item">
-                <strong>Source:</strong> {{ selectedCitation.source || selectedCitation.metadata?.source }}
+                <strong>Retrieval ID:</strong> {{ selectedCitation.retrieval_id || selectedCitation.source_id || selectedCitation.source || selectedCitation.metadata?.source }}
               </div>
               
               <div v-if="selectedCitation.corpus || selectedCitation.metadata?.corpus" class="metadata-item">
@@ -431,7 +431,7 @@
                 <p>{{ getCitationText(citation) }}</p>
               </div>
               <div class="citation-metadata">
-                <p v-if="citation.source || citation.metadata?.source"><strong>Source:</strong> {{ citation.source || citation.metadata?.source }}</p>
+                <p v-if="citation.retrieval_id || citation.source_id || citation.source || citation.metadata?.source"><strong>Retrieval ID:</strong> {{ citation.retrieval_id || citation.source_id || citation.source || citation.metadata?.source }}</p>
                 <p v-if="citation.date || citation.metadata?.date"><strong>Date:</strong> {{ citation.date || citation.metadata?.date }}</p>
                 <p v-if="citation.url || citation.metadata?.url">
                   <a :href="citation.url || citation.metadata?.url" target="_blank" rel="noopener noreferrer">

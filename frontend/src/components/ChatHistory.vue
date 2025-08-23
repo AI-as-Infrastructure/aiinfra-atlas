@@ -37,7 +37,7 @@
 										<div class="citation-tooltip-content">
 											<p class="citation-quote">{{ getCitationText(citation) }}</p>
 											<div class="citation-meta">
-												<p v-if="citation.source || citation.title || citation.metadata?.source"><strong>Source:</strong> {{ citation.source || citation.title || citation.metadata?.source }}</p>
+												<p v-if="citation.retrieval_id || citation.source || citation.title || citation.metadata?.source"><strong>Retrieval ID:</strong> {{ citation.retrieval_id || citation.source || citation.title || citation.metadata?.source }}</p>
 												<p v-if="citation.date || citation.metadata?.date"><strong>Date:</strong> {{ citation.date || citation.metadata?.date }}</p>
 												<p v-if="citation.page || citation.metadata?.page"><strong>Page:</strong> {{ citation.page || citation.metadata?.page }}</p>
 												<p v-if="citation.url || citation.metadata?.url" class="citation-url">
@@ -112,7 +112,7 @@
 										<td>{{ selectedCitation.title }}</td>
 									</tr>
 									<tr v-if="selectedCitation.source">
-										<th>Source</th>
+										<th>Retrieval ID</th>
 										<td>{{ selectedCitation.source }}</td>
 									</tr>
 									<tr v-if="selectedCitation.date">
@@ -190,7 +190,7 @@
 								
 								<!-- Other metadata fields -->
 								<div v-if="citation.source || (citation.metadata && citation.metadata.source)" class="metadata-item">
-									<strong>Source:</strong> {{ citation.source || citation.metadata?.source }}
+									<strong>Retrieval ID:</strong> {{ citation.retrieval_id || citation.source || citation.metadata?.source }}
 								</div>
 								
 								<div v-if="citation.corpus || (citation.metadata && citation.metadata.corpus)" class="metadata-item">

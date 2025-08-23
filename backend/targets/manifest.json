@@ -1,0 +1,141 @@
+{
+  "schema_version": "1.1",
+  "index_name": "blert_1000",
+  "embedding_model": "Livingwithmachines/bert_1890_1900",
+  "created": "2025-08-23T22:31:28.482229Z",
+  "fields": {
+    "date": {
+      "type": "string"
+    },
+    "url": {
+      "type": "string"
+    },
+    "page": {
+      "type": "string"
+    },
+    "loc": {
+      "type": "string"
+    },
+    "corpus": {
+      "type": "enum",
+      "values": [
+        "1901_au",
+        "1901_nz",
+        "1901_uk"
+      ]
+    },
+    "id": {
+      "type": "string"
+    },
+    "source_path": {
+      "type": "string"
+    },
+    "source_relpath": {
+      "type": "string"
+    }
+  },
+  "stats": {
+    "total_chunks": 94936,
+    "total_files": 206,
+    "db_size_mb": 1018.85,
+    "corpora": {
+      "1901_au": {
+        "files": 113,
+        "chunks": 40756,
+        "chars": 27954688,
+        "words": 4679284
+      },
+      "1901_nz": {
+        "files": 62,
+        "chunks": 23503,
+        "chars": 22033368,
+        "words": 4019262
+      },
+      "1901_uk": {
+        "files": 31,
+        "chunks": 30677,
+        "chars": 23815338,
+        "words": 4040154
+      }
+    }
+  },
+  "report": {
+    "collection": "blert_1000",
+    "created": "2025-08-23T22:31:28.482229Z",
+    "model": {
+      "name": "Livingwithmachines/bert_1890_1900",
+      "embedding_dimension": 768,
+      "quantized": false,
+      "hash": null
+    },
+    "processing_config": {
+      "text_splitter": "RecursiveCharacterTextSplitter",
+      "chunk_size": 1000,
+      "chunk_overlap": 100,
+      "batch_size": 100
+    },
+    "corpus_stats": {
+      "1901_au": {
+        "files": 113,
+        "chunks": 40756,
+        "characters": 27954688,
+        "words": 4679284
+      },
+      "1901_nz": {
+        "files": 62,
+        "chunks": 23503,
+        "characters": 22033368,
+        "words": 4019262
+      },
+      "1901_uk": {
+        "files": 31,
+        "chunks": 30677,
+        "characters": 23815338,
+        "words": 4040154
+      }
+    },
+    "totals": {
+      "total_files": 206,
+      "total_chunks": 94936,
+      "total_characters": 73803394,
+      "total_words": 12738700
+    },
+    "composition": {
+      "1901_au": {
+        "files_pct": 54.9,
+        "chunks_pct": 42.9,
+        "characters_pct": 37.9,
+        "words_pct": 36.7
+      },
+      "1901_nz": {
+        "files_pct": 30.1,
+        "chunks_pct": 24.8,
+        "characters_pct": 29.9,
+        "words_pct": 31.6
+      },
+      "1901_uk": {
+        "files_pct": 15.0,
+        "chunks_pct": 32.3,
+        "characters_pct": 32.3,
+        "words_pct": 31.7
+      }
+    },
+    "processing_stats": {
+      "total_processing_time": "11m 3.6s",
+      "total_chunks": 94936,
+      "total_characters": 73803394,
+      "total_words": 12738700
+    },
+    "system": {
+      "OS": "Linux",
+      "OS Version": "#27~24.04.1-Ubuntu SMP PREEMPT_DYNAMIC Tue Jul 22 17:38:49 UTC 2",
+      "Python Version": "3.12.3",
+      "CPU": "x86_64",
+      "CPU Cores": "32 physical, 32 logical",
+      "RAM": "125.6 GB",
+      "GPU": "NVIDIA GeForce RTX 5090",
+      "CUDA Version": "12.8"
+    }
+  },
+  "report_text": "Vector Store Creation Statistics\n=====================================\n\nCollection: blert_1000\nCreated: 2025-08-23T22:31:28.482229Z\n\nModel Information\n---------------\nModel: Livingwithmachines/bert_1890_1900\nEmbedding Dimension: 768\nQuantized: False\nModel Hash: None\n\nProcessing Configuration\n----------------------\nText Splitter: RecursiveCharacterTextSplitter\nChunk Size: 1000\nChunk Overlap: 100\nBatch Size: 100\n\nCorpus Statistics\n---------------\n\n1901_au:\n  Files: 113\n  Chunks: 40,756\n  Characters: 27,954,688\n  Words: 4,679,284\n\n1901_nz:\n  Files: 62\n  Chunks: 23,503\n  Characters: 22,033,368\n  Words: 4,019,262\n\n1901_uk:\n  Files: 31\n  Chunks: 30,677\n  Characters: 23,815,338\n  Words: 4,040,154\n\nTotal Corpus Statistics\n---------------------\nTotal Files: 206\nTotal Chunks: 94,936\nTotal Characters: 73,803,394\nTotal Words: 12,738,700\n\nCorpus Composition\n-----------------\n\n1901_au:\n  Files: 54.9%\n  Chunks: 42.9%\n  Characters: 37.9%\n  Words: 36.7%\n\n1901_nz:\n  Files: 30.1%\n  Chunks: 24.8%\n  Characters: 29.9%\n  Words: 31.6%\n\n1901_uk:\n  Files: 15.0%\n  Chunks: 32.3%\n  Characters: 32.3%\n  Words: 31.7%\n\nProcessing Statistics\n-------------------\nTotal Processing Time: 11m 3.6s\nTotal Chunks: 94,936\nTotal Characters: 73,803,394\nTotal Words: 12,738,700\n\nSystem Information\n----------------\nOS: Linux #27~24.04.1-Ubuntu SMP PREEMPT_DYNAMIC Tue Jul 22 17:38:49 UTC 2\nPython: 3.12.3\nCPU: x86_64\nCPU Cores: 32 physical, 32 logical\nRAM: 125.6 GB\nGPU: NVIDIA GeForce RTX 5090\nCUDA Version: 12.8"
+}

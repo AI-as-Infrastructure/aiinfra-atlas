@@ -25,10 +25,10 @@ try:
     from backend.modules.llm import generate_response_with_telemetry
     from backend.modules.config import get_retriever
     from backend.modules.sensitive_contexts import detect_sensitive_contexts
-    print("✅ Successfully imported LLM processing modules")
+    pass
 except ImportError as e:
-    print(f"⚠️ Could not import LLM processing functions: {e}")
-    print("Please ensure your LLM processing code is available")
+    # LLM processing functions not available
+    raise ImportError(f"Could not import LLM processing functions: {e}")
 
 # Thread pool for running sync LLM operations
 import os
@@ -57,7 +57,6 @@ def process_query_sync(query_data: Dict[str, Any]) -> Dict[str, Any]:
                 "query_data": query_data
             }
         
-        print(f"🔄 Processing query: {question[:50]}...")
         
         # Guardrail check: Detect sensitive contexts
         sensitive_contexts = detect_sensitive_contexts(
@@ -68,7 +67,6 @@ def process_query_sync(query_data: Dict[str, Any]) -> Dict[str, Any]:
         
         # Log if any sensitive contexts were detected (for future use)
         if sensitive_contexts:
-            print(f"⚠️ Detected sensitive contexts: {sensitive_contexts}")
             # In the future, this could trigger special handling or warnings
         
         # Step 1: Retrieve documents
@@ -79,6 +77,19 @@ def process_query_sync(query_data: Dict[str, Any]) -> Dict[str, Any]:
             qa_id=qa_id,
             corpus_filter=corpus_filter
         )
+
+        # If it's a meta/store-stats question, prepend a manifest summary Document
+        try:
+            from backend.modules.manifest_context import (
+                looks_like_manifest_question,
+                get_manifest_document,
+            )
+            if looks_like_manifest_question(question):
+                manifest_doc = get_manifest_document()
+                if manifest_doc is not None:
+                    documents = [manifest_doc] + list(documents)
+        except Exception:
+            pass
         
         if not documents:
             return {
@@ -87,7 +98,6 @@ def process_query_sync(query_data: Dict[str, Any]) -> Dict[str, Any]:
                 "query": question
             }
         
-        print(f"📄 Retrieved {len(documents)} documents")
         
         # Step 2: Apply corpus filter
         documents = filter_documents_with_telemetry(
@@ -105,7 +115,6 @@ def process_query_sync(query_data: Dict[str, Any]) -> Dict[str, Any]:
             qa_id=qa_id
         )
         
-        print(f"🔍 Filtered and reranked to {len(documents)} documents")
         
         # Step 4: Generate response
         response_generator, qa_id = generate_response_with_telemetry(
@@ -125,7 +134,6 @@ def process_query_sync(query_data: Dict[str, Any]) -> Dict[str, Any]:
             response_text += chunk
             chunk_count += 1
         
-        print(f"✅ Generated response with {chunk_count} chunks, {len(response_text)} characters")
         
         return {
             "type": "ask_response",
@@ -139,7 +147,6 @@ def process_query_sync(query_data: Dict[str, Any]) -> Dict[str, Any]:
         }
         
     except Exception as e:
-        print(f"❌ Error in sync processing: {e}")
         import traceback
         traceback.print_exc()
         return {
@@ -167,7 +174,6 @@ async def process_query_async(query_data: Dict[str, Any]) -> Dict[str, Any]:
         return result
             
     except Exception as e:
-        print(f"❌ Error processing LLM query: {e}")
         return {
             "type": "error",
             "error": str(e),
@@ -210,6 +216,4 @@ async def health_check() -> Dict[str, Any]:
 
 def shutdown_llm_service():
     """Gracefully shutdown the LLM service"""
-    print("🔄 Shutting down LLM service...")
-    llm_executor.shutdown(wait=True)
-    print("✅ LLM service shutdown complete") 
+    llm_executor.shutdown(wait=True) 

@@ -126,6 +126,17 @@ def retrieve_documents(
                 # Corpus-agnostic document retrieval - let the retriever handle all corpus logic
                 config = {"corpus_filter": corpus_filter, "session_id": session_id, "qa_id": qa_id} if corpus_filter or session_id or qa_id else None
                 documents = retriever.invoke(query, config=config, k=k)
+                
+                # Log retrieval metrics if available (for cases without span creation)
+                if hasattr(retriever, 'get_retrieval_metrics'):
+                    try:
+                        metrics = retriever.get_retrieval_metrics()
+                        if metrics.get('search_type') == 'hybrid':
+                            logger.info(f"Hybrid search: {metrics.get('dense_candidates', 0)} dense + {metrics.get('bm25_candidates', 0)} BM25 candidates, "
+                                       f"{metrics.get('rrf_overlap', 0)} overlap, {metrics.get('final_documents', 0)} final docs")
+                    except Exception:
+                        pass
+
                 signal.alarm(0)  # Cancel the timeout
                 return documents
             finally:
@@ -199,6 +210,17 @@ def retrieve_documents(
                 # Simple call to retriever - it handles all corpus-specific logic internally
                 config = {"corpus_filter": corpus_filter, "session_id": session_id, "qa_id": qa_id} if corpus_filter or session_id or qa_id else None
                 documents = retriever.invoke(query, config=config, k=k)
+
+                # Collect meaningful retrieval metrics if available
+                if hasattr(retriever, 'get_retrieval_metrics'):
+                    try:
+                        metrics = retriever.get_retrieval_metrics()
+                        for key, value in metrics.items():
+                            if isinstance(value, (str, int, float, bool)):
+                                retrieval_span.set_attribute(f"hybrid.{key}", value)
+                    except Exception:
+                        pass  # Best effort only
+
                 signal.alarm(0)  # Cancel the timeout
             finally:
                 signal.alarm(0)  # Ensure timeout is always cancelled
@@ -236,6 +258,7 @@ def retrieve_documents(
                 end_time = datetime.now()
                 processing_time = (end_time - start_time).total_seconds()
                 retrieval_span.set_attribute("processing_time_seconds", processing_time)
+            
             
             # Update document count attribute
             retrieval_span.set_attribute(SpanAttributes.DOCUMENT_COUNT, len(documents))

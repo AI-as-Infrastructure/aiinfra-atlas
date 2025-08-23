@@ -144,12 +144,25 @@ cd ..
 Generate the vector store and retriever (required for first run):
 
 ```bash
-# Create vector store (this will take some time)
+# Create vector store (shared app venv, CPU by default)
 make vs
+
+# Or use isolated venvs:
+# CPU-only build
+make vs-cpu
+
+# GPU build (defaults to CUDA 12.8 wheels – tuned for RTX 5090/50‑series)
+make vs-gpu
 
 # Generate retriever
 make r
 ```
+
+Notes:
+- vs-gpu creates an isolated .venv-vs-gpu and installs CUDA 12.8 Torch by default (recommended for RTX 50‑series, e.g., 5090).
+- To use a different CUDA wheel index (e.g., older GPUs), override the index for the command:
+  - TORCH_CUDA_INDEX_URL=https://download.pytorch.org/whl/cu121 make vs-gpu
+  - You can also edit `create/gpu_requirements.txt` to pin different CUDA builds locally without affecting others.
 
 ## Development Workflow
 

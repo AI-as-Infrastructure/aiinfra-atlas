@@ -84,6 +84,32 @@ When implementing telemetry in ATLAS components:
 4. **Handle errors**: Record exceptions in spans when they occur.
 5. **Add contextual information**: Include relevant operation-specific details.
 
+### Hybrid retrieval metrics (Dense + BM25 via RRF)
+
+When hybrid retrieval is active, the retriever attaches lightweight, Phoenix-friendly attributes to the current retrieval span:
+
+- hybrid_search.enabled: boolean
+- hybrid_search.bm25_ready: boolean
+- hybrid_search.per_side_candidates: number
+- dense_search.candidates: number
+- dense_search.time_ms: number
+- bm25_search.candidates: number
+- bm25_search.time_ms: number
+- rrf_fusion.k_constant: number (default 60)
+- rrf_fusion.time_ms: number
+- rrf_fusion.overlap_count: number
+- rrf_fusion.unique_dense: number
+- rrf_fusion.unique_bm25: number
+- vector_search.candidates: number (vector-only mode)
+- vector_search.time_ms: number (vector-only mode)
+- final_documents: number (docs returned by retriever)
+- openinference.retriever.type: "hybrid" or "vector"
+
+Notes:
+- If BM25 is unavailable or disabled, attributes reflect vector-only mode and still include bm25_ready=false.
+- Overlap and unique counts help gauge the complementarity between dense and lexical results prior to fusion.
+- Per-side candidates are sized to preserve recall (typically >= 10× search_k).
+
 ## Viewing Telemetry Data
 
 Telemetry data is sent to Phoenix Arize, where you can:

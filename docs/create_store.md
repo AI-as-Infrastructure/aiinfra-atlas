@@ -81,11 +81,17 @@ docs = vector_store.similarity_search(
 )
 ```
 
-Hybrid mode (dense + BM25) is recommended for production; blend scores
-with a simple linear mix or re-ranker.
+Hybrid mode (dense + BM25) is recommended for production and is supported at runtime via Reciprocal Rank Fusion (RRF).
 
-> **Note on BM25 / hybrid search**  
-> ATLAS currently ships only the dense-vector search described above **plus** its own lexical reranker (`document_reranking.py`).  A true Okapi-BM25 index is _not_ built at store-creation time.  If you need a classic term-frequency scorer you can integrate `langchain.retrievers.BM25Retriever`, then blend its scores with the dense results (see `docs/RAG_search.md` for a sketch).
+> BM25 / Hybrid search
+> 
+> • Store creation writes a vector database (Chroma) and can produce a BM25‑aligned corpus file: `bm25_corpus.jsonl`.
+> 
+> • Each JSONL record contains `id`, `text`, and `metadata`. The `id` matches the vector‑store chunk id to enable fusion and citation.
+> 
+> • At query time, if `HANSARD_BM25_CORPUS` (or `BM25_CORPUS`) points to the JSONL and `rank_bm25` is installed, the retriever performs hybrid fusion (dense + BM25). Otherwise it falls back to dense‑only.
+> 
+> See `docs/RAG_search.md` for RRF details and configuration knobs.
 
 ---
 

@@ -9,3 +9,5 @@ models/bert_1890_1900_st/* -text
 *.sqlite3 filter=lfs diff=lfs merge=lfs -text
 backend/targets/chroma_db/*.sqlite3 -text
 targets/chroma_db/*.sqlite3 -text
+backend/targets/bm25_corpus.jsonl filter=lfs diff=lfs merge=lfs -text
+models/** filter=lfs diff=lfs merge=lfs -text

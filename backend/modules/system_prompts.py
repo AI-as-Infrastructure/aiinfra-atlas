@@ -48,6 +48,14 @@ EVIDENCE_HANDLING = (
     "When acknowledging limitations, do so directly without referencing document access."
 )
 
+MANIFEST_USAGE = (
+    "When users ask about repository or corpus statistics, answer strictly from the manifest.json provided in context. "
+    "Only use standardized stats that are included in the manifest across all corpora (files, chunks, words, chars, db size, embedding model, chunking). "
+    "Do not derive or infer counts such as speeches, sessions, debates, speaker totals, or date ranges from documents unless they are explicitly present in the manifest. "
+    "If a requested statistic is not present in the manifest, state that it is unavailable. "
+    "For content questions about the historical proceedings, base answers only on the retrieved context documents, not the manifest."
+)
+
 UNCERTAINTY_HANDLING = (
     "When uncertain or when evidence is limited, acknowledge this explicitly. "
     "For follow-up questions, maintain context by referencing previous exchanges and provided documents. "
@@ -91,6 +99,7 @@ def build_system_prompt(components: Optional[Dict[str, bool]] = None) -> str:
             "task": True,
             "citations": True,
             "evidence": True,
+            "manifest": True,
             "uncertainty": True,
             "search_guidance": True,
             "important": True
@@ -108,6 +117,8 @@ def build_system_prompt(components: Optional[Dict[str, bool]] = None) -> str:
         prompt_parts.append(CITATION_GUIDELINES)
     if components.get("evidence", True):
         prompt_parts.append(EVIDENCE_HANDLING)
+    if components.get("manifest", True):
+        prompt_parts.append(MANIFEST_USAGE)
     if components.get("uncertainty", True):
         prompt_parts.append(UNCERTAINTY_HANDLING)
     if components.get("search_guidance", True):

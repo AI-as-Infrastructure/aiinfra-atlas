@@ -66,7 +66,6 @@ class LLMWorker:
     async def start(self):
         """Start the worker loop"""
         self.running = True
-        print(f"🚀 Starting LLM worker {self.worker_id}")
         
         while self.running:
             try:
@@ -78,18 +77,14 @@ class LLMWorker:
                     await asyncio.sleep(0.1)
                     continue
                 
-                print(f"🔄 Processing request {request.request_id}")
                 await self.process_request(request)
                 self.processed_count += 1
                 
             except KeyboardInterrupt:
-                print(f"\n⏹️ Worker {self.worker_id} received shutdown signal")
                 break
             except Exception as e:
-                print(f"❌ Worker {self.worker_id} error: {e}")
                 await asyncio.sleep(1)  # Brief pause before continuing
         
-        print(f"✅ Worker {self.worker_id} stopped. Processed {self.processed_count} requests")
     
     async def process_request(self, request):
         """Process a single LLM request"""
@@ -120,10 +115,8 @@ class LLMWorker:
                 result_with_metadata
             )
             
-            print(f"✅ Completed request {request.request_id} in {processing_time:.2f}s")
             
         except Exception as e:
-            print(f"❌ Failed to process request {request.request_id}: {e}")
             
             # Update status to failed with error
             await self.queue_manager.update_request_status(
@@ -138,7 +131,6 @@ class LLMWorker:
 
 def signal_handler(signum, frame):
     """Handle shutdown signals"""
-    print(f"\n📡 Received signal {signum}")
     global worker
     if worker:
         worker.stop()
@@ -158,21 +150,15 @@ async def main():
     try:
         await worker.start()
     except Exception as e:
-        print(f"❌ Worker failed: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
     # Global worker instance for signal handling
     worker = None
     
-    print("🔧 Starting Atlas LLM Background Worker")
-    print(f"📁 Project root: {project_root}")
-    print(f"🐍 Python path: {sys.path[0]}")
     
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\n👋 Worker shutdown complete")
     except Exception as e:
-        print(f"❌ Worker startup failed: {e}")
         sys.exit(1) 

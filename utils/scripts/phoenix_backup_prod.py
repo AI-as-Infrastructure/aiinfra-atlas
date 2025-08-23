@@ -176,7 +176,20 @@ def main() -> None:
     root = (BACKUP_ROOT / day_dir).resolve()
     ensure_dir(root)
 
-    client = Client()
+    # Configure Phoenix client with API key from environment
+    client_headers = os.getenv('PHOENIX_CLIENT_HEADERS', '').strip()
+    if client_headers:
+        # Extract API key from headers string (format: "api_key=xxx")
+        if client_headers.startswith('api_key='):
+            api_key = client_headers[8:]
+            client = Client(api_key=api_key)
+        else:
+            # Try to use headers as-is
+            client = Client(api_key=client_headers)
+    else:
+        print("WARNING: No PHOENIX_CLIENT_HEADERS found, using default client", file=sys.stderr)
+        client = Client()
+    
     projects = discover_projects(client)
     print(f"Discovered projects: {projects}")
 

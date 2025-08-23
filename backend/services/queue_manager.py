@@ -42,9 +42,7 @@ class QueueManager:
         # Test connection
         try:
             self.redis_client.ping()
-            print("✅ Redis connection established")
         except Exception as e:
-            print(f"❌ Redis connection failed: {e}")
             raise
     
     async def queue_request(self, query_data: Dict[str, Any], user_id: Optional[str] = None) -> str:
@@ -73,7 +71,6 @@ class QueueManager:
         # Add to processing queue
         self.redis_client.lpush(self.request_queue, request_id)
         
-        print(f"📝 Queued request {request_id}")
         return request_id
     
     async def get_request_status(self, request_id: str) -> Dict[str, Any]:
@@ -107,7 +104,6 @@ class QueueManager:
     async def update_request_status(self, request_id: str, status: str, result: Any = None):
         """Update request status and store result if provided"""
         if not self.redis_client.exists(f"{self.request_prefix}{request_id}"):
-            print(f"⚠️ Request {request_id} not found for status update")
             return
         
         # Update status
@@ -121,7 +117,6 @@ class QueueManager:
                 ex=3600  # 1 hour TTL
             )
         
-        print(f"📊 Updated request {request_id} status to {status}")
     
     async def get_next_request(self, timeout: int = 1) -> Optional[QueuedRequest]:
         """Get the next request from the queue (blocking)"""
@@ -137,7 +132,6 @@ class QueueManager:
             # Get request data
             request_data = self.redis_client.hgetall(f"{self.request_prefix}{request_id}")
             if not request_data:
-                print(f"⚠️ Request data not found for {request_id}")
                 return None
             
             return QueuedRequest(
@@ -149,7 +143,6 @@ class QueueManager:
             )
             
         except Exception as e:
-            print(f"❌ Error getting next request: {e}")
             return None
     
     async def get_queue_stats(self) -> Dict[str, int]:

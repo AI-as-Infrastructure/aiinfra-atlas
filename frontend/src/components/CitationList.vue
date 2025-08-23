@@ -27,7 +27,7 @@
 			  <li v-for="(c, idx) in displayedCitations" :key="idx">
 				<a v-if="c.url" :href="c.url" target="_blank">[{{ idx + 1 }}] {{ c.text || c.quote }}</a>
 				<span v-else>[{{ idx + 1 }}] {{ c.text || c.quote }}</span>
-				<div v-if="c.meta || c.source_id"><small>{{ c.meta || c.source_id }}</small></div>
+				<div v-if="c.meta || c.retrieval_id || c.source_id"><small>{{ c.meta || c.retrieval_id || c.source_id }}</small></div>
 				<div v-if="c.full_content" style="white-space: pre-wrap; font-size: 0.95em;">
 				  {{ c.full_content }}
 				</div>
@@ -58,7 +58,7 @@
 		number: index + 1,
 		text: citation.quote || citation.text,
 		url: citation.url,
-		meta: citation.source_id || citation.meta,
+		meta: citation.retrieval_id || citation.source_id || citation.meta,
 		tooltip: citation.quote || citation.text,
 		full_content: citation.full_content
 	  }));

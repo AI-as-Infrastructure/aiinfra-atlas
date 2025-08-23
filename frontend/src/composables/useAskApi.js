@@ -241,6 +241,7 @@ export async function sendQuestion(
     if (data.references && typeof data.references === 'object') {
       eventCitations = Object.entries(data.references).map(([id, ref]) => ({
         id,
+        retrieval_id: ref?.retrieval_id || ref?.source_id || id,
         text: ref.text || ref.content || '',
         metadata: ref.metadata || {},
         source: ref.metadata?.source || '',
@@ -430,12 +431,15 @@ export async function sendQuestion(
         // Final check for citations in the response data
         if (citations.length === 0) {
           if (finalData.citations && Array.isArray(finalData.citations)) {
-
-            citations = finalData.citations;
+            citations = finalData.citations.map(c => ({
+              ...c,
+              retrieval_id: c.retrieval_id || c.source_id || c.id || ''
+            }));
           } else if (finalData.references && typeof finalData.references === 'object') {
 
             citations = Object.entries(finalData.references).map(([id, ref]) => ({
               id,
+              retrieval_id: ref?.retrieval_id || ref?.source_id || id,
               text: ref.text || ref.content || '',
               metadata: ref.metadata || {},
               source: ref.metadata?.source || '',

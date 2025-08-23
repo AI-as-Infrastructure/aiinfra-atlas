@@ -23,21 +23,17 @@ logger = logging.getLogger(__name__)
 
 # Try to import get_current_span - fallback if not available
 try:
-    from openinference.instrumentation.langchain import get_current_span
+    from openinference.instrumentation.langchain import get_current_span  # type: ignore
 except ImportError:
-    # Fallback to OpenTelemetry's get_current_span with proper context handling
+    # Fallback to OpenTelemetry's current span accessor
     def get_current_span():
-        # Get current context first
-        current_context = get_current()
-        
-        # Try to get span from current context
-        current_span = trace.get_current_span(current_context)
-        
-        # If no span in current context, try the global tracer
-        if not current_span or not current_span.is_recording():
+        try:
             current_span = trace.get_current_span()
-            
-        return current_span if current_span and current_span.is_recording() else None
+            if current_span and hasattr(current_span, "is_recording") and current_span.is_recording():
+                return current_span
+        except Exception:
+            pass
+        return None
 
 
 @contextmanager

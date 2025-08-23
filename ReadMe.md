@@ -4,7 +4,7 @@
 ATLAS: Analysis and Testing of Language Models for Archival Systems is a test harness for the evaluation of Large Language Model (LLM) Retrieval Augmented Generation (RAG) for Humanities & Social Science (HASS) research. ATLAS is a deliverable of the [AI as Infrastructure (AIINFRA)](https://aiinfra.anu.edu.au) project. AIINFRA's primary goal is to develop an evaluation framework for LLM RAG systems designed for historical research.
 
 ## Project Status
-The project is under development and makes heavy use of AI coding support. 
+The project is under active development and makes heavy use of AI coding support. The tool supports authenticated access (AWS Cognito), implements hybrid search (BM25 + dense via RRF), and has been exercised in load‑testing scenarios up to ~30 concurrent users. The default backend corpus (1901 Hansard from Australia, United Kingdom, Aotearoa / New Zealand) can be swapped out.
 
 ## Environment Requirements
 
@@ -22,9 +22,9 @@ ATLAS is built using the following technologies:
 - Chroma DB
 - LangChain
 - OpenTelemetry
-- Phoenix: (Optional) 
+- Phoenix Arize (optional) 
 
-Other dependencies include: Python virtual environments (`venv`), NVM, Sentence Transformers for embeddings, and various optional LLM providers (OpenAI, Anthropic, Ollama, etc.).
+Other dependencies include: Python virtual environments (`venv`), NVM, Sentence Transformers for embeddings, `rank-bm25` for BM25 lexical search (hybrid mode), and optional LLM providers (OpenAI, Anthropic, Ollama, etc.).
 
 ## Quick Start
 
@@ -70,7 +70,9 @@ ATLAS uses a simplified command structure for common operations. Here are the ma
 ### Utilities
 - `make l` - Generate requirements.lock
 - `make c` - Check Python environment
-- `make vs` - Create vector store
+- `make vs` - Create vector store (shared app venv)
+- `make vs-cpu` - Create vector store (isolated CPU venv)
+- `make vs-gpu` - Create vector store (isolated GPU venv; defaults to CUDA 12.8 for RTX 50‑series)
 - `make r` - Generate retriever
 - `make xs` - Create XML vector store
 
@@ -99,7 +101,10 @@ ATLAS requires a vector store for semantic search. You have two options:
    - Provides better semantic search capabilities
    - Run the following command:
    ```bash
-   make vs
+   make vs          # shared app venv
+   # or
+   make vs-cpu      # isolated CPU venv
+   make vs-gpu      # isolated GPU venv (defaults to CUDA 12.8 / RTX 50‑series)
    ```
    This will:
    - Generate embeddings using the BERT model
@@ -132,11 +137,13 @@ This workflow ensures that your retrievers are always in sync with your vector s
 
 ### Architecture and Configuration
 - [Authentication](docs/authentication.md) - AWS Cognito setup and configuration
+- [Backups](docs/backups.md) - Phoenix telemetry data backup configuration and automation
 - [Configuration Guide](docs/configuration.md) - Environment files, API keys, and system configuration
 - [Data Privacy](docs/data_privacy.md) - Anonymity, telemetry, and PII avoidance
-- [GPU Compatibility](docs/gpu_compatibility.md) - Optional NVIDIA GPU setup for performance enhancement (RTX 50-series compatibility notes)
+- [GPU Compatibility](docs/gpu_compatibility.md) - Optional NVIDIA GPU setup for performance enhancement (RTX 5090/50‑series default with CUDA 12.8, guidance for other GPUs)
 - [Test Targets](docs/test_targets.md) - LLM configurations, vector store integration, and target management
 - [Key Modules](docs/key_modules.md) - Core backend modules and their responsibilities
+- [Vector Store Manifest](docs/manifest.md) - Corpus‑agnostic schema, generation, and usage
 
 ### Development and Deployment
 - [Development Environment](docs/development.md) - Local development setup, workflow, and debugging

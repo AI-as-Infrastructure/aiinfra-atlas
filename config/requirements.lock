@@ -389,6 +389,7 @@ numpy==1.26.4
     #   langchain-community
     #   onnxruntime
     #   pandas
+    #   rank-bm25
     #   scikit-learn
     #   scipy
     #   sentence-transformers
@@ -649,6 +650,8 @@ pyyaml==6.0.1
     #   uvicorn
 pyzmq==27.0.1
     # via locust
+rank-bm25==0.2.2
+    # via -r config/requirements.txt
 rapidfuzz==3.13.0
     # via unstructured
 redis==5.0.1

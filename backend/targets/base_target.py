@@ -14,6 +14,7 @@ import inspect
 import logging
 import importlib
 from typing import Dict, Any, Optional
+import json
 
 # Import utilities but not model providers - they're now in backend.modules.llm
 from langchain_community.vectorstores import Redis, Chroma
@@ -96,9 +97,6 @@ class TargetConfig:
             logger.error("CHROMA_PERSIST_DIRECTORY environment variable is not set")
             raise ValueError("CHROMA_PERSIST_DIRECTORY environment variable is not set")
         
-        # Look for a .txt configuration file with the same name as the collection
-        config_file = os.path.join('backend/targets', f"{chroma_collection}.txt")
-        
         # Default configuration values
         config_values = {
             "INDEX_NAME": chroma_collection,
@@ -108,23 +106,28 @@ class TargetConfig:
             "CHUNK_OVERLAP": "100",
             "EMBEDDING_MODEL": "Livingwithmachines/bert_1890_1900"  # Default embedding model
         }
-        
-        # Load configuration from file if it exists
-        if os.path.isfile(config_file):
-            logger.info(f"[TargetConfig] Found Chroma config file: {config_file}")
+
+        # Read details from a single manifest.json under backend/targets
+        manifest_json = os.path.join('backend', 'targets', 'manifest.json')
+        if os.path.isfile(manifest_json):
             try:
-                with open(config_file, 'r') as f:
-                    for line in f:
-                        line = line.strip()
-                        if line and not line.startswith('#') and '=' in line:
-                            key, value = [x.strip() for x in line.split('=', 1)]
-                            if key in config_values:
-                                config_values[key] = value.strip('"').strip("'")
-                                logger.info(f"[TargetConfig] Loaded Chroma config: {key}={config_values[key]}")
+                with open(manifest_json, 'r', encoding='utf-8') as f:
+                    m = json.load(f)
+                if isinstance(m, dict):
+                    if m.get('index_name'):
+                        config_values['INDEX_NAME'] = m['index_name']
+                        chroma_collection = m['index_name']
+                    if m.get('embedding_model'):
+                        config_values['EMBEDDING_MODEL'] = m['embedding_model']
+                    if m.get('chunk_size'):
+                        config_values['CHUNK_SIZE'] = str(m['chunk_size'])
+                    if m.get('chunk_overlap'):
+                        config_values['CHUNK_OVERLAP'] = str(m['chunk_overlap'])
+                logger.info(f"[TargetConfig] Loaded manifest.json from {manifest_json}")
             except Exception as e:
-                logger.error(f"[TargetConfig] Error reading Chroma config {config_file}: {e}")
+                logger.warning(f"[TargetConfig] Could not parse manifest.json at {manifest_json}: {e}")
         else:
-            logger.warning(f"[TargetConfig] No Chroma config file found at {config_file}. Using defaults.")
+            logger.warning("[TargetConfig] No backend/targets/manifest.json found. Using defaults and environment variables.")
         
         return {
             "CHROMA_PERSIST_DIRECTORY": chroma_persist_dir,

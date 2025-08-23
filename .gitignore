@@ -102,6 +102,11 @@ test-reports/
 venv/
 venv.bak/
 venv.bk/
+# Isolated venvs used for vector store creation (GPU/CPU)
+.venv-vs-gpu/
+.venv-vs-cpu/
+.venv.vs-gpu/
+.venv.vs-cpu/
 
 # VS Code
 .vscode/

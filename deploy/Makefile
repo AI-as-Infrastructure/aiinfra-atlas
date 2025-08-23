@@ -121,7 +121,7 @@ clean-tests: ## Clean load test artifacts and old reports
 	@echo "✅ Load test cleanup complete"
 
 # Utility Targets
-.PHONY: l c vs r xs pm
+.PHONY: l c vs vs-cpu vs-gpu r xs xs-cpu xs-gpu pm
 l: ## Generate requirements.lock file
 	@./utils/scripts/generate_lock.sh
 
@@ -131,11 +131,23 @@ c: ## Check Python environment
 vs: ## Create vector store
 	@./utils/scripts/create_store.sh
 
+vs-cpu: ## Create vector store (CPU-only, isolated venv)
+	@./utils/scripts/create_store_cpu.sh
+
+vs-gpu: ## Create vector store (GPU/CUDA, isolated venv)
+	@./utils/scripts/create_store_gpu.sh
+
 r: ## Generate retriever
 	@./utils/scripts/create_retriever.sh
 
 xs: ## Create XML vector store
 	@./utils/scripts/create_xml_store.sh
+
+xs-cpu: ## Create XML vector store (CPU-only, isolated venv)
+	@./utils/scripts/create_xml_store_cpu.sh
+
+xs-gpu: ## Create XML vector store (GPU/CUDA, isolated venv)
+	@./utils/scripts/create_xml_store_gpu.sh
 
 pm: ## Prepare embedding model
 	@echo "Preparing embedding model..."
