@@ -172,7 +172,11 @@ echo "📦 Creating fresh Python environment..."
 python3.10 -m venv .venv
 . .venv/bin/activate
 pip install --upgrade pip
-pip install -r config/requirements.txt gunicorn
+if [ ! -f "config/requirements.lock" ]; then
+  echo "❌ Error: config/requirements.lock not found. Run 'make l' first."
+  exit 1
+fi
+pip install -r config/requirements.lock gunicorn
 
 echo "Checking embedding model configuration..."
 EMBEDDING_MODEL=$(grep "^EMBEDDING_MODEL=" "$APP_DIR_NEW/config/.env.production" | cut -d '"' -f 2)

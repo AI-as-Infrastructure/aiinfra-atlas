@@ -101,7 +101,11 @@ echo "Environment file updated"
 python3.10 -m venv .venv
 . .venv/bin/activate
 pip install --upgrade pip
-pip install -r config/requirements.txt gunicorn
+if [ ! -f "config/requirements.lock" ]; then
+  echo "❌ Error: config/requirements.lock not found. Run 'make l' first."
+  exit 1
+fi
+pip install -r config/requirements.lock gunicorn
 
 # Prepare embedding model if using default model
 EMBEDDING_MODEL=$(grep '^EMBEDDING_MODEL=' "config/.env.staging" | cut -d '=' -f 2- | tr -d '"')
@@ -131,6 +135,7 @@ WorkingDirectory=$APP_DIR
 Environment="PATH=$APP_DIR/.venv/bin"
 Environment="PYTHONPATH=$APP_DIR"
 EnvironmentFile=$APP_DIR/config/.env.staging
+Environment="CUDA_VISIBLE_DEVICES="
 ExecStart=$APP_DIR/.venv/bin/python -m gunicorn backend.app:app -k uvicorn.workers.UvicornWorker -w 4 -b 127.0.0.1:8000
 Restart=on-failure
 

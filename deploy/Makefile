@@ -80,7 +80,8 @@ define setup_load_test
 	fi
 	@if [ ! -f ".venv/bin/locust" ]; then \
 		echo "📥 Installing load test dependencies..."; \
-		.venv/bin/pip install -r config/requirements.txt psutil; \
+		if [ ! -f "config/requirements.lock" ]; then echo "❌ Missing config/requirements.lock. Run 'make l' first."; exit 1; fi; \
+		.venv/bin/pip install -r config/requirements.lock psutil; \
 	fi
 endef
 

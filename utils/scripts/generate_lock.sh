@@ -1,39 +1,43 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# Requirements lock file generation script
-set -e
+# Requirements lock file generation script (CPU-only, reproducible)
+set -euo pipefail
 
-echo "🔍 Checking virtual environment..."
+REQ_IN="config/requirements.txt"
+REQ_OUT="config/requirements.lock"
+TMP_VENV=".venv_lock"
 
-# Check if virtual environment exists
-if [ ! -d ".venv" ]; then
-    echo "📦 Creating virtual environment..."
-    python3 -m venv .venv
+if [ ! -f "$REQ_IN" ]; then
+        echo "❌ Error: $REQ_IN not found!"
+        exit 1
 fi
 
-# Activate virtual environment
-echo "🔌 Activating virtual environment..."
-source .venv/bin/activate
+# Prefer python3.10 for compatibility with deploy targets; fall back to python3
+PY_BIN="python3.10"
+if ! command -v $PY_BIN >/dev/null 2>&1; then
+    PY_BIN="python3"
+fi
 
-# Install pip-tools
+echo "📦 Creating temporary environment for lock generation using $PY_BIN..."
+rm -rf "$TMP_VENV" || true
+$PY_BIN -m venv "$TMP_VENV"
+
+echo "🔌 Activating temporary environment..."
+source "$TMP_VENV/bin/activate"
+pip install --upgrade pip
 echo "📥 Installing pip-tools..."
 pip install pip-tools
 
-# Check if requirements.txt exists
-if [ ! -f "config/requirements.txt" ]; then
-    echo "❌ Error: config/requirements.txt not found!"
-    exit 1
-fi
+# Force pure PyPI index; avoid any CUDA torch indexes from caller env
+export PIP_INDEX_URL="https://pypi.org/simple"
+unset PIP_EXTRA_INDEX_URL || true
+unset TORCH_CUDA_INDEX_URL || true
 
-# Generate lock file
-echo "🔒 Generating requirements.lock file..."
-echo "📝 Using config/requirements.txt as input..."
-pip-compile --verbose config/requirements.txt -o config/requirements.lock
+echo "🔒 Generating $REQ_OUT from $REQ_IN (CPU-only lock)..."
+pip-compile --verbose "$REQ_IN" -o "$REQ_OUT"
 
-if [ $? -eq 0 ]; then
-    echo "✅ Lock file generated successfully at config/requirements.lock"
-    echo "⚠️  WARNING: This file is machine-specific."
-else
-    echo "❌ Error: Failed to generate lock file"
-    exit 1
-fi 
+echo "🧹 Cleaning up temporary environment..."
+deactivate || true
+rm -rf "$TMP_VENV"
+
+echo "✅ Lock file generated successfully at $REQ_OUT"

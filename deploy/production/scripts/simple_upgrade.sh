@@ -58,7 +58,11 @@ chmod +x config/generate_vue_files.sh
 echo "🐍 Updating Python dependencies..."
 source .venv/bin/activate
 pip install --upgrade pip
-pip install -r config/requirements.txt
+if [ ! -f "config/requirements.lock" ]; then
+    echo "❌ Error: config/requirements.lock not found. Run 'make l' first."
+    exit 1
+fi
+pip install -r config/requirements.lock
 
 # Check if models directory exists and has required models
 echo "🔍 Checking model directory..."

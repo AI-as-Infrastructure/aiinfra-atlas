@@ -118,16 +118,12 @@ cd $APP_DIR
 python3.10 -m venv $APP_DIR/.venv
 source $APP_DIR/.venv/bin/activate
 pip install --upgrade pip
-
-# Install requirements
-if [ -f "$APP_DIR/requirements.txt" ]; then
-    pip install -r $APP_DIR/requirements.txt
-elif [ -f "$APP_DIR/config/requirements.txt" ]; then
-    pip install -r $APP_DIR/config/requirements.txt
-else
-    echo "ERROR: No requirements.txt found"
+if [ ! -f "$APP_DIR/config/requirements.lock" ]; then
+    echo "❌ Error: $APP_DIR/config/requirements.lock not found. Run 'make l' to generate it before deployment."
     exit 1
 fi
+echo "Installing from requirements.lock (locked dependencies, CPU default)..."
+pip install -r $APP_DIR/config/requirements.lock
 
 # Set up Python package structure
 echo "Setting up Python package structure..."
