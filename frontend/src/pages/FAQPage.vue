@@ -146,45 +146,53 @@ const faqs = [
     `
   },
   {
-    question: "Why do some questions seem ineffective while others produce high quality results?",
+    question: "How does hybrid search improve results over traditional vector search?",
     answer: `
       <p>
-        This is probably the biggest limitation of the current LLM RAG (Retrieval Augmented Generation) architecture, which uses HNSW vector search for document retrieval and LLM inferencing for question answering.
+        ATLAS now uses hybrid search combining both BM25 (keyword) and dense vector search with Reciprocal Rank Fusion (RRF) to significantly improve search quality and reduce the "search gap" that was present in earlier versions.
       </p>
       
-      <h4 style="color: black; font-size: 1.25rem; font-weight: 600; margin-top: 2rem; margin-bottom: 1.2rem;">The Core Issue</h4>
+      <h4 style="color: black; font-size: 1.25rem; font-weight: 600; margin-top: 2rem; margin-bottom: 1.2rem;">How Hybrid Search Works</h4>
       <p>
-        There's a disconnect between what the LLM understands semantically and what the HNSW search system can find. For example:
+        The system now performs two parallel searches for each query:
       </p>
-      <br>
       <ul>
-        <li><strong>Query that might produce poor results:</strong> "What parliamentary discussions addressed Aboriginal affairs in 1901?" → No or few results found</li>
-        <li><strong>Query that is more liklely to succeed:</strong> "Describe the debates related to Maori and the Treaty of Waitangi in New Zealand" → Rich, detailed results</li>
-      </ul>
-      <br>
-      <p>
-        Both queries ask about Indigenous peoples, but the search system performs literal matching rather than leveraging the LLM's semantic understanding that these are related topics. Depending on the specific terms used, the search may fail to retrieve relevant documents, leading to poor or no results. This is similar to the problem of 'prompt engineering', where the way a question is phrased can significantly impact the quality of the answer when quering LLMs, but is compounded by the fact that the LLM cannot communicate back to the search system to suggest alternative terms.
-      </p>
-      
-      <h4 style="color: black; font-size: 1.25rem; font-weight: 600; margin-top: 2rem; margin-bottom: 1.2rem;">Why This Happens</h4>
-      <ul>
-        <li><strong>Historical Terminology:</strong> Documents use period-specific language that may not match modern search terms</li>
-        <li><strong>One-Way Communication:</strong> The LLM cannot communicate back to the search system to suggest alternative terms</li>
-        <li><strong>Lexical vs Semantic Search:</strong> The current system relies more on exact word matching than conceptual understanding</li>
+        <li><strong>BM25 Keyword Search:</strong> Finds documents containing exact terms and synonyms from your query</li>
+        <li><strong>Dense Vector Search:</strong> Finds documents that are semantically similar, even if they use different terminology</li>
+        <li><strong>RRF Fusion:</strong> Combines and reranks results from both searches to provide the best of both approaches</li>
       </ul>
       
-      <h4 style="color: black; font-size: 1.25rem; font-weight: 600; margin-top: 2rem; margin-bottom: 1.2rem;">Current Status & Roadmap</h4>
-      <p>
-        While this isn't a major issue for the current phase of the project (which focuses on developing our understanding of testing and evaluation), it is on our roadmap for future improvement. We're tracking this issue and potential solutions on <a href="https://github.com/AI-as-Infrastructure/aiinfra-atlas/issues/35" target="_blank" rel="noopener noreferrer">GitHub #35</a>.
-      </p>
-      
-      <h4 style="color: black; font-size: 1.25rem; font-weight: 600; margin-top: 2rem; margin-bottom: 1.2rem;">Tips for Better Results</h4>
+      <h4 style="color: black; font-size: 1.25rem; font-weight: 600; margin-top: 2rem; margin-bottom: 1.2rem;">Benefits Over Vector-Only Search</h4>
       <ul>
-        <li><strong>Try historical terminology:</strong> "Aboriginal affairs" → "Native affairs" or "Māori"</li>
-        <li><strong>Be specific about countries:</strong> "Australian Parliament" or "New Zealand Parliament"</li>
-        <li><strong>Use multiple approaches:</strong> If one query fails, try rephrasing with different terms</li>
-        <li><strong>Browse different time periods:</strong> Terminology evolved over time</li>
+        <li><strong>Better Recall:</strong> Captures both exact term matches and semantic similarities</li>
+        <li><strong>Historical Terminology:</strong> BM25 excels at finding historical terms that might not have strong semantic embeddings</li>
+        <li><strong>Reduced Search Gaps:</strong> Less likely to miss relevant documents due to terminology mismatches</li>
+        <li><strong>Improved Precision:</strong> RRF fusion promotes documents that score well in both search methods</li>
       </ul>
+      
+      <h4 style="color: black; font-size: 1.25rem; font-weight: 600; margin-top: 2rem; margin-bottom: 1.2rem;">Examples of Improvement</h4>
+      <p>
+        Queries that previously struggled now benefit from hybrid search:
+      </p>
+      <ul>
+        <li><strong>Historical terms:</strong> "Aboriginal affairs" finds documents using both modern and historical terminology</li>
+        <li><strong>Conceptual queries:</strong> "Economic policy" matches both explicit policy discussions and related financial debates</li>
+        <li><strong>Cross-temporal searches:</strong> Better at bridging terminology changes over time periods</li>
+      </ul>
+      
+      <h4 style="color: black; font-size: 1.25rem; font-weight: 600; margin-top: 2rem; margin-bottom: 1.2rem;">Performance Considerations</h4>
+      <p>
+        While hybrid search improves results quality, it may be slightly slower than pure vector search due to:
+      </p>
+      <ul>
+        <li><strong>Dual Search Process:</strong> Running both BM25 and vector searches</li>
+        <li><strong>Fusion Overhead:</strong> RRF reranking requires additional computation</li>
+        <li><strong>Larger Candidate Pools:</strong> Processing more documents for better recall</li>
+      </ul>
+      
+      <p>
+        The improved search quality generally outweighs the modest performance cost, providing more comprehensive and accurate results for historical research queries.
+      </p>
     `
   },
   {
