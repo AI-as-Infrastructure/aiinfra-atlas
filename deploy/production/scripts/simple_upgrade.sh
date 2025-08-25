@@ -48,10 +48,12 @@ fi
 # Clean up any stale git lock from prior interruptions
 [ -f .git/index.lock ] && rm -f .git/index.lock || true
 
-# Refresh code non-interactively
-git fetch --prune origin
-git reset --hard origin/$GIT_BRANCH
-git lfs pull
+# Refresh code non-interactively (skip LFS to avoid hangs)
+echo "Fetching latest code (excluding LFS)..."
+GIT_LFS_SKIP_SMUDGE=1 git fetch --prune origin
+echo "Resetting to latest code (excluding LFS)..."
+GIT_LFS_SKIP_SMUDGE=1 git reset --hard origin/$GIT_BRANCH
+echo "✅ Code updated (LFS files skipped - use 'make upf' for full rebuild with LFS)"
 
 # 4. Always rebuild frontend for simplicity
 echo "🏗️ Rebuilding frontend..."
