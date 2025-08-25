@@ -1,0 +1,190 @@
+# Production Environment Configuration for ATLAS Load Testing
+
+# Environment Settings
+environment:
+  name: "production"
+  host: "${VITE_API_URL}"  # Uses VITE_API_URL from .env.production
+  api_version: "v1"
+
+# Authentication Configuration
+# Load tests assume VITE_USE_COGNITO_AUTH=false in .env files
+
+# Redis Configuration
+redis:
+  url: "${REDIS_URL}"
+  password: "${REDIS_PASSWORD}"
+  queue_name: "llm_request_queue"
+  ttl: 3600  # 1 hour
+
+# Load Testing Parameters
+load_test:
+  # User Distribution (percentages should sum to 100)
+  user_distribution:
+    question_users: 70      # Users primarily asking questions
+    feedback_users: 20      # Users primarily giving feedback
+    mixed_users: 10         # Users doing both
+  
+  # Load Patterns - Production test configurations
+  load_patterns:
+    # Production focus group ramp test
+    focus_group_ramp:
+      users: 30
+      spawn_rate: 2.5
+      duration: "20m"
+  
+  # Realistic User Behavior Patterns - Production optimized
+  user_behavior:
+    think_time:
+      min: 60000            # 1 minute minimum between questions
+      max: 300000           # 5 minutes maximum between questions
+      distribution: "normal" # Normal distribution around average
+      average: 180000       # 3 minutes average think time
+    
+    reading_time:
+      base_wpm: 200         # 200 words per minute (academic reading)
+      citation_bonus: 10000 # 10 seconds per citation review
+      min_reading: 10000    # 10 seconds minimum reading time
+      max_reading: 300000   # 5 minutes maximum reading time
+    
+    session_duration:
+      min: 300000           # 5 minutes minimum session
+      max: 1800000          # 30 minutes maximum session
+      average: 900000       # 15 minutes average session
+    
+    questions_per_session:
+      min: 1
+      max: 8
+      average: 3            # Average 3 questions per session
+    
+    natural_pauses:
+      enabled: true
+      probability: 0.3      # 30% chance of longer pause
+      duration: 300000      # 5 minute pause (user distraction)
+  
+  # Performance Targets - Production optimized
+  performance_targets:
+    response_time_p50: 12000  # ms (12s P50 for complete response - tighter than staging)
+    response_time_p95: 18000  # ms (18s P95 for complete response - tighter than staging)
+    response_time_p99: 22000  # ms (22s P99 for complete response - tighter than staging)
+    error_rate_max: 2.0       # percentage (2% max error rate - tighter than staging)
+    throughput_min: 0.6       # requests per second (higher than staging)
+    
+    # Streaming specific targets - production optimized
+    streaming_first_token_p50: 3000   # ms (3s P50 for first token)
+    streaming_first_token_p95: 5000   # ms (5s P95 for first token)
+    streaming_total_time_p50: 12000   # ms (12s P50 for complete response)
+    streaming_total_time_p95: 18000   # ms (18s P95 for complete response)
+    
+    # Infrastructure targets
+    memory_usage_max: 80.0              # percentage (tighter than staging)
+    cpu_usage_max: 80.0                 # percentage (tighter than staging)
+    
+    # Evaluation thresholds for pass/fail/borderline assessment
+    # Production-grade thresholds
+    success_rate:
+      pass_threshold: 98.0        # 98%+ success rate required (higher than staging)
+      borderline_threshold: 96.0  # 96-98% is borderline
+    
+    error_rate:
+      pass_threshold: 2.0         # <2% error rate required (stricter than staging)
+      borderline_threshold: 3.0   # 2-3% is borderline
+    
+    avg_response_time:
+      pass_threshold: 14000       # <14s average response time (stricter than staging)
+      borderline_threshold: 18000 # 14-18s is borderline
+    
+    p95_response_time:
+      pass_threshold: 18000       # <18s P95 response time (stricter than staging)
+      borderline_threshold: 22000 # 18-22s is borderline
+    
+    first_token_time_p95:
+      pass_threshold: 5000        # <5s P95 first token time (stricter than staging)
+      borderline_threshold: 7000  # 5-7s is borderline
+    
+    requests_per_second:
+      pass_threshold: 0.5         # >0.5 RPS (higher than staging)
+      borderline_threshold: 0.4   # 0.4-0.5 RPS is borderline
+
+# Test Data Configuration
+test_data:
+  corpus_filters:
+    - corpus: "hansard"
+      date_range:
+        start: "1900"
+        end: "2000"
+    - corpus: "hansard"
+      date_range:
+        start: "2000"
+        end: "2020"
+    - corpus: "all"
+  
+  question_types:
+    - "parliamentary_debates"
+    - "government_policy"
+    - "historical_events"
+    - "legislation"
+  
+  feedback_distribution:
+    thumbs_up: 70
+    thumbs_down: 30
+    with_comment: 25  # percentage of feedback with comments
+
+# Monitoring and Reporting
+monitoring:
+  metrics_export_interval: 30  # seconds
+  detailed_logging: true
+  export_format: "json"
+  
+  # Custom metrics collection
+  custom_metrics:
+    - "streaming_performance"
+    - "user_journey_completion"
+    - "infrastructure_monitoring"
+
+# Infrastructure Assumptions - Production 8 vCPU, 16GB RAM servers
+infrastructure:
+  backend_workers: 8              # Matching GUNICORN_WORKERS
+  redis_instances: 1
+  load_balancer: "nginx"
+  ssl_enabled: true
+  llm_max_concurrent: 20          # Matching production LLM_MAX_CONCURRENT
+  websocket_max_connections: 100  # Matching WEBSOCKET_MAX_CONNECTIONS
+  
+  # Expected bottlenecks
+  expected_bottlenecks:
+    - "llm_inference"
+    - "vector_search"
+    - "memory_pressure"
+
+# Safety Limits
+safety:
+  max_concurrent_users: 100
+  max_test_duration: "60m"
+  circuit_breaker:
+    error_threshold: 15.0  # percentage (stricter than staging)
+    timeout_threshold: 8000  # ms (stricter than staging)
+  
+  # Rate limiting - realistic human behavior
+  rate_limits:
+    requests_per_user_per_minute: 4    # Max 4 questions per minute (realistic)
+    concurrent_connections_per_user: 2  # Reduced concurrent connections
+
+# Environment Variables (reference - loaded from .env.production)
+env_vars:
+  VITE_API_URL: "${VITE_API_URL}"
+  VITE_USE_COGNITO_AUTH: "${VITE_USE_COGNITO_AUTH}"
+  REDIS_URL: "${REDIS_URL}"
+  REDIS_PASSWORD: "${REDIS_PASSWORD}"
+  BACKEND_LOG_LEVEL: "${BACKEND_LOG_LEVEL}"
+  CORS_ORIGINS: "${CORS_ORIGINS}"
+
+# Active Test Scenarios (used by Makefile targets)
+scenarios:
+  # Used by 'make ltfg-prod' - production focus group ramp test
+  focus_group_ramp:
+    description: "Production focus group ramp test - 30 users with infrastructure monitoring"
+    duration: "20m"
+    users: 30
+    spawn_rate: 2.5
+    user_types: ["question_users", "mixed_users"]
+    infrastructure_focus: true
