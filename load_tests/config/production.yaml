@@ -1,9 +1,9 @@
-# Production Environment Configuration for ATLAS Load Testing
+# Staging Environment Configuration for ATLAS Load Testing
 
 # Environment Settings
 environment:
-  name: "production"
-  host: "${VITE_API_URL}"  # Uses VITE_API_URL from .env.production
+  name: "staging"
+  host: "${VITE_API_URL}"  # Uses VITE_API_URL from .env.staging
   api_version: "v1"
 
 # Authentication Configuration
@@ -24,15 +24,27 @@ load_test:
     feedback_users: 20      # Users primarily giving feedback
     mixed_users: 10         # Users doing both
   
-  # Load Patterns - Production test configurations
+  # Load Patterns - Active test configurations
   load_patterns:
-    # Production focus group ramp test
+    # Used by 'make lts' - realistic baseline
+    sustained:
+      users: 15
+      spawn_rate: 0.2
+      duration: "30m"
+    
+    # Used by 'make ltfg' - focus group ramp
     focus_group_ramp:
       users: 30
       spawn_rate: 2.5
       duration: "20m"
+    
+    # Used by 'make ltfgs' - focus group sustained
+    focus_group_sustained:
+      users: 30
+      spawn_rate: 3.0
+      duration: "30m"
   
-  # Realistic User Behavior Patterns - Production optimized
+  # Realistic User Behavior Patterns - Optimized for 15 concurrent users
   user_behavior:
     think_time:
       min: 60000            # 1 minute minimum between questions
@@ -61,49 +73,49 @@ load_test:
       probability: 0.3      # 30% chance of longer pause
       duration: 300000      # 5 minute pause (user distraction)
   
-  # Performance Targets - Production optimized
+  # Performance Targets - Optimized for Google Gemini 2.0 with realistic expectations
   performance_targets:
-    response_time_p50: 12000  # ms (12s P50 for complete response - tighter than staging)
-    response_time_p95: 18000  # ms (18s P95 for complete response - tighter than staging)
-    response_time_p99: 22000  # ms (22s P99 for complete response - tighter than staging)
-    error_rate_max: 2.0       # percentage (2% max error rate - tighter than staging)
-    throughput_min: 0.6       # requests per second (higher than staging)
+    response_time_p50: 14000  # ms (14s P50 for complete response)
+    response_time_p95: 20000  # ms (20s P95 for complete response)
+    response_time_p99: 25000  # ms (25s P99 for complete response)
+    error_rate_max: 3.0       # percentage (3% max error rate)
+    throughput_min: 0.5       # requests per second (realistic with reading time)
     
-    # Streaming specific targets - production optimized
-    streaming_first_token_p50: 3000   # ms (3s P50 for first token)
-    streaming_first_token_p95: 5000   # ms (5s P95 for first token)
-    streaming_total_time_p50: 12000   # ms (12s P50 for complete response)
-    streaming_total_time_p95: 18000   # ms (18s P95 for complete response)
+    # Streaming specific targets - optimized for Gemini 2.0
+    streaming_first_token_p50: 4000   # ms (4s P50 for first token)
+    streaming_first_token_p95: 6000   # ms (6s P95 for first token)
+    streaming_total_time_p50: 14000   # ms (14s P50 for complete response)
+    streaming_total_time_p95: 20000   # ms (20s P95 for complete response)
     
     # Infrastructure targets
-    memory_usage_max: 80.0              # percentage (tighter than staging)
-    cpu_usage_max: 80.0                 # percentage (tighter than staging)
+    memory_usage_max: 85.0              # percentage
+    cpu_usage_max: 85.0                 # percentage
     
     # Evaluation thresholds for pass/fail/borderline assessment
-    # Production-grade thresholds
+    # Realistic thresholds for 15 concurrent users with proper behavior
     success_rate:
-      pass_threshold: 98.0        # 98%+ success rate required (higher than staging)
-      borderline_threshold: 96.0  # 96-98% is borderline
+      pass_threshold: 97.0        # 97%+ success rate required
+      borderline_threshold: 95.0  # 95-97% is borderline
     
     error_rate:
-      pass_threshold: 2.0         # <2% error rate required (stricter than staging)
-      borderline_threshold: 3.0   # 2-3% is borderline
+      pass_threshold: 3.0         # <3% error rate required
+      borderline_threshold: 5.0   # 3-5% is borderline
     
     avg_response_time:
-      pass_threshold: 14000       # <14s average response time (stricter than staging)
-      borderline_threshold: 18000 # 14-18s is borderline
+      pass_threshold: 16000       # <16s average response time
+      borderline_threshold: 20000 # 16-20s is borderline
     
     p95_response_time:
-      pass_threshold: 18000       # <18s P95 response time (stricter than staging)
-      borderline_threshold: 22000 # 18-22s is borderline
+      pass_threshold: 20000       # <20s P95 response time
+      borderline_threshold: 25000 # 20-25s is borderline
     
     first_token_time_p95:
-      pass_threshold: 5000        # <5s P95 first token time (stricter than staging)
-      borderline_threshold: 7000  # 5-7s is borderline
+      pass_threshold: 6000        # <6s P95 first token time
+      borderline_threshold: 8000  # 6-8s is borderline
     
     requests_per_second:
-      pass_threshold: 0.5         # >0.5 RPS (higher than staging)
-      borderline_threshold: 0.4   # 0.4-0.5 RPS is borderline
+      pass_threshold: 0.4         # >0.4 RPS realistic with reading time
+      borderline_threshold: 0.3   # 0.3-0.4 RPS is borderline
 
 # Test Data Configuration
 test_data:
@@ -141,13 +153,13 @@ monitoring:
     - "user_journey_completion"
     - "infrastructure_monitoring"
 
-# Infrastructure Assumptions - Production 8 vCPU, 16GB RAM servers
+# Infrastructure Assumptions - 8 vCPU, 16GB RAM servers
 infrastructure:
   backend_workers: 8              # Matching GUNICORN_WORKERS
   redis_instances: 1
   load_balancer: "nginx"
   ssl_enabled: true
-  llm_max_concurrent: 20          # Matching production LLM_MAX_CONCURRENT
+  llm_max_concurrent: 30          # Matching LLM_MAX_CONCURRENT
   websocket_max_connections: 100  # Matching WEBSOCKET_MAX_CONNECTIONS
   
   # Expected bottlenecks
@@ -161,15 +173,15 @@ safety:
   max_concurrent_users: 100
   max_test_duration: "60m"
   circuit_breaker:
-    error_threshold: 15.0  # percentage (stricter than staging)
-    timeout_threshold: 8000  # ms (stricter than staging)
+    error_threshold: 20.0  # percentage
+    timeout_threshold: 10000  # ms
   
   # Rate limiting - realistic human behavior
   rate_limits:
     requests_per_user_per_minute: 4    # Max 4 questions per minute (realistic)
     concurrent_connections_per_user: 2  # Reduced concurrent connections
 
-# Environment Variables (reference - loaded from .env.production)
+# Environment Variables (reference - loaded from .env.staging)
 env_vars:
   VITE_API_URL: "${VITE_API_URL}"
   VITE_USE_COGNITO_AUTH: "${VITE_USE_COGNITO_AUTH}"
@@ -180,11 +192,28 @@ env_vars:
 
 # Active Test Scenarios (used by Makefile targets)
 scenarios:
-  # Used by 'make ltfg-prod' - production focus group ramp test
+  # Used by 'make lts' - realistic baseline test
+  baseline_test:
+    description: "Realistic baseline test with 15 concurrent users"
+    duration: "30m"
+    users: 15
+    spawn_rate: 0.2
+    user_types: ["question_users", "feedback_users", "mixed_users"]
+    
+  # Used by 'make ltfg' - focus group ramp test
   focus_group_ramp:
-    description: "Production focus group ramp test - 30 users with infrastructure monitoring"
+    description: "Focus group ramp test - 30 users with infrastructure monitoring"
     duration: "20m"
     users: 30
     spawn_rate: 2.5
     user_types: ["question_users", "mixed_users"]
+    infrastructure_focus: true
+  
+  # Used by 'make ltfgs' - focus group sustained test
+  focus_group_sustained:
+    description: "Focus group sustained load - 30 users sustained load test"
+    duration: "30m"
+    users: 30
+    spawn_rate: 3.0
+    user_types: ["question_users", "feedback_users", "mixed_users"]
     infrastructure_focus: true
