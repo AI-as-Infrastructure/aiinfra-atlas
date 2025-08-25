@@ -58,9 +58,18 @@ echo "✅ Code updated (LFS files skipped - use 'make upf' for full rebuild with
 # 4. Always rebuild frontend for simplicity
 echo "🏗️ Rebuilding frontend..."
 cd frontend
-npm install
-export NODE_OPTIONS="--max_old_space_size=4096"
-npm run build
+echo "Installing npm dependencies..."
+timeout 300s npm install || {
+    echo "❌ npm install timed out"
+    exit 1
+}
+echo "Building frontend with optimized settings..."
+export NODE_OPTIONS="--max_old_space_size=4096 --no-deprecation"
+timeout 600s npm run build || {
+    echo "❌ Frontend build timed out or failed"
+    echo "Try running 'make upf' for full rebuild or check build manually"
+    exit 1
+}
 cd ..
 
 # Update frontend environment files
