@@ -34,15 +34,36 @@ set +a
 # Extract domain for final verification
 DOMAIN=$(echo "$VITE_API_URL" | sed -E 's|^https?://||; s|/$||')
 
-# 3. Update code
+# 3. Update code (non-interactive, safe)
 echo "🔄 Updating code..."
-git stash push -m "Production upgrade stash $(date)" || true
-git fetch origin
+
+# Only stash if there are local changes; guard with timeout to avoid hangs
+if ! git diff --quiet; then
+    echo "Stashing tracked changes only (10s timeout)..."
+    timeout 10s git stash push -m "Production upgrade stash $(date)" >/dev/null 2>&1 || \
+        echo "⚠️  Stash timed out/failed; continuing without stash"
+else
+    echo "No local changes to stash"
+fi
+
+# Clean up any stale git lock from prior interruptions
+[ -f .git/index.lock ] && rm -f .git/index.lock || true
+
+# Refresh code non-interactively
+git fetch --prune origin
 git reset --hard origin/$GIT_BRANCH
 git lfs pull
 
 # 5. FULL rebuild - Python environment
 echo "🐍 Rebuilding Python environment..."
+# Create venv if missing (supports fresh servers)
+if [ ! -d ".venv" ]; then
+    if command -v python3.10 >/dev/null 2>&1; then
+        python3.10 -m venv .venv
+    else
+        python3 -m venv .venv
+    fi
+fi
 source .venv/bin/activate
 pip install --upgrade pip
 if [ ! -f "config/requirements.lock" ]; then
