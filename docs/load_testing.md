@@ -5,11 +5,12 @@ A load testing framework for the ATLAS application using Locust, designed to tes
 ## Quick Start
 
 ```bash
-# Install dependencies (from project root - uses main requirements.txt)
-pip install -r config/requirements.txt
+# Install dependencies (automatically handled by make commands)
+# Run unified load test against staging
+make lts     # 30 users, 20min, realistic ramp up
 
-# Run realistic load test against staging
-make lts     # 15 users, 30min, realistic for 8vCPU/16GB
+# Run same test against production (requires auth disabled)
+make ltp     # 30 users, 20min, against production
 ```
 
 ## Architecture
@@ -18,7 +19,8 @@ make lts     # 15 users, 30min, realistic for 8vCPU/16GB
 load_tests/
 ├── locustfile.py                  # Main Locust configuration
 ├── config/
-│   └── staging.yaml              # Staging environment settings
+│   ├── staging.yaml              # Staging environment settings
+│   └── production.yaml           # Production environment settings
 ├── tasks/
 │   └── question_tasks.py         # Q&A endpoint testing tasks
 ├── utils/
@@ -39,8 +41,7 @@ The load testing framework implements realistic user behavior patterns through s
 - **Startup:** 5-30 second staggered delays to avoid thundering herd
 - **Reading Time:** 15 seconds to 3 minutes based on content length
 - **Key Tasks:**
-  - `POST /api/ask/stream` (60% of requests)
-  - `POST /api/query` (10% of requests)
+  - `POST /api/ask/stream` (streaming Q&A)
   - Health checks and diagnostics
 
 ### FeedbackUser & MixedFeedbackUser (35%)
@@ -116,8 +117,11 @@ VITE_USE_COGNITO_AUTH=false
 
 ### Primary Load Test
 ```bash
-# Realistic load test (recommended for 8vCPU/16GB)
-make lts     # 15 users, 30min, realistic human behavior
+# Unified load test (recommended for 8vCPU/16GB)
+make lts     # 30 users, 20min, realistic ramp up
+
+# Production load test (requires auth disabled)
+make ltp     # 30 users, 20min, against production
 ```
 
 ### Manual Commands
@@ -158,7 +162,7 @@ LOAD_TEST_CONFIG=staging locust -f locustfile.py \
 # Start locust without --headless flag to access http://localhost:8089
 
 # Command line monitoring
-make lts    # Automated reporting to reports/
+make lts    # Automated reporting to reports/ (30 users, staging)
 ```
 
 ### Report Generation
@@ -187,8 +191,8 @@ free -h     # Check swap usage
 
 ### Performance Issues
 ```bash
-# Test with reduced load
-make lts    # Start with 15 users
+# Test with unified load
+make lts    # 30 users with realistic ramp up
 
 # Check semantic success rates in reports
 cat reports/metrics_*.json | jq '.semantic_success_rate'
@@ -203,25 +207,26 @@ The framework automatically generates country-specific questions that match corp
 ## Hardware Recommendations
 
 ### Staging Environment
-- **8vCPU/16GB RAM**: Recommended for 15 concurrent users
-- **4vCPU/8GB RAM**: Limited to 8-10 concurrent users
+- **8vCPU/16GB RAM**: Recommended for 30 concurrent users (unified test)
+- **4vCPU/8GB RAM**: Limited to 15-20 concurrent users
 
 ### Production Environment
-- **16vCPU/32GB RAM**: Recommended for 30-40 concurrent users
+- **16vCPU/32GB RAM**: Recommended for 30+ concurrent users
 - **Load balancer**: For >50 concurrent users
 
 ## Safety Guidelines
 
 ### Staging Testing
-- **Maximum**: 25 concurrent users (with monitoring)
-- **Recommended**: 15 concurrent users
+- **Standard**: 30 concurrent users (unified test)
+- **Maximum**: 40 concurrent users (with monitoring)
 - **Monitor**: Memory usage, semantic success rates, response times
 - **Schedule**: During off-peak hours
 
 ### Production Testing
-- **Maximum**: 15 concurrent users
-- **Recommended**: 10 concurrent users
+- **Standard**: 30 concurrent users (unified test)
+- **Maximum**: 30 concurrent users
 - **Approval**: Required before testing
+- **Requirements**: Authentication must be disabled (VITE_USE_COGNITO_AUTH=false)
 - **Monitoring**: Business impact, user experience
 - **Schedule**: Low-traffic periods only
 

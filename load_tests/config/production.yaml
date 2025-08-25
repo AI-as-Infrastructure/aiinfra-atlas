@@ -1,9 +1,9 @@
-# Staging Environment Configuration for ATLAS Load Testing
+# Production Environment Configuration for ATLAS Load Testing
 
 # Environment Settings
 environment:
-  name: "staging"
-  host: "${VITE_API_URL}"  # Uses VITE_API_URL from .env.staging
+  name: "production"
+  host: "https://atlas-hansard.org"  # Production URL
   api_version: "v1"
 
 # Authentication Configuration
@@ -24,27 +24,15 @@ load_test:
     feedback_users: 20      # Users primarily giving feedback
     mixed_users: 10         # Users doing both
   
-  # Load Patterns - Active test configurations
+  # Unified Load Test Configuration
+  # Single test used by both staging (lts) and production (ltp)
   load_patterns:
-    # Used by 'make lts' - realistic baseline
-    sustained:
-      users: 15
-      spawn_rate: 0.2
-      duration: "30m"
-    
-    # Used by 'make ltfg' - focus group ramp
-    focus_group_ramp:
+    unified_test:
       users: 30
-      spawn_rate: 2.5
-      duration: "20m"
-    
-    # Used by 'make ltfgs' - focus group sustained
-    focus_group_sustained:
-      users: 30
-      spawn_rate: 3.0
-      duration: "30m"
+      spawn_rate: 2.5  # Realistic ramp up
+      duration: "20m"  # Sufficient for meaningful results
   
-  # Realistic User Behavior Patterns - Optimized for 15 concurrent users
+  # Realistic User Behavior Patterns - Optimized for 30 concurrent users
   user_behavior:
     think_time:
       min: 60000            # 1 minute minimum between questions
@@ -190,30 +178,12 @@ env_vars:
   BACKEND_LOG_LEVEL: "${BACKEND_LOG_LEVEL}"
   CORS_ORIGINS: "${CORS_ORIGINS}"
 
-# Active Test Scenarios (used by Makefile targets)
+# Unified Test Scenario (used by both make lts and make ltp)
 scenarios:
-  # Used by 'make lts' - realistic baseline test
-  baseline_test:
-    description: "Realistic baseline test with 15 concurrent users"
-    duration: "30m"
-    users: 15
-    spawn_rate: 0.2
-    user_types: ["question_users", "feedback_users", "mixed_users"]
-    
-  # Used by 'make ltfg' - focus group ramp test
-  focus_group_ramp:
-    description: "Focus group ramp test - 30 users with infrastructure monitoring"
+  unified_load_test:
+    description: "Unified load test - 30 users with realistic ramp up"
     duration: "20m"
     users: 30
     spawn_rate: 2.5
-    user_types: ["question_users", "mixed_users"]
-    infrastructure_focus: true
-  
-  # Used by 'make ltfgs' - focus group sustained test
-  focus_group_sustained:
-    description: "Focus group sustained load - 30 users sustained load test"
-    duration: "30m"
-    users: 30
-    spawn_rate: 3.0
     user_types: ["question_users", "feedback_users", "mixed_users"]
     infrastructure_focus: true

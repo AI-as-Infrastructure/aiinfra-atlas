@@ -173,45 +173,6 @@ class QuestionSubmissionUser(HttpUser):
         # Focus on core RAG functionality only
         self.ask_streaming_question()
 
-    @task(3)
-    def query_documents(self):
-        """Search documents directly"""
-        question = data_generator.generate_question()
-        corpus_filter = data_generator.generate_corpus_filter()
-        
-        query_data = {
-            "query": question,
-            "corpus_filter": corpus_filter,
-            "max_results": random.randint(5, 20)
-        }
-        
-        headers = {"Content-Type": "application/json"}
-        
-        start_time = time.time()
-        
-        with self.client.post(
-            "/api/query",
-            json=query_data,
-            headers=headers,
-            catch_response=True
-        ) as response:
-            
-            response_time = time.time() - start_time
-            
-            if response.status_code == 200:
-                try:
-                    data = response.json()
-                    if isinstance(data, dict) and "results" in data:
-                        response.success()
-                    else:
-                        response.failure("Unexpected response format")
-                except json.JSONDecodeError:
-                    response.failure("Invalid JSON response")
-            else:
-                response.failure(f"HTTP {response.status_code}")
-            
-            metrics_collector.record_request("query", response_time, response.status_code)
-    
     @task(5)
     def get_config(self):
         """Get application configuration"""
