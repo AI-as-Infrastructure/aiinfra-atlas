@@ -37,13 +37,12 @@ DOMAIN=$(echo "$VITE_API_URL" | sed -E 's|^https?://||; s|/$||')
 # 3. Update code (non-interactive, safe)
 echo "🔄 Updating code..."
 
-# Only stash if there are local changes; guard with timeout to avoid hangs
+# Skip stashing completely - just reset hard (safe for production upgrades)
 if ! git diff --quiet; then
-    echo "Stashing tracked changes only (10s timeout)..."
-    timeout 10s git stash push -m "Production upgrade stash $(date)" >/dev/null 2>&1 || \
-        echo "⚠️  Stash timed out/failed; continuing without stash"
+    echo "⚠️  Local changes detected - will be discarded by reset"
+    echo "Skipping stash due to LFS files - using reset instead"
 else
-    echo "No local changes to stash"
+    echo "No local changes detected"
 fi
 
 # Clean up any stale git lock from prior interruptions
