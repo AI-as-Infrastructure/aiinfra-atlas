@@ -220,18 +220,33 @@ class HansardRetriever(BaseRetriever):
     def _unique_id_from_meta(meta: Dict[str, Any]) -> str:
         return str(meta.get("id") or meta.get("doc_id") or meta.get("source_id") or meta.get("_id") or "unknown")
 
-    def _bm25_search_ids(self, query: str, k: int) -> List[Tuple[str, float]]:
+    def _bm25_search_ids(self, query: str, k: int, filter_dict: Optional[Dict[str, Any]] = None) -> List[Tuple[str, float]]:
         if not self._bm25_ready:
             return []
         import re
         TOKEN_RE = re.compile(r"\b\w+\b", re.UNICODE)
         tokens = [t.lower() for t in TOKEN_RE.findall(query)]
         scores = self._bm25.get_scores(tokens)
-        ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)[:k]
+        ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
+        
+        # Apply corpus filtering before selecting top-k
         out: List[Tuple[str, float]] = []
-        for rank_pos, (idx, _score) in enumerate(ranked):
+        rank_pos = 0
+        for idx, _score in ranked:
+            # Apply corpus filter if present
+            if filter_dict and isinstance(filter_dict, dict) and "corpus" in filter_dict:
+                doc_meta = self._bm25_docs[idx].get("metadata", {}) or {}
+                if doc_meta.get("corpus") != filter_dict["corpus"]:
+                    continue  # Skip documents not matching corpus filter
+            
             doc_id = self._bm25_docs[idx]["id"]
             out.append((doc_id, float(rank_pos)))
+            rank_pos += 1
+            
+            # Stop once we have k filtered results
+            if len(out) >= k:
+                break
+                
         return out
 
     def _materialize_docs_by_ids(self, ids: List[str], filter_dict: Optional[Dict[str, Any]]):
@@ -244,10 +259,7 @@ class HansardRetriever(BaseRetriever):
             text = rec.get("text", "")
             meta = rec.get("metadata", {}) or {}
 
-            # Apply simple corpus filter if present
-            if filter_dict and isinstance(filter_dict, dict) and "corpus" in filter_dict:
-                if meta.get("corpus") != filter_dict["corpus"]:
-                    continue
+            # Corpus filtering is now handled upstream in search methods
 
             # Lazy construct a minimal Document-like dict used downstream
             result.append(type("_Doc", (), {"page_content": text, "metadata": meta})())
@@ -288,7 +300,7 @@ class HansardRetriever(BaseRetriever):
             t0 = time.perf_counter()
             dense_ranked = self._dense_search_ids(query, per_side, filter_dict)
             t1 = time.perf_counter()
-            bm25_ranked = self._bm25_search_ids(query, per_side)
+            bm25_ranked = self._bm25_search_ids(query, per_side, filter_dict)
             t2 = time.perf_counter()
 
             if not dense_ranked and not bm25_ranked:
