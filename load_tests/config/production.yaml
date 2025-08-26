@@ -134,6 +134,7 @@ monitoring:
   metrics_export_interval: 30  # seconds
   detailed_logging: true
   export_format: "json"
+  infrastructure_source: "local_system"  # Collect infra metrics from load generator host
   
   # Custom metrics collection
   custom_metrics:

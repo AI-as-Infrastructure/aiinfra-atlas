@@ -260,3 +260,5 @@ def register_telemetry_api(app):
     """Register the telemetry API endpoints with the FastAPI app"""
     app.include_router(router)
     logger.debug("Registered telemetry API endpoints")
+
+

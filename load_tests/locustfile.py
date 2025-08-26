@@ -103,6 +103,11 @@ def on_test_start(environment, **kwargs):
     metrics_collector.reset()
     
     # Start infrastructure monitoring
+    # Determine infra monitoring mode from config (default: local_system)
+    infra_source = (config.get('monitoring', {}).get('infrastructure_source')
+                    if isinstance(config.get('monitoring'), dict) else None)
+    os.environ['LOAD_TEST_INFRA_MODE'] = str(infra_source or 'local_system')
+    metrics_collector.set_infra_mode(os.environ['LOAD_TEST_INFRA_MODE'])
     infrastructure_monitor.start_monitoring()
     
     # Set up environment variables based on config

@@ -28,7 +28,9 @@ class MetricsCollector:
         self.infrastructure_start_time = time.time()
         self.baseline_memory = None
         self.baseline_cpu = None
-        
+        # Monitoring mode: 'local_system' (default) or 'gunicorn_workers'
+        self.infra_mode = os.getenv('LOAD_TEST_INFRA_MODE', 'local_system').strip().lower()
+
         # Response time windows for percentile calculation
         self.response_times = {
             'ask_stream': deque(maxlen=1000),
@@ -48,6 +50,13 @@ class MetricsCollector:
             'async_status': deque(maxlen=1000),
             'websocket': deque(maxlen=1000)
         }
+
+    def set_infra_mode(self, mode: str):
+        """Set infrastructure monitoring mode at runtime."""
+        try:
+            self.infra_mode = (mode or 'local_system').strip().lower()
+        except Exception:
+            self.infra_mode = 'local_system'
     
     def record_request(self, endpoint: str, response_time: float, status_code: int, error: str = None):
         """Record request metrics"""
@@ -139,58 +148,63 @@ class MetricsCollector:
         return workers
 
     def record_infrastructure_metrics(self):
-        """Record current infrastructure metrics for Gunicorn workers only"""
+        """Record current infrastructure metrics.
+
+        Modes:
+        - local_system: capture OS-wide CPU/memory on the load generator host
+        - gunicorn_workers: aggregate over Gunicorn worker processes on this host
+        """
         try:
             timestamp = time.time()
             
-            # Find Gunicorn worker processes
-            workers = self._find_gunicorn_workers()
+            mode = self.infra_mode
+            workers = []
+            memory_total_gb = None
             
-            if not workers:
-                print("Warning: No Gunicorn workers found, falling back to system metrics")
-                # Fallback to system-wide metrics if no workers found
+            if mode == 'gunicorn_workers':
+                # Find Gunicorn worker processes
+                workers = self._find_gunicorn_workers()
+            
+            if mode == 'local_system' or not workers:
+                # System-wide metrics on this host
                 memory = psutil.virtual_memory()
-                memory_percent = memory.percent
+                memory_percent = float(memory.percent)
                 memory_available_gb = memory.available / (1024**3)
                 memory_used_gb = memory.used / (1024**3)
-                cpu_percent = psutil.cpu_percent(interval=0.1)
-                cpu_count = int(os.environ.get('GUNICORN_WORKERS', psutil.cpu_count()))
+                memory_total_gb = memory.total / (1024**3)
+                # Use a small interval to get a non-zero CPU sample
+                cpu_percent = float(psutil.cpu_percent(interval=0.5))
+                cpu_count = psutil.cpu_count(logical=True) or 1
                 worker_count = 0
                 worker_memory_mb = 0
             else:
-                # Calculate metrics for Gunicorn workers only
-                total_worker_memory = 0
-                total_cpu_percent = 0
+                # Aggregate metrics for Gunicorn workers on this host
+                total_worker_memory = 0.0
+                total_cpu_percent = 0.0
                 worker_count = len(workers)
-                
                 for worker in workers:
                     try:
-                        # Worker memory usage
                         worker_memory_info = worker.memory_info()
-                        total_worker_memory += worker_memory_info.rss
-                        
-                        # Worker CPU usage
-                        worker_cpu = worker.cpu_percent()
-                        total_cpu_percent += worker_cpu
+                        total_worker_memory += float(worker_memory_info.rss)
+                        # cpu_percent without interval returns last computed value; give a tiny interval
+                        total_cpu_percent += float(worker.cpu_percent(interval=0.1))
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        worker_count -= 1  # Reduce count if worker is no longer accessible
+                        worker_count = max(worker_count - 1, 0)
                         continue
-                
-                # Convert metrics
                 worker_memory_mb = total_worker_memory / (1024**2)
                 memory_used_gb = total_worker_memory / (1024**3)
-                
-                # Calculate memory percentage based on configured worker memory limits
                 max_worker_memory_mb = int(os.environ.get('GUNICORN_MAX_WORKER_MEMORY_MB', 1800))
-                max_total_memory_mb = max_worker_memory_mb * worker_count
-                memory_percent = (worker_memory_mb / max_total_memory_mb * 100) if max_total_memory_mb > 0 else 0
-                
-                # Memory available is remaining allocated memory
-                memory_available_gb = (max_total_memory_mb - worker_memory_mb) / 1024
-                
-                # CPU metrics
-                cpu_percent = total_cpu_percent  # Total CPU usage across all workers
-                cpu_count = int(os.environ.get('GUNICORN_WORKERS', worker_count))
+                max_total_memory_mb = max_worker_memory_mb * max(worker_count, 1)
+                memory_percent = (worker_memory_mb / max_total_memory_mb * 100.0) if max_total_memory_mb > 0 else 0.0
+                memory_available_gb = max((max_total_memory_mb - worker_memory_mb) / 1024.0, 0.0)
+                cpu_percent = total_cpu_percent  # summed across workers
+                cpu_count = int(os.environ.get('GUNICORN_WORKERS', worker_count or 1))
+            
+            # Clamp memory percent to [0, 100] to avoid confusing values in reports
+            try:
+                memory_percent = max(0.0, min(100.0, float(memory_percent)))
+            except Exception:
+                pass
             
             # Disk I/O (keep system-wide as workers share disk)
             disk_io = psutil.disk_io_counters()
@@ -213,7 +227,7 @@ class MetricsCollector:
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
             
-            # Set baseline on first measurement
+        # Set baseline on first measurement
             if self.baseline_memory is None:
                 self.baseline_memory = memory_percent
                 self.baseline_cpu = cpu_percent
@@ -224,13 +238,14 @@ class MetricsCollector:
                     'percent': memory_percent,
                     'used_gb': memory_used_gb,
                     'available_gb': memory_available_gb,
+            'total_gb': memory_total_gb,
                     'baseline_delta': memory_percent - self.baseline_memory
                 })
                 
                 self.infrastructure_metrics['cpu_usage'].append({
                     'timestamp': timestamp,
                     'percent': cpu_percent,
-                    'core_count': cpu_count,
+            'core_count': cpu_count,
                     'baseline_delta': cpu_percent - self.baseline_cpu
                 })
                 
@@ -277,26 +292,39 @@ class MetricsCollector:
         peak_memory = max(memory_readings) if memory_readings else 0
         peak_cpu = max(cpu_readings) if cpu_readings else 0
         
-        # Calculate infrastructure load percentage based on worker allocation
-        # Memory load based on configured worker memory limits
-        max_worker_memory_mb = int(os.environ.get('GUNICORN_MAX_WORKER_MEMORY_MB', 1800))
-        worker_count = int(os.environ.get('GUNICORN_WORKERS', 8))
-        max_total_memory_mb = max_worker_memory_mb * worker_count
-        
-        # For memory, peak_memory is already calculated as percentage of allocated memory
-        memory_load_percent = min(peak_memory, 100)  # Already a percentage of allocated memory
-        
-        # For CPU, calculate based on worker capacity (each worker can use 100% of one core)
-        max_cpu_percent = worker_count * 100  # Each worker can use 100% of a core
-        cpu_load_percent = (peak_cpu / max_cpu_percent * 100) if max_cpu_percent > 0 else 0
+        # Determine load normalization based on monitoring mode
+        mode = self.infra_mode
+        if mode == 'local_system':
+            # Normalize against host capacity
+            total_cores = latest_cpu.get('core_count', psutil.cpu_count(logical=True) or 1)
+            # peak_memory is already system-wide percent
+            memory_load_percent = min(max(peak_memory, 0), 100)
+            max_cpu_percent = max(int(total_cores) * 100, 100)
+            cpu_load_percent = (peak_cpu / max_cpu_percent * 100) if max_cpu_percent > 0 else 0
+            allocated_memory_gb = latest_memory.get('total_gb') or 0
+            worker_count = int(total_cores)
+            max_memory_per_worker_mb = None
+            monitoring_mode = 'local_system'
+        else:
+            # Normalize against configured worker allocation
+            max_worker_memory_mb = int(os.environ.get('GUNICORN_MAX_WORKER_MEMORY_MB', 1800))
+            worker_count = int(os.environ.get('GUNICORN_WORKERS', 8))
+            max_total_memory_mb = max_worker_memory_mb * max(worker_count, 1)
+            # peak_memory is percent of allocated memory
+            memory_load_percent = min(max(peak_memory, 0), 100)
+            max_cpu_percent = max(worker_count * 100, 100)
+            cpu_load_percent = (peak_cpu / max_cpu_percent * 100) if max_cpu_percent > 0 else 0
+            allocated_memory_gb = max_total_memory_mb / 1024.0
+            max_memory_per_worker_mb = max_worker_memory_mb
+            monitoring_mode = 'worker_specific'
         
         return {
             'test_duration_minutes': (time.time() - self.infrastructure_start_time) / 60,
             'worker_configuration': {
                 'gunicorn_workers': worker_count,
-                'max_memory_per_worker_mb': max_worker_memory_mb,
-                'total_allocated_memory_mb': max_total_memory_mb,
-                'monitoring_mode': 'worker_specific'
+                'max_memory_per_worker_mb': max_memory_per_worker_mb if max_memory_per_worker_mb is not None else 0,
+                'total_allocated_memory_mb': int(allocated_memory_gb * 1024) if allocated_memory_gb else 0,
+                'monitoring_mode': monitoring_mode
             },
             'memory': {
                 'current_percent': latest_memory['percent'],
@@ -305,7 +333,7 @@ class MetricsCollector:
                 'avg_percent': sum(memory_readings) / len(memory_readings),
                 'baseline_delta': latest_memory['baseline_delta'],
                 'load_percentage': min(memory_load_percent, 100),  # Cap at 100%
-                'allocated_memory_gb': max_total_memory_mb / 1024
+                'allocated_memory_gb': allocated_memory_gb or 0
             },
             'cpu': {
                 'current_percent': latest_cpu['percent'],
