@@ -29,10 +29,14 @@ reports/output/*
 # Chroma database directories - exclude all binary DB files (too large for git)
 backend/chroma_db/
 */chroma_db/
-# Exclude chromadb completely (not suitable for git/LFS)
+# Exclude chromadb runtime changes but allow baseline files
 backend/targets/chroma_db/
 targets/chroma_db/
-!backend/targets/chroma_db/.gitkeep
+# Allow baseline chroma_db files for initial setup
+!backend/targets/chroma_db/chroma.sqlite3
+!backend/targets/chroma_db/1240b255-4bfa-405f-916a-0101f7283624/
+!backend/targets/chroma_db/1240b255-4bfa-405f-916a-0101f7283624/*.bin
+!backend/targets/chroma_db/1240b255-4bfa-405f-916a-0101f7283624/*.pickle
 # SQLite WAL and shared memory files
 *.sqlite3-wal
 *.sqlite3-shm
