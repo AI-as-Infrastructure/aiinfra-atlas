@@ -73,7 +73,6 @@ def _get_default_config() -> Dict[str, Any]:
     """Get default configuration values."""
     return {
         "ATLAS_VERSION": "1.0.0",
-        "system_prompt": "You are an assistant answering questions about historical parliamentary debates.",
         "retriever_config": {
             "embedding_model": "Livingwithmachines/bert_1890_1900",
             "search_type": "similarity",
@@ -378,9 +377,8 @@ def get_llm_config() -> LLMConfig:
     })
 
 def get_system_prompt() -> str:
-    """Get the system prompt."""
-    config = get_config()
-    return config.get("system_prompt", "")
+    """Get the system prompt from system_prompts.py - no fallback."""
+    return system_prompt
 
 def get_corpus_options() -> List[CorpusOption]:
     """Get available corpus options."""
