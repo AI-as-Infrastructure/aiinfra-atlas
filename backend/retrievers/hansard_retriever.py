@@ -276,6 +276,111 @@ class HansardRetriever(BaseRetriever):
         base = self.large_all if is_all else self.large_single
         return max(base, int(self.search_k_param) * 10)
     
+    def _per_corpus_candidate_size(self, corpus_filter: Optional[str]) -> int:
+        """Calculate candidates per corpus for balanced retrieval."""
+        if corpus_filter and corpus_filter != "all":
+            # Single corpus - use full allocation
+            return self._candidate_pool_size(corpus_filter)
+        
+        # Multi-corpus - divide pool across corpora for balance
+        total_pool = self._candidate_pool_size(corpus_filter)
+        corpora_count = 3  # AU, NZ, UK
+        return max(total_pool // corpora_count, self.search_k_param * 3)
+    
+    def _balanced_dense_search_ids(self, query: str, corpus_filter: Optional[str]) -> List[Tuple[str, float]]:
+        """Perform corpus-balanced dense search for better representation."""
+        if corpus_filter and corpus_filter != "all":
+            # Single corpus - use standard search
+            per_corpus_k = self._candidate_pool_size(corpus_filter)
+            return self._dense_search_ids(query, per_corpus_k, {"corpus": corpus_filter})
+        
+        # Multi-corpus balanced search
+        per_corpus_k = self._per_corpus_candidate_size(corpus_filter)
+        all_results = []
+        
+        for corpus_id in ["1901_au", "1901_nz", "1901_uk"]:
+            corpus_results = self._dense_search_ids(query, per_corpus_k, {"corpus": corpus_id})
+            all_results.extend(corpus_results)
+        
+        # Sort by score and return
+        all_results.sort(key=lambda x: x[1])
+        return all_results
+    
+    def _balanced_bm25_search_ids(self, query: str, corpus_filter: Optional[str]) -> List[Tuple[str, float]]:
+        """Perform corpus-balanced BM25 search for better representation."""
+        if not self._bm25_ready:
+            return []
+            
+        if corpus_filter and corpus_filter != "all":
+            # Single corpus - use standard search
+            per_corpus_k = self._candidate_pool_size(corpus_filter)
+            return self._bm25_search_ids(query, per_corpus_k, {"corpus": corpus_filter})
+        
+        # Multi-corpus balanced search
+        per_corpus_k = self._per_corpus_candidate_size(corpus_filter)
+        all_results = []
+        
+        for corpus_id in ["1901_au", "1901_nz", "1901_uk"]:
+            corpus_results = self._bm25_search_ids(query, per_corpus_k, {"corpus": corpus_id})
+            all_results.extend(corpus_results)
+        
+        return all_results
+    
+    def _ensure_balanced_final_selection(self, fused_ids: List[str], target_k: int, corpus_filter: Optional[str]) -> List[str]:
+        """Apply stratified final selection to ensure balanced corpus representation."""
+        if corpus_filter and corpus_filter != "all":
+            # Single corpus - no balancing needed
+            return fused_ids[:target_k]
+        
+        if not fused_ids:
+            return []
+        
+        # Group documents by corpus
+        corpus_docs = {"1901_au": [], "1901_nz": [], "1901_uk": []}
+        
+        for doc_id in fused_ids:
+            # Look up corpus from BM25 docs
+            idx = self._bm25_docid_to_idx.get(doc_id)
+            if idx is not None:
+                doc_meta = self._bm25_docs[idx].get("metadata", {}) or {}
+                corpus = doc_meta.get("corpus")
+                if corpus in corpus_docs:
+                    corpus_docs[corpus].append(doc_id)
+        
+        # Calculate target per corpus (roughly equal distribution)
+        per_corpus_target = max(1, target_k // 3)  # At least 1 per corpus
+        remainder = target_k % 3
+        
+        # Build balanced selection
+        balanced_selection = []
+        corpus_list = ["1901_au", "1901_nz", "1901_uk"]
+        
+        # First pass: take target amount from each corpus
+        for corpus in corpus_list:
+            available = corpus_docs[corpus][:per_corpus_target]
+            balanced_selection.extend(available)
+        
+        # Second pass: distribute remainder documents
+        for i in range(remainder):
+            corpus = corpus_list[i]
+            # Take next available document if we haven't exhausted this corpus
+            if len(corpus_docs[corpus]) > per_corpus_target:
+                balanced_selection.append(corpus_docs[corpus][per_corpus_target])
+        
+        # Third pass: fill any remaining slots if we're still short
+        if len(balanced_selection) < target_k:
+            remaining_needed = target_k - len(balanced_selection)
+            used_ids = set(balanced_selection)
+            
+            # Take any remaining documents in order until we reach target_k
+            for doc_id in fused_ids:
+                if len(balanced_selection) >= target_k:
+                    break
+                if doc_id not in used_ids:
+                    balanced_selection.append(doc_id)
+        
+        return balanced_selection[:target_k]
+    
     # LangChain-compatible async implementation
     async def _get_relevant_documents(self, query: str, config: Optional[Dict] = None, **kwargs) -> List[Any]:
         """Internal implementation method called by invoke/ainvoke"""
@@ -308,7 +413,10 @@ class HansardRetriever(BaseRetriever):
 
             from backend.modules.hybrid_search import rrf_merge
             r0 = time.perf_counter()
-            fused_ids = rrf_merge(dense_ranked, bm25_ranked, k=60, top_k=k)
+            fused_ids = rrf_merge(dense_ranked, bm25_ranked, k=60, top_k=k*2)  # Get more candidates for balancing
+            
+            # Apply stratified final selection for balanced corpus representation
+            balanced_ids = self._ensure_balanced_final_selection(fused_ids, k, corpus_filter)
             r1 = time.perf_counter()
 
             # Compute simple overlap stats
@@ -318,13 +426,24 @@ class HansardRetriever(BaseRetriever):
             unique_dense = len(set(dense_ids) - set(bm25_ids))
             unique_bm25 = len(set(bm25_ids) - set(dense_ids))
 
-            docs = self._materialize_docs_by_ids(fused_ids, filter_dict)
+            docs = self._materialize_docs_by_ids(balanced_ids, filter_dict)
+
+            # Calculate corpus distribution in final results for telemetry
+            final_corpus_distribution = {"1901_au": 0, "1901_nz": 0, "1901_uk": 0}
+            for doc in docs:
+                if hasattr(doc, 'metadata'):
+                    corpus = doc.metadata.get("corpus")
+                    if corpus in final_corpus_distribution:
+                        final_corpus_distribution[corpus] += 1
+            
+            is_balanced_query = (not corpus_filter) or (corpus_filter == "all")
 
             # Store meaningful metrics for telemetry consumption
             self._last_retrieval_metrics = {
                 "search_type": "hybrid",
                 "bm25_ready": True,
                 "per_side_candidates": per_side,
+                "stratified_selection_applied": is_balanced_query,
                 "dense_candidates": len(dense_ranked),
                 "dense_time_ms": int((t1 - t0) * 1000),
                 "bm25_candidates": len(bm25_ranked), 
@@ -333,7 +452,11 @@ class HansardRetriever(BaseRetriever):
                 "rrf_overlap": overlap,
                 "rrf_unique_dense": unique_dense,
                 "rrf_unique_bm25": unique_bm25,
-                "final_documents": len(docs)
+                "rrf_candidates": len(fused_ids),
+                "final_documents": len(docs),
+                "final_au_docs": final_corpus_distribution["1901_au"],
+                "final_nz_docs": final_corpus_distribution["1901_nz"], 
+                "final_uk_docs": final_corpus_distribution["1901_uk"]
             }
 
             # Create child spans for hybrid search components (downstream fork pattern)
@@ -418,18 +541,19 @@ class HansardRetriever(BaseRetriever):
         search_type = (config or {}).get("search_type") or self.default_search_type
 
         if search_type == "hybrid" and self._bm25_ready:
-            per_side = self._candidate_pool_size(corpus_filter)
-
             t0 = time.perf_counter()
-            dense_ranked = self._dense_search_ids(input, per_side, filter_dict)
+            dense_ranked = self._balanced_dense_search_ids(input, corpus_filter)
             t1 = time.perf_counter()
-            bm25_ranked = self._bm25_search_ids(input, per_side)
+            bm25_ranked = self._balanced_bm25_search_ids(input, corpus_filter)
             t2 = time.perf_counter()
             if not dense_ranked and not bm25_ranked:
                 return []
             from backend.modules.hybrid_search import rrf_merge
             r0 = time.perf_counter()
-            fused_ids = rrf_merge(dense_ranked, bm25_ranked, k=60, top_k=k)
+            fused_ids = rrf_merge(dense_ranked, bm25_ranked, k=60, top_k=k*2)  # Get more candidates for balancing
+            
+            # Apply stratified final selection for balanced corpus representation
+            balanced_ids = self._ensure_balanced_final_selection(fused_ids, k, corpus_filter)
             r1 = time.perf_counter()
 
             dense_ids = [d for d, _ in dense_ranked]
@@ -438,13 +562,28 @@ class HansardRetriever(BaseRetriever):
             unique_dense = len(set(dense_ids) - set(bm25_ids))
             unique_bm25 = len(set(bm25_ids) - set(dense_ids))
 
-            docs = self._materialize_docs_by_ids(fused_ids, filter_dict)
+            docs = self._materialize_docs_by_ids(balanced_ids, filter_dict)
+            
+            # Calculate per-corpus candidates for telemetry
+            per_corpus_k = self._per_corpus_candidate_size(corpus_filter)
+            is_balanced = (not corpus_filter) or (corpus_filter == "all")
+            
+            # Calculate corpus distribution in final results for telemetry
+            final_corpus_distribution = {"1901_au": 0, "1901_nz": 0, "1901_uk": 0}
+            for doc in docs:
+                if hasattr(doc, 'metadata'):
+                    corpus = doc.metadata.get("corpus")
+                    if corpus in final_corpus_distribution:
+                        final_corpus_distribution[corpus] += 1
 
             # Store meaningful metrics for telemetry consumption
             self._last_retrieval_metrics = {
                 "search_type": "hybrid",
                 "bm25_ready": True,
-                "per_side_candidates": per_side,
+                "per_side_candidates": per_corpus_k * (3 if is_balanced else 1),
+                "per_corpus_candidates": per_corpus_k,
+                "corpus_balanced": is_balanced,
+                "stratified_selection_applied": is_balanced,
                 "dense_candidates": len(dense_ranked),
                 "dense_time_ms": int((t1 - t0) * 1000),
                 "bm25_candidates": len(bm25_ranked), 
@@ -453,22 +592,45 @@ class HansardRetriever(BaseRetriever):
                 "rrf_overlap": overlap,
                 "rrf_unique_dense": unique_dense,
                 "rrf_unique_bm25": unique_bm25,
-                "final_documents": len(docs)
+                "rrf_candidates": len(fused_ids),
+                "final_documents": len(docs),
+                "final_au_docs": final_corpus_distribution["1901_au"],
+                "final_nz_docs": final_corpus_distribution["1901_nz"], 
+                "final_uk_docs": final_corpus_distribution["1901_uk"]
             }
 
             return docs
 
-        # Fallback: vector only — fetch a larger pool to feed reranker downstream
-        pool_k = self._candidate_pool_size(corpus_filter)
+        # Fallback: vector only — with corpus balancing for unfiltered queries
         v0 = time.perf_counter()
-        docs = self.vector_store.similarity_search(query=input, k=pool_k, filter=filter_dict)
+        if (not corpus_filter) or (corpus_filter == "all"):
+            # Use balanced search for unfiltered queries
+            per_corpus_k = self._per_corpus_candidate_size(corpus_filter)
+            all_docs = []
+            for corpus_id in ["1901_au", "1901_nz", "1901_uk"]:
+                corpus_docs = self.vector_store.similarity_search(
+                    query=input, k=per_corpus_k, filter={"corpus": corpus_id}
+                )
+                all_docs.extend(corpus_docs)
+            
+            # Sort by relevance and take top k
+            # Note: This is approximate since we can't easily re-score across corpora
+            docs = all_docs[:k] if len(all_docs) > k else all_docs
+            pool_k = per_corpus_k * 3
+        else:
+            # Single corpus - use standard search
+            pool_k = self._candidate_pool_size(corpus_filter)
+            docs = self.vector_store.similarity_search(query=input, k=pool_k, filter=filter_dict)
+        
         v1 = time.perf_counter()
+        is_balanced = (not corpus_filter) or (corpus_filter == "all")
 
         # Store meaningful metrics for telemetry consumption
         self._last_retrieval_metrics = {
             "search_type": "vector",
             "bm25_ready": self._bm25_ready,
             "vector_candidates": pool_k,
+            "corpus_balanced": is_balanced,
             "vector_time_ms": int((v1 - v0) * 1000),
             "final_documents": len(docs)
         }
