@@ -86,8 +86,8 @@ class LoadTestEvaluator:
                 higher_is_better=False
             ),
             'p95_response_time': Threshold(
-                pass_value=40000,     # <40s P95 is excellent for research queries
-                borderline_value=60000, # 40-60s is acceptable for complex research
+                pass_value=20000,     # <20s P95 is excellent for research queries
+                borderline_value=30000, # 20-30s is acceptable for complex research
                 unit="ms",
                 higher_is_better=False
             ),
@@ -106,8 +106,8 @@ class LoadTestEvaluator:
                 higher_is_better=False
             ),
             'p95_success_response_time': Threshold(
-                pass_value=40000,     # <40s P95 for successful requests
-                borderline_value=60000, # 40-60s is acceptable for research
+                pass_value=20000,     # <20s P95 for successful requests
+                borderline_value=30000, # 20-30s is acceptable for research
                 unit="ms",
                 higher_is_better=False
             ),
