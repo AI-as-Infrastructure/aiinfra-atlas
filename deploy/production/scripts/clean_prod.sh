@@ -80,16 +80,10 @@ sudo rm -rf $APP_DIR
 # Remove logs
 sudo rm -rf /var/log/$APP_NAME
 
-# Remove SSL certificates (Let's Encrypt)
-echo "Removing SSL certificates..."
-if [ -d "/etc/letsencrypt/live" ]; then
-    # Remove certificates for any atlas-related domains
-    sudo find /etc/letsencrypt/live -name "*atlas*" -type d -exec rm -rf {} + 2>/dev/null || true
-    # Remove renewal configs
-    sudo find /etc/letsencrypt/renewal -name "*atlas*" -type f -exec rm -f {} + 2>/dev/null || true
-    # Remove archive files
-    sudo find /etc/letsencrypt/archive -name "*atlas*" -type d -exec rm -rf {} + 2>/dev/null || true
-fi
+# Preserve SSL certificates (Let's Encrypt) to avoid rate limits
+echo "⚠️  Preserving SSL certificates (Let's Encrypt) to avoid rate limits..."
+echo "   If you need to remove certificates, do it manually with:"
+echo "   sudo certbot delete --cert-name <domain>"
 
 # Clean up any temp files
 sudo rm -f /tmp/.env.production /tmp/gunicorn.service /tmp/llm-worker.service /tmp/nginx.conf

@@ -18,8 +18,8 @@ f: ## Start frontend development server
 d: ## Destroy development environment
 	@./deploy/dev/scripts/clean_dev.sh
 
-# Production Deployment Targets
-.PHONY: p dp up sp
+# Production Deployment Targets  
+.PHONY: p dp sp
 p: ## Deploy to production (run locally on server)
 	@if [ ! -f "config/.env.production" ]; then \
 		echo "ERROR: config/.env.production file not found!"; \
@@ -28,33 +28,16 @@ p: ## Deploy to production (run locally on server)
 	fi
 	@bash deploy/production/production.sh
 
-dp: ## Delete production environment
+dp: ## Delete production environment (preserves SSL certificates)
 	@./deploy/production/scripts/clean_prod.sh
 
-up: ## Upgrade production with minimal downtime (run on server)
-	@echo "🚀 Production upgrade using simple server-side approach"
-	@if [ ! -f "config/.env.production" ]; then \
-		echo "ERROR: config/.env.production file not found!"; \
-		echo "Please ensure you're running this on the production server."; \
-		exit 1; \
-	fi
-	@bash deploy/production/scripts/simple_upgrade.sh
-
-upf: ## Full upgrade production with complete rebuild (run on server)
-	@echo "🚀 FULL Production upgrade - complete rebuild"
-	@echo "⚠️  Use this when you've changed .env.production or need complete rebuild"
-	@if [ ! -f "config/.env.production" ]; then \
-		echo "ERROR: config/.env.production file not found!"; \
-		echo "Please ensure you're running this on the production server."; \
-		exit 1; \
-	fi
-	@bash deploy/production/scripts/full_upgrade.sh
 
 sp: ## Stop production environment gracefully
 	@echo "🚨 WARNING: This will stop the production environment!"
 	@read -p "Are you sure you want to continue? (y/N): " confirm && [ "$$confirm" = "y" ] || exit 1
 	@echo "🛑 Stopping production environment gracefully..."
 	@bash deploy/production/scripts/stop_production.sh
+
 
 # Staging Deployment Targets
 .PHONY: s ds
@@ -81,7 +64,7 @@ define setup_load_test
 	fi
 endef
 
-lts: ## Run unified load test against staging (30 users, 20 min)
+lts: ## Run unified load test against staging (30 users, 20 min) with warmup/warmdown
 	@echo "🧪 Running unified load test against STAGING environment..."
 	@echo "📊 30 users with realistic ramp up (2.5 spawn rate)"
 	@if [ ! -f "config/.env.staging" ]; then \
@@ -91,7 +74,7 @@ lts: ## Run unified load test against staging (30 users, 20 min)
 	$(call setup_load_test)
 	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=staging ../.venv/bin/locust -f locustfile.py --host=\$$VITE_API_URL --users=30 --spawn-rate=2.5 --run-time=20m --headless"
 
-ltp: ## Run unified load test against production (30 users, 20 min) - REQUIRES AUTH OFF
+ltp: ## Run unified load test against production (30 users, 20 min) with warmup/warmdown - REQUIRES AUTH OFF
 	@echo "🚨 Running unified load test against PRODUCTION environment..."
 	@echo "⚠️  Ensure VITE_USE_COGNITO_AUTH=false on production server!"
 	@echo "📊 30 users with realistic ramp up (2.5 spawn rate)"
