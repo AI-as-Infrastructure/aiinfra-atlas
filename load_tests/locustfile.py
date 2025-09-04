@@ -77,7 +77,7 @@ config = load_config()
 # Event handlers for custom metrics
 @events.test_start.add_listener
 def on_test_start(environment, **kwargs):
-    """Initialize test environment"""
+    """Initialize test environment with warmup"""
     print("🚀 Starting ATLAS Load Test")
     print(f"Environment: {config.get('environment', {}).get('name', 'default')}")
     print(f"Host: {environment.host}")
@@ -99,6 +99,30 @@ def on_test_start(environment, **kwargs):
     else:
         print("✅ Authentication disabled - ready for load testing")
     
+    # Warmup phase
+    print("🔥 Warming up environment...")
+    try:
+        import requests
+        warmup_payload = {
+            "question": "What is the purpose of parliament?",
+            "corpus_filter": "all"
+        }
+        response = requests.post(
+            f"{environment.host}/api/ask/stream",
+            json=warmup_payload,
+            headers={"Content-Type": "application/json"},
+            timeout=30,
+            verify=False
+        )
+        if response.status_code == 200:
+            print("✅ Warmup successful - models and caches loaded")
+        else:
+            print(f"⚠️ Warmup got status {response.status_code} - continuing anyway")
+    except Exception as e:
+        print(f"⚠️ Warmup failed ({str(e)}) - continuing anyway")
+    
+    time.sleep(5)  # Brief pause after warmup
+    
     # Reset metrics collector
     metrics_collector.reset()
     
@@ -118,8 +142,35 @@ def on_test_start(environment, **kwargs):
 
 @events.test_stop.add_listener
 def on_test_stop(environment, **kwargs):
-    """Clean up and export results"""
-    print("🛑 Load Test Completed")
+    """Clean up and export results with warmdown"""
+    print("🛑 Load Test Completed - Starting warmdown...")
+    
+    # Warmdown phase - gradually reduce load
+    try:
+        print("🔥 Warmdown phase - gentle ramp down...")
+        import requests
+        
+        # Send a few final requests to ensure graceful shutdown
+        for i in range(3):
+            try:
+                warmdown_payload = {
+                    "question": "Thank you for using the parliamentary research system.",
+                    "corpus_filter": "all"
+                }
+                response = requests.post(
+                    f"{environment.host}/api/ask/stream",
+                    json=warmdown_payload,
+                    headers={"Content-Type": "application/json"},
+                    timeout=15,
+                    verify=False
+                )
+                time.sleep(2)  # Brief pause between warmdown requests
+            except Exception as e:
+                print(f"⚠️ Warmdown request {i+1} failed: {str(e)}")
+                
+        print("✅ Warmdown completed")
+    except Exception as e:
+        print(f"⚠️ Warmdown phase failed: {str(e)}")
     
     # Stop infrastructure monitoring
     infrastructure_monitor.stop_monitoring()
