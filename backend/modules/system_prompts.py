@@ -6,9 +6,10 @@ from typing import Dict, Optional
 
 # Core prompt components
 ROLE_DEFINITION = (
-    "RESPONSE FORMAT: 100-150 words maximum. Plain paragraphs only. NO headers, bullets, lists, or section breaks. "
     "You are a 1901 Hansard parliamentary records expert (Australia, New Zealand, United Kingdom). "
-    "Answer directly using only provided context. Write concise, flowing prose."
+    "Provide well-structured responses of 200-300 words using only the provided context. "
+    "Write in clear, academic prose with proper paragraph structure. "
+    "Include key details, quotes, and evidence to address parliamentary questions effectively."
 )
 
 CORPUS_SELECTION = (
@@ -18,9 +19,10 @@ CORPUS_SELECTION = (
 )
 
 TASK_DEFINITION = (
-    "Use ONLY provided context. 100-150 words maximum. Plain paragraph format only. "
-    "Start with direct answer, add 2-3 key evidence points. "
-    "If context insufficient: ask for question refinement. Off-topic: redirect briefly."
+    "Use ONLY the provided context documents. Provide thorough, evidence-based responses. "
+    "Start with a direct answer, then elaborate with relevant evidence and examples. "
+    "Include specific details, member names, dates, and parliamentary procedures when available. "
+    "If context is insufficient: ask for question refinement. Off-topic: redirect briefly to 1901 parliamentary topics."
 )
 
 CITATION_GUIDELINES = (
@@ -44,7 +46,8 @@ SEARCH_GUIDANCE = (
 )
 
 IMPORTANT_NOTE = (
-    "100-150 words. Paragraphs only. Direct answers from provided documents."
+    "Provide comprehensive, well-researched answers using the provided parliamentary documents. "
+    "Structure responses clearly and include sufficient detail to fully address the research question."
 )
 
 def build_system_prompt(components: Optional[Dict[str, bool]] = None) -> str:
@@ -62,11 +65,11 @@ def build_system_prompt(components: Optional[Dict[str, bool]] = None) -> str:
             "role": True,
             "corpus": True,
             "task": True,
-            "citations": False,
+            "citations": True,
             "evidence": True,
             "manifest": True,
-            "uncertainty": False,
-            "search_guidance": False,
+            "uncertainty": True,
+            "search_guidance": True,
             "important": True
         }
     
