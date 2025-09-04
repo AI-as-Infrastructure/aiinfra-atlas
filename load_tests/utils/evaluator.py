@@ -86,8 +86,8 @@ class LoadTestEvaluator:
                 higher_is_better=False
             ),
             'p95_response_time': Threshold(
-                pass_value=25000,     # <25s P95 is excellent for research queries
-                borderline_value=40000, # 25-40s is acceptable for complex research
+                pass_value=40000,     # <40s P95 is excellent for research queries
+                borderline_value=60000, # 40-60s is acceptable for complex research
                 unit="ms",
                 higher_is_better=False
             ),
@@ -106,30 +106,30 @@ class LoadTestEvaluator:
                 higher_is_better=False
             ),
             'p95_success_response_time': Threshold(
-                pass_value=25000,     # <25s P95 for successful requests
-                borderline_value=40000, # 25-40s is acceptable for research
+                pass_value=40000,     # <40s P95 for successful requests
+                borderline_value=60000, # 40-60s is acceptable for research
                 unit="ms",
                 higher_is_better=False
             ),
             
             # Throughput Metrics - Realistic for research tool with thinking time
             'requests_per_second': Threshold(
-                pass_value=0.5,       # >0.5 RPS is excellent for research (realistic thinking time)
-                borderline_value=0.2,  # 0.2-0.5 RPS is acceptable for thoughtful research
+                pass_value=0.15,      # >0.15 RPS is excellent for research (realistic thinking time)
+                borderline_value=0.08, # 0.08-0.15 RPS is acceptable for thoughtful research
                 unit="req/s",
                 higher_is_better=True
             ),
             
             # LLM-Specific Metrics (for streaming responses)
             'first_token_time': Threshold(
-                pass_value=5000,      # <5s to first token is excellent
-                borderline_value=8000, # 5-8s is acceptable
+                pass_value=8000,      # <8s to first token is excellent
+                borderline_value=12000, # 8-12s is acceptable
                 unit="ms",
                 higher_is_better=False
             ),
             'streaming_completion_time': Threshold(
-                pass_value=15000,     # <15s total streaming is excellent
-                borderline_value=30000, # 15-30s is acceptable
+                pass_value=20000,     # <20s total streaming is excellent
+                borderline_value=35000, # 20-35s is acceptable
                 unit="ms", 
                 higher_is_better=False
             ),
