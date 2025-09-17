@@ -46,6 +46,7 @@ Note: Frontend dependencies are installed automatically - see Makefile for devel
 - `config/` - Environment configurations and requirements
 - `docs/` - Documentation
 - `deploy/` - Deployment scripts for dev/staging/production
+- `create/` - Scripts to create a new vector store and associated retriever
 - `backend/targets/` - Test target configurations for different LLM setups
 - `backend/modules/` - Core backend modules (config, LLM, retrieval, etc.)
 
