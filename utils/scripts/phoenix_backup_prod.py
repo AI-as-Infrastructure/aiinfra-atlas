@@ -178,17 +178,19 @@ def main() -> None:
 
     # Configure Phoenix client with API key from environment
     client_headers = os.getenv('PHOENIX_CLIENT_HEADERS', '').strip()
+    phoenix_endpoint = "https://app.phoenix.arize.com/legacy"  # Use legacy endpoint for backups
+    
     if client_headers:
         # Extract API key from headers string (format: "api_key=xxx")
         if client_headers.startswith('api_key='):
             api_key = client_headers[8:]
-            client = Client(api_key=api_key)
+            client = Client(api_key=api_key, endpoint=phoenix_endpoint)
         else:
             # Try to use headers as-is
-            client = Client(api_key=client_headers)
+            client = Client(api_key=client_headers, endpoint=phoenix_endpoint)
     else:
         print("WARNING: No PHOENIX_CLIENT_HEADERS found, using default client", file=sys.stderr)
-        client = Client()
+        client = Client(endpoint=phoenix_endpoint)
     
     projects = discover_projects(client)
     print(f"Discovered projects: {projects}")
