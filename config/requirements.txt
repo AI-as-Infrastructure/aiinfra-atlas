@@ -31,7 +31,7 @@ google-auth==2.40.1
 
 # AI/ML Model Dependencies
 transformers==4.53.0
-torch==2.7.1
+torch==2.7.1+cpu --find-links https://download.pytorch.org/whl/cpu
 unstructured==0.17.2
 
 # Utilities
