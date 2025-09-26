@@ -28,9 +28,9 @@ pip install --upgrade pip
 echo "📥 Installing pip-tools..."
 pip install pip-tools
 
-# Force pure PyPI index; avoid any CUDA torch indexes from caller env
-export PIP_INDEX_URL="https://pypi.org/simple"
-unset PIP_EXTRA_INDEX_URL || true
+# Force CPU-only PyTorch index to avoid CUDA packages
+export PIP_INDEX_URL="https://download.pytorch.org/whl/cpu"
+export PIP_EXTRA_INDEX_URL="https://pypi.org/simple"
 unset TORCH_CUDA_INDEX_URL || true
 
 echo "🔒 Generating $REQ_OUT from $REQ_IN (CPU-only lock)..."
