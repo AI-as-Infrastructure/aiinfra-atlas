@@ -171,8 +171,8 @@ def export_project(
 def main() -> None:
     args = parse_args()
 
-    # Date partition (run date in UTC)
-    day_dir = Path(datetime.utcnow().strftime("%Y/%m/%d"))
+    # Date partition (run date in local time)
+    day_dir = Path(datetime.now().strftime("%Y/%m/%d"))
     root = (BACKUP_ROOT / day_dir).resolve()
     ensure_dir(root)
 
