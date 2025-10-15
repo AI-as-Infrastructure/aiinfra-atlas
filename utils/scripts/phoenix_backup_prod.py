@@ -126,7 +126,8 @@ def export_project(
     print(f"[{project}] Exporting full spans dataframe...", flush=True)
 
     # Export all spans for the project (no time filtering)
-    spans_df = client.get_spans_dataframe(project_name=project)
+    # Use a longer timeout for large projects (300 seconds = 5 minutes)
+    spans_df = client.get_spans_dataframe(project_name=project, timeout=300)
     if spans_df is None or getattr(spans_df, 'empty', False):
         print(f"[{project}] No spans found in project; skipping export.")
         return
