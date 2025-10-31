@@ -24,7 +24,13 @@ create/output/*
 models/**
 models/bert_1890_1900_st/
 load_tests/reports/*
-reports/output/*
+data_backup/phoenix/*
+
+# Analysis outputs - exclude all generated analysis files
+analysis/output/*
+
+# Darwin analysis scripts - internal development only
+analysis/analyze_darwin_spans.py
 
 # Chroma database directories - exclude all binary DB files (too large for git)
 backend/chroma_db/

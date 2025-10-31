@@ -79,6 +79,10 @@ ATLAS uses a simplified command structure for common operations. Here are the ma
 - `make r` - Generate retriever
 - `make xs` - Create XML vector store
 
+### Analysis and Monitoring
+- `make backup-prod` - Backup Phoenix telemetry data from production
+- `make hansard-analysis` - Run Hansard parliamentary data analysis with visualizations
+
 For detailed help on any command, use:
 ```bash
 make help-<command>
@@ -139,6 +143,7 @@ This workflow ensures that your retrievers are always in sync with your vector s
 ## Additional Documentation
 
 ### Architecture and Configuration
+- [Analysis](docs/analysis.md) - Phoenix backup data analysis for user feedback and system performance
 - [Authentication](docs/authentication.md) - AWS Cognito setup and configuration
 - [Backups](docs/backups.md) - Phoenix telemetry data backup configuration and automation
 - [Configuration Guide](docs/configuration.md) - Environment files, API keys, and system configuration
