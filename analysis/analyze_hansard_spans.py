@@ -17,6 +17,27 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from collections import defaultdict
 
+def find_latest_spans_path(project_name: str,
+                           base_dir: Path = Path("/home/jamessmithies/projects/aiinfra-atlas/data_backup/phoenix")) -> Path | None:
+    """Return the newest spans file path (parquet preferred, csv fallback) for a project."""
+    if not base_dir.exists():
+        return None
+    parquet_candidates = list(base_dir.rglob(f"{project_name}/spans.parquet"))
+    csv_candidates = list(base_dir.rglob(f"{project_name}/spans.csv"))
+    candidates = parquet_candidates + csv_candidates
+    if not candidates:
+        return None
+    latest = max(candidates, key=lambda p: p.stat().st_mtime)
+    return latest
+
+def load_spans_dataframe(spans_path: Path) -> pd.DataFrame:
+    """Load spans from parquet or csv based on file suffix."""
+    if spans_path.suffix == ".parquet":
+        return pd.read_parquet(spans_path)
+    if spans_path.suffix == ".csv":
+        return pd.read_csv(spans_path)
+    raise ValueError(f"Unsupported spans file type: {spans_path}")
+
 def create_visualizations(df, feedback_data, output_dir):
     """Create comprehensive visualizations for the Hansard analysis."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -331,8 +352,10 @@ def generate_system_config_info():
     """Generate system configuration information from Phoenix telemetry data."""
     try:
         # Load the spans data to extract configuration from com.atlas.rag.pipeline spans
-        hansard_spans_path = "/home/jamessmithies/projects/aiinfra-atlas/data_backup/phoenix/2025/10/31/Hansard-Prod/spans.parquet"
-        df = pd.read_parquet(hansard_spans_path)
+        latest_path = find_latest_spans_path("Hansard-Prod")
+        if latest_path is None:
+            raise FileNotFoundError("No Hansard-Prod spans backup found")
+        df = load_spans_dataframe(latest_path)
         
         # Find the pipeline spans that contain configuration
         pipeline_spans = df[df['name'] == 'com.atlas.rag.pipeline']
@@ -454,7 +477,7 @@ def analyze_hansard_spans():
     """
     
     # Define file paths
-    hansard_spans_path = "/home/jamessmithies/projects/aiinfra-atlas/data_backup/phoenix/2025/10/31/Hansard-Prod/spans.parquet"
+    latest_path = find_latest_spans_path("Hansard-Prod")
     output_dir = "/home/jamessmithies/projects/aiinfra-atlas/analysis/output"
     
     print("="*80)
@@ -464,7 +487,9 @@ def analyze_hansard_spans():
     
     # Load Hansard spans
     try:
-        hansard_spans = pd.read_parquet(hansard_spans_path)
+        if latest_path is None:
+            raise FileNotFoundError("No Hansard-Prod spans backup found")
+        hansard_spans = load_spans_dataframe(latest_path)
         print(f"\n✓ Hansard-Prod spans loaded: {len(hansard_spans)} records")
         
         if 'start_time' in hansard_spans.columns:
