@@ -79,3 +79,9 @@ locust==2.20.0
 websocket-client==1.7.0
 faker==22.0.0
 pyyaml==6.0.1
+
+# ---
+# Analysis Dependencies
+# These are needed for analysis/analyze_darwin_spans.py
+matplotlib>=3.7.0,<4.0.0
+seaborn>=0.12.0,<0.14.0
