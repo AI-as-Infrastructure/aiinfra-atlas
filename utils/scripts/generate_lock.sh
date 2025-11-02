@@ -24,9 +24,11 @@ $PY_BIN -m venv "$TMP_VENV"
 
 echo "🔌 Activating temporary environment..."
 source "$TMP_VENV/bin/activate"
-pip install --upgrade pip
-echo "📥 Installing pip-tools..."
-pip install pip-tools
+# Workaround for pip-tools compatibility: ensure we have a compatible pip version
+# The use_pep517 attribute was removed in pip 25+, so we constrain pip for now
+pip install "pip>=23.0,<25.0" || pip install "pip>=23.0"
+echo "📥 Installing latest pip-tools (with compatibility fixes)..."
+pip install --upgrade pip-tools
 
 # Force CPU-only PyTorch index to avoid CUDA packages
 export PIP_INDEX_URL="https://download.pytorch.org/whl/cpu"
