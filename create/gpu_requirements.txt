@@ -6,6 +6,6 @@
 # The create scripts will install all other dependencies from
 # config/requirements.lock and then ensure the Torch stack matches this file.
 
-torch==2.7.1+cu128
-torchvision==0.22.1+cu128
-torchaudio==2.7.1+cu128
+torch>=2.8.0+cu128
+torchvision>=0.23.0+cu128
+torchaudio==2.8.0+cu128
