@@ -6,4 +6,4 @@
 # The create scripts will install all other dependencies from
 # config/requirements.lock and then ensure the Torch stack matches this file.
 
-torch==2.7.1
+torch>=2.8.0
