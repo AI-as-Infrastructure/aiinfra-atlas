@@ -307,7 +307,7 @@ kiwisolver==1.4.9
     # via matplotlib
 kubernetes==33.1.0
     # via chromadb
-langchain==0.3.25
+langchain==0.3.27
     # via
     #   -r config/requirements.txt
     #   langchain-community
@@ -317,9 +317,9 @@ langchain-aws==0.2.27
     # via -r config/requirements.txt
 langchain-chroma==0.2.4
     # via -r config/requirements.txt
-langchain-community==0.3.23
+langchain-community==0.3.27
     # via -r config/requirements.txt
-langchain-core==0.3.66
+langchain-core==0.3.79
     # via
     #   -r config/requirements.txt
     #   langchain
@@ -340,7 +340,7 @@ langchain-ollama==0.3.2
     # via -r config/requirements.txt
 langchain-openai==0.3.16
     # via -r config/requirements.txt
-langchain-text-splitters==0.3.8
+langchain-text-splitters==0.3.9
     # via
     #   -r config/requirements.txt
     #   langchain
@@ -789,7 +789,7 @@ tomli==2.2.1
     # via
     #   alembic
     #   build
-torch==2.7.1+cpu
+torch==2.8.0+cpu
     # via
     #   -r config/requirements.txt
     #   sentence-transformers
