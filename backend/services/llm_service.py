@@ -67,7 +67,7 @@ def process_query_sync(query_data: Dict[str, Any]) -> Dict[str, Any]:
         
         # Log if any sensitive contexts were detected (for future use)
         if sensitive_contexts:
-            # In the future, this could trigger special handling or warnings
+            pass  # In the future, this could trigger special handling or warnings
         
         # Step 1: Retrieve documents
         documents, qa_id = retrieve_documents_with_telemetry(
