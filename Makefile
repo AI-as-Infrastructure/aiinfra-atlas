@@ -18,6 +18,26 @@ backup-prod: venv ## Backup full prod project contents (env loaded from config/.
 	PHOENIX_ENV_FILE=config/.env.production \
 	$(VENV_DIR)/bin/python utils/scripts/phoenix_backup_prod.py
 
+# System health check
+.PHONY: health
+health: ## Run comprehensive system health check
+	@echo "🏥 Running system health check..."
+	@utils/scripts/health_check.sh
+
+.PHONY: health-verbose
+health-verbose: ## Run detailed system health check with verbose output
+	@echo "🏥 Running detailed system health check..."
+	@utils/scripts/health_check.sh --verbose
+
+.PHONY: health-json
+health-json: ## Run system health check with JSON output for monitoring
+	@utils/scripts/health_check.sh --json
+
+.PHONY: health-critical
+health-critical: ## Run system health check showing only critical issues
+	@echo "🚨 Checking for critical system issues..."
+	@utils/scripts/health_check.sh --critical-only
+
 # Analysis targets
 .PHONY: hansard-analysis
 hansard-analysis: venv ## Run Hansard parliamentary data analysis with visualizations
