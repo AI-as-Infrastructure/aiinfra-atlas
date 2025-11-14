@@ -73,10 +73,12 @@ sudo apt-get update && sudo apt-get install -y python$PYTHON_VERSION python$PYTH
 
 # Configure Redis with authentication
 echo "Configuring Redis with authentication..."
-REDIS_PASSWORD=$(grep "^REDIS_PASSWORD=" "$PROJECT_ROOT/config/.env.staging" | cut -d '"' -f 2 | cut -d '=' -f 2)
+# Extract password from REDIS_URL format: redis://:password@host:port/db
+REDIS_URL=$(grep "^REDIS_URL=" "$PROJECT_ROOT/config/.env.staging" | cut -d '=' -f 2)
+REDIS_PASSWORD=$(echo "$REDIS_URL" | sed -n 's/.*redis:\/\/:\([^@]*\)@.*/\1/p')
 if [ -z "$REDIS_PASSWORD" ]; then
-    echo "ERROR: REDIS_PASSWORD not found in config/.env.staging"
-    echo "Please add REDIS_PASSWORD=\"your_password\" to your .env.staging file"
+    echo "ERROR: Could not extract Redis password from REDIS_URL in config/.env.staging"
+    echo "Expected format: REDIS_URL=redis://:password@localhost:6379/1"
     exit 1
 fi
 

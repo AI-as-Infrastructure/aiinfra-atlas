@@ -40,7 +40,7 @@ if [ -f "config/.env.production" ]; then
     echo "Environment variables loaded successfully"
     
     # Validate critical environment variables
-    required_vars=("ENVIRONMENT" "REDIS_PASSWORD" "VITE_API_URL")
+    required_vars=("ENVIRONMENT" "VITE_API_URL")
     for var in "${required_vars[@]}"; do
         if [ -z "${!var}" ]; then
             echo "ERROR: $var is not set in config/.env.production"
@@ -134,9 +134,12 @@ chmod 644 $APP_DIR/.venv/lib/python3.10/site-packages/atlas.pth
 
 # Set up Redis with authentication
 echo "Configuring Redis with authentication..."
-REDIS_PASSWORD=$(grep '^REDIS_PASSWORD' "$APP_DIR/config/.env.production" | cut -d'=' -f2 | tr -d '"')
+# Extract password from REDIS_URL format: redis://:password@host:port/db
+REDIS_URL=$(grep "^REDIS_URL=" "$APP_DIR/config/.env.production" | cut -d '=' -f 2)
+REDIS_PASSWORD=$(echo "$REDIS_URL" | sed -n 's/.*redis:\/\/:\([^@]*\)@.*/\1/p')
 if [ -z "$REDIS_PASSWORD" ]; then
-    echo "ERROR: REDIS_PASSWORD not set in $APP_DIR/config/.env.production"
+    echo "ERROR: Could not extract Redis password from REDIS_URL in $APP_DIR/config/.env.production"
+    echo "Expected format: REDIS_URL=redis://:password@localhost:6379/1"
     exit 1
 fi
 
