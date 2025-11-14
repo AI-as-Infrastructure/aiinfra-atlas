@@ -231,7 +231,7 @@ check_redis() {
         
         if [[ -n "$redis_password" ]] && command -v redis-cli >/dev/null 2>&1; then
             # Test Redis connection
-            if redis_cli -a "$redis_password" ping >/dev/null 2>&1; then
+            if redis-cli -a "$redis_password" ping >/dev/null 2>&1; then
                 log_success "Redis connection OK"
                 
                 if [[ "$VERBOSE" == "true" ]]; then
