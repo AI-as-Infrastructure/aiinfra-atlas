@@ -633,13 +633,13 @@ class PhoenixAPIClient:
             logger.error(f"Error checking if user already rated: {e}")
             return False
 
-    async def get_inter_rater_count(self, span_id: str) -> int:
+    def get_inter_rater_count_sync(self, span_id: str) -> int:
         """
-        Get the number of inter-rater feedback entries for a span.
-        
+        Get the number of inter-rater feedback entries for a span (synchronous version).
+
         Args:
             span_id: The original span ID
-            
+
         Returns:
             Number of inter-rater feedback entries
         """
@@ -647,23 +647,23 @@ class PhoenixAPIClient:
             sanitized_span_id = span_id[:8] + "..." if len(span_id) > 8 else span_id
             logger.warning(f"Phoenix client not available - cannot get inter-rater count for span {sanitized_span_id}")
             return 0
-            
+
         try:
             # Query Phoenix annotations API for inter-rater feedback count
             import httpx
-            
+
             phoenix_endpoint = os.getenv('PHOENIX_COLLECTOR_ENDPOINT', 'https://app.phoenix.arize.com')
             # Use correct v11.13.2 API format with project in path
             annotations_endpoint = f"{phoenix_endpoint}/v1/projects/{self.project_name}/span_annotations"
-            
+
             headers = self._get_phoenix_headers()
-            
+
             # Use span_ids parameter (not span_id) as per v11.13.2 API
             params = {
                 "span_ids": span_id,
                 "limit": 100
             }
-            
+
             # Query annotations for this span
             response = httpx.get(
                 annotations_endpoint,
@@ -671,34 +671,41 @@ class PhoenixAPIClient:
                 params=params,
                 timeout=10.0
             )
-            
+
             if response.status_code == 200:
                 annotations = response.json()
-                
+
                 # Debug logging to see what we're getting from Phoenix
                 sanitized_span_id = span_id[:8] + "..." if len(span_id) > 8 else span_id
                 logger.debug(f"Getting inter-rater count for span {sanitized_span_id} - found {len(annotations.get('data', []))} annotations")
-                
+
                 # Count unique inter-rater users (each user can only rate once) (Phoenix v11.13.2 uses 'data' not 'annotations')
                 inter_rater_users = set()
                 for annotation in annotations.get('data', []):
                     metadata = annotation.get('metadata', {})
-                    
+
                     if metadata.get('is_inter_rater') and metadata.get('rater_id'):
                         inter_rater_users.add(metadata['rater_id'])
-                
+
                 count = len(inter_rater_users)
                 sanitized_span_id = span_id[:8] + "..." if len(span_id) > 8 else span_id
-                logger.debug(f"Found {count} inter-rater users for span {sanitized_span_id}")
+                logger.info(f"Found {count} inter-rater users for span {sanitized_span_id}")
                 return count
             else:
                 sanitized_span_id = span_id[:8] + "..." if len(span_id) > 8 else span_id
                 logger.warning(f"Failed to query annotations for span {sanitized_span_id}: {response.status_code}")
                 return 0
-                
+
         except Exception as e:
             logger.error(f"Error getting inter-rater count: {e}")
             return 0
+
+    async def get_inter_rater_count(self, span_id: str) -> int:
+        """
+        Get the number of inter-rater feedback entries for a span (async version).
+        Delegates to synchronous version since httpx call is sync anyway.
+        """
+        return self.get_inter_rater_count_sync(span_id)
 
 # Global instance
 phoenix_client = PhoenixAPIClient()

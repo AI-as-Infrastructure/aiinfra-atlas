@@ -290,26 +290,11 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
             from backend.services.phoenix_client import phoenix_client
             original_span_id = feedback_data.get('original_span_id')
 
-            # Get count asynchronously - need to handle sync context
-            import asyncio
-            try:
-                # Try to get existing event loop
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # We're in an async context already - this shouldn't happen in submit_span_annotation
-                    # but handle it gracefully
-                    logger.warning("Cannot query inter-rater count in running event loop - using fallback")
-                    inter_rater_number = None
-                else:
-                    # Run the async function in the loop
-                    count = loop.run_until_complete(phoenix_client.get_inter_rater_count(original_span_id))
-                    inter_rater_number = count + 1
-            except RuntimeError:
-                # No event loop exists, create one
-                count = asyncio.run(phoenix_client.get_inter_rater_count(original_span_id))
-                inter_rater_number = count + 1
+            # Use synchronous version to avoid event loop issues
+            count = phoenix_client.get_inter_rater_count_sync(original_span_id)
+            inter_rater_number = count + 1
 
-            logger.info(f"Inter-rater number determined: {inter_rater_number}")
+            logger.info(f"Inter-rater number determined: {inter_rater_number} (existing count: {count})")
         except Exception as e:
             logger.warning(f"Failed to determine inter-rater number: {e}. Using fallback format.")
             inter_rater_number = None
