@@ -281,15 +281,8 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
     )
     
     timestamp = int(time.time())
-    if is_inter_rater:
-        # Use inter-rater specific annotation ID format
-        rater_id = feedback_data.get('rater_id', f"rater_{timestamp}")[:8]  # First 8 chars for brevity
-        annotation_id = f"inter_rater_{rater_id}_{qa_id}_{timestamp}" if qa_id else f"inter_rater_{rater_id}_{uuid.uuid4()}_{timestamp}"
-    else:
-        # Regular feedback annotation ID
-        annotation_id = f"feedback_{qa_id}_{timestamp}" if qa_id else f"feedback_{uuid.uuid4()}_{timestamp}"
 
-    # Determine inter-rater number if this is inter-rater feedback
+    # Determine inter-rater number FIRST if this is inter-rater feedback
     inter_rater_number = None
     if is_inter_rater:
         try:
@@ -321,6 +314,16 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
             logger.warning(f"Failed to determine inter-rater number: {e}. Using fallback format.")
             inter_rater_number = None
 
+    # Generate annotation ID - include inter_rater_number for uniqueness
+    if is_inter_rater:
+        # Use inter-rater specific annotation ID format with number for uniqueness
+        rater_id = feedback_data.get('rater_id', f"rater_{timestamp}")[:8]  # First 8 chars for brevity
+        number_suffix = f"_{inter_rater_number}" if inter_rater_number else ""
+        annotation_id = f"inter_rater_{rater_id}{number_suffix}_{qa_id}_{timestamp}" if qa_id else f"inter_rater_{rater_id}{number_suffix}_{uuid.uuid4()}_{timestamp}"
+    else:
+        # Regular feedback annotation ID
+        annotation_id = f"feedback_{qa_id}_{timestamp}" if qa_id else f"feedback_{uuid.uuid4()}_{timestamp}"
+
     # Prepare annotation data list with the formatted span ID
     annotation_data = []
     
@@ -335,6 +338,7 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
                 "feedback_type": "inter_rater",
                 "original_span_id": feedback_data.get("original_span_id"),
                 "rater_id": feedback_data.get("rater_id"),
+                "inter_rater_number": inter_rater_number,
                 "inter_rater_timestamp": datetime.now().isoformat()
             })
         else:
