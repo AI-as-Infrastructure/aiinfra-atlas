@@ -185,10 +185,10 @@ def format_faults_list(faults: Dict[str, bool]) -> List[str]:
         return []
     return [fault_type for fault_type, is_present in faults.items() if is_present]
 
-def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None) -> bool:
+async def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None) -> bool:
     """
     Submit feedback as a span annotation to Phoenix using their span annotations API.
-    
+
     Formats the span ID as a 16-character lowercase hexadecimal string as required by Phoenix.
     """
 
@@ -290,9 +290,8 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
             from backend.services.phoenix_client import phoenix_client
             original_span_id = feedback_data.get('original_span_id')
 
-            # Call async method - asyncio.run() creates new loop
-            import asyncio
-            count = asyncio.run(phoenix_client.get_inter_rater_count(original_span_id))
+            # Call async method directly with await (no asyncio.run needed - we're already in async context)
+            count = await phoenix_client.get_inter_rater_count(original_span_id)
             inter_rater_number = count + 1
 
             logger.info(f"Inter-rater number determined: {inter_rater_number} (existing count: {count})")
@@ -752,15 +751,16 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
     # Convert to JSON for logging and sending
     payload_json = json.dumps(payload)
     
-    # Submit the annotation
+    # Submit the annotation using async httpx client
     try:
-        response = httpx.post(
-            annotation_endpoint,
-            headers=headers,
-            json=payload,
-            timeout=30.0  # Use a longer timeout
-        )
-        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                annotation_endpoint,
+                headers=headers,
+                json=payload,
+                timeout=30.0  # Use a longer timeout
+            )
+
         if response.status_code == 200:
             logger.info(f"Successfully submitted annotation for span {span_id}")
             return True
@@ -789,9 +789,9 @@ async def associate_feedback_with_spans(session_id: str, qa_id: str, feedback_da
         response_span_id = await find_qa_span_id_with_retry(session_id, response_key)
         
         if response_span_id:
-            
+
             # Submit annotation to Phoenix using the response span
-            success = submit_span_annotation(response_span_id, feedback_data, qa_id)
+            success = await submit_span_annotation(response_span_id, feedback_data, qa_id)
             if success:
                 logger.info(f"Feedback annotation submitted to response span for session {session_id}, qa_id {qa_id}")
                 return True
@@ -806,9 +806,9 @@ async def associate_feedback_with_spans(session_id: str, qa_id: str, feedback_da
             if not qa_span_id:
                 logger.error(f"No span ID found for session {session_id}, qa_id {qa_id}")
                 return False
-                
+
             # Submit annotation to Phoenix using the QA span as fallback
-            success = submit_span_annotation(qa_span_id, feedback_data, qa_id)
+            success = await submit_span_annotation(qa_span_id, feedback_data, qa_id)
             if success:
                 logger.info(f"Feedback annotation submitted to QA span for session {session_id}, qa_id {qa_id}")
                 return True

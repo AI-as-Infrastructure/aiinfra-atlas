@@ -54,8 +54,8 @@ class InterRaterService:
             return False
         
         # Submit annotation directly to Phoenix using the original span ID
-        success = submit_span_annotation(target_span_id, feedback_data, qa_id)
-        
+        success = await submit_span_annotation(target_span_id, feedback_data, qa_id)
+
         if success:
             logger.info(f"Inter-rater feedback annotation submitted to span {target_span_id}")
             return True
