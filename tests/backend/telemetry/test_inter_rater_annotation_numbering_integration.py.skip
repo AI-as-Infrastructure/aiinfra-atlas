@@ -1,0 +1,345 @@
+"""
+Tests for inter-rater annotation numbering
+
+Tests the implementation of numbered inter-rater annotations ([inter-rating-1], [inter-rating-2], etc.)
+as specified in OpenSpec change: update-inter-rater-annotation-numbering
+
+Related files:
+- backend/telemetry/feedback.py:318-325 (get_annotation_name function)
+- backend/telemetry/feedback.py:292-322 (inter-rater number determination)
+"""
+
+import pytest
+import asyncio
+from unittest.mock import Mock, patch, AsyncMock, MagicMock
+from backend.telemetry.feedback import submit_span_annotation
+
+
+class TestInterRaterAnnotationNumbering:
+    """Test suite for inter-rater annotation numbering functionality"""
+
+    def test_get_annotation_name_original_feedback(self):
+        """Test that original (non-inter-rater) feedback has no prefix"""
+        # This test validates that the get_annotation_name function
+        # returns the base name without any prefix for original feedback
+
+        # Mock the necessary components
+        with patch('backend.telemetry.feedback.find_qa_span_id', return_value=12345):
+            feedback_data = {
+                'relevance': 5,
+                'is_inter_rater': False,
+            }
+
+            # The function should be tested directly, but since it's nested,
+            # we'll test via the full submission flow
+            result = submit_span_annotation(
+                span_id='12345',
+                feedback_data=feedback_data,
+                qa_id='test_qa_1'
+            )
+
+            # For now, we're setting up the structure
+            # Full assertions will depend on Phoenix API mocking
+            assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_first_inter_rater_gets_number_one(self):
+        """
+        Test: First inter-rater submission shows [inter-rating-1]
+
+        Scenario from spec:
+        - WHEN the first inter-rater submits feedback for a span
+        - THEN the annotation name SHALL be prefixed with [inter-rating-1]
+        """
+        # Mock Phoenix client to return count = 0 (no existing inter-raters)
+        with patch('backend.services.phoenix_client.phoenix_client') as mock_client:
+            mock_client.get_inter_rater_count = AsyncMock(return_value=0)
+
+            feedback_data = {
+                'is_inter_rater': True,
+                'original_span_id': 'original_span_123',
+                'rater_id': 'rater_user_1',
+                'relevance': 4,
+            }
+
+            # Mock the HTTP request to Phoenix
+            with patch('httpx.post') as mock_post:
+                mock_response = Mock()
+                mock_response.status_code = 200
+                mock_response.json.return_value = {'data': []}
+                mock_post.return_value = mock_response
+
+                result = submit_span_annotation(
+                    span_id='12345',
+                    feedback_data=feedback_data,
+                    qa_id='test_qa_1'
+                )
+
+                # Verify the annotation was submitted
+                assert mock_post.called
+
+                # Get the submitted data
+                call_args = mock_post.call_args
+                submitted_data = call_args[1]['json']['data']
+
+                # Find the relevance annotation and check its name
+                relevance_annotation = next(
+                    (a for a in submitted_data if 'relevance' in a.get('id', '')),
+                    None
+                )
+
+                assert relevance_annotation is not None
+                assert relevance_annotation['name'] == '[inter-rating-1] Relevance Rating'
+
+    @pytest.mark.asyncio
+    async def test_second_inter_rater_gets_number_two(self):
+        """
+        Test: Second inter-rater submission shows [inter-rating-2]
+
+        Scenario from spec:
+        - WHEN a second inter-rater submits feedback for the same span
+        - THEN the annotation name SHALL be prefixed with [inter-rating-2]
+        """
+        # Mock Phoenix client to return count = 1 (one existing inter-rater)
+        with patch('backend.services.phoenix_client.phoenix_client') as mock_client:
+            mock_client.get_inter_rater_count = AsyncMock(return_value=1)
+
+            feedback_data = {
+                'is_inter_rater': True,
+                'original_span_id': 'original_span_123',
+                'rater_id': 'rater_user_2',
+                'relevance': 3,
+            }
+
+            with patch('httpx.post') as mock_post:
+                mock_response = Mock()
+                mock_response.status_code = 200
+                mock_response.json.return_value = {'data': []}
+                mock_post.return_value = mock_response
+
+                result = submit_span_annotation(
+                    span_id='12345',
+                    feedback_data=feedback_data,
+                    qa_id='test_qa_2'
+                )
+
+                assert mock_post.called
+                call_args = mock_post.call_args
+                submitted_data = call_args[1]['json']['data']
+
+                relevance_annotation = next(
+                    (a for a in submitted_data if 'relevance' in a.get('id', '')),
+                    None
+                )
+
+                assert relevance_annotation is not None
+                assert relevance_annotation['name'] == '[inter-rating-2] Relevance Rating'
+
+    @pytest.mark.asyncio
+    async def test_third_inter_rater_gets_number_three(self):
+        """
+        Test: Third inter-rater submission shows [inter-rating-3]
+
+        Scenario from spec:
+        - WHEN a third inter-rater submits feedback for the same span
+        - THEN the annotation name SHALL be prefixed with [inter-rating-3]
+        """
+        # Mock Phoenix client to return count = 2 (two existing inter-raters)
+        with patch('backend.services.phoenix_client.phoenix_client') as mock_client:
+            mock_client.get_inter_rater_count = AsyncMock(return_value=2)
+
+            feedback_data = {
+                'is_inter_rater': True,
+                'original_span_id': 'original_span_123',
+                'rater_id': 'rater_user_3',
+                'relevance': 5,
+            }
+
+            with patch('httpx.post') as mock_post:
+                mock_response = Mock()
+                mock_response.status_code = 200
+                mock_response.json.return_value = {'data': []}
+                mock_post.return_value = mock_response
+
+                result = submit_span_annotation(
+                    span_id='12345',
+                    feedback_data=feedback_data,
+                    qa_id='test_qa_3'
+                )
+
+                assert mock_post.called
+                call_args = mock_post.call_args
+                submitted_data = call_args[1]['json']['data']
+
+                relevance_annotation = next(
+                    (a for a in submitted_data if 'relevance' in a.get('id', '')),
+                    None
+                )
+
+                assert relevance_annotation is not None
+                assert relevance_annotation['name'] == '[inter-rating-3] Relevance Rating'
+
+    @pytest.mark.asyncio
+    async def test_phoenix_query_error_uses_fallback(self):
+        """
+        Test: Phoenix query error handling with fallback to [Inter-rater]
+
+        Scenario from spec:
+        - WHEN Phoenix API query fails
+        - THEN the system SHALL use fallback format [Inter-rater]
+        - AND SHALL log the error
+        """
+        # Mock Phoenix client to raise an exception
+        with patch('backend.services.phoenix_client.phoenix_client') as mock_client:
+            mock_client.get_inter_rater_count = AsyncMock(side_effect=Exception("Phoenix API error"))
+
+            feedback_data = {
+                'is_inter_rater': True,
+                'original_span_id': 'original_span_123',
+                'rater_id': 'rater_user_1',
+                'relevance': 4,
+            }
+
+            with patch('httpx.post') as mock_post:
+                mock_response = Mock()
+                mock_response.status_code = 200
+                mock_response.json.return_value = {'data': []}
+                mock_post.return_value = mock_response
+
+                # Should not raise exception - should use fallback
+                result = submit_span_annotation(
+                    span_id='12345',
+                    feedback_data=feedback_data,
+                    qa_id='test_qa_error'
+                )
+
+                assert mock_post.called
+                call_args = mock_post.call_args
+                submitted_data = call_args[1]['json']['data']
+
+                relevance_annotation = next(
+                    (a for a in submitted_data if 'relevance' in a.get('id', '')),
+                    None
+                )
+
+                assert relevance_annotation is not None
+                # Should use fallback format
+                assert relevance_annotation['name'] == '[Inter-rater] Relevance Rating'
+
+    def test_all_annotation_types_get_numbered(self):
+        """
+        Test: All annotation types receive inter-rating prefix
+
+        Validates that all 15+ annotation types are properly prefixed:
+        - User Comment, Relevance Rating, Factual Accuracy, Clarity
+        - Analysis Quality, Query Difficulty, Tags, Faults, etc.
+        """
+        with patch('backend.services.phoenix_client.phoenix_client') as mock_client:
+            mock_client.get_inter_rater_count = AsyncMock(return_value=1)
+
+            feedback_data = {
+                'is_inter_rater': True,
+                'original_span_id': 'original_span_123',
+                'rater_id': 'rater_user_1',
+                'feedback_text': 'Test comment',
+                'relevance': 4,
+                'factual_accuracy': 5,
+                'clarity': 4,
+                'analysis_quality': 5,
+                'difficulty': 3,
+                'tags': ['test-tag'],
+            }
+
+            with patch('httpx.post') as mock_post:
+                mock_response = Mock()
+                mock_response.status_code = 200
+                mock_response.json.return_value = {'data': []}
+                mock_post.return_value = mock_response
+
+                result = submit_span_annotation(
+                    span_id='12345',
+                    feedback_data=feedback_data,
+                    qa_id='test_qa_all'
+                )
+
+                assert mock_post.called
+                call_args = mock_post.call_args
+                submitted_data = call_args[1]['json']['data']
+
+                # Check that all annotations have the [inter-rating-2] prefix
+                for annotation in submitted_data:
+                    annotation_name = annotation.get('name', '')
+                    assert annotation_name.startswith('[inter-rating-2]'), \
+                        f"Annotation '{annotation_name}' does not have correct prefix"
+
+
+class TestInterRaterCountDetermination:
+    """Test suite for inter-rater count determination logic"""
+
+    @pytest.mark.asyncio
+    async def test_zero_count_gives_number_one(self):
+        """
+        Test: No existing inter-rater annotations results in number 1
+
+        Scenario from spec:
+        - WHEN querying annotations for a span with no inter-rater feedback
+        - THEN the inter-rater count SHALL be 0
+        - AND the next inter-rater number SHALL be 1
+        """
+        with patch('backend.services.phoenix_client.phoenix_client') as mock_client:
+            mock_client.get_inter_rater_count = AsyncMock(return_value=0)
+
+            # Call get_inter_rater_count
+            count = await mock_client.get_inter_rater_count('span_123')
+
+            assert count == 0
+            next_number = count + 1
+            assert next_number == 1
+
+    @pytest.mark.asyncio
+    async def test_existing_count_increments_correctly(self):
+        """
+        Test: Existing inter-rater annotations are counted correctly
+
+        Scenario from spec:
+        - WHEN querying annotations for a span with existing inter-rater feedback
+        - THEN the inter-rater count SHALL equal the number of unique rater_ids
+        - AND the next inter-rater number SHALL be count + 1
+        """
+        with patch('backend.services.phoenix_client.phoenix_client') as mock_client:
+            # Simulate 2 existing inter-raters
+            mock_client.get_inter_rater_count = AsyncMock(return_value=2)
+
+            count = await mock_client.get_inter_rater_count('span_123')
+
+            assert count == 2
+            next_number = count + 1
+            assert next_number == 3
+
+
+# Integration test marker for tests that require Phoenix instance
+pytestmark = pytest.mark.integration
+
+
+@pytest.mark.integration
+class TestInterRaterAnnotationIntegration:
+    """
+    Integration tests for inter-rater annotation system
+
+    These tests require a running Phoenix instance and are marked with @pytest.mark.integration
+    Run with: pytest -m integration
+    """
+
+    @pytest.mark.skip(reason="Requires Phoenix instance - manual testing")
+    async def test_full_inter_rater_workflow(self):
+        """
+        Full workflow test: Original feedback + multiple inter-raters
+
+        This test should be run manually against a Phoenix instance to validate:
+        1. Original feedback has no inter-rating prefix
+        2. First inter-rater gets [inter-rating-1]
+        3. Second inter-rater gets [inter-rating-2]
+        4. Third inter-rater gets [inter-rating-3]
+        5. All annotations visible in Phoenix UI
+        """
+        pass

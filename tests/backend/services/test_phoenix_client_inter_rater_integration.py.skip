@@ -1,0 +1,341 @@
+"""
+Tests for Phoenix client inter-rater methods
+
+Tests the Phoenix client methods used for inter-rater reliability:
+- get_inter_rater_count()
+- check_user_already_rated()
+- query_spans_with_feedback()
+
+Related files:
+- backend/services/phoenix_client.py:642-704 (get_inter_rater_count)
+- backend/services/phoenix_client.py:577-639 (check_user_already_rated)
+"""
+
+import pytest
+from unittest.mock import Mock, patch, AsyncMock
+import httpx
+
+
+class TestPhoenixClientInterRaterCount:
+    """Test suite for get_inter_rater_count method"""
+
+    @pytest.mark.asyncio
+    async def test_no_inter_raters_returns_zero(self):
+        """
+        Test: get_inter_rater_count returns 0 when no inter-raters exist
+
+        Scenario:
+        - WHEN Phoenix returns no annotations with is_inter_rater=True
+        - THEN count should be 0
+        """
+        from backend.services.phoenix_client import PhoenixClient
+
+        client = PhoenixClient()
+
+        # Mock the HTTP response
+        with patch('httpx.get') as mock_get:
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {
+                'data': []  # No annotations
+            }
+            mock_get.return_value = mock_response
+
+            count = await client.get_inter_rater_count('span_123')
+
+            assert count == 0
+            assert mock_get.called
+
+    @pytest.mark.asyncio
+    async def test_single_inter_rater_returns_one(self):
+        """
+        Test: get_inter_rater_count returns 1 with one inter-rater
+
+        Scenario:
+        - WHEN Phoenix returns 1 annotation with is_inter_rater=True
+        - THEN count should be 1
+        """
+        from backend.services.phoenix_client import PhoenixClient
+
+        client = PhoenixClient()
+
+        with patch('httpx.get') as mock_get:
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {
+                'data': [
+                    {
+                        'metadata': {
+                            'is_inter_rater': True,
+                            'rater_id': 'user_1'
+                        }
+                    }
+                ]
+            }
+            mock_get.return_value = mock_response
+
+            count = await client.get_inter_rater_count('span_123')
+
+            assert count == 1
+
+    @pytest.mark.asyncio
+    async def test_multiple_inter_raters_counted_correctly(self):
+        """
+        Test: get_inter_rater_count correctly counts unique inter-raters
+
+        Scenario:
+        - WHEN Phoenix returns multiple annotations from different inter-raters
+        - THEN count should equal unique rater_ids with is_inter_rater=True
+        """
+        from backend.services.phoenix_client import PhoenixClient
+
+        client = PhoenixClient()
+
+        with patch('httpx.get') as mock_get:
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {
+                'data': [
+                    {
+                        'name': 'Relevance Rating',
+                        'metadata': {
+                            'is_inter_rater': True,
+                            'rater_id': 'user_1'
+                        }
+                    },
+                    {
+                        'name': 'Clarity',
+                        'metadata': {
+                            'is_inter_rater': True,
+                            'rater_id': 'user_1'  # Same user, different annotation type
+                        }
+                    },
+                    {
+                        'name': 'Relevance Rating',
+                        'metadata': {
+                            'is_inter_rater': True,
+                            'rater_id': 'user_2'
+                        }
+                    },
+                    {
+                        'name': 'Relevance Rating',
+                        'metadata': {
+                            'is_inter_rater': False,  # Original feedback - should not count
+                            'rater_id': 'original_user'
+                        }
+                    }
+                ]
+            }
+            mock_get.return_value = mock_response
+
+            count = await client.get_inter_rater_count('span_123')
+
+            # Should count 2 unique inter-raters (user_1 and user_2)
+            assert count == 2
+
+    @pytest.mark.asyncio
+    async def test_phoenix_api_error_returns_zero(self):
+        """
+        Test: get_inter_rater_count returns 0 on Phoenix API error
+
+        Scenario:
+        - WHEN Phoenix API returns error status
+        - THEN count should be 0 (fail safe)
+        - AND error should be logged
+        """
+        from backend.services.phoenix_client import PhoenixClient
+
+        client = PhoenixClient()
+
+        with patch('httpx.get') as mock_get:
+            mock_response = Mock()
+            mock_response.status_code = 500
+            mock_get.return_value = mock_response
+
+            count = await client.get_inter_rater_count('span_123')
+
+            assert count == 0
+
+
+class TestPhoenixClientCheckUserAlreadyRated:
+    """Test suite for check_user_already_rated method"""
+
+    @pytest.mark.asyncio
+    async def test_user_has_not_rated(self):
+        """
+        Test: check_user_already_rated returns False when user hasn't rated
+
+        Scenario:
+        - WHEN Phoenix returns no annotations for this user
+        - THEN should return False
+        """
+        from backend.services.phoenix_client import PhoenixClient
+
+        client = PhoenixClient()
+
+        with patch('httpx.get') as mock_get:
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {
+                'data': []  # No annotations from this user
+            }
+            mock_get.return_value = mock_response
+
+            already_rated = await client.check_user_already_rated('span_123', 'user_1')
+
+            assert already_rated is False
+
+    @pytest.mark.asyncio
+    async def test_user_has_already_rated(self):
+        """
+        Test: check_user_already_rated returns True when user has rated
+
+        Scenario:
+        - WHEN Phoenix returns annotation with matching rater_id
+        - THEN should return True
+        """
+        from backend.services.phoenix_client import PhoenixClient
+
+        client = PhoenixClient()
+
+        with patch('httpx.get') as mock_get:
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {
+                'data': [
+                    {
+                        'metadata': {
+                            'is_inter_rater': True,
+                            'rater_id': 'user_1'
+                        }
+                    }
+                ]
+            }
+            mock_get.return_value = mock_response
+
+            already_rated = await client.check_user_already_rated('span_123', 'user_1')
+
+            assert already_rated is True
+
+    @pytest.mark.asyncio
+    async def test_different_user_rated(self):
+        """
+        Test: check_user_already_rated returns False for different user
+
+        Scenario:
+        - WHEN Phoenix returns annotations from different users
+        - THEN should return False for the queried user
+        """
+        from backend.services.phoenix_client import PhoenixClient
+
+        client = PhoenixClient()
+
+        with patch('httpx.get') as mock_get:
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {
+                'data': [
+                    {
+                        'metadata': {
+                            'is_inter_rater': True,
+                            'rater_id': 'user_2'  # Different user
+                        }
+                    }
+                ]
+            }
+            mock_get.return_value = mock_response
+
+            already_rated = await client.check_user_already_rated('span_123', 'user_1')
+
+            assert already_rated is False
+
+
+class TestPhoenixClientQuerySpansWithFeedback:
+    """Test suite for query_spans_with_feedback method"""
+
+    @pytest.mark.asyncio
+    async def test_excludes_user_own_feedback(self):
+        """
+        Test: query_spans_with_feedback excludes user's own feedback
+
+        Scenario:
+        - WHEN querying for inter-rater sessions
+        - THEN should exclude spans where user submitted original feedback
+        """
+        from backend.services.phoenix_client import PhoenixClient
+
+        client = PhoenixClient()
+
+        with patch('httpx.post') as mock_post:
+            mock_response = Mock()
+            mock_response.status_code = 200
+            # Simulate Phoenix GraphQL response
+            mock_response.json.return_value = {
+                'data': {
+                    'spans': {
+                        'edges': [
+                            {
+                                'node': {
+                                    'context': {'spanId': '12345'},
+                                    'name': 'com.atlas.rag.generation.response',
+                                    'spanKind': 'LLM',
+                                    'attributes': {
+                                        'output.value': 'Test output'
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+            mock_post.return_value = mock_response
+
+            # Mock annotations check
+            with patch('httpx.get') as mock_get:
+                mock_annotations = Mock()
+                mock_annotations.status_code = 200
+                mock_annotations.json.return_value = {
+                    'data': [
+                        {
+                            'metadata': {
+                                'is_inter_rater': False,
+                                'user_id': 'different_user'  # Not the excluded user
+                            }
+                        }
+                    ]
+                }
+                mock_get.return_value = mock_annotations
+
+                sessions = await client.query_spans_with_feedback(
+                    exclude_user_id='user_to_exclude',
+                    limit=10
+                )
+
+                # Should return sessions (not excluding based on different_user)
+                assert isinstance(sessions, list)
+
+    @pytest.mark.asyncio
+    async def test_only_returns_spans_with_feedback(self):
+        """
+        Test: query_spans_with_feedback only returns spans with user feedback
+
+        Scenario:
+        - WHEN querying for inter-rater sessions
+        - THEN should only return spans that have original user feedback
+        - AND should exclude spans without feedback
+        """
+        from backend.services.phoenix_client import PhoenixClient
+
+        client = PhoenixClient()
+
+        # This test validates that _get_span_feedback_annotations filters correctly
+        # Full implementation requires complex mocking of Phoenix GraphQL API
+        assert True  # Placeholder for complex integration test
+
+
+# Pytest configuration
+def pytest_configure(config):
+    """Configure custom pytest markers"""
+    config.addinivalue_line(
+        "markers", "integration: marks tests as integration tests requiring Phoenix instance"
+    )

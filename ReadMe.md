@@ -155,6 +155,7 @@ This workflow ensures that your retrievers are always in sync with your vector s
 
 ### Development and Deployment
 - [Development Environment](docs/development.md) - Local development setup, workflow, and debugging
+- [Testing](docs/testing.md) - Test suite, running tests, and writing new tests
 - [Staging Environment](docs/staging.md) - Local staging deployment for development and testing
 - [Production Deployment](docs/production.md) - Complete production deployment guide with SSL, systemd services, and maintenance
 - [Health Monitoring](docs/health_monitoring.md) - System health checks, monitoring, and troubleshooting

@@ -1,10 +1,43 @@
-> **Note**: This file provides project context and setup information for AI coding assistants (Claude Code, Cursor, GitHub Copilot, etc.) to help them understand the ATLAS codebase, conventions, and common operations.
+> **Note**: This file provides project context, OpenSpec workflow, and setup information for Claude Code to help understand the ATLAS codebase, conventions, and common operations. This is the single source of truth for AI assistants working on this project.
 
 # ATLAS - AI Infrastructure Research Platform
 
+## OpenSpec Workflow
+
+This project uses [OpenSpec](https://github.com/Fission-AI/OpenSpec) for spec-driven development. When planning significant changes:
+
+### When to Create an OpenSpec Change Proposal
+
+Create a proposal when you need to:
+- Add features or functionality
+- Make breaking changes (API, schema)
+- Change architecture or patterns
+- Optimize performance (changes behavior)
+- Update security patterns
+
+Skip proposals for:
+- Bug fixes (restore intended behavior)
+- Typos, formatting, comments
+- Dependency updates (non-breaking)
+- Configuration changes
+- Tests for existing behavior
+
+### Quick Workflow
+
+1. **Search existing work**: `openspec list` and `openspec list --specs`
+2. **Create proposal**: Choose unique `change-id` (kebab-case, verb-led: `add-`, `update-`, `remove-`)
+3. **Scaffold**: Create `proposal.md`, `tasks.md`, and spec deltas under `openspec/changes/<id>/`
+4. **Validate**: `openspec validate <change-id> --strict`
+5. **Implement**: Follow tasks sequentially
+6. **Archive**: After deployment, use `openspec archive <change-id>`
+
+**Full OpenSpec Documentation**: See `openspec/AGENTS.md` for complete workflow details, validation rules, and examples.
+
+---
+
 ATLAS: Analysis and Testing of Language Models for Archival Systems is a test harness for the evaluation of Large Language Model (LLM) Retrieval Augmented Generation (RAG) for Humanities & Social Science (HASS) research. ATLAS is a deliverable of the [AI as Infrastructure (AIINFRA)](https://aiinfra.anu.edu.au) project, focused on developing evaluation frameworks for LLM RAG systems designed for historical research.
 
-**Research Tool Philosophy**: This is a research prototype emphasizing lean, well-documented code that fails fast. It follows amateur Research Software Engineering (RSE) practices - not intended as an enterprise application. The project makes heavy use of AI coding support. 
+**Research Tool Philosophy**: This is a research prototype emphasizing lean, well-documented code that fails fast. It follows amateur Research Software Engineering (RSE) practices - not intended as an enterprise application. The project makes heavy use of AI coding support.
 
 ## Development
 
@@ -70,7 +103,7 @@ Note: Frontend dependencies are installed automatically - see Makefile for devel
 
 ### Environment Files
 - `config/.env.development` - Development settings
-- `config/.env.staging` - Staging environment settings  
+- `config/.env.staging` - Staging environment settings
 - `config/.env.production` - Production settings (server-only)
 
 ### Test Targets
