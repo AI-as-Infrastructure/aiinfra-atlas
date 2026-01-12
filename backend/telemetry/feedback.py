@@ -290,8 +290,9 @@ def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str = None)
             from backend.services.phoenix_client import phoenix_client
             original_span_id = feedback_data.get('original_span_id')
 
-            # Use synchronous version to avoid event loop issues
-            count = phoenix_client.get_inter_rater_count_sync(original_span_id)
+            # Call async method - asyncio.run() creates new loop
+            import asyncio
+            count = asyncio.run(phoenix_client.get_inter_rater_count(original_span_id))
             inter_rater_number = count + 1
 
             logger.info(f"Inter-rater number determined: {inter_rater_number} (existing count: {count})")

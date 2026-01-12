@@ -633,9 +633,10 @@ class PhoenixAPIClient:
             logger.error(f"Error checking if user already rated: {e}")
             return False
 
-    def get_inter_rater_count_sync(self, span_id: str) -> int:
+    async def get_inter_rater_count(self, span_id: str) -> int:
         """
-        Get the number of inter-rater feedback entries for a span (synchronous version).
+        Get the number of inter-rater feedback entries for a span.
+        Uses async httpx to avoid blocking the event loop.
 
         Args:
             span_id: The original span ID
@@ -664,13 +665,14 @@ class PhoenixAPIClient:
                 "limit": 100
             }
 
-            # Query annotations for this span
-            response = httpx.get(
-                annotations_endpoint,
-                headers=headers,
-                params=params,
-                timeout=10.0
-            )
+            # Use async httpx client to avoid blocking event loop
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    annotations_endpoint,
+                    headers=headers,
+                    params=params,
+                    timeout=10.0
+                )
 
             if response.status_code == 200:
                 annotations = response.json()
@@ -699,13 +701,6 @@ class PhoenixAPIClient:
         except Exception as e:
             logger.error(f"Error getting inter-rater count: {e}")
             return 0
-
-    async def get_inter_rater_count(self, span_id: str) -> int:
-        """
-        Get the number of inter-rater feedback entries for a span (async version).
-        Delegates to synchronous version since httpx call is sync anyway.
-        """
-        return self.get_inter_rater_count_sync(span_id)
 
 # Global instance
 phoenix_client = PhoenixAPIClient()
