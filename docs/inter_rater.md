@@ -30,6 +30,62 @@ Also ensure Cognito auth is enabled where required:
 VITE_USE_COGNITO_AUTH=true
 ```
 
+## Configuration Guidelines
+
+### Choosing Optimal Values
+
+The relationship between `INTER_RATER_MAX_RATINGS` and `INTER_RATER_SESSIONS_PER_USER` determines coverage and workload distribution:
+
+**Small Teams (2-5 users):**
+```bash
+INTER_RATER_MAX_RATINGS=2          # 2 inter-raters per session
+INTER_RATER_SESSIONS_PER_USER=10   # 10 sessions per user
+```
+- Good for quick validation with limited resources
+- Each session gets 2 independent ratings
+- Users rate more sessions but with lighter coverage
+
+**Medium Teams (5-10 users):**
+```bash
+INTER_RATER_MAX_RATINGS=3          # 3 inter-raters per session (recommended)
+INTER_RATER_SESSIONS_PER_USER=5    # 5 sessions per user (default)
+```
+- Recommended for most use cases
+- Provides good statistical reliability
+- Balanced workload per user
+
+**Large Teams (10+ users):**
+```bash
+INTER_RATER_MAX_RATINGS=5          # 5 inter-raters per session
+INTER_RATER_SESSIONS_PER_USER=3    # 3 sessions per user
+```
+- Maximum inter-rater reliability
+- Lower workload per user
+- Requires more users for full coverage
+
+### Coverage Calculation
+
+To achieve full coverage of N sessions:
+```
+Minimum users needed = (N × INTER_RATER_MAX_RATINGS) / INTER_RATER_SESSIONS_PER_USER
+```
+
+**Example:**
+- 20 sessions to cover
+- MAX_RATINGS=3
+- SESSIONS_PER_USER=5
+- Minimum users = (20 × 3) / 5 = **12 users needed**
+
+### Workload Estimation
+
+Per-user time commitment:
+```
+Time per session: ~5-10 minutes (all 9 fields)
+Total time = SESSIONS_PER_USER × 5-10 minutes
+```
+
+With `SESSIONS_PER_USER=5`: **25-50 minutes per user**
+
 ## Architecture
 - Backend
   - `backend/services/inter_rater_service.py`: allocation, per-user cache, limits
@@ -55,14 +111,85 @@ VITE_USE_COGNITO_AUTH=true
    - **Limit to `INTER_RATER_SESSIONS_PER_USER`** (default: 5 per user)
 5. Counts cached per user (short TTL). Cache invalidated when the user submits inter-rater feedback.
 
+## Allocation Algorithm Details
+
+The allocation system uses **deterministic user-specific allocation** to ensure:
+- Each user gets a consistent set of sessions (same user → same sessions)
+- Different users get different, non-overlapping sessions
+- Fair distribution across all available sessions
+
+### How It Works
+
+**Implementation:** `backend/services/inter_rater_service.py` (_allocate_sessions_to_user method, lines 51-123)
+
+1. **Sort Sessions:** All eligible sessions are sorted by `span_id` for consistent ordering
+2. **Hash User ID:** User's Cognito UUID is hashed to generate a starting position
+3. **Allocate Sequential Sessions:** Starting from hash position, allocate N sessions where N = `INTER_RATER_SESSIONS_PER_USER`
+4. **Wrap Around:** If needed, wrap around to the beginning (modulo operation)
+
+### Example with 15 Sessions
+
+```
+Configuration:
+- INTER_RATER_SESSIONS_PER_USER=5
+- 15 eligible sessions available (sorted by span_id)
+
+User A (hash=0):  → Sessions [0, 1, 2, 3, 4]
+User B (hash=5):  → Sessions [5, 6, 7, 8, 9]
+User C (hash=10): → Sessions [10, 11, 12, 13, 14]
+User D (hash=2):  → Sessions [2, 3, 4, 5, 6]  (overlaps with A and B)
+```
+
+**Note:** Some overlap occurs naturally. This is acceptable because the system also checks:
+- User hasn't already rated the session
+- Session hasn't reached `INTER_RATER_MAX_RATINGS` capacity
+
+### Progressive Filling
+
+As users complete ratings, sessions fill up:
+
+```
+Initial State:
+- Session 001: 0/3 ratings
+- Session 002: 0/3 ratings
+- Session 003: 0/3 ratings
+
+After User A rates:
+- Session 001: 1/3 ratings ✓
+- Session 002: 1/3 ratings ✓
+- Session 003: 1/3 ratings ✓
+
+After User B rates:
+- Session 001: 2/3 ratings ✓
+- Session 002: 2/3 ratings ✓
+- Session 003: 2/3 ratings ✓
+
+After User C rates:
+- Session 001: 3/3 ratings [FULL - removed from allocation]
+- Session 002: 3/3 ratings [FULL - removed from allocation]
+- Session 003: 3/3 ratings [FULL - removed from allocation]
+```
+
+Once a session reaches `INTER_RATER_MAX_RATINGS`, it's automatically excluded from future allocations.
+
+### Capacity and Coverage
+
+The system self-balances:
+- Sessions near capacity get fewer new allocations (already rated check)
+- Users who complete their sessions get no new allocations (cache invalidation shows 0 available)
+- New sessions with feedback automatically enter the allocation pool
+
 ## Data Flow (Submission)
 1. Dashboard posts inter-rater feedback to `POST /api/feedback`
 2. Backend verifies JWT, derives anonymous ID
-3. Feedback is attached to the original QA span in Phoenix as span annotations via `feedback.submit_span_annotation()`
-4. Inter-rater entries:
-   - Annotation names are prefixed with `[Inter-rater]`
-   - Metadata includes `is_inter_rater=true`, `rater_id=<anon_id>`, `original_span_id=<phoenix_span>`
-5. On success, the user’s inter-rater cache is invalidated so counts update immediately
+3. Backend queries Phoenix to count existing inter-raters for this span (async, non-blocking)
+4. Inter-rater number calculated: `existing_count + 1`
+5. Feedback is attached to the original QA span in Phoenix as span annotations via `feedback.submit_span_annotation()`
+6. Inter-rater entries:
+   - Annotation names are prefixed with numbered format: `[inter-rating-1]`, `[inter-rating-2]`, `[inter-rating-3]`
+   - Annotation IDs include the number for uniqueness: `inter_rater_{rater_id}_{number}_{qa_id}_{timestamp}`
+   - Metadata includes `is_inter_rater=true`, `rater_id=<anon_id>`, `inter_rater_number=<N>`, `original_span_id=<phoenix_span>`
+7. On success, the user's inter-rater cache is invalidated so counts update immediately
 
 ## Anonymity & Privacy
 - Anonymous IDs: `anonymous_id_service` hashes the Cognito `sub` with an environment-specific salt, producing `anon_<16-hex>` IDs
@@ -98,14 +225,18 @@ Both main ratings and inter-ratings use the same field order - **all 9 fields ar
   - Debug endpoint to verify user ID extraction from JWT tokens
 
 ## Caching
-- Per-user cache key: `inter_rater_sessions_{anon_user_id}`
-- Short TTL (~5 minutes)
-- Invalidated immediately on successful inter-rater submission by that user
+- **Session cache:** Per-user key `inter_rater_sessions_{anon_user_id}` with 60-second TTL
+- **Stats cache:** Per-user key `stats_{anon_user_id}` with 10-second TTL
+- Both caches invalidated immediately when user submits inter-rater feedback
+- Cache validation: Cached sessions are validated against Phoenix to filter out deleted sessions
+- Global cache clear available for significant Phoenix data changes
 
 ## Phoenix Notes
 - POST annotations endpoint used: `/v1/span_annotations?sync=true`
-- All inter-rater annotations are clearly separated by name prefix and metadata
+- All inter-rater annotations are clearly separated by numbered name prefixes (`[inter-rating-1]`, `[inter-rating-2]`, etc.) and metadata
+- Unique annotation IDs prevent overwrites when multiple raters rate the same session
 - Headers include API key only; headers are redacted in logs
+- Inter-rater counting uses GET endpoint: `/v1/projects/{project}/span_annotations` with async httpx for non-blocking queries
 
 ## Troubleshooting
 - **No sessions available**: 
@@ -121,9 +252,16 @@ Both main ratings and inter-ratings use the same field order - **all 9 fields ar
 - **Duplicate rating prevented**: Backend checks if the same rater already rated the same original span
 - **Count not updating immediately**: Cache invalidation happens after submission (handled in backend)
 
-## Recent Fixes (2025-08)
+## Recent Fixes
+
+### 2026-01 (January)
+- ✅ **Numbered Annotations**: Inter-rater annotations now show as `[inter-rating-1]`, `[inter-rating-2]`, `[inter-rating-3]` instead of generic `[Inter-rater]` (GitHub issue #43)
+- ✅ **Async Event Loop Fix**: Converted `submit_span_annotation()` to async to fix `inter_rater_number` determination in FastAPI's running event loop
+- ✅ **Unique Annotation IDs**: Include `inter_rater_number` in annotation IDs to prevent overwrites when multiple raters rate the same session
+
+### 2025-08 (August)
 - ✅ **Authentication Bug**: Fixed frontend components to send Authorization headers with feedback
-- ✅ **User Type Field**: Added missing User Type annotation to Phoenix feedback processing  
+- ✅ **User Type Field**: Added missing User Type annotation to Phoenix feedback processing
 - ✅ **Session Filtering**: Only sessions with existing feedback annotations are allocated for inter-rating
 - ✅ **Anonymous ID Logging**: Enhanced logging for debugging while maintaining privacy
 - ✅ **Filter Loading**: Fixed New Session button to properly reload dynamic filters
