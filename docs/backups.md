@@ -36,20 +36,25 @@ Backup settings are configured in your environment file (`.env.production` for p
 
 ```bash
 # Required: Projects to backup (comma-separated)
-PHOENIX_PROJECT_BACKUPS=ATLAS-Hansard-Prod
+PHOENIX_PROJECT_BACKUPS=ATLAS-Prod
 
 # Required: Base backup directory
-PHOENIX_BACKUP_PATH="/path/to/your/backup/directory"
+PHOENIX_BACKUP_DIR=./data_backup
 
-# Required: Phoenix API authentication
-PHOENIX_CLIENT_HEADERS="api_key=your_phoenix_api_key"
-PHOENIX_COLLECTOR_ENDPOINT="https://app.phoenix.arize.com"
+# Required: Phoenix Spaces Configuration
+# Created by AIINFRA (https://aiinfra.anu.edu.au) - configure for your own Phoenix space
+PHOENIX_SPACE_ID=atlas
+PHOENIX_API_KEY="your_phoenix_api_key"
+PHOENIX_CLIENT_HEADERS="Authorization=Bearer your_phoenix_api_key"
+PHOENIX_COLLECTOR_ENDPOINT="https://app.phoenix.arize.com/s/atlas"
 
 # Optional: Control what gets exported
 PHOENIX_EXPORT_ANNOTATIONS=true  # Include span annotations (default: true)
-PHOENIX_EXPORT_DATASETS=true     # Include datasets (default: true)  
+PHOENIX_EXPORT_DATASETS=true     # Include datasets (default: true)
 PHOENIX_EXPORT_CSV=true          # Export CSV in addition to Parquet (default: true)
 ```
+
+**Note**: Configure `PHOENIX_SPACE_ID` and `PHOENIX_PROJECT_BACKUPS` to match your Phoenix space and project names.
 
 ## Data Structure and Analysis Integration
 
@@ -152,16 +157,16 @@ ls analysis/output/hansard_analysis_*
 crontab -e
 
 # Add this line to run backups daily at 1:20 AM
-20 1 * * * cd /path/to/aiinfra-atlas && /usr/bin/make backup-prod >> /path/to/backup.log 2>&1
+20 1 * * * cd /path/to/atlas && /usr/bin/make backup-prod >> /path/to/backup.log 2>&1
 ```
 
 **Option 2: Weekly backup with analysis** (Recommended)
 ```bash
 # Weekly comprehensive analysis (Mondays at 2:00 AM)
-0 2 * * 1 cd /path/to/aiinfra-atlas && /usr/bin/make backup-prod && /usr/bin/make hansard-analysis >> /path/to/analysis.log 2>&1
+0 2 * * 1 cd /path/to/atlas && /usr/bin/make backup-prod && /usr/bin/make hansard-analysis >> /path/to/analysis.log 2>&1
 
-# Daily backup only (other days at 1:20 AM)  
-20 1 * * 2-7 cd /path/to/aiinfra-atlas && /usr/bin/make backup-prod >> /path/to/backup.log 2>&1
+# Daily backup only (other days at 1:20 AM)
+20 1 * * 2-7 cd /path/to/atlas && /usr/bin/make backup-prod >> /path/to/backup.log 2>&1
 ```
 
 ### Monitoring and Alerting

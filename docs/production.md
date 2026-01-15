@@ -113,10 +113,15 @@ AWS_SECRET_ACCESS_KEY=...
 
 **Observability (Arize Phoenix):**
 ```bash
-PHOENIX_CLIENT_HEADERS="api_key=your-key"
-PHOENIX_PROJECT_NAME=your-project
-PHOENIX_COLLECTOR_ENDPOINT="https://app.phoenix.arize.com"
+# Phoenix Spaces Configuration
+# Configure for your own Phoenix space
+PHOENIX_SPACE_ID=atlas
+PHOENIX_API_KEY=your_phoenix_api_key
+PHOENIX_CLIENT_HEADERS="Authorization=Bearer your_phoenix_api_key"
+PHOENIX_PROJECT_NAME=ATLAS-Prod
+PHOENIX_COLLECTOR_ENDPOINT="https://app.phoenix.arize.com/s/atlas"
 ```
+**Note**: Create your own Phoenix space at https://app.phoenix.arize.com and configure these variables with your space ID and API keys. Different environments (Dev/Staging/Prod) should use different `PHOENIX_PROJECT_NAME` values within the same space.
 
 **Authentication (AWS Cognito):**
 ```bash

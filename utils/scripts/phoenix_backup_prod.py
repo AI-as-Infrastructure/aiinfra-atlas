@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """
-Phoenix backup: export spans and feedback annotations (incl. UI "note") from Phoenix (Legacy by default).
+Phoenix backup: export spans and feedback annotations (incl. UI "note") from Phoenix.
 
 Usage (loads env from config/.env.production unless overridden):
   PHOENIX_PROJECT_BACKUPS="Project A,Project B" \
   PHOENIX_API_KEY="system:..." \
-  PHOENIX_BASE_URL="https://app.phoenix.arize.com/legacy" \
+  PHOENIX_SPACE_ID="atlas" \
   python3 phoenix_backup_prod.py
 
 Common env vars:
   PHOENIX_PROJECT_BACKUPS       Comma-separated project names or IDs (required).
-  PHOENIX_BASE_URL              Phoenix base URL. Default: https://app.phoenix.arize.com/legacy
+  PHOENIX_SPACE_ID              Phoenix space ID. Default: atlas
+  PHOENIX_BASE_URL              Phoenix base URL (overrides space ID). Default: https://app.phoenix.arize.com/s/{PHOENIX_SPACE_ID}
   PHOENIX_API_KEY               API key (colons are OK). Uses Bearer auth.
   PHOENIX_ENV_FILE              .env path (default: config/.env.production)
   PHOENIX_BACKUP_DIR            Base folder for backups (relative to $HOME if relative).
@@ -122,10 +123,17 @@ def discover_projects() -> List[str]:
 
 def init_client() -> "Client":
     api_key = os.getenv("PHOENIX_API_KEY", "").strip()
-    base_url = os.getenv("PHOENIX_BASE_URL", "https://app.phoenix.arize.com/legacy").strip()
+    base_url_override = os.getenv("PHOENIX_BASE_URL", "").strip()
 
-    if not base_url:
-        base_url = "https://app.phoenix.arize.com/legacy"
+    # Use PHOENIX_BASE_URL if provided, otherwise construct from PHOENIX_SPACE_ID
+    if base_url_override:
+        base_url = base_url_override
+    else:
+        # Default to atlas space (generic default for open source)
+        space_id = os.getenv("PHOENIX_SPACE_ID", "atlas").strip()
+        base_url = f"https://app.phoenix.arize.com/s/{space_id}"
+
+    print(f"[backup] Using Phoenix endpoint: {base_url}")
 
     # The Client signature is (base_url=..., api_key=...) in modern SDKs.
     # Older clients may also accept endpoint=..., headers=...; we try the modern way first.

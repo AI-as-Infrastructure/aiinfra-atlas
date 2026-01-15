@@ -148,15 +148,29 @@ REDIS_MAX_MEMORY_MB=1024
 ```bash
 # Telemetry settings
 TELEMETRY_ENABLED=true             # Enable/disable telemetry
-PHOENIX_PROJECT_NAME=ATLAS-Hansard-Dev
-PHOENIX_COLLECTOR_ENDPOINT="https://app.phoenix.arize.com"
-PHOENIX_CLIENT_HEADERS="api_key=<DEFAULT>"
+PHOENIX_PROJECT_NAME=ATLAS-Dev
+
+# Phoenix Spaces Configuration
+# Created by AIINFRA (https://aiinfra.anu.edu.au) - configure for your own Phoenix space
+# PHOENIX_SPACE_ID: Your Phoenix space identifier (e.g., 'atlas', 'research', etc.)
+PHOENIX_SPACE_ID=atlas
+PHOENIX_COLLECTOR_ENDPOINT="https://app.phoenix.arize.com/s/atlas"
+PHOENIX_API_KEY="<DEFAULT>"
+PHOENIX_CLIENT_HEADERS="Authorization=Bearer <DEFAULT>"
 
 # OpenTelemetry configuration
-OTEL_EXPORTER_OTLP_HEADERS="api_key=<DEFAULT>"
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <DEFAULT>"
 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
-OTEL_RESOURCE_ATTRIBUTES="service.name=atlas"
+OTEL_RESOURCE_ATTRIBUTES="service.name=atlas,project.name=ATLAS-Dev"
 ```
+
+**Phoenix Spaces Architecture:**
+- **Space = Organizational Boundary**: A Phoenix space provides isolation for your research project
+- **Projects within Space**: Different environments use different project names:
+  - `ATLAS-Dev`, `ATLAS-Staging`, `ATLAS-Prod` (example naming)
+- **Authentication**: Use Bearer token authentication obtained from Phoenix Cloud settings
+- **Finding Your Space**: Log into Phoenix Cloud and check the URL structure: `https://app.phoenix.arize.com/s/{space-id}/projects`
+- **Getting Started**: Create a space at https://app.phoenix.arize.com and generate API keys from settings
 
 ### Feedback and UI Features
 
