@@ -45,12 +45,6 @@ hansard-analysis: venv ## Run Hansard parliamentary data analysis with visualiza
 	$(VENV_DIR)/bin/python analysis/analyze_hansard_spans.py
 	@echo "✅ Hansard analysis complete. Check analysis/output/ for results."
 
-.PHONY: darwin-analysis
-darwin-analysis: venv ## Run Darwin correspondence data analysis with visualizations (internal)
-	@echo "🔬 Running Darwin analysis..."
-	$(VENV_DIR)/bin/python analysis/analyze_darwin_spans.py
-	@echo "✅ Darwin analysis complete. Check analysis/output/ for results."
-
 # Virtual environment setup
 .PHONY: venv
 venv: $(VENV_DIR)/bin/activate

@@ -226,47 +226,16 @@ async def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str =
     annotation_endpoint = f"{phoenix_endpoint}/v1/span_annotations?sync=true"
     
     def get_phoenix_headers():
-        client_headers = os.getenv('PHOENIX_CLIENT_HEADERS')
+        """Get headers for Phoenix API calls using Bearer authentication (spaces format)."""
         headers = {"Content-Type": "application/json"}
-        
-        # Try the direct Phoenix API key approach first
+
+        # Use PHOENIX_API_KEY with Bearer authentication
         phoenix_api_key = os.getenv('PHOENIX_API_KEY')
         if phoenix_api_key:
-            # Remove 'api_key=' prefix if present
-            if phoenix_api_key.startswith('api_key='):
-                phoenix_api_key = phoenix_api_key[8:]
-            headers['api_key'] = phoenix_api_key
+            headers['Authorization'] = f'Bearer {phoenix_api_key}'
             return headers
-        
-        # For Arize Cloud, use PHOENIX_CLIENT_HEADERS (contains api_key)
-        if client_headers:
-            try:
-                # Check if client_headers starts with 'api_key='
-                if client_headers.startswith('api_key='):
-                    # Extract the actual key (remove 'api_key=' prefix)
-                    api_key_value = client_headers[8:]
-                    headers['api_key'] = api_key_value
-                    return headers
-                    
-                # Check if it's in key:value format (like '71c89f6ab6b6dafbb51:a61f175')
-                if ':' in client_headers and not client_headers.startswith('{'):
-                    headers['api_key'] = client_headers
-                    return headers
-                    
-                # Or it might be JSON formatted
-                import json
-                headers_dict = json.loads(client_headers)
-                if 'api_key' in headers_dict:
-                    headers['api_key'] = headers_dict['api_key']
-                    return headers
-            except json.JSONDecodeError:
-                # Not JSON, likely a direct api_key
-                headers['api_key'] = client_headers
-                return headers
-            except Exception as e:
-                logger.error(f"Error processing PHOENIX_CLIENT_HEADERS: {e}")
-        
-        logger.warning("No Phoenix API key found - annotation may fail")
+
+        logger.error("PHOENIX_API_KEY not configured - feedback annotation will fail")
         return headers
 
     # Get authentication headers

@@ -520,44 +520,19 @@ class PhoenixAPIClient:
             return None
 
     def _get_phoenix_headers(self):
-        """Get authentication headers for Phoenix API calls (v11.13.2 format)."""
-        phoenix_api_key = os.getenv('PHOENIX_API_KEY')
-        client_headers = os.getenv('PHOENIX_CLIENT_HEADERS')
-        
+        """Get headers for Phoenix API calls using Bearer authentication (spaces format)."""
         headers = {
             "Accept": "application/json",
             "Content-Type": "application/json"
         }
-        
-        # Phoenix v11.13.2 expects api_key header (not Bearer authorization)
+
+        # Use PHOENIX_API_KEY with Bearer authentication for spaces architecture
+        phoenix_api_key = os.getenv('PHOENIX_API_KEY')
         if phoenix_api_key:
-            # Clean up the API key if it has prefixes
-            if phoenix_api_key.startswith('api_key='):
-                phoenix_api_key = phoenix_api_key[8:]
-            headers['api_key'] = phoenix_api_key
+            headers['Authorization'] = f'Bearer {phoenix_api_key}'
             return headers
-        
-        # Fallback to client headers if no API key
-        if client_headers:
-            try:
-                if client_headers.startswith('api_key='):
-                    api_key_value = client_headers[8:]
-                    headers['api_key'] = api_key_value
-                    return headers
-                elif ':' in client_headers and not client_headers.startswith('{'):
-                    headers['api_key'] = client_headers
-                    return headers
-                else:
-                    import json
-                    headers_dict = json.loads(client_headers)
-                    if 'api_key' in headers_dict:
-                        headers['api_key'] = headers_dict['api_key']
-                        return headers
-            except Exception:
-                headers['api_key'] = client_headers
-                return headers
-        
-        logger.warning("No Phoenix API key found in PHOENIX_API_KEY or PHOENIX_CLIENT_HEADERS")
+
+        logger.warning("PHOENIX_API_KEY not configured - inter-rater API calls will fail")
         return headers
 
     def _format_span_id(self, span_id: str) -> str:

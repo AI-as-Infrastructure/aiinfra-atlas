@@ -112,6 +112,13 @@ ATLAS uses "test targets" to configure LLM models and parameters:
 - Defines LLM provider, model, and retrieval settings
 - Current target set via `TEST_TARGET` environment variable
 
+### Phoenix Telemetry Configuration
+ATLAS uses Phoenix Arize for LLM observability and telemetry. The default configuration is generic for open source use:
+- **PHOENIX_SPACE_ID**: Set to `atlas` by default - customize for your Phoenix space
+- **PHOENIX_PROJECT_NAME**: Uses generic `ATLAS-Dev`, `ATLAS-Staging`, `ATLAS-Prod` naming
+- **Configuration**: All environment files use Bearer token authentication for Phoenix Cloud spaces
+- Users should create their own Phoenix space and update environment variables accordingly
+
 ## Documentation
 
 See `docs/` directory for detailed guides:
