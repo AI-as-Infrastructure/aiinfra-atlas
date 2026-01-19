@@ -104,7 +104,7 @@ from backend.modules.streaming import (
     stream_response_chunks,
     stream_documents_as_references
 )
-from backend.modules.llm import generate_response_with_telemetry
+from backend.modules.response import generate_response_with_telemetry
 from backend.telemetry.feedback import UserFeedback, FeedbackResponse
 from backend.modules.auth import get_current_user, optional_user, verify_cognito_token, is_cognito_enabled
 from backend.services.validation_service import validation_service, SessionData

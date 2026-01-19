@@ -22,7 +22,7 @@ try:
     from backend.modules.document_retrieval import retrieve_documents_with_telemetry
     from backend.modules.corpus_filtering import filter_documents_with_telemetry
     from backend.modules.document_reranking import rerank_documents_with_telemetry
-    from backend.modules.llm import generate_response_with_telemetry
+    from backend.modules.response import generate_response_with_telemetry
     from backend.modules.config import get_retriever
     from backend.modules.sensitive_contexts import detect_sensitive_contexts
     pass
