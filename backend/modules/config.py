@@ -278,14 +278,14 @@ def validate_config_schema(config: Dict[str, Any]) -> List[str]:
 def _initialize_retriever(config: Dict[str, Any]) -> None:
     """Initialize the retriever with the configuration."""
     global _retriever, _retriever_instance
-    
-    # Import here to avoid circular imports
-    from backend.retrievers.hansard_retriever import HansardRetriever
-    
+
     try:
         logger.debug("Initializing retriever with configuration")
-        _retriever_instance = HansardRetriever(config.get("retriever_config", {}))
-        _retriever = _retriever_instance  # Use HansardRetriever directly, not the LangChain wrapper
+        retriever_config = config.get("retriever_config", {})
+        _retriever_instance = load_retriever(config=retriever_config)
+        if _retriever_instance is None:
+            raise ValueError("load_retriever returned None")
+        _retriever = _retriever_instance
         logger.debug("Retriever initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize retriever: {e}")
@@ -353,9 +353,10 @@ def get_retriever_instance():
 def get_full_config() -> Dict[str, Any]:
     """Get configuration including metadata."""
     config = get_config()
+    retriever_type = os.getenv("RETRIEVER_MODULE", "hansard_retriever")
     return {
         **config,
-        "retriever_type": "hansard_retriever",
+        "retriever_type": retriever_type,
         "retriever_instance": get_retriever_instance().__class__.__name__ if get_retriever_instance() else None,
         "initialized": True
     }

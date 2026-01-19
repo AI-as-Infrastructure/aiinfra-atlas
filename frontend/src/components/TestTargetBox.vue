@@ -457,7 +457,20 @@ function formatProviderValue(val) {
   justify-content: flex-end;
 }
 
-.system-prompt-content,
+.system-prompt-content {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  font-size: 0.95em;
+  line-height: 1.7;
+  padding: 1.5rem;
+  background: #f8f9fa;
+  border-radius: 4px;
+  color: #2c3e50;
+}
+
+.system-prompt-full {
+  white-space: pre-line;
+}
+
 .vector-store-content {
   white-space: pre-wrap;
   font-family: monospace;

@@ -16,10 +16,21 @@ import os
 import matplotlib.pyplot as plt
 import seaborn as sns
 from collections import defaultdict
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv(dotenv_path=Path(__file__).parent.parent / "config" / ".env.development")
+
+# Configuration from environment variables
+ANALYSIS_BASE_DIR = os.getenv("ANALYSIS_BASE_DIR", str(Path(__file__).parent.parent / "data_backup" / "phoenix"))
+ANALYSIS_OUTPUT_DIR = os.getenv("ANALYSIS_OUTPUT_DIR", str(Path(__file__).parent / "output"))
+ANALYSIS_TITLE_PREFIX = os.getenv("ANALYSIS_TITLE_PREFIX", "Parliamentary Data")
 
 def find_latest_spans_path(project_name: str,
-                           base_dir: Path = Path("/home/jamessmithies/projects/aiinfra-atlas/data_backup/phoenix")) -> Path | None:
+                           base_dir: Path = None) -> Path | None:
     """Return the newest spans file path (parquet preferred, csv fallback) for a project."""
+    if base_dir is None:
+        base_dir = Path(ANALYSIS_BASE_DIR)
     if not base_dir.exists():
         return None
     parquet_candidates = list(base_dir.rglob(f"{project_name}/spans.parquet"))
@@ -53,7 +64,7 @@ def create_visualizations(df, feedback_data, output_dir):
     # 1. Feedback Scores Distribution
     if feedback_data:
         fig, axes = plt.subplots(2, 3, figsize=(18, 12))
-        fig.suptitle('Hansard Parliamentary Data: User Feedback Analysis', fontsize=16, fontweight='bold')
+        fig.suptitle(f'{ANALYSIS_TITLE_PREFIX}: User Feedback Analysis', fontsize=16, fontweight='bold')
         
         feedback_metrics = ['Analysis Quality', 'Clarity', 'Corpus Fidelity', 
                            'Factual Accuracy', 'Relevance Rating', 'Query Difficulty']
@@ -96,7 +107,7 @@ def create_visualizations(df, feedback_data, output_dir):
     
     if response_time_col:
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
-        fig.suptitle('Hansard System Performance Analysis', fontsize=16, fontweight='bold')
+        fig.suptitle(f'{ANALYSIS_TITLE_PREFIX} System Performance Analysis', fontsize=16, fontweight='bold')
         
         response_times = df[response_time_col].dropna()
         
@@ -138,7 +149,7 @@ def create_visualizations(df, feedback_data, output_dir):
         response_lengths = responses.str.len()
         
         fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 6))
-        fig.suptitle('Hansard Question-Answer Pattern Analysis', fontsize=16, fontweight='bold')
+        fig.suptitle(f'{ANALYSIS_TITLE_PREFIX} Question-Answer Pattern Analysis', fontsize=16, fontweight='bold')
         
         # Question length distribution
         ax1.hist(question_lengths, bins=20, alpha=0.7, color='lightgreen', edgecolor='black')
@@ -185,7 +196,7 @@ def create_visualizations(df, feedback_data, output_dir):
     # 4. Comprehensive Hansard Dashboard
     fig = plt.figure(figsize=(20, 12))
     gs = fig.add_gridspec(3, 4, hspace=0.3, wspace=0.3)
-    fig.suptitle('Hansard Data: Comprehensive Analysis Dashboard', 
+    fig.suptitle(f'{ANALYSIS_TITLE_PREFIX}: Comprehensive Analysis Dashboard',
                  fontsize=18, fontweight='bold')
     
     # Overall feedback summary (top left)
@@ -302,7 +313,11 @@ def create_visualizations(df, feedback_data, output_dir):
 def save_analysis_results(results, output_dir, figures_dir=None):
     """Save analysis results to files in a readable format."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
+
+    # Debug output
+    print(f"DEBUG: save_analysis_results output_dir = {output_dir}")
+    print(f"DEBUG: save_analysis_results figures_dir = {figures_dir}")
+
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
     
@@ -350,9 +365,13 @@ def save_analysis_results(results, output_dir, figures_dir=None):
 
 def generate_system_config_info():
     """Generate system configuration information from Phoenix telemetry data."""
+    # Debug output
+    print(f"DEBUG: generate_system_config_info base_dir = {ANALYSIS_BASE_DIR}")
+
     try:
         # Load the spans data to extract configuration from com.atlas.rag.pipeline spans
         latest_path = find_latest_spans_path("Hansard-Prod")
+        print(f"DEBUG: generate_system_config_info latest_path = {latest_path}")
         if latest_path is None:
             raise FileNotFoundError("No Hansard-Prod spans backup found")
         df = load_spans_dataframe(latest_path)
@@ -478,7 +497,12 @@ def analyze_hansard_spans():
     
     # Define file paths
     latest_path = find_latest_spans_path("Hansard-Prod")
-    output_dir = "/home/jamessmithies/projects/aiinfra-atlas/analysis/output"
+    output_dir = ANALYSIS_OUTPUT_DIR
+
+    # Debug output
+    print(f"DEBUG: base_dir = {ANALYSIS_BASE_DIR}")
+    print(f"DEBUG: output_dir = {output_dir}")
+    print(f"DEBUG: latest_path = {latest_path}")
     
     print("="*80)
     print("HANSARD PARLIAMENTARY DATA SPANS ANALYSIS")
