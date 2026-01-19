@@ -100,7 +100,3 @@ def get_primary_sensitivity(sensitive_contexts):
         return None
         
     return sensitive_contexts[0][0]
-
-# For backward compatibility with old code
-detect_context_conditions = detect_sensitive_contexts
-get_primary_context = get_primary_sensitivity 
