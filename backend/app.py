@@ -1,21 +1,17 @@
-import os
+"""
+ATLAS Backend Application.
 
-from fastapi import FastAPI, HTTPException, Request, Body
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+FastAPI application entry point with router configuration.
+Endpoints are organized into router modules under backend/routers/.
+"""
+
 import os
-from dotenv import load_dotenv
-import asyncio
-import json
-import datetime
-import logging
-import time
-import gc
-import weakref
-from typing import Dict, List, Optional
-import uuid
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from datetime import datetime
+from dotenv import load_dotenv
+import logging
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -24,127 +20,71 @@ logger = logging.getLogger(__name__)
 # Reduce httpx logging to avoid exposing URLs in logs
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
-# Load environment variables with strict mode - fail if environment file is missing
+# Load environment variables with strict mode
 project_root = os.path.dirname(os.path.dirname(__file__))
 
-# Get environment from ENVIRONMENT (set by deployment scripts)
 atlas_environment = os.getenv("ENVIRONMENT")
 if not atlas_environment:
     logger.error("ENVIRONMENT variable is not set. Cannot determine which configuration to use.")
     raise EnvironmentError("ENVIRONMENT must be set (e.g., 'development', 'staging', 'production') in your .env file")
-    
+
 env_file_name = f".env.{atlas_environment.lower()}"
 env_path = os.path.join(project_root, "config", env_file_name)
 
-# Strict checking - application will not start if the environment file is missing
 if not os.path.exists(env_path):
     logger.error(f"Required environment file not found: {env_path} (ATLAS_ENV='{atlas_environment}')")
     raise FileNotFoundError(f"Cannot find environment file: {env_path}. Deployment is misconfigured.")
 
-# Load the environment file
 logger.info(f"Loading environment variables from: {env_path} (ATLAS_ENV='{atlas_environment}')")
 load_dotenv(dotenv_path=env_path, override=True)
-# Environment variables are now loaded directly with no need for an env_loaded flag
 
 # Initialize telemetry after environment variables are loaded
 from backend.telemetry.core import initialize_telemetry
+from backend.telemetry import telemetry_initialized, telemetry_router
 
-# Get environment for telemetry behavior
 environment = os.getenv("ENVIRONMENT", "development").lower()
 telemetry_enabled = os.getenv("TELEMETRY_ENABLED", "true").lower() in ["true", "1", "yes"]
 
 if not telemetry_enabled:
-    logger.info("📝 Telemetry disabled via TELEMETRY_ENABLED=false")
-    telemetry_success = True  # Consider disabled telemetry as "successful" for app startup
+    logger.info("Telemetry disabled via TELEMETRY_ENABLED=false")
+    telemetry_success = True
 else:
     try:
         telemetry_success = initialize_telemetry()
         if telemetry_success:
-            logger.info("✅ Telemetry initialized successfully")
+            logger.info("Telemetry initialized successfully")
         else:
-            # When telemetry is enabled, it MUST work in ALL environments
-            logger.error(f"❌ CRITICAL: Telemetry initialization failed in {environment}")
+            logger.error(f"CRITICAL: Telemetry initialization failed in {environment}")
             raise RuntimeError(f"Telemetry is enabled but initialization returned False")
     except Exception as e:
-        # When telemetry is enabled, failures are fatal in ALL environments
-        logger.error(f"❌ CRITICAL: Telemetry initialization failed in {environment}: {e}")
+        logger.error(f"CRITICAL: Telemetry initialization failed in {environment}: {e}")
         raise RuntimeError(f"Telemetry initialization failed: {e}")
-
-# Import core modules and telemetry utilities
-from backend.telemetry import (
-    using_session,
-    create_span,
-    log_user_feedback,
-    SpanAttributes,
-    SpanNames,
-    telemetry_initialized,
-    telemetry_router,
-    OpenInferenceSpanKind,
-    Status,
-    StatusCode
-)
-
-# Import our new utility modules
-from backend.modules.config import (
-    initialize_config, 
-    get_config, 
-    get_retriever, 
-    get_retriever_instance,
-    get_system_prompt,
-    get_corpus_options,
-    get_citation_limit
-)
-from backend.modules.document_retrieval import retrieve_documents_with_telemetry
-from backend.modules.corpus_filtering import filter_documents_with_telemetry
-from backend.modules.streaming import (
-    format_sse_message, 
-    create_error_message,
-    create_complete_message,
-    create_chunk_message,
-    stream_response_chunks,
-    stream_documents_as_references
-)
-from backend.modules.response import generate_response_with_telemetry
-from backend.telemetry.feedback import UserFeedback, FeedbackResponse
-from backend.modules.auth import get_current_user, optional_user, verify_cognito_token, is_cognito_enabled
-from backend.services.validation_service import validation_service, SessionData
-from pydantic import BaseModel
-from typing import Dict, List, Optional, Any
-from backend.modules.sensitive_contexts import detect_sensitive_contexts
-from backend.telemetry.config_attrs import get_test_target_attributes
-
-# Import async queue management
-if environment in ["production", "staging"]:
-    # In production/staging, Redis async queue is REQUIRED
-    try:
-        from backend.services.queue_manager import get_queue_manager
-        async_queue_available = True
-        logger.info("✅ Async queue manager imported successfully")
-    except ImportError as e:
-        logger.error(f"❌ CRITICAL: Async queue manager not available in {environment}: {e}")
-        raise RuntimeError(f"Redis queue manager is required in {environment} but not available: {e}")
-else:
-    # Development environment - async queue is optional
-    try:
-        from backend.services.queue_manager import get_queue_manager
-        async_queue_available = True
-        logger.info("✅ Async queue manager imported successfully (development)")
-    except ImportError as e:
-        logger.warning(f"⚠️ Async queue manager not available in development: {e}")
-        logger.info("📝 Development mode: continuing without Redis async queue")
-        async_queue_available = False
 
 if not telemetry_initialized:
     if not telemetry_enabled:
-        logger.info("📝 Telemetry not initialized (explicitly disabled)")
+        logger.info("Telemetry not initialized (explicitly disabled)")
     else:
         raise RuntimeError(f"Telemetry is enabled but not initialized. The app cannot start without telemetry.")
+
+# Import routers
+from backend.routers import (
+    core_router,
+    query_router,
+    feedback_router,
+    validation_router,
+    cache_router,
+    queue_router,
+    inter_rater_router,
+    retriever_router,
+)
+
+# Import configuration initialization
+from backend.modules.config import initialize_config
 
 # Initialize FastAPI app
 app = FastAPI(title="ATLAS")
 
-# Configure CORS with explicit origins for development and production
-# Read CORS_ORIGINS from environment and parse as list
+# Configure CORS
 cors_origins_env = os.environ.get("CORS_ORIGINS", "")
 origins = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
 
@@ -156,26 +96,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Add telemetry middleware to set user preference for each request
+
+# Telemetry middleware
 @app.middleware("http")
 async def telemetry_middleware(request: Request, call_next):
     """Middleware to set user telemetry preference based on request headers."""
     from backend.telemetry import set_user_telemetry_preference
-    
-    # Set user telemetry preference based on headers
+
     user_enabled = set_user_telemetry_preference(request)
-    
-    # Log for debugging
+
     if request.url.path.startswith("/api/"):
         logger.info(f"Telemetry middleware: User telemetry {'enabled' if user_enabled else 'disabled'} for {request.url.path}")
-    
+
     response = await call_next(request)
     return response
 
+
+# Security middleware
 @app.middleware("http")
 async def security_middleware(request: Request, call_next):
     """Basic security middleware for research prototype"""
-    # Request size limit
     max_size = 10 * 1024 * 1024  # 10MB limit
     content_length = request.headers.get("content-length")
     if content_length and int(content_length) > max_size:
@@ -186,8 +126,33 @@ async def security_middleware(request: Request, call_next):
     response = await call_next(request)
     return response
 
-# Include the telemetry router
+
+# HTTPS proxy middleware
+@app.middleware("http")
+async def handle_forwarded_proto(request: Request, call_next):
+    """
+    Process the X-Forwarded-Proto header to detect HTTPS correctly.
+    """
+    forwarded_proto = request.headers.get("X-Forwarded-Proto")
+    if forwarded_proto:
+        request.scope["scheme"] = forwarded_proto
+
+    response = await call_next(request)
+    return response
+
+
+# Include telemetry router
 app.include_router(telemetry_router)
+
+# Include API routers
+app.include_router(core_router)
+app.include_router(query_router)
+app.include_router(feedback_router)
+app.include_router(validation_router)
+app.include_router(cache_router)
+app.include_router(queue_router)
+app.include_router(inter_rater_router)
+app.include_router(retriever_router)
 
 # Initialize configuration
 try:
@@ -198,1009 +163,11 @@ except Exception as e:
     logger.error(f"Failed to initialize configuration: {e}")
     raise
 
-# WebSocket functionality removed for security and simplicity
-# All real-time functionality now uses HTTP endpoints
-
-# LLM Resource Management
-class LLMResourceManager:
-    def __init__(self):
-        # Limit concurrent LLM requests to prevent memory exhaustion
-        self.max_concurrent_requests = int(os.getenv("LLM_MAX_CONCURRENT", "10"))
-        self.request_semaphore = asyncio.Semaphore(self.max_concurrent_requests)
-        
-        # Track active LLM instances for memory cleanup
-        self.active_llm_instances = weakref.WeakSet()
-        self.last_cleanup = time.time()
-        self.cleanup_interval = 300  # 5 minutes
-        
-        # Response size limits
-        self.max_response_tokens = int(os.getenv("LLM_MAX_RESPONSE_TOKENS", "4000"))
-        self.max_response_chars = int(os.getenv("LLM_MAX_RESPONSE_CHARS", "32000"))
-        
-        logger.info(f"LLM Resource Manager initialized: max_concurrent={self.max_concurrent_requests}")
-    
-    async def acquire_llm_slot(self):
-        """Acquire a slot for LLM processing"""
-        await self.request_semaphore.acquire()
-        
-        # Periodic cleanup
-        if time.time() - self.last_cleanup > self.cleanup_interval:
-            self.cleanup_memory()
-    
-    def release_llm_slot(self):
-        """Release a slot for LLM processing"""
-        self.request_semaphore.release()
-    
-    def cleanup_memory(self):
-        """Perform memory cleanup"""
-        try:
-            # Clean up LLM instances
-            self._cleanup_llm_instances()
-            
-            # Clean up vector store connections
-            self._cleanup_vector_stores()
-            
-            # Force garbage collection
-            gc.collect()
-            
-            # Log active instances
-            active_count = len(self.active_llm_instances)
-            logger.info(f"LLM memory cleanup: {active_count} active instances")
-            
-            self.last_cleanup = time.time()
-            
-        except Exception as e:
-            logger.error(f"Error during LLM memory cleanup: {e}")
-    
-    def _cleanup_llm_instances(self):
-        """Clean up LLM instances that are no longer needed"""
-        try:
-            # Get list of current instances (weak references may be None)
-            current_instances = [inst for inst in self.active_llm_instances if inst is not None]
-            
-            # Explicit cleanup for instances that support it
-            for instance in current_instances:
-                try:
-                    # Check if instance has cleanup methods
-                    if hasattr(instance, 'cleanup'):
-                        instance.cleanup()
-                    elif hasattr(instance, 'close'):
-                        instance.close()
-                    elif hasattr(instance, '__del__'):
-                        # Let Python handle cleanup
-                        pass
-                except Exception as inst_error:
-                    logger.debug(f"Error cleaning up LLM instance: {inst_error}")
-            
-            logger.debug(f"Cleaned up {len(current_instances)} LLM instances")
-            
-        except Exception as e:
-            logger.error(f"Error during LLM instance cleanup: {e}")
-    
-    def _cleanup_vector_stores(self):
-        """Clean up vector store connections"""
-        try:
-            from backend.modules.vector_store_manager import get_vector_store_manager
-            vector_manager = get_vector_store_manager()
-            
-            # Clean up expired connections
-            vector_manager._cleanup_expired_connections()
-            
-            logger.debug("Cleaned up vector store connections")
-            
-        except Exception as e:
-            logger.debug(f"Error cleaning up vector stores: {e}")
-    
-    def register_llm_instance(self, llm_instance):
-        """Register an LLM instance for tracking"""
-        self.active_llm_instances.add(llm_instance)
-        
-        # Register cleanup callback if possible
-        if hasattr(llm_instance, 'register_cleanup_callback'):
-            llm_instance.register_cleanup_callback(self._instance_cleanup_callback)
-    
-    def _instance_cleanup_callback(self, instance):
-        """Callback when an LLM instance is cleaned up"""
-        logger.debug(f"LLM instance cleaned up: {type(instance).__name__}")
-    
-    def dispose_llm_instance(self, llm_instance):
-        """Explicitly dispose of an LLM instance"""
-        try:
-            if hasattr(llm_instance, 'cleanup'):
-                llm_instance.cleanup()
-            elif hasattr(llm_instance, 'close'):
-                llm_instance.close()
-            
-            # Remove from tracking
-            self.active_llm_instances.discard(llm_instance)
-            
-            logger.debug(f"Disposed LLM instance: {type(llm_instance).__name__}")
-            
-        except Exception as e:
-            logger.error(f"Error disposing LLM instance: {e}")
-    
-    def check_response_size(self, response_text: str) -> bool:
-        """Check if response exceeds size limits"""
-        if len(response_text) > self.max_response_chars:
-            logger.warning(f"Response truncated: {len(response_text)} chars > {self.max_response_chars} limit")
-            return False
-        return True
-    
-    def truncate_response(self, response_text: str) -> str:
-        """Truncate response to size limits"""
-        if len(response_text) > self.max_response_chars:
-            truncated = response_text[:self.max_response_chars]
-            # Try to truncate at last complete sentence
-            last_period = truncated.rfind('.')
-            if last_period > self.max_response_chars * 0.8:  # If we can find a period in the last 20%
-                truncated = truncated[:last_period + 1]
-            return truncated + "\n\n[Response truncated due to length limits]"
-        return response_text
-
-llm_resource_manager = LLMResourceManager()
-
-# WebSocket endpoint removed - use HTTP /api/feedback endpoint instead
-
-# --- Health check endpoint ---
-@app.get("/")
-async def root():
-    """Health check endpoint"""
-    return {"status": "ok"}
-
-
-# --- Configuration endpoint ---
-@app.get("/api/config")
-def get_config_endpoint():
-    """Return application configuration for UI display."""
-    config = get_config()
-    retriever_config = config.get("retriever_config", {})
-    
-    # Import the full system prompt from system_prompts
-    from backend.modules.system_prompts import system_prompt_text
-    
-    # Build configuration for API use
-    config_data = {
-        "ATLAS_VERSION": config.get("ATLAS_VERSION", "1.0.0"),
-        "SYSTEM_PROMPT": get_system_prompt()[:150] + "..." if len(get_system_prompt()) > 150 else get_system_prompt(),
-        "FULL_SYSTEM_PROMPT": system_prompt_text,
-        "CORPUS_OPTIONS": get_corpus_options(),
-        
-        # Include all retriever configuration
-        "target_id": retriever_config.get("target_id"),
-        "target_version": retriever_config.get("target_version", "1.0"),
-        "embedding_model": retriever_config.get("embedding_model"),
-        "search_type": retriever_config.get("search_type"),
-        "search_k": retriever_config.get("search_k"),
-        "search_score_threshold": retriever_config.get("search_score_threshold"),
-        "pooling": retriever_config.get("pooling"),
-        "citation_limit": retriever_config.get("citation_limit"),
-        "LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS": retriever_config.get("LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS"),
-        "LARGE_RETRIEVAL_SIZE_ALL_CORPUS": retriever_config.get("LARGE_RETRIEVAL_SIZE_ALL_CORPUS"),
-        "algorithm": retriever_config.get("algorithm"),
-        "chunk_size": retriever_config.get("chunk_size"),
-        "chunk_overlap": retriever_config.get("chunk_overlap"),
-        "index_name": retriever_config.get("index_name"),
-        
-        # Include LLM configuration
-        "llm_provider": config.get("llm_provider"),
-        "llm_model": config.get("llm_model"),
-        
-        # Include vector database info
-        "composite_target": f"{retriever_config.get('target_id')}_{retriever_config.get('chroma_collection_name')}"
-    }
-    
-    # Add extra config fields from environment variables
-    config_data["MULTI_CORPUS_VECTORSTORE"] = os.getenv("MULTI_CORPUS_VECTORSTORE")
-    config_data["CHROMA_COLLECTION_NAME"] = os.getenv("CHROMA_COLLECTION_NAME")
-    
-    return JSONResponse(content=config_data)
-
-
-# --- Filter capabilities endpoint ---
-@app.get("/api/retriever/filters")
-def get_retriever_filters():
-    """Return available filter capabilities for the current retriever."""
-    try:
-        retriever = get_retriever_instance()
-        
-        # Check if retriever supports the new filter capabilities interface
-        if hasattr(retriever, 'get_filter_capabilities'):
-            filter_capabilities = retriever.get_filter_capabilities()
-        else:
-            # Fallback for retrievers that haven't implemented the new interface yet
-            filter_capabilities = {
-                "corpus_filtering": {
-                    "supported": retriever.supports_corpus_filtering if hasattr(retriever, 'supports_corpus_filtering') else False,
-                    "options": retriever.get_corpus_options() if hasattr(retriever, 'get_corpus_options') else []
-                },
-                "time_period_filtering": {
-                    "supported": False,
-                    "options": []
-                },
-                "direction_filtering": {
-                    "supported": False,
-                    "options": []
-                }
-            }
-        
-        return JSONResponse(content=filter_capabilities)
-        
-    except Exception as e:
-        logger.error(f"Error getting filter capabilities: {e}")
-        # Return minimal fallback response
-        return JSONResponse(content={
-            "corpus_filtering": {
-                "supported": False,
-                "options": []
-            },
-            "time_period_filtering": {
-                "supported": False,
-                "options": []
-            },
-            "direction_filtering": {
-                "supported": False,
-                "options": []
-            }
-        })
-
-
-# --- Debug endpoint for user ID extraction ---
-@app.get("/api/debug/user-id")
-def debug_user_id_extraction(request: Request):
-    """Debug endpoint to verify user ID extraction is working correctly."""
-    from backend.modules.auth import is_cognito_enabled, verify_cognito_token
-    from backend.services.anonymous_id_service import anonymous_id_service
-    
-    result = {
-        "timestamp": datetime.now().isoformat(),
-        "environment": os.getenv("ENVIRONMENT", "unknown"),
-        "cognito_settings": {
-            "VITE_USE_COGNITO_AUTH": os.getenv("VITE_USE_COGNITO_AUTH", "false"),
-            "cognito_enabled": is_cognito_enabled(),
-            "inter_rater_enabled": os.getenv("INTER_RATER_ENABLED", "false"),
-        },
-        "anonymous_id_service": anonymous_id_service.validate_environment_isolation()
-    }
-    
-    # Try to extract user ID from current request
-    try:
-        auth_header = request.headers.get("Authorization")
-        if auth_header:
-            token = auth_header.split(" ", 1)[1] if " " in auth_header else auth_header
-            payload = verify_cognito_token(token)
-            
-            if payload and payload.get("sub"):
-                cognito_sub = payload.get("sub")
-                user = {"sub": cognito_sub, "authenticated": True}
-                anon_user_id = anonymous_id_service.get_anonymous_id_from_user_data(user)
-                
-                result["extraction_result"] = {
-                    "success": True,
-                    "cognito_sub_prefix": cognito_sub[:8] + "..." if len(cognito_sub) > 8 else cognito_sub,
-                    "anonymous_id_format": anon_user_id[:12] + "..." if anon_user_id else None,
-                    "anonymous_id_length": len(anon_user_id) if anon_user_id else 0
-                }
-            else:
-                result["extraction_result"] = {
-                    "success": False,
-                    "error": "Token verified but no 'sub' in payload",
-                    "payload_keys": list(payload.keys()) if payload else []
-                }
-        else:
-            result["extraction_result"] = {
-                "success": False,
-                "error": "No Authorization header present",
-                "headers_present": list(request.headers.keys())
-            }
-            
-    except Exception as e:
-        result["extraction_result"] = {
-            "success": False,
-            "error": f"Exception during extraction: {str(e)}",
-            "exception_type": type(e).__name__
-        }
-    
-    return JSONResponse(content=result)
-
-
-# --- Streaming Q&A endpoint ---
-@app.post("/api/ask/stream")
-async def ask_stream(data: dict = Body(...)):
-    """
-    Stream an answer to a question using retrieved documents and a language model.
-    """
-    # Extract request data with input sanitization
-    question = data.get("question", "").strip()
-    
-    # Get filters from new dynamic format
-    filters = data.get("filters", {})
-    previous_filters = data.get("previous_filters", {})
-    
-    # Extract corpus filter for backward compatibility with existing retrieval logic
-    corpus_filter = filters.get("corpus_filtering", "all")
-    
-    # Input validation and sanitization
-    if not question or len(question) > 2000:
-        raise HTTPException(status_code=400, detail="Question is required and must be under 2000 characters")
-
-    # Basic injection prevention
-    dangerous_patterns = ["ignore previous", "system:", "<script", "javascript:"]
-    if any(pattern in question.lower() for pattern in dangerous_patterns):
-        raise HTTPException(status_code=400, detail="Invalid question content")
-
-    if corpus_filter not in ["all", "1901_au", "1901_nz", "1901_uk"]:
-        corpus_filter = "all"
-    chat_history = data.get("chat_history", [])
-    session_id = data.get("session_id", str(uuid.uuid4()))
-    qa_id = data.get("qa_id", str(uuid.uuid4()))
-    provider = data.get("provider", None)  # Optional LLM provider override
-    
-    # Import required telemetry constants
-    from backend.telemetry import SpanAttributes, OpenInferenceSpanKind, SpanNames
-    
-    # Define async generator for streaming response
-    async def response_generator():
-        # Use nonlocal to access/modify the qa_id from the outer scope
-        nonlocal qa_id
-        
-        # Create a parent span for the entire RAG pipeline
-        # This allows us to track the complete operation from retrieval to generation
-        from backend.telemetry import create_rag_pipeline_span
-        
-        # Get test target configuration for telemetry
-        test_target_attrs = get_test_target_attributes()
-        
-        # Create base attributes for the span - avoid conflicting with OpenInference input/output fields
-        pipeline_attributes = {
-            SpanAttributes.SESSION_ID: session_id,
-            SpanAttributes.QA_ID: qa_id,
-            # Store question in attributes using non-conflicting names
-            "user_query": question,  # Store original question in attributes (not conflicting with input.value)
-            "is_streaming": True,
-            "corpus_filter": corpus_filter,
-            "filters": filters,
-            "llm_provider": provider,
-            # Use flat structure for OpenInference attributes
-            "openinference.span.kind": OpenInferenceSpanKind.AGENT,
-        }
-        
-        # Add all test target attributes individually with flat names
-        for key, value in test_target_attrs.items():
-            # Convert dot notation to underscore for flat naming
-            flat_key = key.replace(".", "_")
-            pipeline_attributes[flat_key] = value
-        
-        # Remove keys that would clash with explicit parameters in create_rag_pipeline_span
-        safe_attributes = {k: v for k, v in pipeline_attributes.items() if k not in {SpanAttributes.QA_ID, "query"}}
-
-        with create_rag_pipeline_span(
-            session_id=session_id,
-            qa_id=qa_id,
-            query=question,
-            **safe_attributes
-        ) as parent_span:
-            try:
-                # Guardrail check: Detect sensitive contexts early in the pipeline
-                sensitive_contexts = detect_sensitive_contexts(
-                    query=question,
-                    session_id=session_id,
-                    qa_id=qa_id,
-                    parent_span=parent_span  # Pass the RAG pipeline span as parent
-                )
-                
-                # Ensure guardrail span completes before starting retrieval
-                # This ensures proper span ID ordering in Phoenix UI
-                await asyncio.sleep(0.001)  # 1ms delay to ensure span completion
-                
-                # Log if any sensitive contexts were detected
-                if sensitive_contexts:
-                    logger.warning(f"Detected sensitive contexts for session {session_id}: {sensitive_contexts}")
-                    # In the future, this could trigger special handling, warnings, or filtering
-                
-                # Step 1: HNSW retrieval with per-corpus balanced reranking
-                # document_retrieval.py now handles per-corpus vs single-corpus logic internally
-                # and performs balanced reranking within each corpus
-                from backend.modules.config import get_search_k
-                final_k = get_search_k()  # Get configured SEARCH_K (e.g., 30)
-                
-                documents, qa_id = retrieve_documents_with_telemetry(
-                    query=question,
-                    retriever=get_retriever(),
-                    session_id=session_id,
-                    qa_id=qa_id,
-                    corpus_filter=corpus_filter,
-                    k=final_k  # Use final desired document count (30 docs balanced across corpora)
-                )
-
-                # Optionally augment with manifest summary if user asks meta/store-stats questions
-                try:
-                    from backend.modules.manifest_context import (
-                        looks_like_manifest_question,
-                        get_manifest_document,
-                    )
-                    if looks_like_manifest_question(question):
-                        manifest_doc = get_manifest_document()
-                        if manifest_doc is not None:
-                            documents = [manifest_doc] + list(documents)
-                            parent_span.set_attribute("manifest_context_included", True)
-                except Exception:
-                    pass
-                
-                # If no documents were retrieved, return an error
-                if not documents:
-                    error_msg = create_error_message(
-                        "retrieval_error", 
-                        "No relevant documents found for your query."
-                    )
-                    yield format_sse_message(error_msg, event="error")
-                    return
-                
-                logger.info(f"📄 Retrieved {len(documents)} balanced documents (per-corpus reranked)")
-                
-                # Debug: Show sample content from first few reranked docs
-                for i, doc in enumerate(documents[:3]):
-                    content_preview = doc.page_content[:200] if hasattr(doc, 'page_content') else str(doc)[:200]
-                    metadata = getattr(doc, 'metadata', {})
-                    corpus = metadata.get('corpus', 'unknown')
-                    logger.info(f"🥇 Reranked doc {i+1} ({corpus}): {content_preview}...")
-                
-                # Record final document count in parent span
-                parent_span.set_attribute(SpanAttributes.DOCUMENT_COUNT, len(documents))
-                
-                # Acquire LLM resource slot before generation
-                await llm_resource_manager.acquire_llm_slot()
-                
-                try:
-                    # Generate and stream the response
-                    response_generator, qa_id = generate_response_with_telemetry(
-                        question=question,
-                        documents=documents,
-                        session_id=session_id,
-                        qa_id=qa_id,
-                        chat_history=chat_history,
-                        corpus_filter=corpus_filter,
-                        provider=provider  # Pass the provider if specified
-                    )
-                
-                    # Stream response chunks
-                    full_response = ""
-                    chunk_count = 0
-                    
-                    # Use our streaming utility to format SSE messages
-                    async for sse_message in stream_response_chunks(
-                        chunks_generator=response_generator,
-                        qa_id=qa_id,
-                        session_id=session_id,
-                        create_streaming_span=False  # Prevent redundant streaming spans
-                    ):
-                        # Ensure each SSE message ends with \n\n
-                        if not sse_message.endswith('\n\n'):
-                            sse_message += '\n\n'
-                        yield sse_message
-                        await asyncio.sleep(0)
-                        
-                        # Extract the chunk for building full response
-                        try:
-                            data = json.loads(sse_message.split("data: ")[1])
-                            chunk = data.get("chunk", {}).get("text", "")
-                            full_response += chunk
-                            chunk_count += 1
-                        except (IndexError, json.JSONDecodeError):
-                            pass
-
-                    # After all content, stream references/citations
-                    citation_limit = get_citation_limit()
-                    references_message = stream_documents_as_references(
-                        documents=documents,
-                        qa_id=qa_id,
-                        session_id=session_id,
-                        citation_limit=citation_limit
-                    )
-                    if not references_message.endswith('\n\n'):
-                        references_message += '\n\n'
-                    yield references_message
-                    await asyncio.sleep(0)
-                    
-                    # Set top-level span info following OpenInference conventions for proper Phoenix UI separation
-                    # Info field content (using OpenInference standard attributes) - same pattern as com.atlas.rag.references
-                    parent_span.set_attribute("input.value", question)
-                    parent_span.set_attribute("output.value", full_response)
-                    parent_span.set_attribute("openinference.span.kind", OpenInferenceSpanKind.AGENT)
-
-                    # Send completion message
-                    complete_message = create_complete_message(
-                        text=full_response,
-                        qa_id=qa_id
-                    )
-                    complete_sse = format_sse_message(complete_message, event="complete")
-                    if not complete_sse.endswith('\n\n'):
-                        complete_sse += '\n\n'
-                    yield complete_sse
-                    
-                    # Update parent span with final metrics
-                    parent_span.set_attribute(SpanAttributes.RESPONSE_LENGTH, len(full_response))
-                    parent_span.set_attribute("final_chunk_count", chunk_count)
-                    
-                except Exception as e:
-                    # Log the full error details server-side
-                    logger.error(f"Error in streaming response: {e}")
-                    # Record error in parent span
-                    parent_span.record_exception(e)
-                    # Use generic error message for telemetry to avoid exposing sensitive info
-                    parent_span.set_status(Status(StatusCode.ERROR, "Streaming response error"))
-                    
-                    # Create a sanitized error message for the client
-                    # Do not expose internal exception details to client
-                    error_msg = create_error_message(
-                        "streaming_error",
-                        "An error occurred while processing your request"
-                    )
-                    yield format_sse_message(error_msg, event="error")
-                    
-                finally:
-                    # Always release the LLM resource slot
-                    llm_resource_manager.release_llm_slot()
-                    
-            except Exception as e:
-                # Handle any outer exceptions
-                logger.error(f"Error in RAG pipeline: {e}")
-                parent_span.record_exception(e)
-                # Use generic error message for telemetry to avoid exposing sensitive info
-                parent_span.set_status(Status(StatusCode.ERROR, "RAG pipeline error"))
-                
-                # Release LLM resource slot on error
-                llm_resource_manager.release_llm_slot()
-                
-                # Create error message for client
-                error_msg = create_error_message(
-                    "pipeline_error",
-                    "An error occurred while processing your request"
-                )
-                yield format_sse_message(error_msg, event="error")
-    
-    # Return the streaming response with appropriate headers
-    response = StreamingResponse(response_generator(), media_type="text/event-stream")
-    response.headers["Content-Type"] = "text/event-stream"
-    response.headers["Cache-Control"] = "no-cache"
-    response.headers["Connection"] = "keep-alive"
-    response.headers["X-Accel-Buffering"] = "no"
-    return response
-
-# --- Telemetry status endpoint ---
-@app.get("/api/telemetry")
-def telemetry_status():
-    """Return the status of telemetry (initialized or not) for health checks."""
-    return {"telemetry_initialized": telemetry_initialized}
-
-# --- Diagnostic endpoint for debugging ---
-@app.get("/api/diagnostics")
-async def diagnostics(request: Request):
-    """Return diagnostic information to help debug issues."""
-    # Check if authentication is required based on environment
-    auth_required = os.getenv("VITE_USE_COGNITO_AUTH", "false").lower() == "true"
-    
-    if auth_required:
-        # Get the authorization header
-        auth_header = request.headers.get("Authorization")
-        if not auth_header:
-            raise HTTPException(
-                status_code=401,
-                detail="Authentication required for diagnostics"
-            )
-        
-        # Verify user is authenticated
-        user = await optional_user(request)
-        if not user.get("authenticated", False):
-            raise HTTPException(
-                status_code=403,
-                detail="Unauthorized access to diagnostics"
-            )
-    
-    # Get basic config info - only non-sensitive information
-    config_info = {}
-    try:
-        config = get_config()
-        retriever_config = config.get("retriever_config", {})
-        config_info = {
-            "target_id": retriever_config.get("target_id"),
-            "llm_provider": config.get("llm_provider"),
-            "llm_model": config.get("llm_model"),
-            "embedding_model": retriever_config.get("embedding_model"),
-            "citation_limit": retriever_config.get("citation_limit"),
-            "large_retrieval_size": retriever_config.get("large_retrieval_size"),
-        }
-    except Exception:
-        config_info = {"error": "Configuration error occurred"}
-    
-    # Check critical environment variables - only return presence, not values
-    env_vars = {
-        "TEST_TARGET": bool(os.getenv("TEST_TARGET")),
-        "REDIS_HOST": bool(os.getenv("REDIS_HOST")),
-        "REDIS_PORT": bool(os.getenv("REDIS_PORT")),
-        "REDIS_PASSWORD": bool(os.getenv("REDIS_PASSWORD")),
-        "PHOENIX_API_KEY": bool(os.getenv("PHOENIX_API_KEY")),
-        "ANTHROPIC_API_KEY": bool(os.getenv("ANTHROPIC_API_KEY")),
-        "OPENAI_API_KEY": bool(os.getenv("OPENAI_API_KEY")),
-    }
-    
-    return {
-        "environment": env_vars,
-        "config": config_info,
-        "telemetry_initialized": telemetry_initialized
-    }
-
-@app.get("/api/cache/stats")
-async def get_cache_stats(request: Request):
-    """Return prompt cache statistics for monitoring."""
-    # Check if authentication is required based on environment
-    auth_required = os.getenv("VITE_USE_COGNITO_AUTH", "false").lower() == "true"
-    
-    if auth_required:
-        # Get the authorization header
-        auth_header = request.headers.get("Authorization")
-        if not auth_header:
-            raise HTTPException(
-                status_code=401,
-                detail="Authorization header required"
-            )
-        
-        # Extract the token from the header
-        try:
-            token = auth_header.split(" ")[1] if " " in auth_header else auth_header
-        except (IndexError, AttributeError):
-            raise HTTPException(
-                status_code=401,
-                detail="Invalid authorization header format"
-            )
-        
-        # Verify the token (will raise HTTPException if invalid)
-        user = await verify_cognito_token(token)
-        
-        # Check if the user is authenticated
-        if not user.get("authenticated", False):
-            raise HTTPException(
-                status_code=403,
-                detail="Unauthorized access to cache statistics"
-            )
-    
-    try:
-        from backend.modules.prompt_cache import get_cache_statistics
-        cache_stats = get_cache_statistics()
-        
-        return {
-            "cache_statistics": cache_stats,
-            "timestamp": datetime.now().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Error getting cache statistics: {e}")
-        return {
-            "error": "Failed to retrieve cache statistics",
-            "cache_statistics": {},
-            "timestamp": datetime.now().isoformat()
-        }
-
-@app.post("/api/cache/clear")
-async def clear_cache(request: Request):
-    """Clear the prompt cache."""
-    # Check if authentication is required based on environment
-    auth_required = os.getenv("VITE_USE_COGNITO_AUTH", "false").lower() == "true"
-    
-    if auth_required:
-        # Get the authorization header
-        auth_header = request.headers.get("Authorization")
-        if not auth_header:
-            raise HTTPException(
-                status_code=401,
-                detail="Authorization header required"
-            )
-        
-        # Extract the token from the header
-        try:
-            token = auth_header.split(" ")[1] if " " in auth_header else auth_header
-        except (IndexError, AttributeError):
-            raise HTTPException(
-                status_code=401,
-                detail="Invalid authorization header format"
-            )
-        
-        # Verify the token (will raise HTTPException if invalid)
-        user = await verify_cognito_token(token)
-        
-        # Check if the user is authenticated
-        if not user.get("authenticated", False):
-            raise HTTPException(
-                status_code=403,
-                detail="Unauthorized access to cache management"
-            )
-    
-    try:
-        from backend.modules.prompt_cache import clear_prompt_cache
-        clear_prompt_cache()
-        
-        logger.info("Prompt cache cleared via API")
-        
-        return {
-            "message": "Prompt cache cleared successfully",
-            "timestamp": datetime.now().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Error clearing cache: {e}")
-        return {
-            "error": "Failed to clear cache",
-            "timestamp": datetime.now().isoformat()
-        }
-
-# WebSocket stats endpoint removed - WebSocket functionality no longer available
-
-# --- HTTP Feedback endpoint ---
-@app.post("/api/feedback", response_model=FeedbackResponse)
-async def submit_feedback(feedback: UserFeedback, request: Request):
-    """
-    Submit user feedback via HTTP.
-    Primary feedback submission endpoint (WebSocket removed for security).
-    """
-    # Check if authentication is required based on environment
-    auth_required = os.getenv("VITE_USE_COGNITO_AUTH", "false").lower() == "true"
-    
-    try:
-        # Authentication check - only enforce in environments with auth enabled
-        if auth_required:
-            # Require Authorization header when auth is enabled
-            auth_header = request.headers.get("Authorization")
-            if not auth_header:
-                logger.warning("Missing authentication for feedback submission")
-                return FeedbackResponse(
-                    message="Authentication required to submit feedback",
-                    status="error"
-                )
-            # Verify user is authenticated
-            user = await optional_user(request)
-            if not user.get("authenticated", False):
-                logger.warning("Unauthenticated feedback submission attempt")
-                return FeedbackResponse(
-                    message="Authentication required to submit feedback",
-                    status="error"
-                )
-            # If inter-rater is enabled, set rater_id from authenticated user
-            if os.getenv("INTER_RATER_ENABLED", "false").lower() == "true":
-                feedback.rater_id = user.get("sub")
-
-        # Get session ID and QA ID from the feedback
-        session_id = feedback.session_id
-        qa_id = feedback.qa_id
-        
-        # Validate session_id and qa_id
-        if not session_id or not qa_id:
-            logger.warning(f"Invalid feedback submission: missing session_id or qa_id")
-            return FeedbackResponse(
-                message="Invalid feedback submission: missing required identifiers",
-                status="error"
-            )
-        
-        # Log reception of feedback (IP excluded for simplicity/privacy)
-        logger.info(f"Received HTTP feedback for session {session_id}, qa {qa_id}")
-        
-        # Avoid logging raw payload or potentially sensitive fields
-        logger.info("Feedback metadata received (ids only)")
-        
-        # Format feedback data for telemetry using the correct field names
-        feedback_data = {
-            # Original fields
-            "relevance": feedback.relevance,
-            "factual_accuracy": feedback.factual_accuracy,
-            "source_quality": feedback.source_quality,
-            "clarity": feedback.clarity,
-            "question_rating": feedback.question_rating,
-            "user_category": feedback.user_category,
-            "tags": feedback.tags,
-            "feedback_text": feedback.feedback_text,
-            "model_answer": feedback.model_answer,
-            "timestamp": feedback.timestamp or datetime.datetime.now().isoformat(),
-            "source": "http_fallback",
-            
-            # New inline feedback fields
-            "feedback_type": feedback.feedback_type,
-            "sentiment": feedback.sentiment,
-            "analysis_quality": feedback.analysis_quality,
-            "difficulty": feedback.difficulty,
-            "additional_comments": feedback.additional_comments,  # Missing field added
-            "faults": feedback.faults,
-            
-            # Include rich context data from frontend
-            "test_target": feedback.test_target,
-            "question": feedback.question,
-            "answer": feedback.answer,
-            "citations": feedback.citations,
-            "citation_count": len(feedback.citations) if feedback.citations else 0,
-            
-            # AI-Enhanced feedback fields (minimal addition)
-            "ai_validation": feedback.ai_validation,
-            "ai_agreement": feedback.ai_agreement,
-            "ratings": feedback.ratings,
-            
-            # Inter-rater reliability fields
-            "is_inter_rater": feedback.is_inter_rater,
-            "original_span_id": feedback.original_span_id,
-            "rater_id": feedback.rater_id,
-        }
-        
-        # Use the session context to ensure spans are properly associated
-        with using_session(session_id):
-            try:
-                # Additional check for inter-rater duplicates at API level
-                if feedback.is_inter_rater and feedback.rater_id and feedback.original_span_id:
-                    try:
-                        from backend.services.phoenix_client import phoenix_client
-                        already_rated = await phoenix_client.check_user_already_rated(
-                            feedback.original_span_id, feedback.rater_id
-                        )
-                        if already_rated:
-                            sanitized_rater_id = feedback.rater_id[:8] + "..." if len(feedback.rater_id) > 8 else feedback.rater_id
-                            sanitized_span_id = feedback.original_span_id[:8] + "..." if len(feedback.original_span_id) > 8 else feedback.original_span_id
-                            logger.warning(f"User {sanitized_rater_id} attempted to rate span {sanitized_span_id} twice")
-                            return FeedbackResponse(
-                                message="You have already provided feedback for this session.",
-                                status="error"
-                            )
-                    except Exception as dup_check_error:
-                        logger.warning(f"Failed to check for duplicate inter-rater feedback: {dup_check_error}")
-                        # Continue with submission - don't block if duplicate check fails
-                
-                # Log user feedback
-                success = await log_user_feedback(session_id, qa_id, feedback_data)
-                
-                if success:
-                    logger.info(f"HTTP Feedback recorded for session_id={session_id}, qa_id={qa_id}")
-                    
-                    # If this is inter-rater feedback, invalidate the user's session cache
-                    if feedback.is_inter_rater and feedback.rater_id:
-                        try:
-                            from backend.services.inter_rater_service import inter_rater_service
-                            inter_rater_service.invalidate_user_cache(feedback.rater_id)
-                            sanitized_rater_id = feedback.rater_id[:8] + "..." if len(feedback.rater_id) > 8 else feedback.rater_id
-                            logger.debug(f"Invalidated inter-rater cache for user {sanitized_rater_id}")
-                        except Exception as cache_error:
-                            logger.warning(f"Failed to invalidate inter-rater cache: {cache_error}")
-                    
-                    return FeedbackResponse(
-                        message="Feedback received successfully",
-                        status="success"
-                    )
-                else:
-                    logger.error(f"Failed to record HTTP feedback for session_id={session_id}, qa_id={qa_id}")
-                    
-                    # Provide more specific error for inter-rater feedback
-                    if feedback.is_inter_rater:
-                        error_msg = "Unable to submit inter-rater feedback. This may be due to a Phoenix API issue or the original session may no longer be available."
-                        logger.error(f"Inter-rater feedback submission failed for original_span_id={feedback.original_span_id}")
-                    else:
-                        error_msg = "Unable to associate your feedback with this conversation. This may happen if the conversation data has expired."
-                    
-                    return FeedbackResponse(
-                        message=error_msg,
-                        status="error"
-                    )
-            except Exception as e:
-                logger.error(f"Error processing HTTP feedback: {e}")
-                return FeedbackResponse(
-                    message="Error processing feedback",
-                    status="error"
-                )
-    except Exception as e:
-        logger.error(f"Error in HTTP feedback endpoint: {e}")
-        return FeedbackResponse(
-            message="An error occurred processing your feedback",
-            status="error"
-        )
-
-# --- Validation Models ---
-class ValidationRequest(BaseModel):
-    session_id: str
-    qa_id: str
-    question: str
-    answer: str
-    citations: List[Dict[str, Any]]
-    metadata: Dict[str, Any]
-    validation_mode: Optional[str] = None  # "default" or "alternate"
-
-class ValidationResponse(BaseModel):
-    success: bool
-    message: str
-    validation_result: Optional[Dict[str, Any]] = None
-    markdown_export: Optional[str] = None
-    validation_config: Optional[Dict[str, Any]] = None
-
-# --- Session Validation endpoint ---
-@app.post("/api/validate_session", response_model=ValidationResponse)
-async def validate_session(validation_request: ValidationRequest, request: Request):
-    """
-    Validate a RAG session using an alternate LLM to provide structured feedback.
-    
-    This endpoint:
-    1. Exports the session data to structured Markdown
-    2. Sends it to a validation LLM (configured via .env)
-    3. Returns structured feedback to guide human reviewers
-    """
-    
-    # Check if validation is enabled
-    if not validation_service.is_enabled():
-        return ValidationResponse(
-            success=False,
-            message="Session validation is disabled",
-            validation_config=validation_service.get_validation_config_info()
-        )
-    
-    try:
-        # Create session data object
-        session_data = SessionData(
-            session_id=validation_request.session_id,
-            qa_id=validation_request.qa_id,
-            question=validation_request.question,
-            answer=validation_request.answer,
-            citations=validation_request.citations,
-            metadata=validation_request.metadata,
-            timestamp=datetime.datetime.now().isoformat()
-        )
-        
-        # Export session to Markdown
-        markdown_export = validation_service.export_session_to_markdown(session_data)
-        
-        # Validate the session
-        validation_result = validation_service.validate_session(
-            session_data, 
-            validation_mode=validation_request.validation_mode
-        )
-        
-        # Convert validation result to dict for response
-        result_dict = {
-            "session_id": validation_result.session_id,
-            "qa_id": validation_result.qa_id,
-            "validation_model": validation_result.validation_model,
-            "validation_provider": validation_result.validation_provider,
-            "validation_mode": validation_result.validation_mode,
-            "feedback": validation_result.feedback,
-            "structured_feedback": validation_result.structured_feedback,
-            "validation_timestamp": validation_result.validation_timestamp,
-            "processing_time": validation_result.processing_time
-        }
-        
-        logger.info(f"Session validation completed for {validation_request.session_id} using {validation_result.validation_provider}/{validation_result.validation_model}")
-        
-        return ValidationResponse(
-            success=True,
-            message="Session validation completed successfully",
-            validation_result=result_dict,
-            markdown_export=markdown_export,
-            validation_config=validation_service.get_validation_config_info()
-        )
-        
-    except Exception as e:
-        logger.error(f"Error during session validation: {e}")
-        return ValidationResponse(
-            success=False,
-            message="Error during session validation",
-            validation_config=validation_service.get_validation_config_info()
-        )
-
-# --- Validation Configuration endpoint ---
-@app.get("/api/validate_config")
-async def get_validation_config():
-    """
-    Get current validation configuration information.
-    """
-    return validation_service.get_validation_config_info()
-
-# --- Security middleware for HTTPS support ---
-
-# Allow requests only from specific hosts (prevents host header attacks)
-# Get allowed hosts from CORS_ORIGINS environment variable
+# Configure TrustedHostMiddleware
 cors_origins = os.getenv("CORS_ORIGINS", "localhost,127.0.0.1")
 allowed_hosts = [host.strip() for host in cors_origins.split(",")]
-
-# Extract domains from URLs (remove http:// or https:// prefix if present)
 allowed_hosts = [host.replace("https://", "").replace("http://", "") for host in allowed_hosts]
 
-# Add localhost and 127.0.0.1 if not already included
 if "localhost" not in allowed_hosts:
     allowed_hosts.append("localhost")
 if "127.0.0.1" not in allowed_hosts:
@@ -1209,358 +176,11 @@ if "127.0.0.1" not in allowed_hosts:
 print(f"TrustedHostMiddleware: Allowing hosts {allowed_hosts}")
 
 app.add_middleware(
-    TrustedHostMiddleware, 
+    TrustedHostMiddleware,
     allowed_hosts=allowed_hosts
 )
 
-# Make FastAPI correctly detect HTTPS when behind Nginx proxy
-@app.middleware("http")
-async def handle_forwarded_proto(request: Request, call_next):
-    """
-    Process the X-Forwarded-Proto header to detect HTTPS correctly.
-    This ensures that all URL generation and security features work properly
-    when the app is behind an Nginx proxy handling HTTPS.
-    """
-    forwarded_proto = request.headers.get("X-Forwarded-Proto")
-    if forwarded_proto:
-        # Update request's scheme to the original client protocol (http/https)
-        request.scope["scheme"] = forwarded_proto
-    
-    response = await call_next(request)
-    return response
-
-# --- Entrypoint for running with Uvicorn ---
+# Entrypoint for running with Uvicorn
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("backend.app:app", host="0.0.0.0", port=8000, reload=True)
-
-# Add this to your existing backend/app.py file
-@app.get("/api/health")
-def health_check():
-    return {"status": "ok"}
-
-# === ASYNC LLM REQUEST ENDPOINTS ===
-
-@app.post("/api/ask/async")
-async def ask_async(data: dict = Body(...), request: Request = None):
-    """
-    Submit an LLM query for async processing
-    Returns immediately with a request ID for status checking
-    """
-    if not async_queue_available:
-        raise HTTPException(
-            status_code=503, 
-            detail="Async processing not available. Redis queue not configured."
-        )
-    
-    try:
-        # Extract user information if available
-        user_id = None
-        if request:
-            # Try to get user from request (adjust based on your auth system)
-            try:
-                user_id = getattr(request.state, 'user_id', None)
-            except:
-                pass
-        
-        # Get queue manager
-        queue_manager = get_queue_manager()
-        
-        # Queue the request
-        request_id = await queue_manager.queue_request(data, user_id)
-        
-        return {
-            "request_id": request_id,
-            "status": "queued",
-            "message": "Your query has been queued for processing",
-            "estimated_wait_time": "2-10 seconds"
-        }
-        
-    except Exception as e:
-        logger.error(f"Error queuing async request: {e}")
-        raise HTTPException(status_code=500, detail="Failed to queue request")
-
-@app.get("/api/ask/async/{request_id}")
-async def get_async_status(request_id: str):
-    """
-    Get the status and result of an async LLM request
-    """
-    if not async_queue_available:
-        raise HTTPException(
-            status_code=503, 
-            detail="Async processing not available. Redis queue not configured."
-        )
-    
-    try:
-        queue_manager = get_queue_manager()
-        status_data = await queue_manager.get_request_status(request_id)
-        
-        if status_data["status"] == "not_found":
-            raise HTTPException(status_code=404, detail="Request not found or expired")
-        
-        return status_data
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting async status for {request_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get status")
-
-@app.get("/api/queue/stats")
-async def get_queue_stats():
-    """
-    Get current queue statistics (admin endpoint)
-    """
-    if not async_queue_available:
-        raise HTTPException(
-            status_code=503, 
-            detail="Async processing not available. Redis queue not configured."
-        )
-    
-    try:
-        queue_manager = get_queue_manager()
-        stats = await queue_manager.get_queue_stats()
-        
-        return {
-            "queue_stats": stats,
-            "async_enabled": True,
-            "timestamp": datetime.datetime.now().isoformat()
-        }
-        
-    except Exception as e:
-        logger.error(f"Error getting queue stats: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get queue stats")
-
-# WebSocket async status endpoint removed - use HTTP polling on /api/ask/async/{request_id} instead
-
-# --- Inter-rater reliability endpoints ---
-@app.get("/api/inter-rater/sessions")
-async def get_inter_rater_sessions(request: Request):
-    """
-    Get sessions available for inter-rating by the current user.
-    """
-    try:
-        from backend.services.inter_rater_service import inter_rater_service
-        
-        if not inter_rater_service.is_enabled():
-            raise HTTPException(status_code=404, detail="Inter-rater functionality is disabled")
-        
-        # Get user ID (similar to feedback endpoint)
-        auth_required = os.getenv("VITE_USE_COGNITO_AUTH", "false").lower() == "true"
-        user_id = None
-        
-        if auth_required and is_cognito_enabled():
-            auth_header = request.headers.get("Authorization")
-            if auth_header:
-                token = auth_header.split(" ", 1)[1] if " " in auth_header else auth_header
-                payload = verify_cognito_token(token)
-                if payload and payload.get("sub"):
-                    from backend.services.anonymous_id_service import anonymous_id_service
-                    user = {"sub": payload.get("sub"), "authenticated": True}
-                    user_id = anonymous_id_service.get_anonymous_id_from_user_data(user)
-            
-        # If no authenticated user, return empty/0 (no IP fallback)
-        if not user_id:
-            return {"sessions": []} if "sessions" in request.url.path else {"enabled": True, "available_sessions": 0, "completed_sessions": 0}
-        
-        sessions = await inter_rater_service.get_sessions_for_inter_rating(user_id)
-        return {"sessions": sessions}
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting inter-rater sessions: {e}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve inter-rater sessions")
-
-@app.get("/api/inter-rater/stats")
-async def get_inter_rater_stats(request: Request):
-    """
-    Get inter-rater statistics for the current user.
-    """
-    try:
-        from backend.services.inter_rater_service import inter_rater_service
-        
-        if not inter_rater_service.is_enabled():
-            return {"enabled": False}
-        
-        # Get user ID (similar to feedback endpoint)
-        auth_required = os.getenv("VITE_USE_COGNITO_AUTH", "false").lower() == "true"
-        user_id = None
-        
-        if auth_required and is_cognito_enabled():
-            auth_header = request.headers.get("Authorization")
-            if auth_header:
-                token = auth_header.split(" ", 1)[1] if " " in auth_header else auth_header
-                payload = verify_cognito_token(token)
-                if payload and payload.get("sub"):
-                    from backend.services.anonymous_id_service import anonymous_id_service
-                    user = {"sub": payload.get("sub"), "authenticated": True}
-                    user_id = anonymous_id_service.get_anonymous_id_from_user_data(user)
-        
-        # If no authenticated user, return empty/0 (no IP fallback)
-        if not user_id:
-            return {"sessions": []} if "sessions" in request.url.path else {"enabled": True, "available_sessions": 0, "completed_sessions": 0}
-        
-        stats = await inter_rater_service.get_inter_rater_stats(user_id)
-        return stats
-        
-    except Exception as e:
-        # Log full error details for debugging (server-side only)
-        logger.error(f"Error getting inter-rater stats: {e}", exc_info=True)
-        # Return a generic message to avoid exposing internal details
-        return {"enabled": False, "error": "Failed to retrieve inter-rater stats"}
-
-@app.post("/api/inter-rater/refresh-cache")
-async def refresh_inter_rater_cache(request: Request):
-    """
-    Force refresh of inter-rater session cache. Useful when Phoenix data has been modified.
-    """
-    try:
-        from backend.services.inter_rater_service import inter_rater_service
-        
-        if not inter_rater_service.is_enabled():
-            raise HTTPException(status_code=404, detail="Inter-rater functionality is disabled")
-        
-        # Get user ID (same logic as other endpoints)
-        auth_required = os.getenv("VITE_USE_COGNITO_AUTH", "false").lower() == "true"
-        user_id = None
-        
-        if auth_required and is_cognito_enabled():
-            auth_header = request.headers.get("Authorization")
-            if auth_header:
-                token = auth_header.split(" ", 1)[1] if " " in auth_header else auth_header
-                payload = verify_cognito_token(token)
-                if payload and payload.get("sub"):
-                    from backend.services.anonymous_id_service import anonymous_id_service
-                    user = {"sub": payload.get("sub"), "authenticated": True}
-                    user_id = anonymous_id_service.get_anonymous_id_from_user_data(user)
-        
-        # If no authenticated user, return empty/0 (no IP fallback)
-        if not user_id:
-            return {"sessions": []} if "sessions" in request.url.path else {"enabled": True, "available_sessions": 0, "completed_sessions": 0}
-        
-        # Clear cache for this user and force fresh fetch
-        inter_rater_service.invalidate_user_cache(user_id)
-        
-        # Fetch fresh sessions
-        sessions = await inter_rater_service.get_sessions_for_inter_rating(user_id)
-        
-        return {
-            "message": "Cache refreshed successfully",
-            "sessions_found": len(sessions),
-            "status": "success"
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error refreshing inter-rater cache: {e}")
-        raise HTTPException(status_code=500, detail="Failed to refresh inter-rater cache")
-
-@app.get("/api/vector-store-info")
-async def get_vector_store_info(raw: bool = False):
-    try:
-        # Serve the single-source JSON manifest as pretty-printed text for the UI
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        manifest_path = os.path.join(current_dir, "targets", "manifest.json")
-
-        if not os.path.exists(manifest_path):
-            raise HTTPException(status_code=404, detail="Vector store manifest.json not found in backend/targets")
-
-        # Load manifest JSON
-        try:
-            import json as _json
-            with open(manifest_path, "r", encoding="utf-8") as f:
-                data = _json.load(f)
-        except Exception:
-            # If parsing fails, fall back to raw file contents
-            with open(manifest_path, "r", encoding="utf-8") as f:
-                raw_text = f.read()
-            return {"content": raw_text}
-
-        # If raw requested, pretty-print JSON
-        if raw:
-            return {"content": _json.dumps(data, indent=2)}
-
-        # Otherwise, render a concise, human-readable overview
-        def _fmt_num(n):
-            try:
-                return f"{int(n):,}"
-            except Exception:
-                try:
-                    return f"{float(n):,.2f}"
-                except Exception:
-                    return str(n)
-
-        index_name = data.get("index_name", "(unknown)")
-        embedding_model = data.get("embedding_model", "(unknown)")
-        created = data.get("created")
-        chunk_size = data.get("chunk_size")
-        chunk_overlap = data.get("chunk_overlap")
-        fields = data.get("fields", {}) or {}
-        stats = data.get("stats", {}) or {}
-        corpora = (stats.get("corpora") or {}) if isinstance(stats, dict) else {}
-        total_chunks = stats.get("total_chunks")
-        total_files = stats.get("total_files")
-        db_size_mb = stats.get("db_size_mb")
-
-        # Aggregate totals for words and chars if available per-corpus
-        total_words = None
-        total_chars = None
-        try:
-            total_words = sum(int(c.get("words", 0)) for c in corpora.values()) if corpora else None
-            total_chars = sum(int(c.get("chars", 0)) for c in corpora.values()) if corpora else None
-        except Exception:
-            pass
-
-        # Compose lines
-        lines = []
-        lines.append(f"Vector Store: {index_name}")
-        if created:
-            lines.append(f"Created: {created}")
-        lines.append(f"Embedding model: {embedding_model}")
-        if chunk_size is not None and chunk_overlap is not None:
-            lines.append(f"Chunking: size {chunk_size}, overlap {chunk_overlap}")
-        if db_size_mb is not None:
-            lines.append(f"DB size: {_fmt_num(db_size_mb)} MB")
-
-        totals_line = []
-        if total_files is not None:
-            totals_line.append(f"files {_fmt_num(total_files)}")
-        if total_chunks is not None:
-            totals_line.append(f"chunks {_fmt_num(total_chunks)}")
-        if total_words is not None:
-            totals_line.append(f"words {_fmt_num(total_words)}")
-        if total_chars is not None:
-            totals_line.append(f"chars {_fmt_num(total_chars)}")
-        if totals_line:
-            lines.append("Totals: " + ", ".join(totals_line))
-
-        # Per-corpus breakdown (limit to top 8 by chunks)
-        if corpora:
-            try:
-                sorted_items = sorted(corpora.items(), key=lambda kv: kv[1].get("chunks", 0), reverse=True)
-            except Exception:
-                sorted_items = list(corpora.items())
-            lines.append("")
-            lines.append("Corpora:")
-            for i, (cid, cstats) in enumerate(sorted_items[:8]):
-                c_files = _fmt_num(cstats.get("files")) if cstats.get("files") is not None else "?"
-                c_chunks = _fmt_num(cstats.get("chunks")) if cstats.get("chunks") is not None else "?"
-                c_words = _fmt_num(cstats.get("words")) if cstats.get("words") is not None else None
-                summary = f"  • {cid}: files {c_files}, chunks {c_chunks}"
-                if c_words is not None:
-                    summary += f", words {c_words}"
-                lines.append(summary)
-            if len(corpora) > 8:
-                lines.append(f"  • (+{len(corpora) - 8} more)")
-
-        # Metadata fields summary
-        if fields:
-            enum_fields = [k for k, v in fields.items() if isinstance(v, dict) and v.get("type") == "enum"]
-            lines.append("")
-            lines.append(f"Metadata fields: {len(fields)}" + (f" (enums: {', '.join(enum_fields)})" if enum_fields else ""))
-
-        return {"content": "\n".join(lines)}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
