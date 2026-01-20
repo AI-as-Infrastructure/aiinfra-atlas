@@ -22,46 +22,12 @@ def get_retriever_filters():
     """Return available filter capabilities for the current retriever."""
     try:
         retriever = get_retriever_instance()
-
-        # Check if retriever supports the new filter capabilities interface
-        if hasattr(retriever, 'get_filter_capabilities'):
-            filter_capabilities = retriever.get_filter_capabilities()
-        else:
-            # Fallback for retrievers that haven't implemented the new interface yet
-            filter_capabilities = {
-                "corpus_filtering": {
-                    "supported": retriever.supports_corpus_filtering if hasattr(retriever, 'supports_corpus_filtering') else False,
-                    "options": retriever.get_corpus_options() if hasattr(retriever, 'get_corpus_options') else []
-                },
-                "time_period_filtering": {
-                    "supported": False,
-                    "options": []
-                },
-                "direction_filtering": {
-                    "supported": False,
-                    "options": []
-                }
-            }
-
+        filter_capabilities = retriever.get_filter_capabilities()
         return JSONResponse(content=filter_capabilities)
 
     except Exception as e:
         logger.error(f"Error getting filter capabilities: {e}")
-        # Return minimal fallback response
-        return JSONResponse(content={
-            "corpus_filtering": {
-                "supported": False,
-                "options": []
-            },
-            "time_period_filtering": {
-                "supported": False,
-                "options": []
-            },
-            "direction_filtering": {
-                "supported": False,
-                "options": []
-            }
-        })
+        raise HTTPException(status_code=500, detail="Failed to get filter capabilities")
 
 
 @router.get("/api/vector-store-info")
