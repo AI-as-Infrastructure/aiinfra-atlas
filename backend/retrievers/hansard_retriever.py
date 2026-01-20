@@ -15,14 +15,6 @@ import time
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Define corpus options directly (removed SelfQuery prefix)
-CORPUS_OPTIONS = [
-    {"value": "all", "label": "All Collections"},
-    {"value": "1901_au", "label": "Australia (1901)"},
-    {"value": "1901_nz", "label": "New Zealand (1901)"},
-    {"value": "1901_uk", "label": "United Kingdom (1901)"}
-]
-
 
 class HansardRetriever(BaseRetriever):
     """Hansard retriever with optional hybrid search (dense + BM25 via RRF)."""
@@ -30,8 +22,12 @@ class HansardRetriever(BaseRetriever):
         if config is None:
             config = {}
 
-        # Ensure UI gets corpus options
-        config["CORPUS_OPTIONS"] = CORPUS_OPTIONS
+        # Load corpus options dynamically from manifest
+        from backend.modules.manifest_loader import get_corpus_options, get_corpus_values
+        config["CORPUS_OPTIONS"] = get_corpus_options()
+
+        # Store corpus IDs for balanced search operations
+        self._corpus_ids = get_corpus_values()
 
         # Base initialization
         super().__init__(config)
@@ -128,7 +124,8 @@ class HansardRetriever(BaseRetriever):
         return self._supports_corpus_filtering
 
     def get_corpus_options(self) -> List[Dict[str, str]]:
-        return CORPUS_OPTIONS
+        from backend.modules.manifest_loader import get_corpus_options
+        return get_corpus_options()
 
     def similar_search(self, query: str, k: int = 10, corpus_filter: Optional[str] = None) -> List[Dict[str, Any]]:
         from backend.modules.document_pool import cleanup_documents
@@ -284,8 +281,8 @@ class HansardRetriever(BaseRetriever):
         
         # Multi-corpus - divide pool across corpora for balance
         total_pool = self._candidate_pool_size(corpus_filter)
-        corpora_count = 3  # AU, NZ, UK
-        return max(total_pool // corpora_count, self.search_k_param * 3)
+        corpora_count = len(self._corpus_ids)
+        return max(total_pool // corpora_count, self.search_k_param * corpora_count)
     
     def _balanced_dense_search_ids(self, query: str, corpus_filter: Optional[str]) -> List[Tuple[str, float]]:
         """Perform corpus-balanced dense search for better representation."""
@@ -298,7 +295,7 @@ class HansardRetriever(BaseRetriever):
         per_corpus_k = self._per_corpus_candidate_size(corpus_filter)
         all_results = []
         
-        for corpus_id in ["1901_au", "1901_nz", "1901_uk"]:
+        for corpus_id in self._corpus_ids:
             corpus_results = self._dense_search_ids(query, per_corpus_k, {"corpus": corpus_id})
             all_results.extend(corpus_results)
         
@@ -320,7 +317,7 @@ class HansardRetriever(BaseRetriever):
         per_corpus_k = self._per_corpus_candidate_size(corpus_filter)
         all_results = []
         
-        for corpus_id in ["1901_au", "1901_nz", "1901_uk"]:
+        for corpus_id in self._corpus_ids:
             corpus_results = self._bm25_search_ids(query, per_corpus_k, {"corpus": corpus_id})
             all_results.extend(corpus_results)
         
@@ -336,7 +333,7 @@ class HansardRetriever(BaseRetriever):
             return []
         
         # Group documents by corpus
-        corpus_docs = {"1901_au": [], "1901_nz": [], "1901_uk": []}
+        corpus_docs = {cid: [] for cid in self._corpus_ids}
         
         for doc_id in fused_ids:
             # Look up corpus from BM25 docs
@@ -348,12 +345,13 @@ class HansardRetriever(BaseRetriever):
                     corpus_docs[corpus].append(doc_id)
         
         # Calculate target per corpus (roughly equal distribution)
-        per_corpus_target = max(1, target_k // 3)  # At least 1 per corpus
-        remainder = target_k % 3
+        corpora_count = len(self._corpus_ids)
+        per_corpus_target = max(1, target_k // corpora_count)  # At least 1 per corpus
+        remainder = target_k % corpora_count
         
         # Build balanced selection
         balanced_selection = []
-        corpus_list = ["1901_au", "1901_nz", "1901_uk"]
+        corpus_list = self._corpus_ids
         
         # First pass: take target amount from each corpus
         for corpus in corpus_list:
@@ -429,7 +427,7 @@ class HansardRetriever(BaseRetriever):
             docs = self._materialize_docs_by_ids(balanced_ids, filter_dict)
 
             # Calculate corpus distribution in final results for telemetry
-            final_corpus_distribution = {"1901_au": 0, "1901_nz": 0, "1901_uk": 0}
+            final_corpus_distribution = {cid: 0 for cid in self._corpus_ids}
             for doc in docs:
                 if hasattr(doc, 'metadata'):
                     corpus = doc.metadata.get("corpus")
@@ -439,6 +437,7 @@ class HansardRetriever(BaseRetriever):
             is_balanced_query = (not corpus_filter) or (corpus_filter == "all")
 
             # Store meaningful metrics for telemetry consumption
+            # Build metrics with dynamic corpus distribution
             self._last_retrieval_metrics = {
                 "search_type": "hybrid",
                 "bm25_ready": True,
@@ -446,7 +445,7 @@ class HansardRetriever(BaseRetriever):
                 "stratified_selection_applied": is_balanced_query,
                 "dense_candidates": len(dense_ranked),
                 "dense_time_ms": int((t1 - t0) * 1000),
-                "bm25_candidates": len(bm25_ranked), 
+                "bm25_candidates": len(bm25_ranked),
                 "bm25_time_ms": int((t2 - t1) * 1000),
                 "rrf_time_ms": int((r1 - r0) * 1000),
                 "rrf_overlap": overlap,
@@ -454,10 +453,10 @@ class HansardRetriever(BaseRetriever):
                 "rrf_unique_bm25": unique_bm25,
                 "rrf_candidates": len(fused_ids),
                 "final_documents": len(docs),
-                "final_au_docs": final_corpus_distribution["1901_au"],
-                "final_nz_docs": final_corpus_distribution["1901_nz"], 
-                "final_uk_docs": final_corpus_distribution["1901_uk"]
             }
+            # Add per-corpus document counts dynamically
+            for cid, count in final_corpus_distribution.items():
+                self._last_retrieval_metrics[f"final_{cid}_docs"] = count
 
             # Create child spans for hybrid search components (downstream fork pattern)
             try:
@@ -569,7 +568,7 @@ class HansardRetriever(BaseRetriever):
             is_balanced = (not corpus_filter) or (corpus_filter == "all")
             
             # Calculate corpus distribution in final results for telemetry
-            final_corpus_distribution = {"1901_au": 0, "1901_nz": 0, "1901_uk": 0}
+            final_corpus_distribution = {cid: 0 for cid in self._corpus_ids}
             for doc in docs:
                 if hasattr(doc, 'metadata'):
                     corpus = doc.metadata.get("corpus")
@@ -577,16 +576,17 @@ class HansardRetriever(BaseRetriever):
                         final_corpus_distribution[corpus] += 1
 
             # Store meaningful metrics for telemetry consumption
+            corpora_count = len(self._corpus_ids)
             self._last_retrieval_metrics = {
                 "search_type": "hybrid",
                 "bm25_ready": True,
-                "per_side_candidates": per_corpus_k * (3 if is_balanced else 1),
+                "per_side_candidates": per_corpus_k * (corpora_count if is_balanced else 1),
                 "per_corpus_candidates": per_corpus_k,
                 "corpus_balanced": is_balanced,
                 "stratified_selection_applied": is_balanced,
                 "dense_candidates": len(dense_ranked),
                 "dense_time_ms": int((t1 - t0) * 1000),
-                "bm25_candidates": len(bm25_ranked), 
+                "bm25_candidates": len(bm25_ranked),
                 "bm25_time_ms": int((t2 - t1) * 1000),
                 "rrf_time_ms": int((r1 - r0) * 1000),
                 "rrf_overlap": overlap,
@@ -594,10 +594,10 @@ class HansardRetriever(BaseRetriever):
                 "rrf_unique_bm25": unique_bm25,
                 "rrf_candidates": len(fused_ids),
                 "final_documents": len(docs),
-                "final_au_docs": final_corpus_distribution["1901_au"],
-                "final_nz_docs": final_corpus_distribution["1901_nz"], 
-                "final_uk_docs": final_corpus_distribution["1901_uk"]
             }
+            # Add per-corpus document counts dynamically
+            for cid, count in final_corpus_distribution.items():
+                self._last_retrieval_metrics[f"final_{cid}_docs"] = count
 
             return docs
 
@@ -607,7 +607,7 @@ class HansardRetriever(BaseRetriever):
             # Use balanced search for unfiltered queries
             per_corpus_k = self._per_corpus_candidate_size(corpus_filter)
             all_docs = []
-            for corpus_id in ["1901_au", "1901_nz", "1901_uk"]:
+            for corpus_id in self._corpus_ids:
                 corpus_docs = self.vector_store.similarity_search(
                     query=input, k=per_corpus_k, filter={"corpus": corpus_id}
                 )
@@ -616,7 +616,7 @@ class HansardRetriever(BaseRetriever):
             # Sort by relevance and take top k
             # Note: This is approximate since we can't easily re-score across corpora
             docs = all_docs[:k] if len(all_docs) > k else all_docs
-            pool_k = per_corpus_k * 3
+            pool_k = per_corpus_k * len(self._corpus_ids)
         else:
             # Single corpus - use standard search
             pool_k = self._candidate_pool_size(corpus_filter)

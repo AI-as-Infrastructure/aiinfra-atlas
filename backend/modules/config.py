@@ -69,6 +69,18 @@ _config: Optional[Dict[str, Any]] = None
 _retriever = None
 _retriever_instance = None
 
+
+def _get_dynamic_corpus_options() -> List[CorpusOption]:
+    """Load corpus options dynamically from manifest."""
+    try:
+        from backend.modules.manifest_loader import get_corpus_options
+        return get_corpus_options()
+    except Exception as e:
+        logger.warning(f"Failed to load corpus options from manifest: {e}")
+        # Minimal fallback - just "all" option
+        return [{"value": "all", "label": "All Collections"}]
+
+
 def _get_default_config() -> Dict[str, Any]:
     """Get default configuration values."""
     return {
@@ -82,24 +94,7 @@ def _get_default_config() -> Dict[str, Any]:
             "LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS": 500,
             "LARGE_RETRIEVAL_SIZE_ALL_CORPUS": 500,
             "supports_corpus_filtering": True,
-            "corpus_options": [
-                {"value": "all", "label": "All Collections"},
-                {
-                    "value": "1901_au", 
-                    "label": "Australia (1901)",
-                    "url_message": "Australian Parliament URL not available"
-                },
-                {
-                    "value": "1901_nz", 
-                    "label": "New Zealand (1901)",
-                    "url_message": "New Zealand Parliament URL not available"
-                },
-                {
-                    "value": "1901_uk", 
-                    "label": "United Kingdom (1901)",
-                    "url_message": "United Kingdom Parliament URL not available"
-                }
-            ],
+            "corpus_options": _get_dynamic_corpus_options(),
             "algorithm": "hnsw",
             "chunk_size": 1000,
             "chunk_overlap": 200,
