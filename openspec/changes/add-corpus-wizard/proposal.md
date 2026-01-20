@@ -318,6 +318,114 @@ class CorpusWizard:
         await self.restart_server()
 ```
 
+### Enhanced Build Progress and Requirements
+
+#### System Requirements Check
+Before building, the system analyzes hardware capabilities and provides estimates:
+
+```python
+class SystemRequirements:
+    """Check system capabilities and estimate build time"""
+
+    def analyze_system(self):
+        return {
+            'cpu': {
+                'cores': psutil.cpu_count(),
+                'model': platform.processor(),
+                'available': True
+            },
+            'gpu': {
+                'available': torch.cuda.is_available(),
+                'name': torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
+                'memory': torch.cuda.get_device_properties(0).total_memory if torch.cuda.is_available() else 0
+            },
+            'memory': {
+                'total': psutil.virtual_memory().total,
+                'available': psutil.virtual_memory().available,
+                'required': self.estimate_memory_requirement()
+            },
+            'disk': {
+                'free': shutil.disk_usage('/').free,
+                'required': self.estimate_disk_requirement()
+            }
+        }
+
+    def estimate_build_time(self, doc_count, mode='cpu'):
+        """Estimate build time based on document count and processing mode"""
+        if mode == 'gpu':
+            docs_per_second = 4.0  # Based on benchmarks
+        else:
+            docs_per_second = 1.2  # CPU is ~3x slower
+
+        estimated_seconds = doc_count / docs_per_second
+        return {
+            'seconds': estimated_seconds,
+            'formatted': self.format_duration(estimated_seconds),
+            'confidence': 0.75  # 75% confidence in estimate
+        }
+```
+
+#### Real-Time Progress Tracking
+Detailed progress with multiple metrics:
+
+```python
+class BuildProgressTracker:
+    """Track and report detailed build progress"""
+
+    def __init__(self, total_docs, websocket=None):
+        self.total_docs = total_docs
+        self.processed_docs = 0
+        self.start_time = time.time()
+        self.websocket = websocket
+        self.metrics = {
+            'current_doc': None,
+            'current_chunk': 0,
+            'total_chunks': 0,
+            'docs_per_second': 0,
+            'memory_usage': 0,
+            'gpu_usage': 0,
+            'errors': 0,
+            'warnings': 0
+        }
+
+    async def update_progress(self, doc_path, chunk_num=None):
+        """Send detailed progress update"""
+        self.processed_docs += 1
+        elapsed = time.time() - self.start_time
+
+        progress_data = {
+            'percentage': (self.processed_docs / self.total_docs) * 100,
+            'processed': self.processed_docs,
+            'total': self.total_docs,
+            'current_document': doc_path,
+            'current_chunk': chunk_num,
+            'elapsed_seconds': elapsed,
+            'estimated_remaining': self.estimate_remaining_time(),
+            'docs_per_second': self.processed_docs / elapsed if elapsed > 0 else 0,
+            'memory': {
+                'ram_used_gb': psutil.Process().memory_info().rss / 1e9,
+                'ram_percent': psutil.virtual_memory().percent,
+                'gpu_used_gb': self.get_gpu_memory() if torch.cuda.is_available() else 0,
+                'gpu_percent': self.get_gpu_usage() if torch.cuda.is_available() else 0
+            },
+            'performance': {
+                'cpu_percent': psutil.cpu_percent(interval=0.1),
+                'disk_io_mb': self.get_disk_io()
+            },
+            'filter_progress': self.get_filter_progress()
+        }
+
+        if self.websocket:
+            await self.websocket.send_json(progress_data)
+
+        return progress_data
+
+    def get_filter_progress(self):
+        """Track progress per corpus filter"""
+        # Returns progress for each filter
+        # e.g., {"1901_au": {"processed": 450, "total": 1456}}
+```
+
 ### Frontend Wizard UI
 
 ```vue
@@ -363,22 +471,36 @@ class CorpusWizard:
         v-model="embeddingModel"
         :recommendations="modelRecommendations"
         :corpus-sample="corpusSample"
-        @continue="buildCorpus"
+        @continue="checkRequirements"
       />
     </div>
 
-    <!-- Step 5: Build Progress -->
+    <!-- Step 5: Requirements Check -->
     <div v-if="currentStep === 5" class="wizard-step">
+      <h2>System Requirements Check</h2>
+      <RequirementsChecker
+        :corpus-stats="corpusStats"
+        :system-info="systemInfo"
+        @select-mode="selectProcessingMode"
+      />
+    </div>
+
+    <!-- Step 6: Build Progress -->
+    <div v-if="currentStep === 6" class="wizard-step">
       <h2>Building Vector Store</h2>
       <BuildProgress
         :progress="buildProgress"
         :logs="buildLogs"
+        :mode="processingMode"
+        :detailed-metrics="detailedMetrics"
+        @pause="pauseBuild"
+        @resume="resumeBuild"
         @complete="testCorpus"
       />
     </div>
 
-    <!-- Step 6: Test & Activate -->
-    <div v-if="currentStep === 6" class="wizard-step">
+    <!-- Step 7: Test & Activate -->
+    <div v-if="currentStep === 7" class="wizard-step">
       <h2>Test & Activate Corpus</h2>
       <CorpusTester
         :config="finalConfig"

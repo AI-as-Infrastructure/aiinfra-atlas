@@ -47,10 +47,15 @@
 ### Universal Corpus Builder
 - [ ] Create `create/create_corpus_store.py` as config-driven builder
 - [ ] Refactor `create_hansard_store.py` to use config system
-- [ ] Add progress reporting callbacks to builder
+- [ ] Add detailed progress reporting callbacks with metrics
+- [ ] Implement CPU/GPU mode detection and switching
+- [ ] Add system requirements checker (RAM, disk, GPU)
+- [ ] Implement pause/resume functionality for builds
+- [ ] Add progress tracking per filter/category
 - [ ] Support both TXT and XML in unified pipeline
 - [ ] Add metadata injection into manifest.json
 - [ ] Generate appropriate test queries per corpus type
+- [ ] Add build time estimation based on corpus size and mode
 
 ### Model Recommendation System
 - [ ] Create embedding model database with characteristics
@@ -88,12 +93,25 @@
 - [ ] Implement sample text testing
 - [ ] Show model characteristics (size, speed, period)
 
+### System Requirements Check
+- [ ] Create `frontend/src/components/wizard/RequirementsChecker.vue`
+- [ ] Display CPU/GPU capabilities detection
+- [ ] Show memory and disk requirements
+- [ ] Provide time estimates for CPU vs GPU modes
+- [ ] Add warnings for insufficient resources
+- [ ] Allow mode selection (CPU/GPU)
+
 ### Build Progress
 - [ ] Create `frontend/src/components/wizard/BuildProgress.vue`
-- [ ] Implement SSE connection for progress updates
-- [ ] Add log viewer with filtering
-- [ ] Show estimated time remaining
-- [ ] Add pause/resume capabilities
+- [ ] Implement SSE/WebSocket for real-time progress updates
+- [ ] Display detailed metrics (docs/sec, memory, GPU usage)
+- [ ] Show progress per filter category
+- [ ] Add log viewer with filtering and search
+- [ ] Show current document and chunk being processed
+- [ ] Display estimated time remaining with confidence
+- [ ] Add pause/resume/cancel capabilities
+- [ ] Show performance graphs (optional advanced view)
+- [ ] Add progress persistence for recovery after interruption
 
 ### Testing & Activation
 - [ ] Create `frontend/src/components/wizard/CorpusTester.vue`
