@@ -5,7 +5,7 @@ import FAQPage from '@/pages/FAQPage.vue'
 import InterRaterPage from '@/pages/InterRaterPage.vue'
 import AmplifyCallback from '@/pages/AmplifyCallback.vue'
 import LoginPage from '@/pages/LoginPage.vue'
-import CorpusWizard from '@/pages/CorpusWizard.vue'
+import CorpusWizard from '@/pages/CorpusWizardComplete.vue'
 import { isCognitoEnabled, isAuthenticated } from '@/auth/amplify-auth'
 
 const routes = [

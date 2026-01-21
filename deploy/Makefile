@@ -15,7 +15,7 @@ b: ## Start backend development server
 f: ## Start frontend development server
 	@./deploy/dev/scripts/start_frontend.sh
 
-d: ## Destroy development environment
+d: ## Destroy development environment (removes ALL venvs and node_modules)
 	@./deploy/dev/scripts/clean_dev.sh
 
 # Production Deployment Targets  
@@ -133,16 +133,33 @@ pm: ## Prepare embedding model
 	@bash -c "source .venv/bin/activate && python create/prepare_model.py"
 
 # Corpus Wizard Commands
-corpus-wizard: venv ## Enter corpus configuration wizard mode
-	@echo "🧙 Starting ATLAS Corpus Configuration Wizard..."
-	@echo "Opening browser at http://localhost:8000/corpus-wizard"
-	@bash -c "source .venv/bin/activate && python -c \"import requests; r = requests.post('http://localhost:8000/api/corpus-wizard/mode', json={'enabled': True}); print('Wizard mode:', r.json().get('status', 'failed'))\""
-	@echo "Navigate to http://localhost:8000/corpus-wizard to configure your corpus"
+corpus-wizard-cpu: ## Setup corpus wizard with CPU-only PyTorch (smaller ~200MB download)
+	@chmod +x utils/scripts/corpus_wizard_setup_cpu.sh 2>/dev/null || true
+	@./utils/scripts/corpus_wizard_setup_cpu.sh
 
-corpus-wizard-exit: venv ## Exit corpus wizard mode and return to normal operation
-	@echo "Exiting corpus wizard mode..."
-	@bash -c "source .venv/bin/activate && python -c \"import requests; r = requests.post('http://localhost:8000/api/corpus-wizard/mode', json={'enabled': False}); print('Status:', r.json().get('status', 'failed'))\""
-	@echo "✅ Returned to normal operation mode"
+corpus-wizard-gpu: ## Setup corpus wizard with GPU/CUDA PyTorch (larger ~2GB download, for NVIDIA GPUs)
+	@chmod +x utils/scripts/corpus_wizard_setup_gpu.sh 2>/dev/null || true
+	@./utils/scripts/corpus_wizard_setup_gpu.sh
+
+corpus-clean: ## Clean up corpus wizard environment (preserves configs and backups)
+	@chmod +x utils/scripts/corpus_wizard_clean.sh 2>/dev/null || true
+	@./utils/scripts/corpus_wizard_clean.sh
+
+corpus-build: ## Build a corpus from configuration file (uses corpus environment)
+	@if [ -z "$(CONFIG)" ]; then \
+		echo "❌ Usage: make corpus-build CONFIG=<config-file>"; \
+		echo "Example: make corpus-build CONFIG=corpus_configs/darwin_correspondence.yaml"; \
+		exit 1; \
+	fi
+	@echo "🔨 Building corpus from configuration: $(CONFIG)"
+	@if [ -d ".venv_corpus" ]; then \
+		source .venv_corpus/bin/activate && python create/create_corpus_store.py --config "$(CONFIG)"; \
+	elif [ -d ".venv" ]; then \
+		source .venv/bin/activate && python create/create_corpus_store.py --config "$(CONFIG)"; \
+	else \
+		echo "❌ No virtual environment found. Run 'make corpus-wizard' first."; \
+		exit 1; \
+	fi
 
 corpus-backup: ## Backup current corpus configuration and vector store
 	@echo "📦 Backing up current corpus..."
@@ -175,4 +192,32 @@ corpus-list: ## List available corpus configurations
 	else \
 		echo "No corpus_configs directory found"; \
 	fi
+
+corpus-swap: ## Swap to a different corpus using configuration file
+	@if [ -z "$(CORPUS)" ]; then \
+		echo "❌ Usage: make corpus-swap CORPUS=<config-name>"; \
+		echo "Available configurations:"; \
+		ls -1 corpus_configs/*.yaml 2>/dev/null | sed 's|corpus_configs/||; s|\.yaml||' || echo "No configurations found"; \
+		exit 1; \
+	fi
+	@if [ ! -d ".venv_corpus" ] && [ ! -d ".venv" ]; then \
+		echo "⚠️  No virtual environment found. Setting up corpus environment..."; \
+		./utils/scripts/corpus_wizard_setup.sh; \
+	fi
+	@./utils/scripts/swap_corpus.sh $(CORPUS)
+
+# Quick corpus swap commands
+use-hansard: ## Quick swap to Hansard corpus (auto-setup if needed)
+	@if [ ! -d ".venv_corpus" ] && [ ! -d ".venv" ]; then \
+		echo "⚠️  Setting up corpus environment..."; \
+		./utils/scripts/corpus_wizard_setup.sh; \
+	fi
+	@./utils/scripts/swap_corpus.sh hansard_1901
+
+use-darwin: ## Quick swap to Darwin corpus (auto-setup if needed)
+	@if [ ! -d ".venv_corpus" ] && [ ! -d ".venv" ]; then \
+		echo "⚠️  Setting up corpus environment..."; \
+		./utils/scripts/corpus_wizard_setup.sh; \
+	fi
+	@./utils/scripts/swap_corpus.sh darwin_correspondence
 

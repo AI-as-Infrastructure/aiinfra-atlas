@@ -8,9 +8,13 @@ echo "Stopping running processes..."
 pkill -f "uvicorn backend.app:app" || true
 pkill -f "npm run dev" || true
 
-# Remove virtual environment
-echo "Removing virtual environment..."
-rm -rf .venv
+# Remove ALL virtual environments (matches any .venv* or venv* pattern)
+echo "Removing all virtual environments..."
+rm -rf .venv 2>/dev/null || true
+rm -rf .venv_* 2>/dev/null || true
+rm -rf .venv-* 2>/dev/null || true
+rm -rf venv 2>/dev/null || true
+rm -rf venv_* 2>/dev/null || true
 
 # Clean up frontend
 echo "Cleaning up frontend..."

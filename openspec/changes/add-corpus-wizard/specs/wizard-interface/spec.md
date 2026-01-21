@@ -7,7 +7,7 @@ The system SHALL provide a dedicated wizard mode that temporarily disables norma
 
 #### Scenario: Enter wizard mode
 GIVEN an administrator wants to configure a new corpus
-WHEN they execute "make corpus-wizard"
+WHEN they execute "make corpus-wizard-cpu" or "make corpus-wizard-gpu"
 THEN the system enters wizard mode
 AND normal query endpoints are disabled
 AND the UI redirects to the corpus wizard interface

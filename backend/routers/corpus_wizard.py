@@ -593,30 +593,43 @@ def _format_duration(seconds: float) -> str:
 
 async def _build_corpus_task(build_id: str, config: CorpusConfig):
     """
-    Background task to build corpus.
-    This is a placeholder - actual implementation would use the corpus builder.
+    Background task to build corpus using the universal corpus builder.
     """
     try:
+        # Import the corpus builder
+        import sys
+        from pathlib import Path
+        sys.path.append(str(Path(__file__).parent.parent.parent))
+        from create.create_corpus_store import UniversalCorpusBuilder
+
         # Update status
         wizard_state['build_progress'][build_id]['status'] = 'building'
 
-        # Simulate build process (replace with actual builder)
-        total_docs = 1000  # This would come from actual corpus
-        for i in range(total_docs):
-            wizard_state['build_progress'][build_id].update({
-                'progress': (i + 1) / total_docs * 100,
-                'processed_documents': i + 1,
-                'total_documents': total_docs,
-                'current_document': f'document_{i}.txt',
-                'status': 'building'
-            })
-            await asyncio.sleep(0.1)  # Simulate processing time
+        # Create progress callback
+        async def progress_callback(progress_data):
+            """Update wizard state with progress."""
+            wizard_state['build_progress'][build_id].update(progress_data)
+
+        # Initialize builder
+        mode = wizard_state['build_progress'][build_id].get('mode', 'cpu')
+        builder = UniversalCorpusBuilder(config, mode)
+
+        # Build corpus
+        results = await builder.build(progress_callback)
 
         # Mark as completed
-        wizard_state['build_progress'][build_id]['status'] = 'completed'
-        wizard_state['build_progress'][build_id]['completed_at'] = datetime.now().isoformat()
+        wizard_state['build_progress'][build_id].update({
+            'status': 'completed',
+            'completed_at': datetime.now().isoformat(),
+            'results': results
+        })
+
+        logger.info(f"Corpus build completed: {results}")
 
     except Exception as e:
         logger.error(f"Build failed: {e}")
-        wizard_state['build_progress'][build_id]['status'] = 'failed'
-        wizard_state['build_progress'][build_id]['error'] = str(e)
+        wizard_state['build_progress'][build_id].update({
+            'status': 'failed',
+            'error': str(e),
+            'failed_at': datetime.now().isoformat()
+        })

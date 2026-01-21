@@ -51,10 +51,25 @@ venv: $(VENV_DIR)/bin/activate
 
 $(VENV_DIR)/bin/activate: config/requirements.lock
 	@if [ ! -d "$(VENV_DIR)" ]; then \
-		python3 -m venv $(VENV_DIR); \
+		echo "📦 Creating virtual environment..."; \
+		python3 -m venv $(VENV_DIR) 2>/dev/null || { \
+			echo "❌ Failed to create virtual environment."; \
+			echo ""; \
+			echo "If you see an error about 'ensurepip', install the venv package:"; \
+			echo "  Ubuntu/Debian: sudo apt-get install python3-venv"; \
+			echo "  or for specific Python version: sudo apt-get install python3.12-venv"; \
+			echo ""; \
+			echo "Then run this command again."; \
+			exit 1; \
+		}; \
 	fi
 	@if [ ! -f "config/requirements.lock" ]; then echo "❌ Missing config/requirements.lock. Run 'make l' first."; exit 1; fi
-	$(VENV_DIR)/bin/pip install -r config/requirements.lock
+	@if [ -f "$(VENV_DIR)/bin/pip" ]; then \
+		$(VENV_DIR)/bin/pip install -r config/requirements.lock; \
+	else \
+		echo "❌ Virtual environment not properly created. Please install python3-venv package."; \
+		exit 1; \
+	fi
 	@touch $(VENV_DIR)/bin/activate
 
 # Help target

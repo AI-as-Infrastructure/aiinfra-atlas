@@ -1,0 +1,51 @@
+# Hansard 1901 Parliamentary Records Configuration
+metadata:
+  name: "Parliamentary Hansards 1901"
+  description: "Parliamentary records from Australia, New Zealand, and United Kingdom for the year 1901"
+  time_period_from: 1901
+  time_period_to: 1901
+  copyright_status: "public_domain"
+  copyright_statement: "Public domain - government records"
+  citation: "Parliamentary Hansards, 1901. Digital collection."
+  people: []
+  places: ["Australia", "New Zealand", "United Kingdom"]
+  topics: ["parliament", "politics", "legislation", "debate", "government"]
+  organization_preferences: ["by_region", "by_date"]
+
+source:
+  type: "local"
+  location: "${HANSARD_SOURCES_ROOT:-/data/hansard_sources_FULL_TXT}"
+  file_types: ["txt"]
+
+filters:
+  - id: "all"
+    label: "All Collections"
+    pattern: "**/*.txt"
+  - id: "1901_au"
+    label: "Australia (1901)"
+    pattern: "**/AU/**/*.txt"
+  - id: "1901_nz"
+    label: "New Zealand (1901)"
+    pattern: "**/NZ/**/*.txt"
+  - id: "1901_uk"
+    label: "United Kingdom (1901)"
+    pattern: "**/UK/**/*.txt"
+
+embeddings:
+  model: "Livingwithmachines/bert_1890_1900"
+  pooling: "mean+max"
+  chunk_size: 1000
+  chunk_overlap: 100
+  batch_size: 100
+
+vector_store:
+  type: "chromadb"
+  collection_name: "hansard_1901"
+  persist_directory: "backend/targets/chroma_db"
+
+search:
+  type: "hybrid"
+  k_default: 10
+  large_single_corpus: 120
+  large_all_corpus: 80
+  test_query: "parliament debate legislation"
