@@ -5,6 +5,7 @@ import FAQPage from '@/pages/FAQPage.vue'
 import InterRaterPage from '@/pages/InterRaterPage.vue'
 import AmplifyCallback from '@/pages/AmplifyCallback.vue'
 import LoginPage from '@/pages/LoginPage.vue'
+import CorpusWizard from '@/pages/CorpusWizard.vue'
 import { isCognitoEnabled, isAuthenticated } from '@/auth/amplify-auth'
 
 const routes = [
@@ -12,11 +13,14 @@ const routes = [
   { path: '/about', component: AboutPage },
   { path: '/faq', component: FAQPage },
   { path: '/inter-rater', component: InterRaterPage, meta: { requiresAuth: true } },
-  
+
+  // Corpus wizard route (admin functionality - no auth required for development)
+  { path: '/corpus-wizard', component: CorpusWizard, name: 'corpus-wizard' },
+
   // Authentication routes
   { path: '/login', component: LoginPage, name: 'login' },
   { path: '/callback', component: AmplifyCallback, name: 'callback' },
-  
+
   // No debug pages needed
 ]
 
