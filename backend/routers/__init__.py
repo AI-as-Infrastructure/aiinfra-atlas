@@ -12,6 +12,7 @@ from backend.routers.cache import router as cache_router
 from backend.routers.queue import router as queue_router
 from backend.routers.inter_rater import router as inter_rater_router
 from backend.routers.retriever import router as retriever_router
+from backend.routers.corpus_wizard import router as corpus_wizard_router
 
 __all__ = [
     "core_router",
@@ -22,4 +23,5 @@ __all__ = [
     "queue_router",
     "inter_rater_router",
     "retriever_router",
+    "corpus_wizard_router",
 ]

@@ -76,6 +76,7 @@ from backend.routers import (
     queue_router,
     inter_rater_router,
     retriever_router,
+    corpus_wizard_router,
 )
 
 # Import configuration initialization
@@ -153,6 +154,7 @@ app.include_router(cache_router)
 app.include_router(queue_router)
 app.include_router(inter_rater_router)
 app.include_router(retriever_router)
+app.include_router(corpus_wizard_router)
 
 # Initialize configuration
 try:

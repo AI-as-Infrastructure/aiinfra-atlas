@@ -132,3 +132,47 @@ pm: ## Prepare embedding model
 	fi
 	@bash -c "source .venv/bin/activate && python create/prepare_model.py"
 
+# Corpus Wizard Commands
+corpus-wizard: venv ## Enter corpus configuration wizard mode
+	@echo "🧙 Starting ATLAS Corpus Configuration Wizard..."
+	@echo "Opening browser at http://localhost:8000/corpus-wizard"
+	@bash -c "source .venv/bin/activate && python -c \"import requests; r = requests.post('http://localhost:8000/api/corpus-wizard/mode', json={'enabled': True}); print('Wizard mode:', r.json().get('status', 'failed'))\""
+	@echo "Navigate to http://localhost:8000/corpus-wizard to configure your corpus"
+
+corpus-wizard-exit: venv ## Exit corpus wizard mode and return to normal operation
+	@echo "Exiting corpus wizard mode..."
+	@bash -c "source .venv/bin/activate && python -c \"import requests; r = requests.post('http://localhost:8000/api/corpus-wizard/mode', json={'enabled': False}); print('Status:', r.json().get('status', 'failed'))\""
+	@echo "✅ Returned to normal operation mode"
+
+corpus-backup: ## Backup current corpus configuration and vector store
+	@echo "📦 Backing up current corpus..."
+	@timestamp=$$(date +%Y%m%d_%H%M%S); \
+	backup_dir="corpus_backups/backup_$$timestamp"; \
+	mkdir -p "$$backup_dir"; \
+	if [ -d "backend/targets" ]; then \
+		cp -r backend/targets "$$backup_dir/targets"; \
+		echo "✅ Backed up to $$backup_dir"; \
+	else \
+		echo "⚠️  No corpus to backup"; \
+	fi
+
+corpus-restore: ## Restore corpus from most recent backup
+	@echo "🔄 Restoring corpus from backup..."
+	@latest_backup=$$(ls -t corpus_backups | head -1); \
+	if [ -n "$$latest_backup" ]; then \
+		echo "Restoring from corpus_backups/$$latest_backup"; \
+		rm -rf backend/targets; \
+		cp -r "corpus_backups/$$latest_backup/targets" backend/targets; \
+		echo "✅ Corpus restored from $$latest_backup"; \
+	else \
+		echo "❌ No backup found to restore"; \
+	fi
+
+corpus-list: ## List available corpus configurations
+	@echo "📚 Available corpus configurations:"
+	@if [ -d "corpus_configs" ]; then \
+		ls -1 corpus_configs/*.yaml 2>/dev/null | sed 's|corpus_configs/||; s|\.yaml||' || echo "No configurations found"; \
+	else \
+		echo "No corpus_configs directory found"; \
+	fi
+
