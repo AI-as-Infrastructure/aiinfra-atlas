@@ -35,6 +35,9 @@ analysis/analyze_darwin_spans.py
 # Data directory - corpus text files (too large for git)
 data/
 
+# Source examples directory - example corpus files for testing
+source_examples/
+
 # Chroma database directories - exclude all binary DB files (too large for git)
 backend/chroma_db/
 */chroma_db/
