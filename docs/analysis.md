@@ -35,7 +35,7 @@ The analysis generates comprehensive outputs including:
 
 ### Hansard Parliamentary Data
 ```
-data_backup/phoenix/2025/10/31/Hansard-Prod/spans.parquet
+backend/telemetry/backup/phoenix/2025/10/31/Hansard-Prod/spans.parquet
 ```
 - **Focus**: Parliamentary correspondence analysis
 - **Typical volume**: ~1000+ records per backup
@@ -172,7 +172,7 @@ make backup-prod  # Can be scheduled via cron
 ## Prerequisites and Dependencies
 
 - **Python Environment**: Virtual environment with pandas, matplotlib, seaborn
-- **Data Access**: Phoenix backup data in `data_backup/phoenix/` directory
+- **Data Access**: Phoenix backup data in `backend/telemetry/backup/phoenix/` directory
 - **Disk Space**: ~50MB per analysis run (including visualizations)
 - **Processing Time**: ~30 seconds for typical analysis run
 
@@ -192,7 +192,7 @@ pip install matplotlib seaborn
 ```
 
 **Empty analysis results:**
-- Check backup data exists in `data_backup/phoenix/YYYY/MM/DD/`
+- Check backup data exists in `backend/telemetry/backup/phoenix/YYYY/MM/DD/`
 - Verify Phoenix telemetry is capturing data
 - Review backup configuration in `config/.env.production`
 

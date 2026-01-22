@@ -64,7 +64,7 @@ pip install -r config/requirements.lock gunicorn
 # 7. Prepare embedding model if needed
 EMBEDDING_MODEL=$(grep "^EMBEDDING_MODEL=" "config/.env.staging" | cut -d '"' -f 2)
 if [ "$EMBEDDING_MODEL" = "Livingwithmachines/bert_1890_1900" ]; then
-  python create/prepare_model.py
+  python utils/scripts/prepare_model.py
 fi
 
 # 8. Build frontend

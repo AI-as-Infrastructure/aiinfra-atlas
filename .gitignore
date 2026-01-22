@@ -23,14 +23,17 @@ deploy/docker/
 create/output/*
 models/**
 models/bert_1890_1900_st/
-load_tests/reports/*
-data_backup/phoenix/*
+tests/load_tests/reports/*
+backend/telemetry/backup/phoenix/*
 
 # Analysis outputs - exclude all generated analysis files
 analysis/output/*
 
 # Darwin analysis scripts - internal development only
 analysis/analyze_darwin_spans.py
+
+# Data directory - corpus text files (too large for git)
+data/
 
 # Chroma database directories - exclude all binary DB files (too large for git)
 backend/chroma_db/
@@ -117,6 +120,8 @@ venv.bk/
 .venv-vs-cpu/
 .venv.vs-gpu/
 .venv.vs-cpu/
+# Corpus wizard isolated environment
+.venv_corpus/
 
 # VS Code
 .vscode/
@@ -126,8 +131,8 @@ frontend/public/logout.html
 frontend/dist/
 
 # Load Testing Results (exclude sensitive performance data)
-load_tests/reports/
-load_tests/results/
-load_tests/*.log
+tests/load_tests/reports/
+tests/load_tests/results/
+tests/load_tests/*.log
 
 

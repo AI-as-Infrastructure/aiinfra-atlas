@@ -1,9 +1,0 @@
-# CPU-only overrides for vector store creation venv
-#
-# Purpose: Keep the main application environment untouched while allowing a
-# separate, minimal venv for vector store creation that uses CPU Torch.
-#
-# The create scripts will install all other dependencies from
-# config/requirements.lock and then ensure the Torch stack matches this file.
-
-torch>=2.8.0

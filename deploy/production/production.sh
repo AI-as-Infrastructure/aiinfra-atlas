@@ -203,7 +203,7 @@ if [ ! -d "$APP_DIR/models" ] || [ -z "$(ls -A $APP_DIR/models 2>/dev/null)" ]; 
     echo "Models directory missing or empty. Generating models..."
     cd $APP_DIR
     . .venv/bin/activate
-    python create/prepare_model.py
+    python utils/scripts/prepare_model.py
     echo "✅ Models generated successfully"
 else
     echo "✅ Models directory found with content"

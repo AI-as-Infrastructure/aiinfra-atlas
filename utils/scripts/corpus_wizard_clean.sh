@@ -22,23 +22,23 @@ else
 fi
 
 # Clean up any corpus build artifacts
-if [ -d "create/output" ]; then
+if [ -d "backend/corpus/tmp" ]; then
     echo "🗑️  Removing corpus build artifacts..."
-    rm -rf create/output
+    rm -rf backend/corpus/tmp/*
     echo -e "${GREEN}✅ Build artifacts removed${NC}"
 fi
 
 # Clean up temporary corpus downloads
-if [ -d "create/temp_corpus" ]; then
+if [ -d "backend/corpus/temp_corpus" ]; then
     echo "🗑️  Removing temporary corpus downloads..."
-    rm -rf create/temp_corpus
+    rm -rf backend/corpus/temp_corpus
     echo -e "${GREEN}✅ Temporary downloads removed${NC}"
 fi
 
 # Clean up corpus build logs
-if ls create/*.log 1> /dev/null 2>&1; then
+if ls backend/corpus/*.log 1> /dev/null 2>&1; then
     echo "📝 Removing corpus build logs..."
-    rm -f create/*.log
+    rm -f backend/corpus/*.log
     echo -e "${GREEN}✅ Build logs removed${NC}"
 fi
 
@@ -47,7 +47,8 @@ echo -e "${GREEN}✅ Corpus wizard cleanup complete!${NC}"
 echo ""
 echo "Note: This does not affect:"
 echo "  - Your main development environment (.venv)"
-echo "  - Your corpus configurations (corpus_configs/)"
-echo "  - Your active corpus (backend/targets/)"
+echo "  - Your corpus configurations (config/corpus.yaml)"
+echo "  - Your active corpus (backend/corpus/)"
+echo "  - Your test targets (backend/targets/)"
 echo "  - Your corpus backups (corpus_backups/)"
 echo ""

@@ -106,7 +106,7 @@ class VectorStoreConfig(BaseModel):
     type: str = Field("chromadb", description="Vector store type")
     collection_name: str = Field(..., description="Collection name")
     persist_directory: str = Field(
-        "backend/targets/chroma_db",
+        "backend/corpus/chroma_db",
         description="Storage directory"
     )
 

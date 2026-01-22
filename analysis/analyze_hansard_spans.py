@@ -22,7 +22,7 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path=Path(__file__).parent.parent / "config" / ".env.development")
 
 # Configuration from environment variables
-ANALYSIS_BASE_DIR = os.getenv("ANALYSIS_BASE_DIR", str(Path(__file__).parent.parent / "data_backup" / "phoenix"))
+ANALYSIS_BASE_DIR = os.getenv("ANALYSIS_BASE_DIR", str(Path(__file__).parent.parent / "backend" / "telemetry" / "backup" / "phoenix"))
 ANALYSIS_OUTPUT_DIR = os.getenv("ANALYSIS_OUTPUT_DIR", str(Path(__file__).parent / "output"))
 ANALYSIS_TITLE_PREFIX = os.getenv("ANALYSIS_TITLE_PREFIX", "Parliamentary Data")
 

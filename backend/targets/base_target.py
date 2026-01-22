@@ -107,8 +107,8 @@ class TargetConfig:
             "EMBEDDING_MODEL": "Livingwithmachines/bert_1890_1900"  # Default embedding model
         }
 
-        # Read details from a single manifest.json under backend/targets
-        manifest_json = os.path.join('backend', 'targets', 'manifest.json')
+        # Read details from manifest.json under backend/corpus (new location)
+        manifest_json = os.path.join('backend', 'corpus', 'manifest.json')
         if os.path.isfile(manifest_json):
             try:
                 with open(manifest_json, 'r', encoding='utf-8') as f:
@@ -127,7 +127,7 @@ class TargetConfig:
             except Exception as e:
                 logger.warning(f"[TargetConfig] Could not parse manifest.json at {manifest_json}: {e}")
         else:
-            logger.warning("[TargetConfig] No backend/targets/manifest.json found. Using defaults and environment variables.")
+            logger.warning("[TargetConfig] No backend/corpus/manifest.json found. Using defaults and environment variables.")
         
         return {
             "CHROMA_PERSIST_DIRECTORY": chroma_persist_dir,

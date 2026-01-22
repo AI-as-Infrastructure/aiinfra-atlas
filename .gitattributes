@@ -1,14 +1,11 @@
-# LFS tracking for large files  
+# LFS tracking for large files
 # Track chromadb with LFS (required for large files)
-backend/targets/chroma_db/** filter=lfs diff=lfs merge=lfs -text
-targets/chroma_db/** filter=lfs diff=lfs merge=lfs -text
+backend/corpus/chroma_db/** filter=lfs diff=lfs merge=lfs -text
 # Explicitly exclude BERT model files
 models/bert_1890_1900_st/** -text
 models/bert_1890_1900_st/* -text
 # Track other sqlite3 files with LFS (but not chroma ones)
 *.sqlite3 filter=lfs diff=lfs merge=lfs -text
-backend/targets/chroma_db/*.sqlite3 -text
-targets/chroma_db/*.sqlite3 -text
-backend/targets/bm25_corpus.jsonl filter=lfs diff=lfs merge=lfs -text
+backend/corpus/chroma_db/*.sqlite3 -text
+backend/corpus/bm25_corpus.jsonl filter=lfs diff=lfs merge=lfs -text
 models/** filter=lfs diff=lfs merge=lfs -text
-backend/targets/chroma_db/1240b255-4bfa-405f-916a-0101f7283624/* filter=lfs diff=lfs merge=lfs -text

@@ -508,24 +508,84 @@ async def activate_corpus(
 ):
     """
     Activate a newly built corpus.
+
+    This moves corpus files from backend/corpus/tmp/ to their proper locations:
+    - Corpus data (chroma_db, manifest, bm25) → backend/corpus/
+    - Test target configs (.conf files) → backend/targets/
+    - Corpus configuration → config/corpus.yaml
+    - Generated retriever → backend/retrievers/
     """
     try:
-        # Path to new corpus
-        new_corpus_path = Path("create/output")
-        target_path = Path("backend/targets")
+        # Paths
+        output_path = Path("backend/corpus/tmp")
+        corpus_path = Path("backend/corpus")
+        targets_path = Path("backend/targets")
+        retrievers_path = Path("backend/retrievers")
+        config_path = Path("config")
 
-        if not new_corpus_path.exists():
-            raise HTTPException(status_code=404, detail="New corpus not found")
+        if not output_path.exists():
+            raise HTTPException(status_code=404, detail="Built corpus not found in backend/corpus/tmp")
 
         # Backup current corpus if requested
-        if backup and target_path.exists():
-            backup_path = Path(f"backend/targets.backup.{datetime.now().strftime('%Y%m%d_%H%M%S')}")
-            shutil.move(str(target_path), str(backup_path))
-            logger.info(f"Backed up current corpus to {backup_path}")
+        if backup and corpus_path.exists() and any(corpus_path.iterdir()):
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            backup_dir = Path(f"corpus_backups/backup_{timestamp}")
+            backup_dir.mkdir(parents=True, exist_ok=True)
 
-        # Move new corpus to active location
-        shutil.move(str(new_corpus_path), str(target_path))
-        logger.info(f"Activated new corpus: {corpus_name}")
+            # Backup corpus data
+            if corpus_path.exists():
+                shutil.copytree(corpus_path, backup_dir / "corpus")
+            # Backup config
+            corpus_config = config_path / "corpus.yaml"
+            if corpus_config.exists():
+                shutil.copy(corpus_config, backup_dir / "corpus.yaml")
+
+            logger.info(f"Backed up current corpus to {backup_dir}")
+
+        # Clear existing corpus data
+        if corpus_path.exists():
+            shutil.rmtree(corpus_path)
+        corpus_path.mkdir(parents=True, exist_ok=True)
+
+        # Move corpus data files to backend/corpus/
+        corpus_files = ["chroma_db", "manifest.json", "bm25_corpus.jsonl"]
+        for file_name in corpus_files:
+            source = output_path / file_name
+            if source.exists():
+                dest = corpus_path / file_name
+                if source.is_dir():
+                    shutil.move(str(source), str(dest))
+                else:
+                    shutil.copy(str(source), str(dest))
+                logger.info(f"Moved {file_name} to backend/corpus/")
+
+        # Move test target configs to backend/targets/
+        targets_path.mkdir(parents=True, exist_ok=True)
+        for conf_file in output_path.glob("*.conf"):
+            dest = targets_path / conf_file.name
+            shutil.copy(str(conf_file), str(dest))
+            logger.info(f"Copied {conf_file.name} to backend/targets/")
+
+        # Copy corpus configuration to config/corpus.yaml
+        corpus_config_src = output_path / "corpus_config.yaml"
+        if corpus_config_src.exists():
+            corpus_config_dest = config_path / "corpus.yaml"
+            shutil.copy(str(corpus_config_src), str(corpus_config_dest))
+            logger.info(f"Copied corpus configuration to config/corpus.yaml")
+
+        # Move generated retriever to backend/retrievers/
+        for retriever_file in output_path.glob("*_retriever.py"):
+            dest = retrievers_path / retriever_file.name
+            shutil.copy(str(retriever_file), str(dest))
+            logger.info(f"Copied {retriever_file.name} to backend/retrievers/")
+
+            # Update RETRIEVER_MODULE in .env files
+            retriever_module = retriever_file.stem  # Remove .py extension
+            # This would need to be done manually or through a separate config update
+
+        # Clean up tmp directory
+        shutil.rmtree(output_path)
+        output_path.mkdir()  # Recreate empty directory for next corpus
 
         # Clear wizard state
         wizard_state['enabled'] = False
@@ -533,7 +593,13 @@ async def activate_corpus(
         return JSONResponse({
             "status": "activated",
             "corpus": corpus_name,
-            "message": "Corpus activated successfully. Please restart the server."
+            "message": "Corpus activated successfully. Please restart the server to use the new corpus.",
+            "locations": {
+                "corpus_data": "backend/corpus/",
+                "test_targets": "backend/targets/",
+                "corpus_config": "config/corpus.yaml",
+                "retriever": f"backend/retrievers/{corpus_name}_retriever.py"
+            }
         })
 
     except Exception as e:
@@ -596,11 +662,8 @@ async def _build_corpus_task(build_id: str, config: CorpusConfig):
     Background task to build corpus using the universal corpus builder.
     """
     try:
-        # Import the corpus builder
-        import sys
-        from pathlib import Path
-        sys.path.append(str(Path(__file__).parent.parent.parent))
-        from create.create_corpus_store import UniversalCorpusBuilder
+        # Import the corpus builder from backend modules
+        from backend.modules.corpus_builder import UniversalCorpusBuilder
 
         # Update status
         wizard_state['build_progress'][build_id]['status'] = 'building'
@@ -612,7 +675,9 @@ async def _build_corpus_task(build_id: str, config: CorpusConfig):
 
         # Initialize builder
         mode = wizard_state['build_progress'][build_id].get('mode', 'cpu')
-        builder = UniversalCorpusBuilder(config, mode)
+        # Use the tmp directory for corpus building
+        output_dir = Path("backend/corpus/tmp")
+        builder = UniversalCorpusBuilder(config, mode, output_dir)
 
         # Build corpus
         results = await builder.build(progress_callback)

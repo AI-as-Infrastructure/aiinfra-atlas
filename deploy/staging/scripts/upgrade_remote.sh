@@ -111,7 +111,7 @@ pip install -r config/requirements.lock gunicorn
 EMBEDDING_MODEL=$(grep '^EMBEDDING_MODEL=' "config/.env.staging" | cut -d '=' -f 2- | tr -d '"')
 if [ "$EMBEDDING_MODEL" = "Livingwithmachines/bert_1890_1900" ]; then
   echo "Preparing default embedding model..."
-  python create/prepare_model.py
+  python utils/scripts/prepare_model.py
 else
   echo "Skipping model preparation - using custom model: $EMBEDDING_MODEL"
 fi

@@ -348,7 +348,7 @@ def get_retriever_instance():
 def get_full_config() -> Dict[str, Any]:
     """Get configuration including metadata."""
     config = get_config()
-    retriever_type = os.getenv("RETRIEVER_MODULE", "hansard_retriever")
+    retriever_type = os.getenv("RETRIEVER_MODULE", "not_configured")
     return {
         **config,
         "retriever_type": retriever_type,

@@ -39,7 +39,7 @@ Backup settings are configured in your environment file (`.env.production` for p
 PHOENIX_PROJECT_BACKUPS=ATLAS-Prod
 
 # Required: Base backup directory
-PHOENIX_BACKUP_DIR=./data_backup
+PHOENIX_BACKUP_DIR=./backend/telemetry/backup
 
 # Required: Phoenix Spaces Configuration
 # Created by AIINFRA (https://aiinfra.anu.edu.au) - configure for your own Phoenix space
@@ -63,7 +63,7 @@ PHOENIX_EXPORT_CSV=true          # Export CSV in addition to Parquet (default: t
 Backups are organized by date for easy historical analysis:
 
 ```
-data_backup/
+backend/telemetry/backup/
 └── phoenix/
     └── YYYY/
         └── MM/
@@ -175,7 +175,7 @@ Set up monitoring for the backup and analysis pipeline:
 
 ```bash
 # Check backup completion
-ls -la data_backup/phoenix/$(date +%Y/%m/%d)/
+ls -la backend/telemetry/backup/phoenix/$(date +%Y/%m/%d)/
 
 # Check analysis outputs
 ls -la analysis/output/hansard_analysis_$(date +%Y%m%d)*
@@ -276,7 +276,7 @@ python analysis/analyze_hansard_spans.py --date-range "2025-10-01,2025-10-31"
 **Storage optimization:**
 ```bash
 # Compress old backups
-gzip data_backup/phoenix/*/**.csv
+gzip backend/telemetry/backup/phoenix/*/**.csv
 
 # Archive analysis outputs older than 30 days
 find analysis/output/ -name "*.png" -mtime +30 -exec tar -czf archived_analysis.tar.gz {} +

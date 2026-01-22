@@ -1,0 +1,481 @@
+"""
+Universal corpus builder for ATLAS.
+
+Config-driven corpus store creation that replaces hardcoded corpus-specific logic
+with a flexible system that can handle any corpus structure.
+"""
+
+import json
+import hashlib
+import asyncio
+import logging
+from pathlib import Path
+from typing import Dict, List, Any, Optional, Callable
+from datetime import datetime
+
+import torch
+from langchain.text_splitter import RecursiveCharacterTextSplitter, CharacterTextSplitter
+from langchain_community.document_loaders import DirectoryLoader, TextLoader, UnstructuredXMLLoader
+from langchain_community.vectorstores import Chroma
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain.schema import Document
+
+from backend.modules.corpus_config import CorpusConfig, CorpusFilter
+from backend.modules.github_corpus import GitHubCorpusManager
+from backend.modules.build_progress import BuildProgressTracker
+from backend.modules.system_requirements import SystemRequirementsChecker
+
+logger = logging.getLogger(__name__)
+
+
+class UniversalCorpusBuilder:
+    """Universal corpus builder that uses configuration to build any corpus."""
+
+    def __init__(self, config: CorpusConfig, mode: str = "cpu", output_dir: Optional[Path] = None):
+        """
+        Initialize corpus builder.
+
+        Args:
+            config: Corpus configuration
+            mode: Processing mode ('cpu' or 'gpu')
+            output_dir: Output directory (default: backend/corpus/tmp)
+        """
+        self.config = config
+        self.mode = mode
+        self.progress_tracker = None
+        self.documents = []
+        self.vector_store = None
+        self.embeddings = None
+
+        # Allow configurable output directory
+        if output_dir is None:
+            output_dir = Path("backend/corpus/tmp")
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+    async def build(self, progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
+        """
+        Build corpus with progress tracking.
+
+        Args:
+            progress_callback: Async callback for progress updates
+
+        Returns:
+            Build results including paths to generated files
+        """
+        logger.info(f"Starting corpus build: {self.config.metadata.name}")
+        logger.info(f"Processing mode: {self.mode}")
+
+        # Initialize progress tracker
+        self.progress_tracker = BuildProgressTracker(
+            callback=progress_callback,
+            checkpoint_dir=self.output_dir
+        )
+
+        try:
+            # Step 1: Fetch source if from GitHub
+            source_path = await self._fetch_source()
+
+            # Step 2: Load documents
+            await self._load_documents(source_path)
+
+            # Step 3: Initialize embeddings
+            self._initialize_embeddings()
+
+            # Step 4: Create vector store
+            await self._create_vector_store()
+
+            # Step 5: Generate manifest
+            manifest_path = self._generate_manifest()
+
+            # Step 6: Generate BM25 corpus
+            bm25_path = await self._generate_bm25_corpus()
+
+            # Step 7: Save configuration
+            config_path = self._save_config()
+
+            # Step 8: Generate retriever from template
+            retriever_path = self._generate_retriever()
+
+            # Clean up checkpoint on success
+            self.progress_tracker.cleanup_checkpoint()
+
+            # Mark as complete
+            if progress_callback:
+                await progress_callback({
+                    "status": "completed",
+                    "percentage": 100,
+                    "message": "Corpus build completed successfully"
+                })
+
+            return {
+                "success": True,
+                "vector_store_path": str(self.output_dir / "chroma_db"),
+                "manifest_path": str(manifest_path),
+                "bm25_corpus_path": str(bm25_path),
+                "config_path": str(config_path),
+                "retriever_path": str(retriever_path),
+                "documents_processed": len(self.documents),
+                "errors": self.progress_tracker.errors,
+                "warnings": self.progress_tracker.warnings
+            }
+
+        except Exception as e:
+            logger.error(f"Build failed: {e}")
+            if progress_callback:
+                await progress_callback({
+                    "status": "failed",
+                    "error": str(e)
+                })
+            raise
+
+    async def _fetch_source(self) -> Path:
+        """Fetch source files from local or GitHub."""
+        if self.config.source.type == "github":
+            logger.info(f"Fetching corpus from GitHub: {self.config.source.location}")
+            github_manager = GitHubCorpusManager()
+            return github_manager.fetch_corpus(
+                repo_url=self.config.source.location,
+                branch=self.config.source.branch or "main",
+                path=self.config.source.path or ""
+            )
+        else:
+            source_path = Path(self.config.source.location)
+            if not source_path.exists():
+                raise ValueError(f"Source path does not exist: {source_path}")
+            return source_path
+
+    async def _load_documents(self, source_path: Path):
+        """Load documents from source directory."""
+        logger.info(f"Loading documents from {source_path}")
+
+        all_docs = []
+
+        for file_type in self.config.source.file_types:
+            logger.info(f"Loading {file_type} files...")
+
+            if file_type == "txt":
+                loader = DirectoryLoader(
+                    str(source_path),
+                    glob=f"**/*.{file_type}",
+                    loader_cls=TextLoader,
+                    loader_kwargs={"encoding": "utf-8", "autodetect_encoding": True}
+                )
+            elif file_type == "xml":
+                loader = DirectoryLoader(
+                    str(source_path),
+                    glob=f"**/*.{file_type}",
+                    loader_cls=UnstructuredXMLLoader,
+                    loader_kwargs={"encoding": "utf-8"}
+                )
+            else:
+                logger.warning(f"Unsupported file type: {file_type}")
+                continue
+
+            try:
+                docs = loader.load()
+                all_docs.extend(docs)
+                logger.info(f"Loaded {len(docs)} {file_type} files")
+            except Exception as e:
+                logger.error(f"Error loading {file_type} files: {e}")
+                self.progress_tracker.add_error(f"Failed to load {file_type} files: {e}")
+
+        logger.info(f"Total documents loaded: {len(all_docs)}")
+
+        # Apply filters if configured
+        if self.config.filters:
+            all_docs = self._apply_filters(all_docs)
+
+        self.documents = all_docs
+        self.progress_tracker.total_docs = len(self.documents)
+
+    def _apply_filters(self, documents: List[Document]) -> List[Document]:
+        """Apply configured filters to documents."""
+        if not self.config.filters:
+            return documents
+
+        filtered_docs = []
+        for doc in documents:
+            matched_filter = self._match_document_to_filter(doc)
+            if matched_filter:
+                # Add filter metadata
+                doc.metadata["corpus"] = matched_filter.id
+                doc.metadata["filter_1"] = matched_filter.id  # For 2-filter system
+                if matched_filter.label:
+                    doc.metadata["corpus_label"] = matched_filter.label
+
+                filtered_docs.append(doc)
+
+        logger.info(f"Filtered {len(documents)} documents to {len(filtered_docs)}")
+        return filtered_docs
+
+    def _match_document_to_filter(self, doc: Document) -> Optional[CorpusFilter]:
+        """Match document to appropriate filter based on patterns."""
+        for filter_def in self.config.filters:
+            # Check pattern match
+            if filter_def.pattern:
+                import re
+                source_path = doc.metadata.get("source", "")
+                if re.search(filter_def.pattern, source_path):
+                    return filter_def
+
+            # Check metadata field match
+            if filter_def.metadata_field and filter_def.metadata_value:
+                if doc.metadata.get(filter_def.metadata_field) == filter_def.metadata_value:
+                    return filter_def
+
+        # Default filter if exists
+        return self.config.filters[0] if self.config.filters else None
+
+    def _initialize_embeddings(self):
+        """Initialize embedding model."""
+        logger.info(f"Initializing embeddings: {self.config.embeddings.model}")
+
+        device = "cuda" if self.mode == "gpu" and torch.cuda.is_available() else "cpu"
+
+        model_kwargs = {"device": device}
+        if device == "cuda":
+            model_kwargs["trust_remote_code"] = True
+
+        encode_kwargs = {
+            "normalize_embeddings": True,
+            "batch_size": self.config.embeddings.batch_size
+        }
+
+        self.embeddings = HuggingFaceEmbeddings(
+            model_name=self.config.embeddings.model,
+            model_kwargs=model_kwargs,
+            encode_kwargs=encode_kwargs
+        )
+
+        logger.info(f"Embeddings initialized on {device}")
+
+    async def _create_vector_store(self):
+        """Create vector store with documents."""
+        logger.info("Creating vector store...")
+
+        # Split documents into chunks
+        splitter = self._get_text_splitter()
+        all_chunks = []
+
+        for i, doc in enumerate(self.documents):
+            # Update progress
+            await self.progress_tracker.update(
+                doc_path=doc.metadata.get("source", f"doc_{i}"),
+                filter_id=doc.metadata.get("corpus")
+            )
+
+            # Check if paused
+            while self.progress_tracker.paused:
+                await asyncio.sleep(1)
+
+            # Split document
+            try:
+                chunks = splitter.split_documents([doc])
+                all_chunks.extend(chunks)
+            except Exception as e:
+                logger.warning(f"Error splitting document: {e}")
+                self.progress_tracker.add_warning(str(e))
+
+            self.progress_tracker.increment_processed()
+
+        logger.info(f"Created {len(all_chunks)} chunks from {len(self.documents)} documents")
+
+        # Create vector store
+        persist_dir = self.output_dir / "chroma_db"
+        persist_dir.mkdir(parents=True, exist_ok=True)
+
+        self.vector_store = Chroma.from_documents(
+            documents=all_chunks,
+            embedding=self.embeddings,
+            collection_name=self.config.vector_store.collection_name,
+            persist_directory=str(persist_dir)
+        )
+
+        # Persist the vector store
+        self.vector_store.persist()
+        logger.info(f"Vector store created and persisted to {persist_dir}")
+
+    def _get_text_splitter(self):
+        """Get appropriate text splitter based on configuration."""
+        if self.config.embeddings.chunk_size:
+            return RecursiveCharacterTextSplitter(
+                chunk_size=self.config.embeddings.chunk_size,
+                chunk_overlap=self.config.embeddings.chunk_overlap,
+                length_function=len
+            )
+        else:
+            return CharacterTextSplitter(
+                chunk_size=1000,
+                chunk_overlap=100,
+                length_function=len
+            )
+
+    def _generate_manifest(self) -> Path:
+        """Generate manifest.json with corpus metadata."""
+        logger.info("Generating manifest...")
+
+        # Calculate statistics
+        stats = {
+            "total_documents": len(self.documents),
+            "total_chunks": self.vector_store._collection.count() if self.vector_store else 0,
+            "filters": {}
+        }
+
+        for filter_id, progress in self.progress_tracker.filter_progress.items():
+            stats["filters"][filter_id] = progress
+
+        # Get filter information for 2-filter system
+        filter_1_info = None
+        filter_2_info = None
+        if self.config.filters:
+            if len(self.config.filters) >= 1:
+                filter_1_info = {
+                    "label": self.config.filters[0].label or self.config.filters[0].id,
+                    "values": []  # Will be populated from actual documents
+                }
+            if len(self.config.filters) >= 2:
+                filter_2_info = {
+                    "label": self.config.filters[1].label or self.config.filters[1].id,
+                    "values": []
+                }
+
+        # Create manifest with enhanced embedding documentation
+        manifest = {
+            "version": "1.2",
+            "created": datetime.now().isoformat(),
+            "corpus_name": self.config.metadata.name,
+            "metadata": self.config.metadata.dict(),
+            "source": self.config.source.dict(),
+            "embedding_model": {
+                "id": self.config.embeddings.model,
+                "source": "huggingface",
+                "is_default": self.config.embeddings.model == "sentence-transformers/all-mpnet-base-v2",
+                "validated": True,
+                "characteristics": {
+                    "embedding_dim": 768 if "mpnet" in self.config.embeddings.model else None,
+                    "max_sequence_length": 512,
+                    "model_size_mb": None  # Would need actual calculation
+                }
+            },
+            "embeddings": self.config.embeddings.dict(),  # Keep for compatibility
+            "vector_store": self.config.vector_store.dict(),
+            "filters": {
+                "filter_1": filter_1_info,
+                "filter_2": filter_2_info
+            },
+            "statistics": stats,
+            "fields": {
+                "corpus": {
+                    "type": "enum",
+                    "values": [f.id for f in self.config.filters]
+                }
+            }
+        }
+
+        manifest_path = self.output_dir / "manifest.json"
+        with open(manifest_path, 'w') as f:
+            json.dump(manifest, f, indent=2)
+
+        logger.info(f"Manifest saved to {manifest_path}")
+        return manifest_path
+
+    async def _generate_bm25_corpus(self) -> Path:
+        """Generate BM25 corpus for hybrid search."""
+        logger.info("Generating BM25 corpus...")
+
+        bm25_path = self.output_dir / "bm25_corpus.jsonl"
+
+        with open(bm25_path, 'w') as f:
+            for doc in self.documents:
+                bm25_doc = {
+                    "id": hashlib.md5(doc.page_content.encode()).hexdigest(),
+                    "content": doc.page_content,
+                    "metadata": doc.metadata
+                }
+                f.write(json.dumps(bm25_doc) + "\n")
+
+        logger.info(f"BM25 corpus saved to {bm25_path}")
+        return bm25_path
+
+    def _save_config(self) -> Path:
+        """Save configuration to output directory."""
+        config_path = self.output_dir / "corpus_config.yaml"
+        self.config.to_yaml(str(config_path))
+        logger.info(f"Configuration saved to {config_path}")
+        return config_path
+
+    def _generate_retriever(self) -> Path:
+        """Generate corpus-specific retriever from template."""
+        logger.info("Generating corpus-specific retriever...")
+
+        # Read template
+        template_path = Path(__file__).parent.parent / "retrievers" / "templates" / "corpus_retriever_template.py"
+        if not template_path.exists():
+            logger.warning(f"Retriever template not found at {template_path}")
+            return None
+
+        with open(template_path, 'r') as f:
+            template = f.read()
+
+        # Convert corpus name to PascalCase for class name
+        corpus_name = self.config.metadata.name
+        corpus_class = ''.join(word.capitalize() for word in corpus_name.replace('-', '_').split('_'))
+
+        # Get filter labels
+        filter_1_label = self.config.filters[0].label if self.config.filters else "Category"
+        filter_2_label = self.config.filters[1].label if len(self.config.filters) > 1 else "Subcategory"
+
+        # Replace template variables
+        retriever_code = template.format(
+            corpus_name=corpus_name,
+            CorpusClass=corpus_class,
+            creation_date=datetime.now().strftime("%Y-%m-%d"),
+            creation_time=datetime.now().strftime("%H:%M:%S"),
+            filter_1_label=filter_1_label,
+            filter_2_label=filter_2_label,
+            embedding_model=self.config.embeddings.model
+        )
+
+        # Save retriever
+        retriever_name = f"{corpus_name.replace('-', '_')}_retriever.py"
+        retriever_path = self.output_dir / retriever_name
+
+        with open(retriever_path, 'w') as f:
+            f.write(retriever_code)
+
+        logger.info(f"Retriever generated: {retriever_path}")
+        return retriever_path
+
+
+async def build_corpus_from_config(
+    config_path: str,
+    mode: str = "cpu",
+    output_dir: Optional[str] = None,
+    progress_callback: Optional[Callable] = None
+) -> Dict[str, Any]:
+    """
+    Build corpus from configuration file.
+
+    Args:
+        config_path: Path to corpus configuration YAML
+        mode: Processing mode ('cpu' or 'gpu')
+        output_dir: Output directory (optional)
+        progress_callback: Optional async callback for progress updates
+
+    Returns:
+        Build results
+    """
+    # Load configuration
+    config = CorpusConfig.from_yaml(config_path)
+
+    # Check system requirements
+    checker = SystemRequirementsChecker()
+    requirements = checker.check_requirements(1000, mode)  # Estimate
+
+    if not requirements["can_proceed"]:
+        raise RuntimeError(f"System requirements not met: {requirements['issues']}")
+
+    # Build corpus
+    builder = UniversalCorpusBuilder(config, mode, output_dir)
+    return await builder.build(progress_callback)

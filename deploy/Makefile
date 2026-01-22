@@ -8,7 +8,7 @@ STACK_NAME ?= atlas-prod
 DOMAIN_NAME ?= atlas.aiinfra.org
 
 # Development Targets
-.PHONY: b f d
+.PHONY: b f d stop-wizard
 b: ## Start backend development server
 	@./deploy/dev/scripts/start_backend.sh
 
@@ -17,6 +17,9 @@ f: ## Start frontend development server
 
 d: ## Destroy development environment (removes ALL venvs and node_modules)
 	@./deploy/dev/scripts/clean_dev.sh
+
+stop-wizard: ## Stop wizard/development servers gracefully (backend and frontend)
+	@./deploy/dev/scripts/stop_wizard.sh
 
 # Production Deployment Targets  
 .PHONY: p dp sp
@@ -72,7 +75,7 @@ lts: ## Run unified load test against staging (30 users, 20 min) with warmup/war
 		exit 1; \
 	fi
 	$(call setup_load_test)
-	@bash -c "cd load_tests && source ../config/.env.staging && LOAD_TEST_CONFIG=staging ../.venv/bin/locust -f locustfile.py --host=\$$VITE_API_URL --users=30 --spawn-rate=2.5 --run-time=20m --headless"
+	@bash -c "cd tests/load_tests && source ../../config/.env.staging && LOAD_TEST_CONFIG=staging ../../.venv/bin/locust -f locustfile.py --host=\$$VITE_API_URL --users=30 --spawn-rate=2.5 --run-time=20m --headless"
 
 ltp: ## Run unified load test against production (30 users, 20 min) with warmup/warmdown - REQUIRES AUTH OFF
 	@echo "🚨 Running unified load test against PRODUCTION environment..."
@@ -83,46 +86,25 @@ ltp: ## Run unified load test against production (30 users, 20 min) with warmup/
 		exit 1; \
 	fi
 	$(call setup_load_test)
-	@bash -c "cd load_tests && source ../config/.env.production && LOAD_TEST_CONFIG=production ../.venv/bin/locust -f locustfile.py --host=https://atlas-hansard.org --users=30 --spawn-rate=2.5 --run-time=20m --headless"
+	@bash -c "cd tests/load_tests && source ../../config/.env.production && LOAD_TEST_CONFIG=production ../../.venv/bin/locust -f locustfile.py --host=https://atlas-hansard.org --users=30 --spawn-rate=2.5 --run-time=20m --headless"
 
 clean-tests: ## Clean load test artifacts and old reports
 	@echo "🧹 Cleaning load test artifacts..."
-	@find load_tests -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-	@find load_tests -name "*.pyc" -delete 2>/dev/null || true
+	@find tests/load_tests -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	@find tests/load_tests -name "*.pyc" -delete 2>/dev/null || true
 	@echo "🗑️  Removing reports older than 7 days..."
-	@find load_tests/reports -name "*.json" -mtime +7 -delete 2>/dev/null || true
-	@find load_tests/reports -name "*.md" -mtime +7 -delete 2>/dev/null || true
-	@find load_tests/reports -name "*.txt" -mtime +7 -delete 2>/dev/null || true
+	@find tests/load_tests/reports -name "*.json" -mtime +7 -delete 2>/dev/null || true
+	@find tests/load_tests/reports -name "*.md" -mtime +7 -delete 2>/dev/null || true
+	@find tests/load_tests/reports -name "*.txt" -mtime +7 -delete 2>/dev/null || true
 	@echo "✅ Load test cleanup complete"
 
 # Utility Targets
-.PHONY: l c vs vs-cpu vs-gpu r xs xs-cpu xs-gpu pm
+.PHONY: l c pm
 l: ## Generate requirements.lock file
 	@./utils/scripts/generate_lock.sh
 
 c: ## Check Python environment
 	@./utils/scripts/check_env.sh
-
-vs: ## Create vector store
-	@./utils/scripts/create_store.sh
-
-vs-cpu: ## Create vector store (CPU-only, isolated venv)
-	@./utils/scripts/create_store_cpu.sh
-
-vs-gpu: ## Create vector store (GPU/CUDA, isolated venv)
-	@./utils/scripts/create_store_gpu.sh
-
-r: ## Generate retriever
-	@./utils/scripts/create_retriever.sh
-
-xs: ## Create XML vector store
-	@./utils/scripts/create_xml_store.sh
-
-xs-cpu: ## Create XML vector store (CPU-only, isolated venv)
-	@./utils/scripts/create_xml_store_cpu.sh
-
-xs-gpu: ## Create XML vector store (GPU/CUDA, isolated venv)
-	@./utils/scripts/create_xml_store_gpu.sh
 
 pm: ## Prepare embedding model
 	@echo "Preparing embedding model..."
@@ -130,7 +112,7 @@ pm: ## Prepare embedding model
 		echo "Creating virtual environment..."; \
 		python3 -m venv .venv; \
 	fi
-	@bash -c "source .venv/bin/activate && python create/prepare_model.py"
+	@bash -c "source .venv/bin/activate && python utils/scripts/prepare_model.py"
 
 # Corpus Wizard Commands
 corpus-wizard-cpu: ## Setup corpus wizard with CPU-only PyTorch (smaller ~200MB download)
@@ -145,29 +127,31 @@ corpus-clean: ## Clean up corpus wizard environment (preserves configs and backu
 	@chmod +x utils/scripts/corpus_wizard_clean.sh 2>/dev/null || true
 	@./utils/scripts/corpus_wizard_clean.sh
 
-corpus-build: ## Build a corpus from configuration file (uses corpus environment)
-	@if [ -z "$(CONFIG)" ]; then \
-		echo "❌ Usage: make corpus-build CONFIG=<config-file>"; \
-		echo "Example: make corpus-build CONFIG=corpus_configs/darwin_correspondence.yaml"; \
-		exit 1; \
-	fi
-	@echo "🔨 Building corpus from configuration: $(CONFIG)"
-	@if [ -d ".venv_corpus" ]; then \
-		source .venv_corpus/bin/activate && python create/create_corpus_store.py --config "$(CONFIG)"; \
-	elif [ -d ".venv" ]; then \
-		source .venv/bin/activate && python create/create_corpus_store.py --config "$(CONFIG)"; \
-	else \
-		echo "❌ No virtual environment found. Run 'make corpus-wizard' first."; \
-		exit 1; \
-	fi
+# Note: corpus-build has been removed. Use the corpus wizard UI instead:
+# 1. Run 'make corpus-wizard-cpu' or 'make corpus-wizard-gpu' to setup
+# 2. Run 'make f' to start the frontend
+# 3. Run 'make b' to start the backend
+# 4. Navigate to http://localhost:5173 and use the Corpus Wizard
 
 corpus-backup: ## Backup current corpus configuration and vector store
 	@echo "📦 Backing up current corpus..."
 	@timestamp=$$(date +%Y%m%d_%H%M%S); \
 	backup_dir="corpus_backups/backup_$$timestamp"; \
 	mkdir -p "$$backup_dir"; \
+	backed_up=false; \
+	if [ -d "backend/corpus" ]; then \
+		cp -r backend/corpus "$$backup_dir/corpus"; \
+		backed_up=true; \
+	fi; \
 	if [ -d "backend/targets" ]; then \
 		cp -r backend/targets "$$backup_dir/targets"; \
+		backed_up=true; \
+	fi; \
+	if [ -f "config/corpus.yaml" ]; then \
+		cp config/corpus.yaml "$$backup_dir/corpus.yaml"; \
+		backed_up=true; \
+	fi; \
+	if [ "$$backed_up" = true ]; then \
 		echo "✅ Backed up to $$backup_dir"; \
 	else \
 		echo "⚠️  No corpus to backup"; \
@@ -178,8 +162,17 @@ corpus-restore: ## Restore corpus from most recent backup
 	@latest_backup=$$(ls -t corpus_backups | head -1); \
 	if [ -n "$$latest_backup" ]; then \
 		echo "Restoring from corpus_backups/$$latest_backup"; \
-		rm -rf backend/targets; \
-		cp -r "corpus_backups/$$latest_backup/targets" backend/targets; \
+		if [ -d "corpus_backups/$$latest_backup/corpus" ]; then \
+			rm -rf backend/corpus; \
+			cp -r "corpus_backups/$$latest_backup/corpus" backend/corpus; \
+		fi; \
+		if [ -d "corpus_backups/$$latest_backup/targets" ]; then \
+			rm -rf backend/targets; \
+			cp -r "corpus_backups/$$latest_backup/targets" backend/targets; \
+		fi; \
+		if [ -f "corpus_backups/$$latest_backup/corpus.yaml" ]; then \
+			cp "corpus_backups/$$latest_backup/corpus.yaml" config/corpus.yaml; \
+		fi; \
 		echo "✅ Corpus restored from $$latest_backup"; \
 	else \
 		echo "❌ No backup found to restore"; \
@@ -187,37 +180,24 @@ corpus-restore: ## Restore corpus from most recent backup
 
 corpus-list: ## List available corpus configurations
 	@echo "📚 Available corpus configurations:"
-	@if [ -d "corpus_configs" ]; then \
-		ls -1 corpus_configs/*.yaml 2>/dev/null | sed 's|corpus_configs/||; s|\.yaml||' || echo "No configurations found"; \
+	@if [ -d "backend/corpus/tmp" ] && [ -f "backend/corpus/tmp/corpus_config.yaml" ]; then \
+		echo "✅ Active corpus in backend/corpus/tmp (use wizard to activate)"; \
+	fi
+	@if [ -d "backend/corpus" ] && [ -f "backend/corpus/manifest.json" ]; then \
+		echo "✅ Deployed corpus in backend/corpus"; \
+	fi
+	@if [ -f "config/corpus.yaml" ]; then \
+		echo "✅ Corpus configuration in config/corpus.yaml"; \
+	fi
+	@if ls corpus_backups/*/corpus.yaml 1>/dev/null 2>&1 || ls corpus_backups/*/corpus_config.yaml 1>/dev/null 2>&1; then \
+		echo "📦 Backed up corpora:"; \
+		ls -t corpus_backups | head -5; \
 	else \
-		echo "No corpus_configs directory found"; \
+		echo "⚠️  No corpus configurations found. Use the Corpus Wizard to create one."; \
 	fi
 
-corpus-swap: ## Swap to a different corpus using configuration file
-	@if [ -z "$(CORPUS)" ]; then \
-		echo "❌ Usage: make corpus-swap CORPUS=<config-name>"; \
-		echo "Available configurations:"; \
-		ls -1 corpus_configs/*.yaml 2>/dev/null | sed 's|corpus_configs/||; s|\.yaml||' || echo "No configurations found"; \
-		exit 1; \
-	fi
-	@if [ ! -d ".venv_corpus" ] && [ ! -d ".venv" ]; then \
-		echo "⚠️  No virtual environment found. Setting up corpus environment..."; \
-		./utils/scripts/corpus_wizard_setup.sh; \
-	fi
-	@./utils/scripts/swap_corpus.sh $(CORPUS)
+# Note: corpus-swap has been removed. Use the Corpus Wizard UI to manage corpora.
 
-# Quick corpus swap commands
-use-hansard: ## Quick swap to Hansard corpus (auto-setup if needed)
-	@if [ ! -d ".venv_corpus" ] && [ ! -d ".venv" ]; then \
-		echo "⚠️  Setting up corpus environment..."; \
-		./utils/scripts/corpus_wizard_setup.sh; \
-	fi
-	@./utils/scripts/swap_corpus.sh hansard_1901
-
-use-darwin: ## Quick swap to Darwin corpus (auto-setup if needed)
-	@if [ ! -d ".venv_corpus" ] && [ ! -d ".venv" ]; then \
-		echo "⚠️  Setting up corpus environment..."; \
-		./utils/scripts/corpus_wizard_setup.sh; \
-	fi
-	@./utils/scripts/swap_corpus.sh darwin_correspondence
+# Note: Quick corpus swap commands have been removed.
+# There are no pre-built corpora. Use the Corpus Wizard to create your first corpus.
 

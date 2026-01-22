@@ -1,7 +1,7 @@
 """
 Manifest context utilities.
 
-This module provides helpers to load backend/targets/manifest.json and
+This module provides helpers to load backend/corpus/manifest.json and
 expose a concise summary as a LangChain Document for inclusion in LLM context
 when users ask meta questions about the vector store (counts, model, etc.).
 """
@@ -14,10 +14,10 @@ from typing import Optional, Dict, Any
 
 
 def _manifest_path() -> str:
-    """Return absolute path to backend/targets/manifest.json."""
-    # This file lives in backend/modules -> ascend to backend/targets
+    """Return absolute path to backend/corpus/manifest.json."""
+    # This file lives in backend/modules -> ascend to backend/corpus
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.normpath(os.path.join(current_dir, "..", "targets", "manifest.json"))
+    return os.path.normpath(os.path.join(current_dir, "..", "corpus", "manifest.json"))
 
 
 def load_manifest() -> Optional[Dict[str, Any]]:

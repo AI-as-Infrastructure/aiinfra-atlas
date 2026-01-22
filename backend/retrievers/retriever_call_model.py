@@ -25,6 +25,9 @@ logger = logging.getLogger(__name__)
 from backend.modules.config import get_config, get_retriever, get_retriever_instance
 from backend.modules.system_prompts import system_prompt, contextualize_q_system_prompt
 
+# Import document formatting utility from base_retriever
+from backend.retrievers.base_retriever import format_document_for_citation
+
 # Import telemetry
 from backend.telemetry import (
     create_span, SpanAttributes, OpenInferenceSpanKind,
@@ -69,28 +72,7 @@ class State(TypedDict):
     previous_corpus_filter: Optional[str]
     trace_context: Optional[Dict]
 
-# Retrieve the format_document_for_citation function from the retriever implementation
-format_document_for_citation = getattr(retriever_instance, "format_document_for_citation", None)
-if format_document_for_citation is None:
-    # Fallback implementation if not available from the retriever
-    def format_document_for_citation(document: Document, idx: Optional[int] = None) -> Optional[Dict[str, Any]]:
-        if not document:
-            return None
-            
-        metadata = document.metadata if hasattr(document, 'metadata') else {}
-        text = document.page_content if hasattr(document, 'page_content') else str(document)
-        
-        processed_metadata = {}
-        for key, value in metadata.items():
-            processed_metadata[key] = str(value) if value is not None else ""
-            
-        citation = {
-            "text": text,
-            "metadata": processed_metadata,
-            "id": metadata.get("id") or (f"doc_{idx}" if idx is not None else f"doc_{uuid.uuid4()}")
-        }
-        
-        return citation
+# The format_document_for_citation function is now imported from base_retriever above
 
 async def call_model(
     question: str,

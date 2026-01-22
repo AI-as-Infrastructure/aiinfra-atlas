@@ -258,6 +258,71 @@ class BaseRetriever(ABC):
         return asyncio.run(self.aget_relevant_documents(query, **kwargs))
 
 
+# --- Utility functions for document formatting ---
+def format_document_for_citation(document, idx: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    """
+    Format a document for citation display.
+
+    This utility function converts a document object into a citation format
+    suitable for display in the frontend. It extracts key metadata fields
+    and truncates content for display purposes.
+
+    Args:
+        document: The document to format (typically a LangChain Document)
+        idx: Optional index number for the citation
+
+    Returns:
+        A dictionary containing citation information, or None if document is invalid
+    """
+    if not document:
+        return None
+
+    # Extract metadata and content from document
+    metadata = getattr(document, 'metadata', {})
+    content = getattr(document, 'page_content', str(document))
+
+    # Extract key metadata fields with fallbacks
+    source = metadata.get('source', 'Unknown')
+
+    # Support both new 2-filter system and legacy corpus field
+    filter_1 = metadata.get('filter_1')
+    filter_2 = metadata.get('filter_2')
+    corpus = metadata.get('corpus')  # Legacy field
+
+    # Build corpus display string
+    corpus_display = corpus  # Use legacy field if available
+    if filter_1 and filter_2:
+        corpus_display = f"{filter_1}/{filter_2}"
+    elif filter_1:
+        corpus_display = filter_1
+    elif not corpus:
+        corpus_display = 'Unknown'
+
+    # Extract optional enrichment metadata
+    enrichment_fields = {}
+    for field in ['day_of_week', 'day', 'month', 'year', 'date', 'title', 'author']:
+        if field in metadata:
+            enrichment_fields[field] = metadata[field]
+
+    # Build citation dictionary
+    citation = {
+        "content": content[:500] if len(content) > 500 else content,
+        "metadata": metadata,
+        "source": source,
+        "corpus": corpus_display
+    }
+
+    # Add enrichment fields if present
+    if enrichment_fields:
+        citation["enrichment"] = enrichment_fields
+
+    # Add index if provided
+    if idx is not None:
+        citation["idx"] = idx
+
+    return citation
+
+
 # --- State schema for retriever operations ---
 class State(TypedDict):
     input: str

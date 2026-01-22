@@ -16,7 +16,7 @@ make ltp     # 30 users, 20min, against production
 ## Architecture
 
 ```
-load_tests/
+tests/load_tests/
 ├── locustfile.py                  # Main Locust configuration
 ├── config/
 │   ├── staging.yaml              # Staging environment settings
@@ -127,7 +127,7 @@ make ltp     # 30 users, 20min, against production
 ### Manual Commands
 ```bash
 # Run test manually with custom parameters
-cd load_tests
+cd tests/load_tests
 source ../config/.env.staging
 LOAD_TEST_CONFIG=staging locust -f locustfile.py \
   --host=$VITE_API_URL --users=15 --spawn-rate=0.2 --run-time=30m --headless

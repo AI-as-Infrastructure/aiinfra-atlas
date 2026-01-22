@@ -298,30 +298,40 @@ class CorpusAnalyzer:
         content_analysis: Dict[str, Any],
         metadata_hints: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
-        """Suggest filters based on all available information."""
+        """Suggest filters based on all available information.
+
+        Priority order:
+        1. Directory structure (highest) - explicit organization by user
+        2. Metadata hints (medium) - user knowledge about content
+        3. Content analysis (lowest) - discovered from sampling
+        """
         filters = []
         used_ids = set()
 
-        # Add filters based on metadata hints (highest priority)
-        if metadata_hints:
+        # Always add an "all" filter first
+        filters.append({
+            'id': 'all',
+            'label': 'All Documents',
+            'type': 'all',
+            'pattern': '**/*',
+            'confidence': 1.0
+        })
+        used_ids.add('all')
+
+        # Add filters based on directory structure (HIGHEST PRIORITY)
+        # These are explicit organizational choices by the user
+        structure_filters = self._filters_from_structure(structure_analysis, used_ids)
+        filters.extend(structure_filters)
+
+        # Add filters based on metadata hints (MEDIUM PRIORITY)
+        # Only if we don't have good structure filters
+        if metadata_hints and len(structure_filters) < 3:
             filters.extend(self._filters_from_hints(metadata_hints, structure_analysis, used_ids))
 
-        # Add filters based on directory structure
-        filters.extend(self._filters_from_structure(structure_analysis, used_ids))
-
-        # Add filters based on content analysis
-        if content_analysis.get('xml_elements'):
+        # Add filters based on content analysis (LOWEST PRIORITY)
+        # Only if we have very few filters from structure
+        if content_analysis.get('xml_elements') and len(filters) < 5:
             filters.extend(self._filters_from_xml(content_analysis, used_ids))
-
-        # Always add an "all" filter
-        if 'all' not in used_ids:
-            filters.insert(0, {
-                'id': 'all',
-                'label': 'All Documents',
-                'type': 'all',
-                'pattern': '**/*',
-                'confidence': 1.0
-            })
 
         return filters
 
@@ -410,31 +420,56 @@ class CorpusAnalyzer:
         structure: Dict[str, Any],
         used_ids: Set[str]
     ) -> List[Dict[str, Any]]:
-        """Generate filters from directory structure patterns."""
+        """Generate filters from directory structure patterns.
+
+        Uses folder names directly as filter labels - users should name
+        folders meaningfully (e.g., 'Australia' not 'AU').
+        """
         filters = []
 
-        for pattern in structure.get('naming_patterns', []):
-            if pattern['count'] < 2:
-                continue  # Skip if only one instance
-
-            # Create filters for each example
-            for example in pattern['examples'][:5]:
-                filter_id = example.lower()
+        # First, create filters for ALL top-level directories (level_0)
+        level_0_dirs = structure.get('common_directories', {}).get('level_0', {})
+        if level_0_dirs:
+            for dir_name, count in level_0_dirs.items():
+                filter_id = dir_name.lower().replace(' ', '_')
                 if filter_id in used_ids:
                     continue
 
-                label = example
-                if pattern['type'] == 'geographical' and len(example) <= 3:
-                    # Try to expand region codes
-                    label = self._expand_region_code(example)
+                # Use the folder name directly as the label
+                # Users should name folders meaningfully
+                filters.append({
+                    'id': filter_id,
+                    'label': dir_name,  # Use exact folder name
+                    'type': 'structural',  # Based on structure, not content
+                    'pattern': f"{dir_name}/**/*",
+                    'confidence': 0.95,  # High confidence for explicit folder structure
+                    'source': 'directory_structure',
+                    'level': 'level_0',
+                    'document_count': count
+                })
+                used_ids.add(filter_id)
+
+        # Then add filters for patterns found in deeper levels
+        for pattern in structure.get('naming_patterns', []):
+            if pattern['level'] == 'level_0':
+                continue  # Already handled above
+
+            if pattern['count'] < 2:
+                continue  # Skip if only one instance
+
+            # Create filters for pattern-based discoveries at deeper levels
+            for example in pattern['examples'][:3]:  # Limit to top 3
+                filter_id = f"{pattern['level']}_{example.lower()}"
+                if filter_id in used_ids:
+                    continue
 
                 filters.append({
                     'id': filter_id,
-                    'label': label,
+                    'label': f"{example} ({pattern['level'].replace('_', ' ')})",
                     'type': pattern['type'],
                     'pattern': f"**/{example}/**/*",
-                    'confidence': 0.85,
-                    'source': 'structure',
+                    'confidence': 0.75,  # Lower confidence for deeper patterns
+                    'source': 'structure_pattern',
                     'level': pattern['level']
                 })
                 used_ids.add(filter_id)
@@ -473,20 +508,10 @@ class CorpusAnalyzer:
         return filters
 
     def _expand_region_code(self, code: str) -> str:
-        """Expand common region codes to full names."""
-        expansions = {
-            'AU': 'Australia',
-            'NZ': 'New Zealand',
-            'UK': 'United Kingdom',
-            'US': 'United States',
-            'CA': 'Canada',
-            'IE': 'Ireland',
-            'FR': 'France',
-            'DE': 'Germany',
-            'IT': 'Italy',
-            'ES': 'Spain'
-        }
-        return expansions.get(code.upper(), code)
+        """Return the folder name as-is for use as a filter label."""
+        # Don't expand - let users name their folders meaningfully
+        # e.g., "Australia" instead of "AU" if they want that label
+        return code
 
     def _calculate_stats(
         self,

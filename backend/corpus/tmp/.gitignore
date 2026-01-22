@@ -1,0 +1,9 @@
+# This is the temporary workspace for the Corpus Wizard
+# Files here are temporary and will be moved to parent directories when activated
+# - Corpus data (chroma_db, manifest.json, bm25_corpus.jsonl) → ../
+# - Test configs (.conf files) → ../../targets/
+# - Corpus config → ../../../config/corpus.yaml
+
+# Ignore all files except this .gitignore
+*
+!.gitignore

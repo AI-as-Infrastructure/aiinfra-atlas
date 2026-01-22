@@ -44,14 +44,14 @@ echo "📥 Installing dependencies..."
 pip install -r config/requirements.lock
 
 # Check if prepare script exists
-if [ ! -f "create/prepare_model.py" ]; then
-    echo "❌ Error: create/prepare_model.py not found!"
+if [ ! -f "utils/scripts/prepare_model.py" ]; then
+    echo "❌ Error: utils/scripts/prepare_model.py not found!"
     exit 1
 fi
 
 # Prepare model
 echo "🔨 Preparing embedding model..."
-python create/prepare_model.py
+python utils/scripts/prepare_model.py
 
 echo "✅ Model prepared successfully!"
 echo "💡 The model is now ready for use with ATLAS" 

@@ -6,19 +6,12 @@ VENV_DIR := .venv
 PYTHON_VERSION := $(shell python3 --version 2>&1 | awk '{print $$2}')
 
 # Utility Targets
-.PHONY: l c vs r pm
+.PHONY: l c pm
 l: ## Generate requirements.lock file
 	@./utils/scripts/generate_lock.sh
 
 c: ## Check Python environment
 	@./utils/scripts/check_env.sh
-
-vs: ## Create vector store
-	@./utils/scripts/create_store.sh
-
-r: ## Generate retriever
-	@./utils/scripts/create_retriever.sh
-
 
 pm: ## Prepare embedding model for ATLAS
 	@./utils/scripts/prepare_model.sh 
