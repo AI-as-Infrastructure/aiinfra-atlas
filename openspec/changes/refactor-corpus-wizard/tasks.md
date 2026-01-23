@@ -12,11 +12,13 @@
 - [ ] Create migration script for existing .env to corpus.yaml
 
 ### Corpus Analysis Engine
-- [ ] Create `backend/modules/corpus_analyzer.py` for structure analysis
-- [ ] Implement directory pattern detection algorithm
-- [ ] Implement XML metadata extraction for filter discovery
-- [ ] Add temporal filter generation from date ranges
-- [ ] Create filter inference rules engine
+- [ ] Enhance `backend/modules/corpus_analyzer.py` for structure analysis
+- [ ] Implement filter method selection (directory vs XML structure)
+- [ ] Add directory depth analysis (1 or 2 layers)
+- [ ] Implement filename metadata extraction with regex patterns
+- [ ] Add XML entity extraction with XPath support
+- [ ] Create date range auto-generation from extracted dates
+- [ ] Generate combined filters for 2-layer directory structures
 
 ### GitHub Integration
 - [ ] Create `backend/modules/github_corpus.py` for repo handling
@@ -45,6 +47,46 @@
 - [ ] Implement `/api/corpus-wizard/activate` endpoint
 - [ ] Add `/api/corpus-wizard/status` health check
 
+### Validation Phase Endpoints
+- [ ] Implement `/api/corpus-wizard/validate-sample` endpoint for sample processing
+- [ ] Add `/api/corpus-wizard/preview-metadata` endpoint for extraction preview
+- [ ] Implement `/api/corpus-wizard/estimate-time` endpoint for processing estimates
+- [ ] Add `/api/corpus-wizard/fix-issues` endpoint for automated issue resolution
+
+## Phase 2.5: Validation Implementation
+
+### Sample Processing
+- [ ] Create `backend/modules/corpus_sampler.py` for sample selection
+- [ ] Implement minimal viable sample algorithm with these rules:
+  - [ ] Minimum: 10 documents or 5% of corpus (whichever is smaller)
+  - [ ] Maximum: 50 documents or 10% of corpus (whichever is smaller)
+  - [ ] Per-filter minimum: 2 documents from each discovered filter
+  - [ ] For 2-layer structures: Sample from each combination (e.g., AU/1901, NZ/1901)
+  - [ ] For XML corpora: Include diverse XML structures
+  - [ ] For literary corpora: Sample from beginning, middle, end of long texts
+- [ ] Create stratified sampling for balanced representation
+- [ ] Add sample caching for re-validation without reprocessing
+- [ ] Implement adaptive sampling based on corpus characteristics:
+  - [ ] Increase sample for heterogeneous corpora
+  - [ ] Reduce sample for homogeneous corpora
+  - [ ] Adjust based on metadata extraction success rate
+
+### Validation Engine
+- [ ] Create `backend/modules/corpus_validator.py` for validation logic
+- [ ] Implement metadata extraction validation
+- [ ] Add filename pattern consistency checking
+- [ ] Create filter coverage analysis
+- [ ] Implement citation template validation
+- [ ] Add XML structure validation for XML-based corpora
+- [ ] Create issue detection and categorization
+
+### Processing Estimation
+- [ ] Implement time estimation based on sample processing metrics
+- [ ] Add CPU vs GPU mode estimation differences
+- [ ] Create memory requirement calculations
+- [ ] Add disk space requirement estimation
+- [ ] Implement confidence scoring for estimates
+
 ## Phase 3: Corpus Builder Refactoring
 
 ### Universal Corpus Builder
@@ -60,11 +102,29 @@
 - [ ] Generate appropriate test queries per corpus type
 - [ ] Add build time estimation based on corpus size and mode
 
-### Model Recommendation System
-- [ ] Create embedding model database with characteristics
-- [ ] Implement time-period matching logic
+### Parent-Source Association
+- [ ] Create `backend/modules/chunk_processor.py` for chunk management
+- [ ] Implement parent document metadata extraction
+- [ ] Add chunk indexing within parent documents
+- [ ] Ensure all chunks inherit parent metadata (author, title, date)
+- [ ] Add chapter/section detection for literary works
+- [ ] Implement special handling for large documents (novels, long texts)
+- [ ] Maintain filter associations through chunking process
+
+### Citation Metadata Processing
+- [ ] Create `backend/modules/citation_enricher.py` for metadata extraction
+- [ ] Implement regex-based metadata extraction from filenames
+- [ ] Add URL generation from templates and extracted metadata
+- [ ] Inject citation metadata into each chunk during processing
+- [ ] Store citation config in corpus.yaml
+- [ ] Update retriever to include citation metadata in responses
+
+### Model Selection System
+- [ ] Implement default model configuration (all-MiniLM-L6-v2)
+- [ ] Create HuggingFace model validator for custom models
 - [ ] Add corpus sampling for model testing
 - [ ] Create model performance testing utility
+- [ ] Implement model metadata fetching (dimensions, size, etc.)
 
 ## Phase 4: Frontend UI
 
@@ -75,6 +135,10 @@
 - [ ] Add time period picker with validation
 - [ ] Add entity extraction fields (people, places, topics)
 - [ ] Add copyright and DOI input fields with validation
+- [ ] Add citation template builder with preview
+- [ ] Add URL pattern configuration with variables
+- [ ] Add source attribution fields (source name, repository)
+- [ ] Add metadata extraction pattern configuration
 
 ### Source Selection
 - [ ] Create `frontend/src/components/wizard/SourceSelector.vue`
@@ -82,19 +146,42 @@
 - [ ] Add GitHub URL input with branch selection
 - [ ] Implement source validation and testing
 
+### Filter Method Selection
+- [ ] Create `frontend/src/components/wizard/FilterMethodSelector.vue`
+- [ ] Add dropdown for directory vs XML structure selection
+- [ ] Show directory depth selector (1 or 2 layers) for directory method
+- [ ] Add filename pattern configuration UI
+- [ ] Show XPath configuration for XML method
+
 ### Filter Configuration
 - [ ] Create `frontend/src/components/wizard/FilterConfigurator.vue`
-- [ ] Display discovered filters with counts
+- [ ] Display discovered filters based on selected method
+- [ ] Show filter hierarchy for 2-layer structures
 - [ ] Add filter editing capabilities
 - [ ] Add custom filter creation
 - [ ] Implement filter testing with sample docs
 
 ### Model Selection
 - [ ] Create `frontend/src/components/wizard/ModelSelector.vue`
-- [ ] Display model recommendations with scores
-- [ ] Add custom model input option
-- [ ] Implement sample text testing
-- [ ] Show model characteristics (size, speed, period)
+- [ ] Display default model with description
+- [ ] Add custom HuggingFace model input field
+- [ ] Implement model validation on custom input
+- [ ] Add sample text testing functionality
+- [ ] Show model characteristics (size, dimensions, speed)
+
+### Validation Preview
+- [ ] Create `frontend/src/components/wizard/ValidationPreview.vue`
+- [ ] Display sample processing results with statistics
+- [ ] Show discovered filters with document counts
+- [ ] Display metadata extraction preview with examples
+- [ ] Highlight detected issues (naming inconsistencies, missing metadata)
+- [ ] Add issue resolution interface with suggestions
+- [ ] Show citation preview for each filter
+- [ ] Display processing time estimates with confidence levels
+- [ ] Add re-validation button after pattern adjustments
+- [ ] Implement sample document viewer
+- [ ] Add filter adjustment interface for refinement
+- [ ] Show coverage statistics (documents per filter, metadata completeness)
 
 ### System Requirements Check
 - [ ] Create `frontend/src/components/wizard/RequirementsChecker.vue`
@@ -142,10 +229,19 @@
 
 ### Unit Tests
 - [ ] Test filter discovery algorithms
-- [ ] Test model recommendation logic
+- [ ] Test default model configuration and custom model validation
 - [ ] Test config validation
 - [ ] Test GitHub repo handling
 - [ ] Test metadata extraction
+- [ ] Test minimal viable sample selection:
+  - [ ] Test sample size calculations for different corpus sizes
+  - [ ] Test stratified sampling across filters
+  - [ ] Test edge cases (very small/large corpora)
+- [ ] Test validation engine:
+  - [ ] Test metadata extraction validation
+  - [ ] Test issue detection algorithms
+  - [ ] Test citation generation from samples
+- [ ] Test processing time estimation accuracy
 
 ### Integration Tests
 - [ ] Test full wizard flow with mock data
@@ -153,6 +249,11 @@
 - [ ] Test progress reporting
 - [ ] Test error recovery
 - [ ] Test backup and restore
+- [ ] Test validation phase integration:
+  - [ ] Test sample processing → validation preview flow
+  - [ ] Test re-validation after pattern adjustments
+  - [ ] Test issue resolution → re-validation cycle
+  - [ ] Test validation → full build transition
 
 ### E2E Tests
 - [ ] Test Hansard → Darwin swap
@@ -160,6 +261,12 @@
 - [ ] Test custom corpus configuration
 - [ ] Test GitHub repo corpus
 - [ ] Test cancellation and cleanup
+- [ ] Test validation with real corpus examples:
+  - [ ] Test Hansard corpus (2-layer directory, TXT files)
+  - [ ] Test Darwin corpus (1-layer directory, XML files)
+  - [ ] Test Gutenberg/Trollope corpus (2-layer, long TXT files)
+  - [ ] Verify parent-source associations maintained during chunking
+  - [ ] Verify citation metadata correctly extracted
 
 ## Phase 7: Environment Variable Migration
 
@@ -247,14 +354,18 @@
 ### Critical Path
 1. Wizard mode management (blocks everything)
 2. Config-driven corpus builder (blocks build functionality)
-3. API endpoints (blocks frontend integration)
-4. Frontend wizard flow (blocks user testing)
+3. Validation implementation (blocks user confidence)
+4. API endpoints (blocks frontend integration)
+5. Frontend wizard flow (blocks user testing)
+6. Validation preview UI (blocks issue resolution)
 
 ## Estimated Timeline
-- Phase 1-2: 2 days (backend foundation)
+- Phase 1-2: 2 days (backend foundation and API layer)
+- Phase 2.5: 1 day (validation implementation)
 - Phase 3: 1 day (corpus builder refactoring)
-- Phase 4: 2 days (frontend UI)
-- Phase 5-6: 1 day (integration and testing)
-- Phase 7-8: 1 day (documentation and polish)
+- Phase 4: 2.5 days (frontend UI including validation preview)
+- Phase 5-6: 1.5 days (integration and testing)
+- Phase 7-8: 1 day (environment migration and documentation)
+- Phase 9: 1 day (validation and polish)
 
-Total: ~7 days of focused development
+Total: ~10 days of focused development

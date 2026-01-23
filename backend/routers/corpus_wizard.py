@@ -22,10 +22,13 @@ import json
 
 # Import corpus modules
 from backend.modules.corpus_config import (
-    CorpusConfig, CorpusMetadata, CorpusSource, CorpusFilter,
-    EmbeddingConfig, VectorStoreConfig, SearchConfig, CorpusConfigManager
+    CorpusConfig, CorpusMetadata, SourceConfig, FilterDefinition,
+    FilterConfig, CitationConfig, EmbeddingConfig, ProcessingConfig,
+    CorpusConfigManager
 )
 from backend.modules.corpus_analyzer import CorpusAnalyzer
+from backend.modules.corpus_sampler import CorpusSampler
+from backend.modules.corpus_validator import CorpusValidator
 from backend.modules.github_corpus import GitHubCorpusManager
 
 logger = logging.getLogger(__name__)
@@ -256,113 +259,55 @@ async def get_system_requirements(
     return JSONResponse(system_info)
 
 
-@router.post("/recommend-model")
-async def recommend_model(metadata: Dict[str, Any] = Body(...)):
+@router.get("/model-recommendation")
+async def get_model_recommendation():
     """
-    Recommend embedding models based on corpus metadata.
+    Get default embedding model recommendation.
     """
-    recommendations = []
-
-    # Extract time period if available
-    time_from = metadata.get('time_period_from')
-    time_to = metadata.get('time_period_to')
-    material_type = metadata.get('material_type', 'general')
-
-    # Historical models
-    if time_from and time_to:
-        avg_year = (time_from + time_to) / 2
-
-        if 1760 <= avg_year <= 1900:
-            recommendations.append({
-                "model": "Livingwithmachines/bert_1760_1900",
-                "score": 0.95,
-                "reason": "Trained on texts from your corpus time period",
-                "characteristics": {
-                    "period": "1760-1900",
-                    "training_data": "Historical newspapers and books",
-                    "size_mb": 420,
-                    "context_length": 512
-                }
-            })
-
-            if avg_year >= 1850:
-                recommendations.append({
-                    "model": "Livingwithmachines/bert_1890_1900",
-                    "score": 0.85,
-                    "reason": "Optimized for late Victorian period",
-                    "characteristics": {
-                        "period": "1890-1900",
-                        "training_data": "Late Victorian texts",
-                        "size_mb": 420,
-                        "context_length": 512
-                    }
-                })
-
-        elif avg_year > 1900 and avg_year < 1950:
-            recommendations.append({
-                "model": "sentence-transformers/all-MiniLM-L12-v2",
-                "score": 0.8,
-                "reason": "Good for early 20th century texts",
-                "characteristics": {
-                    "period": "General",
-                    "training_data": "Mixed modern texts",
-                    "size_mb": 120,
-                    "context_length": 512
-                }
-            })
-
-    # Modern models
-    if not recommendations or (time_from and time_from >= 1950):
-        recommendations.append({
-            "model": "sentence-transformers/all-mpnet-base-v2",
-            "score": 0.9 if not time_from or time_from >= 1950 else 0.7,
-            "reason": "Best general-purpose model for modern texts",
-            "characteristics": {
-                "period": "Modern",
-                "training_data": "Contemporary texts",
-                "size_mb": 420,
-                "context_length": 512
-            }
-        })
-
-    # Domain-specific recommendations
-    if material_type == 'scientific':
-        recommendations.append({
-            "model": "allenai/scibert_scivocab_uncased",
-            "score": 0.85,
-            "reason": "Optimized for scientific texts",
-            "characteristics": {
-                "period": "Modern",
-                "training_data": "Scientific papers",
-                "size_mb": 440,
-                "context_length": 512
-            }
-        })
-
-    # Always include a fast fallback
-    recommendations.append({
-        "model": "sentence-transformers/all-MiniLM-L6-v2",
-        "score": 0.6,
-        "reason": "Fast, lightweight, general-purpose",
-        "characteristics": {
-            "period": "General",
-            "training_data": "Mixed texts",
-            "size_mb": 80,
-            "context_length": 512
-        }
-    })
-
-    # Sort by score
-    recommendations.sort(key=lambda x: x['score'], reverse=True)
-
     return JSONResponse({
-        "recommendations": recommendations[:5],  # Return top 5
-        "primary_recommendation": recommendations[0],
-        "metadata_used": {
-            "time_period": f"{time_from}-{time_to}" if time_from else "Not specified",
-            "material_type": material_type
-        }
+        "default": {
+            "model_id": "sentence-transformers/all-MiniLM-L6-v2",
+            "description": "General-purpose model suitable for most corpora",
+            "performance": "Fast processing with good accuracy",
+            "size_mb": 90,
+            "dimensions": 384,
+            "max_seq_length": 512
+        },
+        "custom_option": True,
+        "custom_help": "Enter any HuggingFace sentence-transformers model ID"
     })
+
+
+@router.post("/validate-model")
+async def validate_custom_model(model_id: str = Body(..., embed=True)):
+    """
+    Validate a custom HuggingFace model.
+    """
+    try:
+        # Basic validation - check format
+        if not model_id or "/" not in model_id:
+            return JSONResponse({
+                "valid": False,
+                "error": "Invalid model ID format. Expected: owner/model-name"
+            })
+
+        # In production, would check HuggingFace API
+        # For now, return mock validation
+        return JSONResponse({
+            "valid": True,
+            "model_info": {
+                "model_id": model_id,
+                "dimensions": 384,  # Would be fetched from model
+                "max_seq_length": 512,
+                "estimated_size_mb": 100
+            }
+        })
+
+    except Exception as e:
+        return JSONResponse({
+            "valid": False,
+            "error": str(e)
+        })
 
 
 @router.post("/validate-config")
@@ -404,6 +349,175 @@ async def validate_config(config_data: Dict[str, Any] = Body(...)):
             "errors": [str(e)],
             "warnings": []
         })
+
+
+@router.post("/validate-sample")
+async def validate_sample(
+    source_path: str = Body(...),
+    config: Dict[str, Any] = Body(...),
+    sample_size: Optional[int] = Body(None)
+):
+    """
+    Validate corpus with a minimal viable sample.
+    """
+    try:
+        sampler = CorpusSampler(source_path)
+        validator = CorpusValidator(source_path)
+
+        # Get minimal sample
+        corpus_files = list(Path(source_path).rglob("*"))
+        filters = config.get("filters", {}).get("filters", [])
+
+        sample = sampler.get_minimal_sample(filters, corpus_files)
+
+        # Validate sample
+        sample_files = [Path(f) for f in sample["files"]]
+        validation_result = validator.validate_sample(sample_files, config)
+
+        # Detect issues
+        issues = validator.detect_issues(sample_files)
+        validation_result["detected_issues"] = issues
+
+        # Estimate processing time
+        estimation = sampler.estimate_processing_time(
+            sample,
+            config.get("processing", {}).get("mode", "cpu")
+        )
+        validation_result["time_estimation"] = estimation
+
+        return JSONResponse({
+            "sample": sample,
+            "validation": validation_result,
+            "ready_to_build": validation_result["valid"]
+        })
+
+    except Exception as e:
+        logger.error(f"Sample validation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/preview-metadata")
+async def preview_metadata_extraction(
+    source_path: str = Body(...),
+    patterns: Dict[str, str] = Body(...)
+):
+    """
+    Preview metadata extraction from sample files.
+    """
+    try:
+        from backend.modules.citation_enricher import CitationEnricher
+
+        # Get sample files
+        sample_files = []
+        path = Path(source_path)
+        for ext in ['.txt', '.xml']:
+            files = list(path.rglob(f"*{ext}"))[:5]
+            sample_files.extend(files)
+
+        # Configure enricher
+        citation_config = {
+            "metadata_patterns": patterns,
+            "template": "{author}. {title}. {date}. {source}.",
+            "source_name": "Corpus"
+        }
+        enricher = CitationEnricher(citation_config)
+
+        # Generate test citations
+        test_citations = enricher.generate_test_citations(sample_files[:10])
+
+        return JSONResponse({
+            "sample_extractions": test_citations,
+            "patterns_used": patterns,
+            "files_tested": len(sample_files)
+        })
+
+    except Exception as e:
+        logger.error(f"Metadata preview failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/estimate-time")
+async def estimate_processing_time(
+    doc_count: int = Body(...),
+    mode: str = Body("cpu"),
+    sample_metrics: Optional[Dict[str, Any]] = Body(None)
+):
+    """
+    Estimate corpus processing time.
+    """
+    # Base estimates
+    if mode == "gpu":
+        docs_per_second = 4.0
+    else:
+        docs_per_second = 1.2
+
+    # Adjust based on sample metrics if available
+    if sample_metrics:
+        avg_doc_size = sample_metrics.get("avg_doc_size", 5000)
+        if avg_doc_size > 10000:
+            docs_per_second *= 0.7  # Slower for large docs
+        elif avg_doc_size < 2000:
+            docs_per_second *= 1.3  # Faster for small docs
+
+    total_seconds = doc_count / docs_per_second
+
+    return JSONResponse({
+        "estimated_seconds": int(total_seconds),
+        "estimated_minutes": int(total_seconds / 60),
+        "estimated_hours": round(total_seconds / 3600, 1),
+        "docs_per_second": docs_per_second,
+        "mode": mode,
+        "confidence": 0.8
+    })
+
+
+@router.post("/fix-issues")
+async def fix_detected_issues(
+    issues: List[Dict[str, Any]] = Body(...),
+    auto_fix: bool = Body(True)
+):
+    """
+    Suggest or apply fixes for detected issues.
+    """
+    fixes = []
+
+    for issue in issues:
+        issue_type = issue.get("type")
+
+        if issue_type == "naming_inconsistency":
+            fixes.append({
+                "issue": issue,
+                "fix_type": "rename",
+                "suggestion": "Standardize naming pattern",
+                "auto_fixable": True
+            })
+        elif issue_type == "encoding_error":
+            fixes.append({
+                "issue": issue,
+                "fix_type": "convert_encoding",
+                "suggestion": "Convert to UTF-8",
+                "auto_fixable": True
+            })
+        elif issue_type == "empty_file":
+            fixes.append({
+                "issue": issue,
+                "fix_type": "skip",
+                "suggestion": "Skip empty files during processing",
+                "auto_fixable": True
+            })
+        else:
+            fixes.append({
+                "issue": issue,
+                "fix_type": "manual",
+                "suggestion": "Manual review required",
+                "auto_fixable": False
+            })
+
+    return JSONResponse({
+        "fixes": fixes,
+        "auto_fixable_count": sum(1 for f in fixes if f["auto_fixable"]),
+        "manual_review_count": sum(1 for f in fixes if not f["auto_fixable"])
+    })
 
 
 @router.post("/build")

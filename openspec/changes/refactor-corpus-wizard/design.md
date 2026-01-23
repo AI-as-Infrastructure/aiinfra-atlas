@@ -36,7 +36,7 @@ This design document outlines the architecture for a UI-driven corpus configurat
 **Rationale**:
 - User knows their corpus better than algorithms
 - Metadata guides filter discovery (e.g., knowing "Darwin" is important)
-- Time period informs embedding model selection
+- Time period for corpus dating and citation context
 - Copyright/DOI needed for academic use
 
 **Trade-offs**:
@@ -129,23 +129,24 @@ vector_store:      # Storage configuration
 - Portable between instances
 - Version control friendly
 
-### Decision 6: Embedding Model Recommendation
+### Decision 6: Embedding Model Selection
 
-**Choice**: Rule-based recommendations with period matching
+**Choice**: Default general-purpose model with custom HuggingFace option
 
-**Rules**:
-1. Historical texts (pre-1900): Livingwithmachines models
-2. Modern texts: sentence-transformers
-3. Mixed periods: General purpose models
-4. Domain-specific: Future extension point
+**Approach**:
+1. Default: sentence-transformers/all-MiniLM-L6-v2 (general-purpose)
+2. Custom: Any HuggingFace sentence-transformers model ID
+3. Validation: Check model exists and is compatible
+4. Testing: Allow testing with corpus samples
 
 **Implementation**:
 ```python
-def recommend_model(metadata):
-    if metadata.time_period.from < 1900:
-        return "Livingwithmachines/bert_1760_1900"
-    else:
-        return "sentence-transformers/all-MiniLM-L6-v2"
+def get_model_options():
+    return {
+        'default': 'sentence-transformers/all-MiniLM-L6-v2',
+        'custom_enabled': True,
+        'validator': validate_huggingface_model
+    }
 ```
 
 ### Decision 7: Progress Tracking

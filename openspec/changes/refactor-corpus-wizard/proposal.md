@@ -4,7 +4,7 @@
 `refactor-corpus-wizard`
 
 ## Summary
-Implement a UI-driven corpus configuration wizard that enables users to swap between different corpora without manual code changes, supporting both local and GitHub-hosted sources, with intelligent filter discovery and embedding model recommendations based on user-provided metadata.
+Implement a UI-driven corpus configuration wizard that enables users to configure and swap between different corpora within ATLAS's supported structural patterns. The wizard guides users through organizing their corpus into one of four supported patterns (single-layer directories, two-layer directories, flat XML, or flat text with metadata), ensuring reliable processing and consistent citation generation.
 
 ## Motivation
 
@@ -20,7 +20,7 @@ The corpus wizard solves these problems by:
 - Providing a guided UI for corpus configuration
 - Supporting arbitrary corpus structures (not just parliamentary records)
 - Auto-discovering filters from both structure and user metadata
-- Recommending appropriate embedding models based on time period
+- Providing a default embedding model with custom HuggingFace options
 - Supporting GitHub repos as corpus sources
 - Tracking academic metadata (copyright status, DOI)
 - Enabling single-command corpus swapping
@@ -33,7 +33,7 @@ The corpus wizard solves these problems by:
 - Support for local directories and GitHub repositories as sources
 - Copyright and DOI metadata tracking
 - Intelligent filter discovery combining user metadata and structure analysis
-- Embedding model recommendations based on corpus characteristics
+- Default embedding model with custom HuggingFace model support
 - Config-driven corpus generation (replacing hardcoded patterns)
 - Progress tracking and validation during vector store creation
 - Atomic corpus swapping with backup
@@ -173,6 +173,57 @@ When a user activates a new corpus through the wizard:
 
 This automated flow ensures consistency across all components without manual intervention.
 
+## Supported Corpus Structures
+
+ATLAS is designed to support common academic and research corpus patterns. While flexible, the system implements specific structural patterns for practical and performance reasons:
+
+### Supported Patterns
+
+1. **Single-Layer Directory Structure** (e.g., Hansard)
+   - One level of categorization folders (countries, topics, years)
+   - Multiple documents within each folder
+   - Best for: Parliamentary records, news archives, correspondence collections
+
+2. **Two-Layer Directory Structure** (e.g., Literary collections)
+   - Two levels of categorization (genre/author, period/topic)
+   - Documents organized hierarchically
+   - Best for: Literature collections, academic papers, mixed-type archives
+
+3. **Flat XML Collection** (e.g., Darwin Correspondence)
+   - Single directory of XML files
+   - Metadata extracted from XML structure
+   - Best for: Digital editions, TEI-encoded texts, structured datasets
+
+4. **Flat Text Collection with Metadata in Filenames**
+   - Single directory with descriptive filenames
+   - Metadata extracted via regex patterns
+   - Best for: Simple document collections, converted archives
+
+### Structural Constraints
+
+**What ATLAS requires:**
+- Consistent file naming within a corpus
+- UTF-8 encoded text files (TXT) or well-formed XML
+- Directory names that can serve as meaningful filters
+- Files under 50MB each (larger files should be pre-split)
+
+**What ATLAS does NOT support:**
+- Deeply nested structures (>2 directory levels)
+- Binary formats (PDF, DOCX) without pre-conversion
+- Mixed encodings within a corpus
+- Database exports or CSV files as primary sources
+- Dynamically generated content
+
+### File Naming Conventions
+
+For optimal metadata extraction, follow these patterns:
+- **Literary works**: `Author_FirstName_Title_Year.txt`
+- **Correspondence**: `Date_From_To_Subject.txt`
+- **Parliamentary**: `Date_Location_Session.txt`
+- **Academic**: `Author_Year_Title_Journal.txt`
+
+These constraints ensure reliable processing, consistent citation generation, and predictable search behavior across different corpus types.
+
 ## Proposed Solution
 
 ### Architecture Overview
@@ -222,6 +273,21 @@ corpus_metadata:
     from: 1901
     to: 1901
   material_type: "parliamentary_records"
+
+  # Citation metadata - used in UI when displaying sources
+  citation_template:
+    format: "{title}, {date}, {location}"  # Template for citation display
+    base_url: "https://hansard.parliament.uk/historic/{date}/{id}"  # URL pattern
+    source_name: "Historic Hansard"  # Source attribution
+    repository: "Parliamentary Archives"  # Repository/archive name
+
+  # Additional metadata for citations
+  document_metadata:
+    title_pattern: "regex: ^([^,]+)"  # Extract title from filename
+    date_format: "ISO-8601"  # Expected date format in documents
+    id_pattern: "regex: _(\\d+)\\."  # Extract document ID for URLs
+    location_field: "directory_name"  # Use directory as location (e.g., "Australia")
+
   entities:
     people: ["Edmund Barton", "Richard Seddon", "Arthur Balfour"]
     places: ["Sydney", "Wellington", "London"]
@@ -234,7 +300,7 @@ corpus_metadata:
     status: "public_domain"
     statement: "Parliamentary records are in the public domain"
   doi: "10.5281/zenodo.7654321"  # Optional
-  citation: "Parliamentary Hansard Records, 1901"
+  citation: "Parliamentary Hansard Records, 1901"  # Default citation text
 ```
 
 #### Step 2: Source Selection
@@ -249,56 +315,221 @@ source_config:
   # path: "corpus/"  # Path within repo
 ```
 
-#### Step 3: Filter Discovery
-Combines metadata with structural analysis:
-```python
-def discover_filters(metadata, source_structure):
-    filters = []
+#### Step 3: Corpus Structure Selection
+Users select from supported structural patterns:
 
-    # Time-based filters from metadata
-    if metadata.time_period:
-        filters.extend(generate_temporal_filters(
-            metadata.time_period.from,
-            metadata.time_period.to
-        ))
+```yaml
+corpus_structure:
+  pattern: "single_layer_directory"  # Guided selection from 4 supported patterns
+  # Options:
+  # - single_layer_directory (e.g., Hansard: Country folders)
+  # - two_layer_directory (e.g., Gutenberg: Genre/Work structure)
+  # - flat_xml_collection (e.g., Darwin: XML letters in single folder)
+  # - flat_text_metadata (e.g., Simple corpus with metadata in filenames)
 
-    # Entity-based filters from metadata + content
-    if metadata.entities.people:
-        filters.extend(find_person_filters(
-            source_structure,
-            expected_people=metadata.entities.people
-        ))
+filter_method:
+  type: "directory_structure"  # Automatically set based on pattern
 
-    # Structure-based filters
-    filters.extend(analyze_directory_patterns(source_structure))
+  # For directory_structure type:
+  directory_options:
+    depth: 1  # or 2 (number of folder layers to use as filters)
+    layer_1_name: "Country"  # e.g., Australia, New Zealand, UK
+    layer_2_name: "Year"  # (only if depth=2) e.g., 1901, 1902
 
-    return filters
+  # Extract metadata from filenames
+  filename_metadata:
+    enabled: true
+    patterns:
+      - date: "regex: (\\d{4}-\\d{2}-\\d{2})"  # Extract date
+      - author: "regex: ^([^_]+)_"  # Extract author before underscore
+      - session: "regex: _session_(\\d+)"  # Extract session number
+
+  # For xml_structure type:
+  xml_options:
+    use_directories: true  # Still use first layer directories as filters
+    entities:
+      people: "//person/@name"  # XPath to extract people
+      dates: "//date/@value"  # XPath to extract dates
+      titles: "//title/text()"  # XPath to extract titles
+    date_range_generation: true  # Auto-generate year/decade ranges from dates
 ```
 
-#### Step 4: Model Recommendation
+#### Filter Generation Examples:
+
+**Directory Structure (1 layer):**
+```
+sources/
+├── Australia/
+│   ├── Friday, 02 August, 1901.txt
+│   └── Monday, 09 December, 1901.txt
+├── New Zealand/
+│   └── Tuesday, 16 July, 1901.txt
+└── United Kingdom/
+    └── Thursday, 28th February, 1901.txt
+
+Generates filters:
+- "Australia" (all files in Australia/)
+- "New Zealand" (all files in New Zealand/)
+- "United Kingdom" (all files in United Kingdom/)
+```
+
+**Directory Structure (2 layers):**
+```
+sources/
+├── Fiction/
+│   ├── 1800-1850/
+│   │   └── pride_prejudice.txt
+│   └── 1851-1900/
+│       └── oliver_twist.txt
+└── Non-Fiction/
+    ├── 1800-1850/
+    │   └── origin_species.txt
+    └── 1851-1900/
+        └── capital_marx.txt
+
+Generates filters:
+- "Fiction" (all Fiction files)
+- "Non-Fiction" (all Non-Fiction files)
+- "Fiction: 1800-1850"
+- "Fiction: 1851-1900"
+- "Non-Fiction: 1800-1850"
+- "Non-Fiction: 1851-1900"
+```
+
+**XML Structure (Darwin Correspondence):**
+```xml
+<!-- in sources/Darwin/DCP-LETT-1.xml -->
+<TEI xml:id="DCP-LETT-1">
+  <teiHeader>
+    <titleStmt>
+      <title>From Mary Congreve 27 October [1821]</title>
+    </titleStmt>
+  </teiHeader>
+  <text>...</text>
+</TEI>
+
+Generates filters:
+- "Mary Congreve" (from person entity)
+- "1821" (from date)
+- "1820-1830" (auto-generated decade range)
+```
+
+**Literary Corpus (2 layers - Gutenberg example):**
+```
+sources/
+├── Fiction/
+│   ├── Trollope_Anthony_The_Warden_1855.txt
+│   ├── Trollope_Anthony_Barchester_Towers_1857.txt
+│   └── Dickens_Charles_Oliver_Twist_1838.txt
+└── Non-Fiction/
+    ├── Trollope_Anthony_North_America_1862.txt
+    └── Darwin_Charles_Origin_Species_1859.txt
+
+Generates filters:
+- "Fiction" (all fiction works)
+- "Non-Fiction" (all non-fiction works)
+- Plus author/date metadata from filenames
+```
+
+#### Step 4: Validation with Sample Subset
+
+Before processing the full corpus, the system performs a validation pass with a minimal viable sample:
+
+```yaml
+validation_config:
+  sample_size: "auto"  # or specific number/percentage
+  sampling_strategy: "representative"  # Ensures samples from each filter/category
+
+  # Auto-sampling targets
+  auto_sample_rules:
+    min_documents: 10  # Minimum documents to sample
+    max_documents: 50  # Maximum for quick processing
+    per_filter_min: 2  # At least 2 docs from each filter category
+    percentage: 5  # Or 5% of corpus, whichever is smaller
+
+# Sample selection for different patterns
+sample_selection:
+  single_layer:
+    # For Hansard: 2-3 documents from each country
+    - "Australia/Friday, 02 August, 1901.txt"
+    - "New Zealand/Tuesday, 16 July, 1901.txt"
+    - "United Kingdom/1-Friday, 15th March, 1901.txt"
+
+  two_layer:
+    # For Gutenberg: 1 work from each genre (first chapter only)
+    - "Fiction/Trollope_Anthony_The_Warden_1855.txt" (first 10000 chars)
+    - "Non-Fiction/Darwin_Charles_Origin_Species_1859.txt" (first 10000 chars)
+
+  flat_xml:
+    # For Darwin: Random sample of letters
+    - Random 10 XML files
+
+# Validation outputs for user review
+validation_results:
+  filters_discovered:
+    - name: "Australia"
+      document_count: 2
+      sample_citation: "Friday, 02 August, 1901, Sydney Parliament"
+
+  metadata_extracted:
+    - document: "The_Warden_1855.txt"
+      author: "Anthony Trollope"
+      title: "The Warden"
+      year: "1855"
+      citation_preview: "Trollope, Anthony. The Warden (1855), Chapter 1"
+
+  issues_detected:
+    - type: "inconsistent_naming"
+      files: ["Tuesday, 8th October, 1501.txt"]  # Year typo
+      suggestion: "Check date format consistency"
+
+    - type: "missing_metadata"
+      files: ["Unknown_Author_Title.txt"]
+      suggestion: "Add author/date to filename"
+
+  processing_estimates:
+    sample_processing_time: "45 seconds"
+    estimated_full_corpus_time: "~15 minutes"
+    chunks_per_document_avg: 12
+    total_estimated_chunks: 14400
+```
+
+The user can then:
+1. **Review discovered filters** - Confirm they match expectations
+2. **Check citation previews** - Ensure formatting is correct
+3. **Fix detected issues** - Rename files, adjust patterns
+4. **Adjust configuration** - Modify extraction patterns if needed
+5. **Proceed or iterate** - Run another validation or proceed to full build
+
+#### Step 5: Model Selection
 ```python
-def recommend_embedding_model(metadata):
-    period = metadata.time_period
-    material = metadata.material_type
+def get_model_options():
+    # Provide default model and allow custom selection
+    return {
+        'default': {
+            'model_id': 'sentence-transformers/all-MiniLM-L6-v2',
+            'description': 'General-purpose model suitable for most corpora',
+            'performance': 'Fast processing with good accuracy',
+            'size_mb': 90,
+            'dimensions': 384
+        },
+        'custom_option': True,
+        'custom_help': 'Enter any HuggingFace sentence-transformers model ID'
+    }
 
-    recommendations = []
-
-    # Historical models for period texts
-    if 1760 <= period.from <= 1900:
-        recommendations.append({
-            'model': 'Livingwithmachines/bert_1760_1900',
-            'score': 0.95,
-            'reason': 'Optimized for this historical period'
-        })
-
-    # Always include general fallback
-    recommendations.append({
-        'model': 'sentence-transformers/all-MiniLM-L6-v2',
-        'score': 0.7,
-        'reason': 'General purpose, fast, reliable'
-    })
-
-    return recommendations
+def validate_custom_model(model_id):
+    # Validate HuggingFace model exists and is compatible
+    try:
+        from sentence_transformers import SentenceTransformer
+        # Attempt to load model metadata
+        model = SentenceTransformer(model_id, cache_folder='.cache')
+        return {
+            'valid': True,
+            'dimensions': model.get_sentence_embedding_dimension(),
+            'max_seq_length': model.max_seq_length
+        }
+    except Exception as e:
+        return {'valid': False, 'error': str(e)}
 ```
 
 ### Configuration Output
@@ -320,26 +551,49 @@ metadata:
     status: "public_domain"
     statement: "Parliamentary records are in the public domain"
   doi: "10.5281/zenodo.7654321"
-  citation: "Parliamentary Hansard Records, 1901"
+  default_citation: "Parliamentary Hansard Records, 1901"
+
+# Citation configuration for UI display
+citation_config:
+  template: "{title}, {date}, {location}"
+  base_url: "https://hansard.parliament.uk/historic/{date}/{id}"
+  source_name: "Historic Hansard"
+  repository: "Parliamentary Archives"
+  extraction_patterns:
+    title: "regex: ^([^,]+)"
+    date: "regex: ([A-Za-z]+, \\d{1,2}[a-z]{0,2} [A-Za-z]+, \\d{4})"
+    id: "regex: _(\\d+)\\."
+    location: "from_directory"  # Extract from parent directory name
 
 source:
   type: "local"
   location: "backend/corpus/sources/"
   file_types: ["txt"]
 
+filter_method:
+  type: "directory_structure"
+  depth: 1
+  layer_1_name: "Country"
+  filename_metadata:
+    enabled: true
+    patterns:
+      - date: "regex: ([A-Za-z]+, \\d{1,2}[a-z]{0,2} [A-Za-z]+, \\d{4})"
+
 filters:
-  - id: "1901_au"
-    label: "Australia 1901"
-    pattern: "**/AU/**/*"
+  - id: "australia"
+    label: "Australia"
+    type: "directory"
+    path: "Australia/"
     document_count: 1456
-  - id: "1901_nz"
-    label: "New Zealand 1901"
-    pattern: "**/NZ/**/*"
-    metadata_field: "country"
+  - id: "new_zealand"
+    label: "New Zealand"
+    type: "directory"
+    path: "New Zealand/"
     document_count: 892
-  - id: "1901_uk"
-    label: "United Kingdom 1901"
-    pattern: "**/UK/**/*"
+  - id: "united_kingdom"
+    label: "United Kingdom"
+    type: "directory"
+    path: "United Kingdom/"
     document_count: 2341
 
 embeddings:
@@ -358,6 +612,144 @@ search:
   k_default: 10
   test_query: "parliament federation"
 ```
+
+### Parent-Source Association During Chunking
+
+For corpora with large documents (novels, long letters, parliamentary sessions), maintaining the parent-source relationship is critical:
+
+```python
+class ChunkProcessor:
+    """Ensures chunks maintain parent document association"""
+
+    def process_document(self, file_path: str, content: str, config: Dict) -> List[Dict]:
+        """Process a document into chunks with parent metadata"""
+
+        # Extract parent document metadata
+        parent_metadata = self.extract_parent_metadata(file_path)
+
+        # For large documents like novels, add source-level metadata
+        if self.is_large_document(content):
+            parent_metadata['doc_type'] = 'full_work'
+            parent_metadata['total_length'] = len(content)
+            parent_metadata['work_title'] = self.extract_title(file_path)
+            parent_metadata['author'] = self.extract_author(file_path)
+
+        # Create chunks with parent reference
+        chunks = []
+        chunk_texts = self.text_splitter.split_text(content)
+
+        for i, chunk_text in enumerate(chunk_texts):
+            chunk = {
+                'text': chunk_text,
+                'metadata': {
+                    **parent_metadata,  # Include all parent metadata
+                    'chunk_index': i,
+                    'total_chunks': len(chunk_texts),
+                    'source_file': os.path.basename(file_path),
+                    'source_path': file_path,
+                    'parent_id': self.generate_doc_id(file_path),
+                    # Maintain filter associations
+                    'filter_1': os.path.basename(os.path.dirname(file_path)),  # e.g., "Fiction"
+                    'filter_2': os.path.basename(os.path.dirname(os.path.dirname(file_path)))  # if 2-layer
+                }
+            }
+
+            # For literary works, add chapter/section context if detectable
+            if 'Chapter' in chunk_text[:100] or 'CHAPTER' in chunk_text[:100]:
+                chapter_match = re.search(r'Chapter\s+(\d+|[IVXLC]+)', chunk_text[:100], re.I)
+                if chapter_match:
+                    chunk['metadata']['chapter'] = chapter_match.group(1)
+
+            chunks.append(chunk)
+
+        return chunks
+
+    def extract_title(self, file_path: str) -> str:
+        """Extract title from filename pattern like 'Author_Name_Title_Year.txt'"""
+        filename = os.path.basename(file_path).replace('.txt', '')
+        parts = filename.split('_')
+        # Assuming pattern: Author_FirstName_Title_Words_Year
+        if len(parts) >= 4:
+            return ' '.join(parts[2:-1])  # Title is everything between author and year
+        return filename
+
+    def extract_author(self, file_path: str) -> str:
+        """Extract author from filename pattern"""
+        filename = os.path.basename(file_path)
+        parts = filename.split('_')
+        if len(parts) >= 2:
+            return f"{parts[1]} {parts[0]}"  # "FirstName LastName"
+        return ""
+```
+
+This ensures:
+1. **Every chunk knows its parent document** - Essential for novels, long letters
+2. **Chunks inherit all parent metadata** - Author, title, date, etc.
+3. **Chunk position is tracked** - Know where in the document each chunk comes from
+4. **Filter associations maintained** - Chunks correctly associated with directory-based filters
+
+### Citation Metadata Implementation
+
+The citation metadata collected during the wizard will be embedded in each chunk during vector store creation and used to generate rich citations in the UI:
+
+```python
+class CitationEnricher:
+    """Enriches document chunks with citation metadata"""
+
+    def __init__(self, citation_config: Dict):
+        self.config = citation_config
+        self.template = citation_config['template']
+        self.base_url = citation_config.get('base_url', '')
+        self.patterns = citation_config.get('extraction_patterns', {})
+
+    def enrich_chunk(self, chunk: Dict, file_path: str) -> Dict:
+        """Add citation metadata to a document chunk"""
+
+        # Extract metadata using configured patterns
+        metadata = {}
+        filename = os.path.basename(file_path)
+        directory = os.path.basename(os.path.dirname(file_path))
+
+        # Extract title
+        if 'title' in self.patterns:
+            match = re.search(self.patterns['title'], filename)
+            metadata['title'] = match.group(1) if match else filename
+
+        # Extract date
+        if 'date' in self.patterns:
+            match = re.search(self.patterns['date'], filename)
+            metadata['date'] = match.group(1) if match else ''
+
+        # Extract ID for URL generation
+        if 'id' in self.patterns:
+            match = re.search(self.patterns['id'], filename)
+            metadata['doc_id'] = match.group(1) if match else ''
+
+        # Use directory as location if specified
+        if self.patterns.get('location') == 'from_directory':
+            metadata['location'] = directory
+
+        # Generate URL if base_url provided
+        if self.base_url and metadata.get('doc_id'):
+            metadata['url'] = self.base_url.format(
+                date=metadata.get('date', ''),
+                id=metadata.get('doc_id', ''),
+                location=metadata.get('location', '')
+            )
+
+        # Generate citation text using template
+        metadata['citation_text'] = self.template.format(**metadata)
+
+        # Add source attribution
+        metadata['source_name'] = self.config.get('source_name', '')
+        metadata['repository'] = self.config.get('repository', '')
+
+        # Merge with chunk metadata
+        chunk['metadata'] = {**chunk.get('metadata', {}), **metadata}
+        return chunk
+```
+
+This ensures every chunk has rich citation metadata that can be displayed in the UI, making sources transparent and verifiable for researchers.
 
 ### Corpus Swap Implementation
 
@@ -561,19 +953,54 @@ class BuildProgressTracker:
       />
     </div>
 
-    <!-- Step 3: Filter Configuration -->
+    <!-- Step 3: Filter Definition Method -->
     <div v-if="currentStep === 3" class="wizard-step">
+      <h2>Choose Filter Definition Method</h2>
+      <FilterMethodSelector
+        v-model="filterMethod"
+        :corpus-type="source.fileTypes"
+        @continue="configureFilters"
+      />
+      <!-- Shows dropdown with:
+        - Directory Structure (1 or 2 layers)
+        - XML Structure (with entity extraction)
+        Plus configuration options based on selection -->
+    </div>
+
+    <!-- Step 4: Filter Configuration -->
+    <div v-if="currentStep === 4" class="wizard-step">
       <h2>Configure Search Filters</h2>
       <FilterConfigurator
         v-model="filters"
+        :method="filterMethod"
         :discovered="discoveredFilters"
         :metadata="metadata"
         @continue="selectModel"
       />
     </div>
 
-    <!-- Step 4: Model Selection -->
-    <div v-if="currentStep === 4" class="wizard-step">
+    <!-- Step 5: Validation Preview -->
+    <div v-if="currentStep === 5" class="wizard-step">
+      <h2>Validate Configuration with Sample</h2>
+      <ValidationPreview
+        :sample-config="validationConfig"
+        :validation-results="validationResults"
+        :issues="detectedIssues"
+        @fix-issues="returnToConfiguration"
+        @adjust-patterns="adjustExtractionPatterns"
+        @continue="selectModel"
+      />
+      <!-- Shows:
+        - Sample documents being processed
+        - Discovered filters with counts
+        - Citation format previews
+        - Detected issues with suggestions
+        - Time estimates for full processing
+      -->
+    </div>
+
+    <!-- Step 6: Model Selection -->
+    <div v-if="currentStep === 6" class="wizard-step">
       <h2>Select Embedding Model</h2>
       <ModelSelector
         v-model="embeddingModel"
@@ -583,8 +1010,8 @@ class BuildProgressTracker:
       />
     </div>
 
-    <!-- Step 5: Requirements Check -->
-    <div v-if="currentStep === 5" class="wizard-step">
+    <!-- Step 7: Requirements Check -->
+    <div v-if="currentStep === 7" class="wizard-step">
       <h2>System Requirements Check</h2>
       <RequirementsChecker
         :corpus-stats="corpusStats"
@@ -593,8 +1020,8 @@ class BuildProgressTracker:
       />
     </div>
 
-    <!-- Step 6: Build Progress -->
-    <div v-if="currentStep === 6" class="wizard-step">
+    <!-- Step 7: Build Progress -->
+    <div v-if="currentStep === 7" class="wizard-step">
       <h2>Building Vector Store</h2>
       <BuildProgress
         :progress="buildProgress"
@@ -607,8 +1034,8 @@ class BuildProgressTracker:
       />
     </div>
 
-    <!-- Step 7: Test & Activate -->
-    <div v-if="currentStep === 7" class="wizard-step">
+    <!-- Step 8: Test & Activate -->
+    <div v-if="currentStep === 8" class="wizard-step">
       <h2>Test & Activate Corpus</h2>
       <CorpusTester
         :config="finalConfig"
@@ -667,16 +1094,16 @@ async def activate_corpus(
 
 ## Benefits
 
-1. **Accessibility**: Non-technical users can configure corpora through UI
-2. **Flexibility**: Support for any corpus structure, not just Hansard
-3. **Discoverability**: Intelligent filter suggestions based on metadata
-4. **Optimization**: Appropriate embedding models for each corpus
-5. **Provenance**: Tracking of copyright and DOI information
-6. **Portability**: GitHub support enables sharing corpus configurations
-7. **Reliability**: Atomic swapping with automatic backup
-8. **Cleaner Configuration**: Removes corpus-specific settings from environment files, making deployment simpler
-9. **Dynamic Branding**: ATLAS automatically adapts its title and telemetry based on active corpus
-10. **Reduced Complexity**: Single source of truth for corpus configuration in corpus.yaml
+1. **Guided Structure**: Users are guided to organize corpora into proven patterns that work reliably
+2. **Predictable Behavior**: Limited structural patterns ensure consistent processing and searching
+3. **Clear Boundaries**: Explicit constraints prevent configuration errors and processing failures
+4. **Accessibility**: Non-technical users can configure corpora through UI within clear guidelines
+5. **Quality Assurance**: Structural constraints ensure proper citation generation and filter discovery
+6. **Optimization**: Default embedding model with option for custom HuggingFace models
+7. **Provenance**: Tracking of copyright and DOI information for academic rigor
+8. **Portability**: Corpus configurations can be shared between ATLAS instances
+9. **Cleaner Configuration**: Removes corpus-specific settings from environment files
+10. **Academic Focus**: Constraints are designed specifically for humanities and social science research needs
 
 ## Risk Assessment
 
@@ -712,13 +1139,59 @@ The implementation will include comprehensive documentation updates:
 - Updates to all affected existing documentation files
 - Example configurations for common corpus types (Hansard, Darwin, etc.)
 
+## Example Configurations
+
+### Gutenberg Literary Corpus (2-layer structure)
+```yaml
+# config/corpus.yaml for Trollope collection
+metadata:
+  name: "Anthony Trollope Complete Works"
+  display_name: "ATLAS Trollope"
+  version: "1.0.0"
+  time_period:
+    from: 1847
+    to: 1883
+
+citation_config:
+  template: "{author}, {title} ({year}), Chapter {chapter}"
+  base_url: "https://www.gutenberg.org/ebooks/{gutenberg_id}"
+  source_name: "Project Gutenberg"
+  extraction_patterns:
+    author: "regex: ^([^_]+_[^_]+)"  # "Trollope_Anthony"
+    title: "regex: _([^_]+(?:_[^_]+)*?)_\\d{4}"  # Title between author and year
+    year: "regex: (\\d{4})\\."
+    gutenberg_id: "from_metadata"  # Would need to be added during processing
+
+filter_method:
+  type: "directory_structure"
+  depth: 2
+  layer_1_name: "Genre"  # Fiction, Non-Fiction
+  layer_2_name: "Work"   # Individual novels/books
+  filename_metadata:
+    enabled: true
+    patterns:
+      - author: "regex: ^([^_]+)_([^_]+)"
+      - title: "regex: _([^_]+(?:_[^_]+)*?)_\\d{4}"
+      - year: "regex: (\\d{4})"
+
+# Chunking configuration critical for novels
+chunking:
+  strategy: "preserve_chapters"  # Special handling for literary works
+  chunk_size: 2000  # Larger chunks for narrative coherence
+  chunk_overlap: 200
+  parent_tracking: true  # Ensure all chunks know their parent work
+  detect_chapters: true  # Try to identify chapter boundaries
+```
+
+This configuration ensures that when a user searches for themes in Trollope's work, each chunk returned will properly cite the specific novel and chapter it comes from.
+
 ## Acceptance Criteria
 
 - [ ] Wizard mode can be enabled/disabled via make command
 - [ ] Metadata collection includes copyright and DOI fields
 - [ ] GitHub repositories can be used as corpus sources
 - [ ] Filters are discovered from metadata + structure
-- [ ] Embedding models are recommended based on time period
+- [ ] Default embedding model is provided with custom HuggingFace option
 - [ ] Progress is tracked during vector store build
 - [ ] Corpus swap is atomic with automatic backup
 - [ ] Test case: Successfully swap between Hansard and Darwin corpora
