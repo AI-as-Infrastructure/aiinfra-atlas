@@ -1,7 +1,7 @@
 # Proposal: Refactor and Implement UI-Driven Corpus Configuration Wizard
 
 ## Change ID
-`refactor-corpus-wizard`
+`add-corpus-wizard`
 
 ## Summary
 Implement a UI-driven corpus configuration wizard that enables users to configure and swap between different corpora within ATLAS's supported structural patterns. The wizard guides users through organizing their corpus into one of four supported patterns (single-layer directories, two-layer directories, flat XML, or flat text with metadata), ensuring reliable processing and consistent citation generation.
