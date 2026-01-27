@@ -43,6 +43,11 @@ class SourceConfig(BaseModel):
     location: str = Field(..., description="Path or URL to source")
     branch: Optional[str] = Field(default="main", description="Git branch for GitHub sources")
     sparse_checkout: Optional[List[str]] = Field(default_factory=list, description="Paths for sparse checkout")
+    file_extensions: Optional[str] = Field(default=".txt", description="File extensions to process")
+    include_subdirectories: Optional[bool] = Field(default=True, description="Include subdirectories")
+    extract_inline_urls: Optional[bool] = Field(default=False, description="Extract URLs from document content")
+    date_pattern: Optional[str] = Field(default=None, description="Date extraction pattern")
+    custom_date_pattern: Optional[str] = Field(default=None, description="Custom regex for date extraction")
 
 
 class FilterDefinition(BaseModel):

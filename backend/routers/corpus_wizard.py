@@ -310,6 +310,58 @@ async def validate_custom_model(model_id: str = Body(..., embed=True)):
         })
 
 
+@router.post("/validate-regex")
+async def validate_regex_pattern(request: Dict[str, str] = Body(...)):
+    """
+    Validate a regex pattern for date extraction.
+    """
+    import re
+
+    pattern = request.get("pattern", "")
+    test_string = request.get("test_string", "")
+
+    try:
+        if not pattern:
+            return JSONResponse({
+                "valid": False,
+                "error": "Pattern cannot be empty"
+            })
+
+        # Try to compile the regex
+        compiled = re.compile(pattern)
+
+        # Test against string if provided
+        matches = []
+        if test_string:
+            for match in compiled.finditer(test_string):
+                if match.groups():
+                    # If there are groups, return the first group
+                    matches.append(match.group(1))
+                else:
+                    # Otherwise return the whole match
+                    matches.append(match.group(0))
+
+        return JSONResponse({
+            "valid": True,
+            "pattern": pattern,
+            "matches": matches,
+            "message": f"Valid regex pattern. Found {len(matches)} match(es)" if test_string else "Valid regex pattern"
+        })
+
+    except re.error as e:
+        return JSONResponse({
+            "valid": False,
+            "error": f"Invalid regex: {str(e)}",
+            "pattern": pattern
+        })
+    except Exception as e:
+        return JSONResponse({
+            "valid": False,
+            "error": str(e),
+            "pattern": pattern
+        })
+
+
 @router.post("/validate-config")
 async def validate_config(config_data: Dict[str, Any] = Body(...)):
     """
@@ -529,9 +581,57 @@ async def build_corpus(
     Start building a corpus vector store in the background.
     """
     try:
+        # Transform frontend config to backend CorpusConfig format
+        frontend_config = build_request.config
+
+        # Create the backend config structure
+        backend_config = {
+            "metadata": {
+                "name": frontend_config["metadata"]["name"],
+                "display_name": frontend_config["metadata"].get("name", "Corpus"),
+                "description": frontend_config["metadata"].get("description", ""),
+                "copyright_status": frontend_config["metadata"].get("copyright", ""),
+                "doi": frontend_config["metadata"].get("source_doi", "")
+            },
+            "source": {
+                **frontend_config["source"],
+                # Add extraction settings to source config
+                "extract_inline_urls": frontend_config["source"].get("extract_inline_urls", False)
+            },
+            "filters": {
+                "method": "directory",
+                "directory_depth": 2,
+                "filters": [
+                    {
+                        **f,
+                        # Map 'all' type to 'directory' for backend compatibility
+                        "type": "directory" if f.get("type") == "all" else f.get("type", "directory")
+                    }
+                    for f in frontend_config.get("filters", [])
+                ]
+            },
+            "citation": {
+                "template": "{author}. {title}. {date}. {source}.",
+                "source_name": frontend_config["metadata"].get("name", "Corpus"),
+                # Add metadata patterns if date extraction is configured
+                "metadata_patterns": {
+                    "date": frontend_config["source"].get("custom_date_pattern") if frontend_config["source"].get("date_pattern") == "custom" else None
+                } if frontend_config["source"].get("date_pattern") else {}
+            },
+            "embedding": {
+                "model_id": frontend_config["embeddings"]["model"],
+                "chunk_size": frontend_config["embeddings"]["chunk_size"],
+                "chunk_overlap": frontend_config["embeddings"]["chunk_overlap"],
+                "batch_size": frontend_config["embeddings"]["batch_size"]
+            },
+            "processing": {
+                "mode": build_request.mode,
+                "max_workers": 4
+            }
+        }
+
         # Parse configuration
-        config = CorpusConfig(**build_request.config)
-        config.processing_mode = build_request.mode
+        config = CorpusConfig(**backend_config)
 
         # Generate build ID
         build_id = f"build_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -712,10 +812,17 @@ async def preview_documents(request: Dict[str, Any] = Body(...)):
                         }
                         pattern = pattern_map.get(source['date_pattern'])
                         if pattern:
-                            match = re.search(pattern, doc.name)
-                            if match:
-                                extracted_metadata['date'] = match.group(1)
-                                docs_with_dates += 1
+                            try:
+                                # Validate regex pattern first
+                                compiled_pattern = re.compile(pattern)
+                                match = compiled_pattern.search(doc.name)
+                                if match:
+                                    # Get first group or whole match
+                                    extracted_metadata['date'] = match.group(1) if match.groups() else match.group(0)
+                                    docs_with_dates += 1
+                            except re.error as e:
+                                # Pattern is invalid, will be reported in warnings
+                                pass
 
                     sample["extracted_metadata"] = extracted_metadata
 
@@ -784,12 +891,29 @@ async def preview_documents(request: Dict[str, Any] = Body(...)):
 
         # Check for warnings
         warnings = []
+
+        # Validate custom regex pattern upfront
+        if source.get('date_pattern') == 'custom' and source.get('custom_date_pattern'):
+            import re
+            try:
+                re.compile(source.get('custom_date_pattern'))
+            except re.error as e:
+                warnings.append(f"Invalid date extraction regex pattern: {e}")
+
         if not documents:
             warnings.append("No documents found with specified extensions")
         if source.get('extract_inline_urls') and docs_with_urls == 0:
             warnings.append("URL extraction enabled but no URLs found in sample documents")
-        if source.get('date_pattern') and docs_with_dates == 0:
+        if source.get('date_pattern') and docs_with_dates == 0 and source.get('date_pattern') != 'custom':
             warnings.append("Date extraction configured but no dates found in filenames")
+        if source.get('date_pattern') == 'custom' and docs_with_dates == 0 and source.get('custom_date_pattern'):
+            # Only warn if the pattern is valid
+            try:
+                import re
+                re.compile(source.get('custom_date_pattern'))
+                warnings.append("Custom date pattern provided but no dates found in sample filenames")
+            except:
+                pass  # Invalid pattern already reported above
 
         return JSONResponse({
             "total_documents": len(documents),

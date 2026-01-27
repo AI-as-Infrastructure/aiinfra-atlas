@@ -214,12 +214,47 @@
 
           <div v-if="source.date_pattern === 'custom'" class="form-group">
             <label>Custom Date Pattern</label>
-            <input
-              v-model="source.custom_date_pattern"
-              type="text"
-              placeholder="Enter regex pattern"
-              class="form-control"
-            />
+            <div class="regex-input-group">
+              <input
+                v-model="source.custom_date_pattern"
+                type="text"
+                placeholder="e.g., (\d+\w*\s+\w+,\s*\d+)"
+                class="form-control"
+                :class="{ 'is-invalid': regexValidation.tested && !regexValidation.valid }"
+                @input="clearRegexValidation"
+              />
+              <button
+                @click="validateRegexPattern"
+                :disabled="!source.custom_date_pattern"
+                class="btn btn-secondary"
+                type="button"
+              >
+                Validate Pattern
+              </button>
+            </div>
+
+            <div v-if="regexValidation.tested" class="validation-feedback">
+              <div v-if="regexValidation.valid" class="success-message">
+                ✅ Valid pattern
+                <span v-if="regexValidation.matches && regexValidation.matches.length > 0">
+                  - Found: {{ regexValidation.matches.join(', ') }}
+                </span>
+              </div>
+              <div v-else class="error-message">
+                ❌ Invalid pattern: {{ regexValidation.error }}
+              </div>
+            </div>
+
+            <small class="help-text">
+              Example patterns:<br/>
+              • <code>(\d+\w*\s+\w+,\s*\d+)</code> - Matches "6th June, 1901"<br/>
+              • <code>(\d{4}-\d{2}-\d{2})</code> - Matches "1901-06-06"<br/>
+              • <code>(\w+\s+\d+,\s*\d{4})</code> - Matches "June 6, 1901"
+            </small>
+
+            <div v-if="source.custom_date_pattern && !regexValidation.tested" class="warning-message">
+              ⚠️ Please validate your pattern before proceeding
+            </div>
           </div>
         </div>
       </div>
@@ -719,6 +754,14 @@ export default {
     const loadingPreview = ref(false)
     const selectedFilters = ref([])
 
+    // Regex validation
+    const regexValidation = ref({
+      tested: false,
+      valid: false,
+      error: null,
+      matches: []
+    })
+
     // Build
     const building = ref(false)
     const buildProgress = ref({})
@@ -791,6 +834,52 @@ export default {
       }
     }
 
+    // Regex validation methods
+    const validateRegexPattern = async () => {
+      if (!source.value.custom_date_pattern) {
+        return
+      }
+
+      // Get a sample filename for testing
+      const sampleFilename = "Friday, 02 August, 1901.txt"
+
+      try {
+        const response = await fetch('/api/corpus-wizard/validate-regex', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            pattern: source.value.custom_date_pattern,
+            test_string: sampleFilename
+          })
+        })
+
+        const data = await response.json()
+
+        regexValidation.value = {
+          tested: true,
+          valid: data.valid,
+          error: data.error || null,
+          matches: data.matches || []
+        }
+      } catch (error) {
+        regexValidation.value = {
+          tested: true,
+          valid: false,
+          error: error.message,
+          matches: []
+        }
+      }
+    }
+
+    const clearRegexValidation = () => {
+      regexValidation.value = {
+        tested: false,
+        valid: false,
+        error: null,
+        matches: []
+      }
+    }
+
     // Preview methods
     const loadPreview = async () => {
       console.log('loadPreview called')
@@ -800,6 +889,18 @@ export default {
       // Validate that we have a source location
       if (!source.value.location) {
         alert('Please specify a source location in the previous step')
+        return
+      }
+
+      // Check if custom regex pattern needs validation
+      if (source.value.date_pattern === 'custom' && source.value.custom_date_pattern && !regexValidation.value.tested) {
+        alert('Please validate your custom regex pattern before proceeding')
+        return
+      }
+
+      // Check if custom regex pattern is invalid
+      if (source.value.date_pattern === 'custom' && regexValidation.value.tested && !regexValidation.value.valid) {
+        alert('Please fix your invalid regex pattern before proceeding')
         return
       }
 
@@ -1164,6 +1265,11 @@ export default {
       loadPreview,
       selectedFilters,
       toggleFilter,
+
+      // Regex validation
+      regexValidation,
+      validateRegexPattern,
+      clearRegexValidation,
 
       // Build
       building,
@@ -1623,6 +1729,67 @@ textarea.form-control {
 .help-text {
   color: #666;
   margin-bottom: 1.5rem;
+}
+
+/* Regex Validation Styles */
+.regex-input-group {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.regex-input-group .form-control {
+  flex: 1;
+}
+
+.regex-input-group .btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.validation-feedback {
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.validation-feedback .success-message {
+  color: #155724;
+  background-color: #d4edda;
+  border: 1px solid #c3e6cb;
+  padding: 0.5rem;
+  border-radius: 4px;
+}
+
+.validation-feedback .error-message {
+  color: #721c24;
+  background-color: #f8d7da;
+  border: 1px solid #f5c6cb;
+  padding: 0.5rem;
+  border-radius: 4px;
+}
+
+.form-control.is-invalid {
+  border-color: #dc3545;
+  background-color: #fff5f5;
+}
+
+.warning-message {
+  color: #856404;
+  background-color: #fff3cd;
+  border: 1px solid #ffeeba;
+  padding: 0.5rem;
+  border-radius: 4px;
+  margin-top: 0.5rem;
+}
+
+.help-text code {
+  background-color: #f4f4f4;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-family: monospace;
+  color: #333;
 }
 
 .filter-list {

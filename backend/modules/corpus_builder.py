@@ -56,13 +56,32 @@ class UniversalCorpusBuilder:
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         # Initialize metadata extractor and URL builder
+        # Get extraction settings from citation config or source config
+        date_regex = None
+        extract_inline_urls = False
+
+        # Check if we have date extraction pattern in source config or citation config
+        if hasattr(self.config.source, 'custom_date_pattern') and self.config.source.custom_date_pattern:
+            date_regex = self.config.source.custom_date_pattern
+        elif hasattr(self.config.citation, 'metadata_patterns') and self.config.citation.metadata_patterns:
+            date_regex = self.config.citation.metadata_patterns.get('date')
+
+        # Check source config for extraction settings
+        if hasattr(self.config.source, 'extract_inline_urls'):
+            extract_inline_urls = self.config.source.extract_inline_urls
+
         self.metadata_extractor = MetadataExtractor(
-            filename_pattern=self.config.metadata.get('filename_pattern'),
-            extract_inline_urls=self.config.metadata.get('extract_inline_urls', False)
+            filename_pattern=None,  # We're not using template patterns for now
+            extract_inline_urls=extract_inline_urls,
+            date_regex=date_regex
         )
-        self.url_builder = URLBuilder(
-            self.config.metadata.get('source_url_template')
-        )
+
+        # URL builder from citation config
+        url_template = None
+        if hasattr(self.config.citation, 'url_pattern'):
+            url_template = self.config.citation.url_pattern
+
+        self.url_builder = URLBuilder(url_template)
 
     async def build(self, progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
         """
@@ -162,20 +181,29 @@ class UniversalCorpusBuilder:
 
         all_docs = []
 
-        for file_type in self.config.source.file_types:
+        # Handle file_extensions from SourceConfig
+        file_extensions = self.config.source.file_extensions or ".txt"
+        # Convert string like ".txt" or ".txt,.xml" to list of extensions
+        if isinstance(file_extensions, str):
+            # Remove dots and split by comma
+            extensions = [ext.strip().lstrip('.') for ext in file_extensions.split(',')]
+        else:
+            extensions = file_extensions
+
+        for file_type in extensions:
             logger.info(f"Loading {file_type} files...")
 
             if file_type == "txt":
                 loader = DirectoryLoader(
                     str(source_path),
-                    glob=f"**/*.{file_type}",
+                    glob=f"**/*.{file_type}" if self.config.source.include_subdirectories else f"*.{file_type}",
                     loader_cls=TextLoader,
                     loader_kwargs={"encoding": "utf-8", "autodetect_encoding": True}
                 )
             elif file_type == "xml":
                 loader = DirectoryLoader(
                     str(source_path),
-                    glob=f"**/*.{file_type}",
+                    glob=f"**/*.{file_type}" if self.config.source.include_subdirectories else f"*.{file_type}",
                     loader_cls=UnstructuredXMLLoader,
                     loader_kwargs={"encoding": "utf-8"}
                 )
@@ -242,25 +270,40 @@ class UniversalCorpusBuilder:
 
     def _match_document_to_filter(self, doc: Document) -> Optional[FilterDefinition]:
         """Match document to appropriate filter based on patterns."""
-        for filter_def in self.config.filters:
+        import fnmatch
+        import re
+
+        for filter_def in self.config.filters.filters:
             # Check pattern match
             if filter_def.pattern:
-                import re
                 source_path = doc.metadata.get("source", "")
-                if re.search(filter_def.pattern, source_path):
-                    return filter_def
+
+                # If pattern looks like a glob pattern (contains * or ?), use fnmatch
+                if '*' in filter_def.pattern or '?' in filter_def.pattern:
+                    # Convert glob to work with full path matching
+                    if fnmatch.fnmatch(source_path, filter_def.pattern):
+                        return filter_def
+                else:
+                    # Otherwise try as regex
+                    try:
+                        if re.search(filter_def.pattern, source_path):
+                            return filter_def
+                    except re.error:
+                        # Invalid regex, skip this filter
+                        logger.warning(f"Invalid regex pattern: {filter_def.pattern}")
 
             # Check metadata field match
-            if filter_def.metadata_field and filter_def.metadata_value:
-                if doc.metadata.get(filter_def.metadata_field) == filter_def.metadata_value:
-                    return filter_def
+            if hasattr(filter_def, 'metadata_field') and hasattr(filter_def, 'metadata_value'):
+                if filter_def.metadata_field and filter_def.metadata_value:
+                    if doc.metadata.get(filter_def.metadata_field) == filter_def.metadata_value:
+                        return filter_def
 
         # Default filter if exists
-        return self.config.filters[0] if self.config.filters else None
+        return self.config.filters.filters[0] if self.config.filters.filters else None
 
     def _initialize_embeddings(self):
         """Initialize embedding model."""
-        logger.info(f"Initializing embeddings: {self.config.embeddings.model}")
+        logger.info(f"Initializing embeddings: {self.config.embedding.model_id}")
 
         device = "cuda" if self.mode == "gpu" and torch.cuda.is_available() else "cpu"
 
@@ -270,11 +313,11 @@ class UniversalCorpusBuilder:
 
         encode_kwargs = {
             "normalize_embeddings": True,
-            "batch_size": self.config.embeddings.batch_size
+            "batch_size": self.config.embedding.batch_size
         }
 
         self.embeddings = HuggingFaceEmbeddings(
-            model_name=self.config.embeddings.model,
+            model_name=self.config.embedding.model_id,
             model_kwargs=model_kwargs,
             encode_kwargs=encode_kwargs
         )
@@ -328,10 +371,13 @@ class UniversalCorpusBuilder:
         persist_dir = self.output_dir / "chroma_db"
         persist_dir.mkdir(parents=True, exist_ok=True)
 
+        # Generate collection name from metadata
+        collection_name = self.config.metadata.name.lower().replace(" ", "_").replace("-", "_")
+
         self.vector_store = Chroma.from_documents(
             documents=all_chunks,
             embedding=self.embeddings,
-            collection_name=self.config.vector_store.collection_name,
+            collection_name=collection_name,
             persist_directory=str(persist_dir)
         )
 
@@ -341,10 +387,10 @@ class UniversalCorpusBuilder:
 
     def _get_text_splitter(self):
         """Get appropriate text splitter based on configuration."""
-        if self.config.embeddings.chunk_size:
+        if self.config.embedding.chunk_size:
             return RecursiveCharacterTextSplitter(
-                chunk_size=self.config.embeddings.chunk_size,
-                chunk_overlap=self.config.embeddings.chunk_overlap,
+                chunk_size=self.config.embedding.chunk_size,
+                chunk_overlap=self.config.embedding.chunk_overlap,
                 length_function=len
             )
         else:
@@ -391,18 +437,22 @@ class UniversalCorpusBuilder:
             "metadata": self.config.metadata.dict(),
             "source": self.config.source.dict(),
             "embedding_model": {
-                "id": self.config.embeddings.model,
+                "id": self.config.embedding.model_id,
                 "source": "huggingface",
-                "is_default": self.config.embeddings.model == "sentence-transformers/all-mpnet-base-v2",
+                "is_default": self.config.embedding.model_id == "sentence-transformers/all-mpnet-base-v2",
                 "validated": True,
                 "characteristics": {
-                    "embedding_dim": 768 if "mpnet" in self.config.embeddings.model else None,
+                    "embedding_dim": 768 if "mpnet" in self.config.embedding.model_id else None,
                     "max_sequence_length": 512,
                     "model_size_mb": None  # Would need actual calculation
                 }
             },
-            "embeddings": self.config.embeddings.dict(),  # Keep for compatibility
-            "vector_store": self.config.vector_store.dict(),
+            "embeddings": self.config.embedding.dict(),  # Keep for compatibility
+            "vector_store": {
+                "type": "chromadb",
+                "collection_name": self.config.metadata.name.lower().replace(" ", "_"),
+                "persist_directory": str(self.output_dir / "chroma_db")
+            },
             "filters": {
                 "filter_1": filter_1_info,
                 "filter_2": filter_2_info
@@ -466,8 +516,8 @@ class UniversalCorpusBuilder:
         corpus_class = ''.join(word.capitalize() for word in corpus_name.replace('-', '_').split('_'))
 
         # Get filter labels
-        filter_1_label = self.config.filters[0].label if self.config.filters else "Category"
-        filter_2_label = self.config.filters[1].label if len(self.config.filters) > 1 else "Subcategory"
+        filter_1_label = self.config.filters.filters[0].label if self.config.filters.filters else "Category"
+        filter_2_label = self.config.filters.filters[1].label if len(self.config.filters.filters) > 1 else "Subcategory"
 
         # Replace template variables
         retriever_code = template.format(
@@ -477,7 +527,7 @@ class UniversalCorpusBuilder:
             creation_time=datetime.now().strftime("%H:%M:%S"),
             filter_1_label=filter_1_label,
             filter_2_label=filter_2_label,
-            embedding_model=self.config.embeddings.model
+            embedding_model=self.config.embedding.model_id
         )
 
         # Save retriever

@@ -19,17 +19,29 @@ class MetadataExtractor:
     # Regex for extracting <url>...</url> from first line
     INLINE_URL_PATTERN = re.compile(r'^<url>(.*?)</url>', re.MULTILINE)
 
-    def __init__(self, filename_pattern: Optional[str] = None, extract_inline_urls: bool = False):
+    def __init__(self, filename_pattern: Optional[str] = None, extract_inline_urls: bool = False,
+                 date_regex: Optional[str] = None):
         """
         Initialize metadata extractor.
 
         Args:
             filename_pattern: Pattern with {variable_name} placeholders
             extract_inline_urls: Whether to extract URLs from first line of documents
+            date_regex: Raw regex pattern for extracting dates from filenames
         """
         self.pattern = filename_pattern
         self.regex = self._compile_pattern(filename_pattern) if filename_pattern else None
         self.extract_inline_urls = extract_inline_urls
+
+        # Handle date regex separately - compile it directly without conversion
+        self.date_regex = None
+        if date_regex:
+            try:
+                self.date_regex = re.compile(date_regex)
+                logger.info(f"Date extraction regex compiled: {date_regex}")
+            except re.error as e:
+                logger.error(f"Invalid date regex pattern: {date_regex} - {e}")
+                self.date_regex = None
 
         if filename_pattern:
             logger.info(f"MetadataExtractor initialized with pattern: {filename_pattern}")
@@ -51,17 +63,25 @@ class MetadataExtractor:
         Returns:
             Dictionary of extracted metadata fields, empty dict if no pattern or no match
         """
-        if not self.regex:
-            return {}
+        metadata = {}
 
-        match = self.regex.match(filename)
-        if match:
-            extracted = match.groupdict()
-            logger.debug(f"Extracted metadata from {filename}: {extracted}")
-            return extracted
+        # First try template pattern extraction
+        if self.regex:
+            match = self.regex.match(filename)
+            if match:
+                metadata.update(match.groupdict())
+                logger.debug(f"Extracted metadata from {filename}: {metadata}")
 
-        logger.debug(f"No metadata match for {filename} with pattern {self.pattern}")
-        return {}
+        # Then try date regex extraction
+        if self.date_regex:
+            date_match = self.date_regex.search(filename)
+            if date_match:
+                # Get the first capturing group or the whole match
+                date_str = date_match.group(1) if date_match.groups() else date_match.group(0)
+                metadata['date'] = date_str
+                logger.debug(f"Extracted date from {filename}: {date_str}")
+
+        return metadata
 
     def extract_inline_url(self, content: str) -> Tuple[Optional[str], str]:
         """
