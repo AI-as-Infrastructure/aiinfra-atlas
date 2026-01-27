@@ -20,10 +20,12 @@ from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.schema import Document
 
-from backend.modules.corpus_config import CorpusConfig, CorpusFilter
+from backend.modules.corpus_config import CorpusConfig, FilterDefinition
 from backend.modules.github_corpus import GitHubCorpusManager
 from backend.modules.build_progress import BuildProgressTracker
 from backend.modules.system_requirements import SystemRequirementsChecker
+from backend.modules.metadata_extractor import MetadataExtractor
+from backend.modules.url_builder import URLBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +54,15 @@ class UniversalCorpusBuilder:
             output_dir = Path("backend/corpus/tmp")
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Initialize metadata extractor and URL builder
+        self.metadata_extractor = MetadataExtractor(
+            filename_pattern=self.config.metadata.get('filename_pattern'),
+            extract_inline_urls=self.config.metadata.get('extract_inline_urls', False)
+        )
+        self.url_builder = URLBuilder(
+            self.config.metadata.get('source_url_template')
+        )
 
     async def build(self, progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
         """
@@ -190,7 +201,7 @@ class UniversalCorpusBuilder:
         self.progress_tracker.total_docs = len(self.documents)
 
     def _apply_filters(self, documents: List[Document]) -> List[Document]:
-        """Apply configured filters to documents."""
+        """Apply configured filters and enrich with comprehensive metadata."""
         if not self.config.filters:
             return documents
 
@@ -198,18 +209,38 @@ class UniversalCorpusBuilder:
         for doc in documents:
             matched_filter = self._match_document_to_filter(doc)
             if matched_filter:
-                # Add filter metadata
-                doc.metadata["corpus"] = matched_filter.id
-                doc.metadata["filter_1"] = matched_filter.id  # For 2-filter system
-                if matched_filter.label:
-                    doc.metadata["corpus_label"] = matched_filter.label
+                # Get source filename
+                source_path = doc.metadata.get("source", "")
+                filename = Path(source_path).name
+
+                # Core metadata (always present)
+                doc.metadata["source_filename"] = filename
+                doc.metadata["filter_1"] = matched_filter.id
+                doc.metadata["corpus"] = matched_filter.id  # Legacy compatibility
+                doc.metadata["corpus_label"] = matched_filter.label
+
+                # Extract custom metadata from filename
+                extracted = self.metadata_extractor.extract_from_filename(filename)
+                doc.metadata.update(extracted)
+
+                # Extract inline URL from content if configured
+                inline_url, cleaned_content = self.metadata_extractor.extract_inline_url(doc.page_content)
+                if inline_url:
+                    doc.metadata["source_url"] = inline_url
+                    doc.page_content = cleaned_content  # Remove URL line from content
+                    logger.debug(f"Extracted inline URL for {filename}: {inline_url}")
+                elif self.url_builder.template:
+                    # Fallback to template-generated URL if no inline URL found
+                    source_url = self.url_builder.build_url(**extracted)
+                    if source_url:
+                        doc.metadata["source_url"] = source_url
 
                 filtered_docs.append(doc)
 
         logger.info(f"Filtered {len(documents)} documents to {len(filtered_docs)}")
         return filtered_docs
 
-    def _match_document_to_filter(self, doc: Document) -> Optional[CorpusFilter]:
+    def _match_document_to_filter(self, doc: Document) -> Optional[FilterDefinition]:
         """Match document to appropriate filter based on patterns."""
         for filter_def in self.config.filters:
             # Check pattern match
@@ -272,6 +303,18 @@ class UniversalCorpusBuilder:
             # Split document
             try:
                 chunks = splitter.split_documents([doc])
+
+                # Add chunk-specific metadata
+                filename = doc.metadata.get("source_filename", f"doc_{i}")
+                parent_id = Path(filename).stem
+
+                for chunk_idx, chunk in enumerate(chunks):
+                    # Unique chunk ID
+                    chunk.metadata["chunk_id"] = f"{parent_id}_chunk_{chunk_idx}"
+                    chunk.metadata["chunk_index"] = chunk_idx
+                    chunk.metadata["parent_doc_id"] = parent_id
+                    chunk.metadata["total_chunks"] = len(chunks)
+
                 all_chunks.extend(chunks)
             except Exception as e:
                 logger.warning(f"Error splitting document: {e}")

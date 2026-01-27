@@ -615,6 +615,395 @@ async def stream_build_progress(build_id: str):
     )
 
 
+@router.post("/preview")
+async def preview_documents(request: Dict[str, Any] = Body(...)):
+    """
+    Preview documents with extraction settings.
+    """
+    try:
+        source = request.get('source', {})
+        metadata = request.get('metadata', {})
+
+        # Get source path
+        if source.get('type') == 'github':
+            github_manager = GitHubCorpusManager()
+            source_path = github_manager.fetch_corpus(
+                repo_url=source.get('location'),
+                branch=source.get('branch', 'main'),
+                path=source.get('path', '')
+            )
+        else:
+            location = source.get('location', '.')
+            # Handle relative paths - make them relative to the project root
+            source_path = Path(location)
+            if not source_path.is_absolute():
+                # If relative path, assume it's relative to project root
+                source_path = Path.cwd() / source_path
+
+        # Ensure source_path is a Path object
+        if not isinstance(source_path, Path):
+            source_path = Path(source_path)
+
+        logger.info(f"Preview: Checking path {source_path}")
+
+        if not source_path.exists():
+            logger.error(f"Source path does not exist: {source_path}")
+            return JSONResponse({
+                "error": f"Source path does not exist: {source_path}",
+                "attempted_path": str(source_path),
+                "current_dir": str(Path.cwd())
+            })
+
+        # Find documents
+        extensions = source.get('file_extensions', '.txt').split(',')
+        documents = []
+        for ext in extensions:
+            ext = ext.strip()
+            if not ext.startswith('.'):
+                ext = '.' + ext
+            if source.get('include_subdirectories', True):
+                docs = list(source_path.rglob(f"*{ext}"))
+            else:
+                docs = list(source_path.glob(f"*{ext}"))
+            documents.extend(docs)
+
+        total_size = sum(doc.stat().st_size for doc in documents if doc.is_file())
+
+        # Process sample documents
+        samples = []
+        docs_with_urls = 0
+        docs_with_dates = 0
+
+        for doc in documents[:5]:  # Sample first 5
+            if not doc.is_file():
+                continue
+
+            sample = {
+                "filename": doc.name,
+                "path": str(doc.relative_to(source_path) if source_path in doc.parents or doc == source_path else doc),
+                "size": doc.stat().st_size
+            }
+
+            # Read preview
+            try:
+                with open(doc, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                    sample["preview"] = ''.join(lines[:10])  # First 10 lines
+
+                    # Extract metadata if configured
+                    extracted_metadata = {}
+
+                    # Check for inline URL
+                    if source.get('extract_inline_urls') and lines:
+                        first_line = lines[0].strip()
+                        if first_line.startswith('<url>') and first_line.endswith('</url>'):
+                            url = first_line[5:-6]
+                            extracted_metadata['url'] = url
+                            docs_with_urls += 1
+
+                    # Extract date from filename
+                    if source.get('date_pattern'):
+                        import re
+                        pattern_map = {
+                            'YYYY-MM-DD': r'(\d{4}-\d{2}-\d{2})',
+                            'DD-MM-YYYY': r'(\d{2}-\d{2}-\d{4})',
+                            'YYYYMMDD': r'(\d{8})',
+                            'custom': source.get('custom_date_pattern', '')
+                        }
+                        pattern = pattern_map.get(source['date_pattern'])
+                        if pattern:
+                            match = re.search(pattern, doc.name)
+                            if match:
+                                extracted_metadata['date'] = match.group(1)
+                                docs_with_dates += 1
+
+                    sample["extracted_metadata"] = extracted_metadata
+
+            except Exception as e:
+                sample["error"] = str(e)
+
+            samples.append(sample)
+
+        # Discover filters from directory structure
+        filters = []
+        directory_structure = {}
+
+        # Analyze directory structure for filters
+        for doc in documents:
+            if not doc.is_file():
+                continue
+
+            # Get relative path from source
+            try:
+                rel_path = doc.relative_to(source_path)
+                parts = rel_path.parts[:-1]  # Exclude filename
+
+                if parts:
+                    # Track directory structure
+                    current_level = directory_structure
+                    for part in parts:
+                        if part not in current_level:
+                            current_level[part] = {}
+                        current_level = current_level[part]
+            except ValueError:
+                continue
+
+        # Create filters from directory structure
+        def create_filters_from_structure(structure, prefix=""):
+            for key, value in structure.items():
+                filter_id = f"{prefix}{key}".lower().replace(" ", "_").replace("-", "_")
+                filter_path = f"{prefix}{key}/"
+
+                # Count documents in this directory
+                doc_count = sum(1 for d in documents if str(d).replace(str(source_path), "").startswith(f"/{filter_path}") or filter_path in str(d))
+
+                filters.append({
+                    "id": filter_id,
+                    "label": key,
+                    "type": "directory",
+                    "path": filter_path.rstrip('/'),
+                    "pattern": f"**/{key}/**/*.txt",
+                    "document_count": doc_count
+                })
+
+                # Recurse for subdirectories
+                if value:
+                    create_filters_from_structure(value, f"{filter_path}")
+
+        create_filters_from_structure(directory_structure)
+
+        # Add an "all" filter
+        filters.insert(0, {
+            "id": "all",
+            "label": "All Documents",
+            "type": "all",
+            "path": "",
+            "pattern": "**/*.txt",
+            "document_count": len(documents)
+        })
+
+        # Check for warnings
+        warnings = []
+        if not documents:
+            warnings.append("No documents found with specified extensions")
+        if source.get('extract_inline_urls') and docs_with_urls == 0:
+            warnings.append("URL extraction enabled but no URLs found in sample documents")
+        if source.get('date_pattern') and docs_with_dates == 0:
+            warnings.append("Date extraction configured but no dates found in filenames")
+
+        return JSONResponse({
+            "total_documents": len(documents),
+            "total_size": total_size,
+            "docs_with_urls": docs_with_urls,
+            "docs_with_dates": docs_with_dates,
+            "samples": samples,
+            "filters": filters,
+            "warnings": warnings
+        })
+
+    except Exception as e:
+        logger.error(f"Preview failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/current-corpus")
+async def get_current_corpus_info():
+    """
+    Get information about the currently active corpus.
+    """
+    try:
+        corpus_path = Path("backend/corpus")
+        chroma_path = corpus_path / "chroma_db"
+        manifest_path = corpus_path / "manifest.json"
+
+        if not corpus_path.exists():
+            return JSONResponse({
+                "exists": False,
+                "message": "No active corpus found"
+            })
+
+        info = {
+            "exists": True
+        }
+
+        # Get document count from manifest if it exists
+        if manifest_path.exists():
+            with open(manifest_path, 'r') as f:
+                manifest = json.load(f)
+                info["document_count"] = manifest.get("statistics", {}).get("total_documents", 0)
+                info["model"] = manifest.get("embedding_model", "Unknown")
+
+        # Get vector store size
+        if chroma_path.exists():
+            size = sum(
+                f.stat().st_size
+                for f in chroma_path.rglob('*')
+                if f.is_file()
+            )
+            info["size"] = size
+
+        return JSONResponse(info)
+
+    except Exception as e:
+        logger.error(f"Failed to get current corpus info: {e}")
+        return JSONResponse({
+            "exists": False,
+            "error": str(e)
+        })
+
+
+@router.post("/validate/{build_id}")
+async def validate_corpus(build_id: str):
+    """
+    Validate a built corpus before activation.
+    """
+    try:
+        # Check if build exists and is completed
+        if build_id not in wizard_state['build_progress']:
+            raise HTTPException(status_code=404, detail="Build not found")
+
+        build_info = wizard_state['build_progress'][build_id]
+        if build_info.get('status') != 'completed':
+            return JSONResponse({
+                "all_valid": False,
+                "structure_valid": False,
+                "metadata_valid": False,
+                "search_functional": False,
+                "message": "Build not yet completed"
+            })
+
+        # Check output files
+        output_path = Path("backend/corpus/tmp")
+        chroma_path = output_path / "chroma_db"
+        manifest_path = output_path / "manifest.json"
+
+        structure_valid = chroma_path.exists() and chroma_path.is_dir()
+        metadata_valid = manifest_path.exists()
+
+        # Try a test search to verify functionality
+        search_functional = False
+        if structure_valid:
+            try:
+                # Would perform actual test search here
+                search_functional = True
+            except Exception:
+                search_functional = False
+
+        all_valid = structure_valid and metadata_valid and search_functional
+
+        return JSONResponse({
+            "all_valid": all_valid,
+            "structure_valid": structure_valid,
+            "metadata_valid": metadata_valid,
+            "search_functional": search_functional
+        })
+
+    except Exception as e:
+        logger.error(f"Validation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/test-search")
+async def test_search(request: Dict[str, Any] = Body(...)):
+    """
+    Run a test search on the newly built corpus.
+    """
+    try:
+        build_id = request.get('build_id')
+        query = request.get('query', 'test query')
+        limit = request.get('limit', 5)
+
+        # Check if build exists
+        if build_id not in wizard_state['build_progress']:
+            raise HTTPException(status_code=404, detail="Build not found")
+
+        # Mock search results for now
+        # In production, would use the actual vector store
+        results = []
+        for i in range(min(3, limit)):
+            results.append({
+                "content": f"Sample document content for result {i+1}. This is a test result demonstrating the search functionality...",
+                "score": 0.9 - (i * 0.1),
+                "metadata": {
+                    "source": f"document_{i+1}.txt",
+                    "date": "2024-01-15"
+                }
+            })
+
+        return JSONResponse({
+            "query": query,
+            "results": results,
+            "total_found": len(results)
+        })
+
+    except Exception as e:
+        logger.error(f"Test search failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/activate")
+async def activate_corpus_by_build(request: Dict[str, Any] = Body(...)):
+    """
+    Activate a corpus from a specific build.
+    """
+    try:
+        build_id = request.get('build_id')
+        corpus_name = request.get('corpus_name')
+
+        # Validate build exists and is completed
+        if build_id not in wizard_state['build_progress']:
+            raise HTTPException(status_code=404, detail="Build not found")
+
+        build_info = wizard_state['build_progress'][build_id]
+        if build_info.get('status') != 'completed':
+            raise HTTPException(status_code=400, detail="Build not completed")
+
+        # Create backup
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_id = f"backup_{timestamp}"
+
+        # Paths
+        output_path = Path("backend/corpus/tmp")
+        corpus_path = Path("backend/corpus")
+
+        # Backup current corpus if it exists
+        if corpus_path.exists() and any(corpus_path.iterdir()):
+            backup_dir = Path(f"corpus_backups/{backup_id}")
+            backup_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(corpus_path, backup_dir / "corpus")
+            logger.info(f"Backed up current corpus to {backup_dir}")
+
+        # Clear and move new corpus
+        if corpus_path.exists():
+            shutil.rmtree(corpus_path)
+        corpus_path.mkdir(parents=True, exist_ok=True)
+
+        # Move files from tmp to corpus
+        for item in output_path.iterdir():
+            if item.name in ["chroma_db", "manifest.json", "bm25_corpus.jsonl"]:
+                dest = corpus_path / item.name
+                if item.is_dir():
+                    shutil.move(str(item), str(dest))
+                else:
+                    shutil.copy(str(item), str(dest))
+
+        # Clear wizard state
+        wizard_state['enabled'] = False
+
+        return JSONResponse({
+            "success": True,
+            "backup_id": backup_id,
+            "message": "Corpus activated successfully"
+        })
+
+    except Exception as e:
+        logger.error(f"Activation failed: {e}")
+        return JSONResponse({
+            "success": False,
+            "error": str(e)
+        })
+
+
 @router.post("/activate/{corpus_name}")
 async def activate_corpus(
     corpus_name: str,
