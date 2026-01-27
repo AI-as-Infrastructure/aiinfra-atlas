@@ -648,9 +648,21 @@ async def build_corpus(
             "mode": build_request.mode
         }
 
-        # Start build in background
+        # Start build in background - use asyncio to ensure proper async execution
+        import asyncio
+
+        # Create a new event loop for the background task
+        def run_build_in_background(build_id: str, config: CorpusConfig):
+            """Wrapper to run async build task in background."""
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(_build_corpus_task(build_id, config))
+            finally:
+                loop.close()
+
         background_tasks.add_task(
-            _build_corpus_task,
+            run_build_in_background,
             build_id,
             config
         )
