@@ -179,6 +179,17 @@ class UniversalCorpusBuilder:
         """Load documents from source directory."""
         logger.info(f"Loading documents from {source_path}")
 
+        # Update progress to show we're starting
+        if self.progress_tracker.callback:
+            await self.progress_tracker.callback({
+                "status": "building",
+                "percentage": 0,
+                "processed_documents": 0,
+                "total_documents": 0,
+                "current_document": "Scanning for documents...",
+                "message": "Loading documents from source directory"
+            })
+
         all_docs = []
 
         # Handle file_extensions from SourceConfig
@@ -227,6 +238,17 @@ class UniversalCorpusBuilder:
 
         self.documents = all_docs
         self.progress_tracker.total_docs = len(self.documents)
+
+        # Update progress with document count
+        if self.progress_tracker.callback:
+            await self.progress_tracker.callback({
+                "status": "building",
+                "percentage": 5,
+                "processed_documents": 0,
+                "total_documents": len(self.documents),
+                "current_document": f"Loaded {len(self.documents)} documents",
+                "message": f"Documents loaded successfully: {len(self.documents)} files"
+            })
 
     def _apply_filters(self, documents: List[Document]) -> List[Document]:
         """Apply configured filters and enrich with comprehensive metadata."""
@@ -328,6 +350,17 @@ class UniversalCorpusBuilder:
         """Create vector store with documents."""
         logger.info("Creating vector store...")
 
+        # Send initial progress update
+        if self.progress_tracker.callback:
+            await self.progress_tracker.callback({
+                "status": "building",
+                "percentage": 15,
+                "processed_documents": 0,
+                "total_documents": len(self.documents),
+                "current_document": "Starting document processing...",
+                "message": "Preparing to create vector store"
+            })
+
         # Split documents into chunks
         splitter = self._get_text_splitter()
         all_chunks = []
@@ -365,7 +398,25 @@ class UniversalCorpusBuilder:
 
             self.progress_tracker.increment_processed()
 
+            # Send progress update every 5 documents or on last document
+            if (i + 1) % 5 == 0 or (i + 1) == len(self.documents):
+                if self.progress_tracker.callback:
+                    progress = self.progress_tracker.get_progress()
+                    progress["current_document"] = f"Processing document {i+1}/{len(self.documents)}"
+                    await self.progress_tracker.callback(progress)
+
         logger.info(f"Created {len(all_chunks)} chunks from {len(self.documents)} documents")
+
+        # Update progress for embedding phase
+        if self.progress_tracker.callback:
+            await self.progress_tracker.callback({
+                "status": "building",
+                "percentage": 50,
+                "processed_documents": len(self.documents),
+                "total_documents": len(self.documents),
+                "current_document": f"Creating embeddings for {len(all_chunks)} chunks...",
+                "message": "Generating vector embeddings"
+            })
 
         # Create vector store
         persist_dir = self.output_dir / "chroma_db"
@@ -384,6 +435,17 @@ class UniversalCorpusBuilder:
         # Persist the vector store
         self.vector_store.persist()
         logger.info(f"Vector store created and persisted to {persist_dir}")
+
+        # Update progress
+        if self.progress_tracker.callback:
+            await self.progress_tracker.callback({
+                "status": "building",
+                "percentage": 75,
+                "processed_documents": len(self.documents),
+                "total_documents": len(self.documents),
+                "current_document": "Vector store created successfully",
+                "message": "Finalizing corpus build"
+            })
 
     def _get_text_splitter(self):
         """Get appropriate text splitter based on configuration."""

@@ -1320,26 +1320,33 @@ async def _build_corpus_task(build_id: str, config: CorpusConfig):
     """
     Background task to build corpus using the universal corpus builder.
     """
+    logger.info(f"Starting build task for build_id: {build_id}")
     try:
         # Import the corpus builder from backend modules
         from backend.modules.corpus_builder import UniversalCorpusBuilder
 
-        # Update status
+        # Update status to show task started
         wizard_state['build_progress'][build_id]['status'] = 'building'
+        wizard_state['build_progress'][build_id]['current_document'] = 'Initializing corpus builder...'
+        logger.info(f"Build task initialized for {config.metadata.name}")
 
         # Create progress callback
         async def progress_callback(progress_data):
             """Update wizard state with progress."""
+            logger.debug(f"Progress update for {build_id}: {progress_data.get('current_document', 'N/A')}")
             wizard_state['build_progress'][build_id].update(progress_data)
 
         # Initialize builder
         mode = wizard_state['build_progress'][build_id].get('mode', 'cpu')
         # Use the tmp directory for corpus building
         output_dir = Path("backend/corpus/tmp")
+        logger.info(f"Creating UniversalCorpusBuilder with mode={mode}, output={output_dir}")
         builder = UniversalCorpusBuilder(config, mode, output_dir)
+        logger.info("Builder created successfully, starting build...")
 
         # Build corpus
         results = await builder.build(progress_callback)
+        logger.info(f"Build completed with results: {results}")
 
         # Mark as completed
         wizard_state['build_progress'][build_id].update({
