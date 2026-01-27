@@ -42,11 +42,15 @@ config = get_config()
 retriever_config = config.get("retriever_config", {})
 
 # Try to get LLM from retriever instance
-LLM = getattr(retriever_instance, "llm", None)
-if LLM is None:
-    # We need an LLM from the retriever - no fallback available
-    logger.error("No LLM available from retriever instance")
-    raise ValueError("No LLM available from the retriever instance. The retriever must provide an LLM.")
+LLM = None
+if retriever_instance is not None:
+    LLM = getattr(retriever_instance, "llm", None)
+    if LLM is None:
+        # We need an LLM from retriever - no fallback available
+        logger.error("No LLM available from retriever instance")
+        raise ValueError("No LLM available from the retriever instance. The retriever must provide an LLM.")
+else:
+    logger.warning("No retriever configured - LLM functionality will not be available until a corpus is set up")
 
 # Extract configuration values for telemetry
 EMBEDDING_MODEL = retriever_config.get("embedding_model", "unknown")

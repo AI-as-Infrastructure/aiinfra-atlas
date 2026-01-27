@@ -69,10 +69,22 @@ def process_query_sync(query_data: Dict[str, Any]) -> Dict[str, Any]:
         if sensitive_contexts:
             pass  # In the future, this could trigger special handling or warnings
         
+        # Check if retriever is available
+        retriever = get_retriever()
+        if retriever is None:
+            logger.error("No corpus configured. Cannot process query.")
+            return {
+                "session_id": session_id,
+                "qa_id": qa_id,
+                "question": question,
+                "answer": "No corpus configured. Please use the corpus wizard to set up a corpus first.",
+                "error": True
+            }
+
         # Step 1: Retrieve documents
         documents, qa_id = retrieve_documents_with_telemetry(
             query=question,
-            retriever=get_retriever(),
+            retriever=retriever,
             session_id=session_id,
             qa_id=qa_id,
             corpus_filter=corpus_filter

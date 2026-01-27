@@ -695,7 +695,39 @@ async def activate_corpus(
 
             # Update RETRIEVER_MODULE in .env files
             retriever_module = retriever_file.stem  # Remove .py extension
-            # This would need to be done manually or through a separate config update
+
+            # Update all .env files
+            env_files = ['config/.env.development', 'config/.env.staging', 'config/.env.production']
+            for env_file in env_files:
+                env_path = Path(env_file)
+                if env_path.exists():
+                    # Read the file
+                    with open(env_path, 'r') as f:
+                        lines = f.readlines()
+
+                    # Update RETRIEVER_MODULE line
+                    updated = False
+                    for i, line in enumerate(lines):
+                        if line.strip().startswith('RETRIEVER_MODULE=') or line.strip().startswith('# RETRIEVER_MODULE='):
+                            lines[i] = f'RETRIEVER_MODULE={retriever_module}\n'
+                            updated = True
+                            break
+
+                    # If not found, add it
+                    if not updated:
+                        # Find a good place to insert it (after TEST_TARGET if it exists)
+                        insert_index = len(lines)
+                        for i, line in enumerate(lines):
+                            if line.strip().startswith('TEST_TARGET='):
+                                insert_index = i + 1
+                                break
+                        lines.insert(insert_index, f'RETRIEVER_MODULE={retriever_module}\n')
+
+                    # Write back
+                    with open(env_path, 'w') as f:
+                        f.writelines(lines)
+
+                    logger.info(f"Updated RETRIEVER_MODULE in {env_file} to {retriever_module}")
 
         # Clean up tmp directory
         shutil.rmtree(output_path)

@@ -279,9 +279,12 @@ def _initialize_retriever(config: Dict[str, Any]) -> None:
         retriever_config = config.get("retriever_config", {})
         _retriever_instance = load_retriever(config=retriever_config)
         if _retriever_instance is None:
-            raise ValueError("load_retriever returned None")
-        _retriever = _retriever_instance
-        logger.debug("Retriever initialized successfully")
+            logger.warning("No retriever configured. Please use the corpus wizard to set up a corpus.")
+            # Set to None but don't raise an error - allows corpus wizard to work
+            _retriever = None
+        else:
+            _retriever = _retriever_instance
+            logger.debug("Retriever initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize retriever: {e}")
         raise

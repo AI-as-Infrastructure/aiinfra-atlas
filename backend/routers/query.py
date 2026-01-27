@@ -149,12 +149,20 @@ async def ask_stream(data: dict = Body(...)):
                 if sensitive_contexts:
                     logger.warning(f"Detected sensitive contexts for session {session_id}: {sensitive_contexts}")
 
+                # Check if retriever is available
+                retriever = get_retriever()
+                if retriever is None:
+                    error_msg = "No corpus configured. Please use the corpus wizard to set up a corpus first."
+                    logger.error(error_msg)
+                    yield f"data: {json.dumps({'error': error_msg})}\n\n"
+                    return
+
                 # Step 1: HNSW retrieval with per-corpus balanced reranking
                 final_k = get_search_k()
 
                 documents, qa_id = retrieve_documents_with_telemetry(
                     query=question,
-                    retriever=get_retriever(),
+                    retriever=retriever,
                     session_id=session_id,
                     qa_id=qa_id,
                     corpus_filter=corpus_filter,
