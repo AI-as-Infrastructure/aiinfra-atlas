@@ -699,6 +699,7 @@ async def stream_build_progress(build_id: str):
 
     async def event_generator():
         last_update = None
+        keepalive_counter = 0
         while True:
             current_progress = wizard_state['build_progress'].get(build_id)
             if not current_progress:
@@ -708,6 +709,14 @@ async def stream_build_progress(build_id: str):
             if current_progress != last_update:
                 yield f"data: {json.dumps(current_progress)}\n\n"
                 last_update = current_progress.copy()
+                keepalive_counter = 0
+            else:
+                # Send keepalive every 10 seconds if no updates
+                keepalive_counter += 1
+                if keepalive_counter >= 10:
+                    # Send a comment to keep connection alive
+                    yield f": keepalive\n\n"
+                    keepalive_counter = 0
 
             # Check if completed
             if current_progress.get('status') in ['completed', 'failed']:

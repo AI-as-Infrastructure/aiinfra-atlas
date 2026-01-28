@@ -425,11 +425,63 @@ class UniversalCorpusBuilder:
         # Generate collection name from metadata
         collection_name = self.config.metadata.name.lower().replace(" ", "_").replace("-", "_")
 
-        self.vector_store = Chroma.from_documents(
-            documents=all_chunks,
-            embedding=self.embeddings,
+        # Batch process embeddings to avoid blocking
+        logger.info(f"Creating vector store with {len(all_chunks)} chunks in batches...")
+        batch_size = 100  # Process 100 chunks at a time
+
+        # Initialize Chroma client
+        from chromadb import Client
+        from chromadb.config import Settings
+        client = Client(Settings(
+            persist_directory=str(persist_dir),
+            anonymized_telemetry=False
+        ))
+
+        # Create or get collection
+        try:
+            collection = client.get_collection(name=collection_name)
+            client.delete_collection(name=collection_name)
+        except:
+            pass
+
+        collection = client.create_collection(
+            name=collection_name,
+            embedding_function=self.embeddings
+        )
+
+        # Process in batches
+        for i in range(0, len(all_chunks), batch_size):
+            batch = all_chunks[i:i+batch_size]
+            batch_end = min(i+batch_size, len(all_chunks))
+
+            # Update progress
+            progress_pct = 50 + (40 * batch_end / len(all_chunks))  # 50-90% range
+            if self.progress_tracker.callback:
+                await self.progress_tracker.callback({
+                    "status": "building",
+                    "percentage": progress_pct,
+                    "processed_documents": len(self.documents),
+                    "total_documents": len(self.documents),
+                    "current_document": f"Processing embeddings batch {i//batch_size + 1}/{(len(all_chunks) + batch_size - 1)//batch_size}",
+                    "message": f"Generating embeddings ({batch_end}/{len(all_chunks)} chunks)"
+                })
+
+            # Add documents to collection
+            collection.add(
+                ids=[doc.metadata.get("chunk_id", f"chunk_{i+j}") for j, doc in enumerate(batch)],
+                documents=[doc.page_content for doc in batch],
+                metadatas=[doc.metadata for doc in batch]
+            )
+
+            # Small async sleep to allow other tasks
+            await asyncio.sleep(0.1)
+
+        # Create Chroma vector store wrapper
+        from langchain_community.vectorstores import Chroma
+        self.vector_store = Chroma(
+            client=client,
             collection_name=collection_name,
-            persist_directory=str(persist_dir)
+            embedding_function=self.embeddings
         )
 
         # Persist the vector store
