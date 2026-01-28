@@ -70,8 +70,9 @@ if command -v uv &>/dev/null || command -v ~/.local/bin/uv &>/dev/null; then
 
         # Install with uv using optional dependency
         # Use --extra-index-url (not --index-url) so it checks both PyPI and PyTorch repos
+        # Use --index-strategy unsafe-best-match to allow finding best version across all indexes
         if [ -n "$TORCH_INDEX" ]; then
-            $UV_CMD pip install -e ".[$TORCH_EXTRA]" --extra-index-url "$TORCH_INDEX"
+            $UV_CMD pip install -e ".[$TORCH_EXTRA]" --extra-index-url "$TORCH_INDEX" --index-strategy unsafe-best-match
         else
             $UV_CMD pip install -e ".[$TORCH_EXTRA]"
         fi
@@ -83,12 +84,12 @@ if command -v uv &>/dev/null || command -v ~/.local/bin/uv &>/dev/null; then
         else
             echo "⚠️  GPU PyTorch installed but GPU not accessible - falling back to CPU"
             echo "   This may be due to CUDA driver issues or unsupported compute capability"
-            $UV_CMD pip install -e ".[cpu]" --extra-index-url https://download.pytorch.org/whl/cpu
+            $UV_CMD pip install -e ".[cpu]" --extra-index-url https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match
             echo "cpu" > .venv/.corpus_mode
         fi
     else
         echo "💻 No GPU detected - installing CPU-only variant"
-        $UV_CMD pip install -e ".[cpu]" --extra-index-url https://download.pytorch.org/whl/cpu
+        $UV_CMD pip install -e ".[cpu]" --extra-index-url https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match
         echo "cpu" > .venv/.corpus_mode
     fi
 else

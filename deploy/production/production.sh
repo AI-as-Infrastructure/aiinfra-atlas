@@ -117,13 +117,61 @@ echo "Setting up Python environment..."
 cd $APP_DIR
 python3.10 -m venv $APP_DIR/.venv
 source $APP_DIR/.venv/bin/activate
-pip install --upgrade pip
-if [ ! -f "$APP_DIR/config/requirements.lock" ]; then
-    echo "❌ Error: $APP_DIR/config/requirements.lock not found. Run 'make l' to generate it before deployment."
+
+# Install uv if not available
+if ! command -v uv &>/dev/null; then
+    echo "📦 Installing uv for faster dependency management..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    export PATH="$HOME/.local/bin:$PATH"
+fi
+
+# Verify uv is available
+if ! command -v uv &>/dev/null && ! command -v ~/.local/bin/uv &>/dev/null; then
+    echo "❌ Error: uv installation failed. Cannot proceed."
     exit 1
 fi
-echo "Installing from requirements.lock (locked dependencies, CPU default)..."
-pip install -r $APP_DIR/config/requirements.lock
+
+UV_CMD=$(command -v uv || echo ~/.local/bin/uv)
+echo "✅ Using uv for dependency installation"
+
+# Detect GPU and install appropriate PyTorch variant
+echo "🎮 Detecting GPU capability..."
+if command -v nvidia-smi &>/dev/null; then
+    echo "✅ NVIDIA GPU detected"
+    CUDA_VERSION=$(nvidia-smi | grep "CUDA Version" | awk '{print $9}' | cut -d. -f1,2 | tr -d '.' || echo "124")
+    echo "   Detected CUDA version code: $CUDA_VERSION"
+
+    if [ "$CUDA_VERSION" = "118" ]; then
+        echo "   Installing CUDA 11.8 variant"
+        TORCH_EXTRA="cuda118"
+        TORCH_INDEX="https://download.pytorch.org/whl/cu118"
+    elif [ "$CUDA_VERSION" = "121" ]; then
+        echo "   Installing CUDA 12.1 variant"
+        TORCH_EXTRA="cuda121"
+        TORCH_INDEX=""
+    else
+        echo "   Installing CUDA 12.4+ nightly variant"
+        TORCH_EXTRA="cuda124-nightly"
+        TORCH_INDEX="https://download.pytorch.org/whl/nightly/cu124"
+    fi
+
+    if [ -n "$TORCH_INDEX" ]; then
+        $UV_CMD pip install -e ".[$TORCH_EXTRA]" --extra-index-url "$TORCH_INDEX" --index-strategy unsafe-best-match
+    else
+        $UV_CMD pip install -e ".[$TORCH_EXTRA]"
+    fi
+
+    # Verify GPU works
+    if python -c "import torch; exit(0 if torch.cuda.is_available() else 1)" 2>/dev/null; then
+        echo "✅ GPU support confirmed"
+    else
+        echo "⚠️  GPU detected but not accessible, falling back to CPU"
+        $UV_CMD pip install -e ".[cpu]" --extra-index-url https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match
+    fi
+else
+    echo "💻 No GPU detected - installing CPU-only variant"
+    $UV_CMD pip install -e ".[cpu]" --extra-index-url https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match
+fi
 
 # Set up Python package structure
 echo "Setting up Python package structure..."
