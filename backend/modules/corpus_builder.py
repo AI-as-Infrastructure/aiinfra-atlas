@@ -481,11 +481,17 @@ class UniversalCorpusBuilder:
                     "message": f"Generating embeddings ({batch_end}/{len(all_chunks)} chunks)"
                 })
 
-            # Add documents to collection
+            # Pre-compute embeddings for this batch to avoid blocking
+            batch_texts = [doc.page_content for doc in batch]
+            logger.info(f"Computing embeddings for batch {i//batch_size + 1}")
+            batch_embeddings = self.embeddings.embed_documents(batch_texts)
+
+            # Add documents to collection with pre-computed embeddings
             collection.add(
                 ids=[doc.metadata.get("chunk_id", f"chunk_{i+j}") for j, doc in enumerate(batch)],
-                documents=[doc.page_content for doc in batch],
-                metadatas=[doc.metadata for doc in batch]
+                documents=batch_texts,
+                metadatas=[doc.metadata for doc in batch],
+                embeddings=batch_embeddings
             )
 
             # Small async sleep to allow other tasks
