@@ -30,6 +30,18 @@ from backend.modules.url_builder import URLBuilder
 logger = logging.getLogger(__name__)
 
 
+class ChromaEmbeddingFunction:
+    """Wrapper to make LangChain embeddings compatible with ChromaDB."""
+
+    def __init__(self, langchain_embeddings):
+        self.embeddings = langchain_embeddings
+
+    def __call__(self, input: List[str]) -> List[List[float]]:
+        """Embed a list of texts and return embeddings."""
+        # Use the LangChain embeddings to generate embeddings
+        return self.embeddings.embed_documents(input)
+
+
 class UniversalCorpusBuilder:
     """Universal corpus builder that uses configuration to build any corpus."""
 
@@ -444,9 +456,12 @@ class UniversalCorpusBuilder:
         except:
             pass
 
+        # Wrap LangChain embeddings for ChromaDB compatibility
+        chroma_embeddings = ChromaEmbeddingFunction(self.embeddings)
+
         collection = client.create_collection(
             name=collection_name,
-            embedding_function=self.embeddings
+            embedding_function=chroma_embeddings
         )
 
         # Process in batches
