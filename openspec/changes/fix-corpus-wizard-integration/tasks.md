@@ -7,13 +7,15 @@
 - [ ] Fix the `get_corpus_options()` method to properly extract filter values
 - [ ] Test that filters appear correctly in the UI after corpus activation
 
-## Phase 2: Generate Target Configuration
+## Phase 2: Add Target Configuration UI to Wizard
 
-- [ ] Create a target configuration template with default values for k20_claude4
-- [ ] Add target generation logic to the validation step in corpus_wizard.py
-- [ ] Generate the target file (k20_claude4.txt) in backend/targets/
-- [ ] Add UI notification about target configuration in the wizard
-- [ ] Document how users can create additional target configurations
+- [ ] Create a new wizard step/page for target configuration
+- [ ] Add form fields for LLM provider, model, and search parameters
+- [ ] Pre-populate with k20_claude4 defaults as suggestions
+- [ ] Create API endpoint to save target configuration
+- [ ] Generate target file based on user selections
+- [ ] Display unified configuration combining corpus and target settings
+- [ ] Add configuration review before activation
 - [ ] Clean up any obsolete target files from backend/targets/
 
 ## Phase 3: Update Environment Variables
@@ -32,6 +34,14 @@
 - [ ] Verify the site title displays correctly
 - [ ] Test creating custom target configurations
 - [ ] Verify backward compatibility with existing corpora
+- [ ] Verify unified configuration is complete:
+  - Check /api/config endpoint returns all fields
+  - Verify TestTargetBox displays complete configuration
+  - Ensure composite_target is correctly generated
+- [ ] Verify telemetry tracking:
+  - Check all config fields appear in Phoenix telemetry
+  - Verify composite_target and component fields are tracked
+  - Ensure no missing attributes in telemetry data
 
 ## Phase 5: Environment Migration
 

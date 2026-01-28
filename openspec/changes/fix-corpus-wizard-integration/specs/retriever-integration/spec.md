@@ -24,9 +24,9 @@ When the retriever processes a query with filters
 Then it should correctly apply both filter levels
 And return only documents matching the filter criteria
 
-### Requirement: Retriever template must match manifest output
+### Requirement: Retriever template SHALL match manifest output
 
-The retriever template used during corpus building must be aligned with the manifest structure produced by the same build process.
+The retriever template used during corpus building SHALL be aligned with the manifest structure produced by the same build process.
 
 #### Scenario: Template generation with correct paths
 

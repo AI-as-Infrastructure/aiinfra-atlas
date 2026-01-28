@@ -8,7 +8,7 @@ This specification defines how the corpus wizard updates environment variables a
 
 ### Requirement: Activation SHALL update environment variables
 
-The corpus activation process must update relevant environment variables to reflect the new corpus configuration.
+The corpus activation process SHALL update relevant environment variables to reflect the new corpus configuration.
 
 #### Scenario: Updating VITE_SITE_TITLE
 
@@ -26,9 +26,9 @@ Then all other variables should remain unchanged
 And the file format should be preserved
 And comments should be maintained
 
-### Requirement: Frontend configuration must be regenerated
+### Requirement: Frontend configuration SHALL be regenerated
 
-After updating environment variables, the frontend configuration must be regenerated to apply the changes.
+After updating environment variables, the frontend configuration SHALL be regenerated to apply the changes.
 
 #### Scenario: Regenerating Vue configuration
 
@@ -46,9 +46,9 @@ Then the activation should not fail completely
 And the user should be notified of the issue
 And manual regeneration instructions should be provided
 
-### Requirement: Environment updates must be safe
+### Requirement: Environment updates SHALL be safe
 
-Environment file modifications must be performed safely with proper validation and rollback capabilities.
+Environment file modifications SHALL be performed safely with proper validation and rollback capabilities.
 
 #### Scenario: Safe environment file updates
 
@@ -68,9 +68,9 @@ And the error details should be logged
 
 ## MODIFIED Requirements
 
-### Requirement: Environment configuration must support corpus metadata
+### Requirement: Environment configuration SHALL support corpus metadata
 
-The environment system must be extended to support corpus-specific metadata beyond just the title.
+The environment system SHALL be extended to support corpus-specific metadata beyond just the title.
 
 #### Scenario: Additional corpus metadata
 
