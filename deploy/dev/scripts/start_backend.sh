@@ -28,10 +28,10 @@ fi
 echo "📦 Activating virtual environment..."
 source .venv/bin/activate
 
-# Install dependencies if needed
-if [ ! -f "config/requirements.lock" ]; then
-    echo "❌ Error: requirements.lock not found!"
-    echo "💡 Please run 'make l' to generate it"
+# Check for pyproject.toml
+if [ ! -f "pyproject.toml" ]; then
+    echo "❌ Error: pyproject.toml not found!"
+    echo "💡 This file is required for dependency management"
     exit 1
 fi
 
@@ -97,7 +97,6 @@ else
     echo "   Install uv for 10-100x faster installs: curl -LsSf https://astral.sh/uv/install.sh | sh"
 
     pip install --upgrade pip
-    pip install -r config/requirements.lock
 
     # Legacy GPU detection for pip fallback
     echo "🎮 Detecting GPU capability..."
@@ -107,29 +106,23 @@ else
         CUDA_VERSION=$(nvidia-smi | grep "CUDA Version" | awk '{print $9}' | cut -d. -f1,2 | tr -d '.' || echo "124")
 
         if [ "$CUDA_VERSION" = "118" ]; then
-            TORCH_INDEX="https://download.pytorch.org/whl/cu118"
+            pip install -e ".[cuda118]" --extra-index-url https://download.pytorch.org/whl/cu118
         elif [ "$CUDA_VERSION" = "121" ]; then
-            TORCH_INDEX="https://download.pytorch.org/whl/cu121"
+            pip install -e ".[cuda121]"
         else
-            TORCH_INDEX="https://download.pytorch.org/whl/nightly/cu124"
-        fi
-
-        pip uninstall torch -y 2>/dev/null || true
-        if [ "$TORCH_INDEX" = "https://download.pytorch.org/whl/nightly/cu124" ]; then
-            pip install --pre torch --index-url $TORCH_INDEX
-        else
-            pip install torch --index-url $TORCH_INDEX
+            pip install -e ".[cuda124-nightly]" --extra-index-url https://download.pytorch.org/whl/nightly/cu124
         fi
 
         if python -c "import torch; exit(0 if torch.cuda.is_available() else 1)" 2>/dev/null; then
             echo "gpu" > .venv/.corpus_mode
         else
+            echo "⚠️  GPU detected but not accessible, falling back to CPU"
+            pip install -e ".[cpu]" --extra-index-url https://download.pytorch.org/whl/cpu
             echo "cpu" > .venv/.corpus_mode
         fi
     else
         echo "💻 No GPU detected"
-        pip uninstall torch -y 2>/dev/null || true
-        pip install torch --index-url https://download.pytorch.org/whl/cpu
+        pip install -e ".[cpu]" --extra-index-url https://download.pytorch.org/whl/cpu
         echo "cpu" > .venv/.corpus_mode
     fi
 fi

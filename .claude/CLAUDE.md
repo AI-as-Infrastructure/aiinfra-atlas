@@ -97,7 +97,7 @@ Note: Frontend dependencies are installed automatically - see Makefile for devel
 - **Vector Store**: ChromaDB with Sentence Transformers (BERT-based embeddings)
 - **Monitoring**: Phoenix (optional), comprehensive telemetry
 - **Deployment**: Python venv, NVM for Node.js version management
-- **Requirements**: System-specific requirements.lock (regenerate with `make l` if needed)
+- **Requirements**: Managed via pyproject.toml with optional dependencies (regenerate lock with `make l` if needed)
 
 ## Configuration
 

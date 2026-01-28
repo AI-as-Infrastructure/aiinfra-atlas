@@ -83,7 +83,7 @@ make p  # Deploy production (includes corpus wizard)
 The corpus wizard requires the following additional dependency:
 - `gitpython==3.1.41` - For GitHub corpus integration
 
-This is included in `config/requirements.txt` and will be installed automatically.
+This is included in `pyproject.toml` and will be installed automatically.
 
 ## Usage
 

@@ -6,6 +6,7 @@ with a flexible system that can handle any corpus structure.
 """
 
 import json
+import yaml
 import hashlib
 import asyncio
 import logging
@@ -177,10 +178,14 @@ class UniversalCorpusBuilder:
         if self.config.source.type == "github":
             logger.info(f"Fetching corpus from GitHub: {self.config.source.location}")
             github_manager = GitHubCorpusManager()
+            # Use sparse_checkout paths if available
+            path = ""
+            if self.config.source.sparse_checkout and len(self.config.source.sparse_checkout) > 0:
+                path = self.config.source.sparse_checkout[0]  # Use first path
             return github_manager.fetch_corpus(
                 repo_url=self.config.source.location,
                 branch=self.config.source.branch or "main",
-                path=self.config.source.path or ""
+                path=path
             )
         else:
             source_path = Path(self.config.source.location)
@@ -549,12 +554,13 @@ class UniversalCorpusBuilder:
             # Small async sleep to allow other tasks
             await asyncio.sleep(0.1)
 
-        # Create Chroma vector store wrapper
+        # Create Chroma vector store wrapper with persist directory
         from langchain_community.vectorstores import Chroma
         self.vector_store = Chroma(
             client=client,
             collection_name=collection_name,
-            embedding_function=self.embeddings
+            embedding_function=self.embeddings,
+            persist_directory=str(persist_dir)
         )
 
         # Persist the vector store
@@ -605,14 +611,14 @@ class UniversalCorpusBuilder:
         filter_1_info = None
         filter_2_info = None
         if self.config.filters:
-            if len(self.config.filters) >= 1:
+            if len(self.config.filters.filters) >= 1:
                 filter_1_info = {
-                    "label": self.config.filters[0].label or self.config.filters[0].id,
+                    "label": self.config.filters.filters[0].label or self.config.filters.filters[0].id,
                     "values": []  # Will be populated from actual documents
                 }
-            if len(self.config.filters) >= 2:
+            if len(self.config.filters.filters) >= 2:
                 filter_2_info = {
-                    "label": self.config.filters[1].label or self.config.filters[1].id,
+                    "label": self.config.filters.filters[1].label or self.config.filters.filters[1].id,
                     "values": []
                 }
 
@@ -648,7 +654,7 @@ class UniversalCorpusBuilder:
             "fields": {
                 "corpus": {
                     "type": "enum",
-                    "values": [f.id for f in self.config.filters]
+                    "values": [f.id for f in self.config.filters.filters]
                 }
             }
         }
@@ -681,7 +687,18 @@ class UniversalCorpusBuilder:
     def _save_config(self) -> Path:
         """Save configuration to output directory."""
         config_path = self.output_dir / "corpus_config.yaml"
-        self.config.to_yaml(str(config_path))
+
+        # Convert config to dict and handle datetime objects
+        config_data = self.config.dict()
+        if 'created_at' in config_data:
+            config_data['created_at'] = config_data['created_at'].isoformat()
+        if 'last_modified' in config_data:
+            config_data['last_modified'] = config_data['last_modified'].isoformat()
+
+        # Save to YAML
+        with open(config_path, 'w') as f:
+            yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+
         logger.info(f"Configuration saved to {config_path}")
         return config_path
 

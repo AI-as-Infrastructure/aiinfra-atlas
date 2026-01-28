@@ -7,7 +7,7 @@ Test suite for the ATLAS AI Infrastructure Research Platform.
 Install test dependencies:
 
 ```bash
-pip install -r config/requirements-test.txt
+uv pip install -e ".[test]"  # or pip install -e ".[test]" if uv not available
 ```
 
 ## Running Tests
@@ -82,7 +82,7 @@ mv tests/backend/telemetry/test_inter_rater_annotation_numbering_integration.py.
    tests/backend/telemetry/test_inter_rater_annotation_numbering_integration.py
 
 # Install backend dependencies
-pip install -r config/requirements.txt
+uv pip install -e ".[cpu]"  # or appropriate variant for your GPU
 
 # Run integration tests
 pytest tests/backend/telemetry/test_inter_rater_annotation_numbering_integration.py
@@ -161,8 +161,8 @@ pytest --lf
 Tests should be run in CI/CD pipeline:
 ```bash
 # Install dependencies
-pip install -r config/requirements.txt
-pip install -r config/requirements-test.txt
+uv pip install -e ".[cpu]"  # or appropriate variant for your GPU
+uv pip install -e ".[test]"  # or pip install -e ".[test]" if uv not available
 
 # Run unit tests only (fast)
 pytest -m unit

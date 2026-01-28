@@ -57,12 +57,21 @@ The backend automatically installs the correct PyTorch version based on your CUD
 ### Latest Generation (RTX 50xx)
 - **CUDA Version:** 12.4+
 - **PyTorch Source:** `https://download.pytorch.org/whl/nightly/cu124` (nightly builds)
-- **Compute Capability:** 12.0+
-- **Status:** ✅ Supported via PyTorch nightly
+- **Compute Capability:** 12.0 (sm_120)
+- **Status:** ⚠️ Limited support - automatic CPU fallback
 
 **Examples:**
 - RTX 5090 (compute 12.0)
 - RTX 5080 (compute 12.0)
+
+**Important RTX 5090 Compatibility Note:**
+As of January 2026, PyTorch does not yet fully support RTX 5090's compute capability 12.0 (sm_120). The system will:
+1. Detect your RTX 5090 correctly
+2. Attempt to use PyTorch nightly builds
+3. Automatically fall back to CPU mode for embeddings if GPU operations fail
+4. Display clear status indicators showing CPU fallback mode
+
+This is a PyTorch limitation, not an ATLAS or WSL issue. Full RTX 5090 support will be available once PyTorch adds sm_120 kernel support.
 
 ## GPU Detection Process
 
@@ -132,16 +141,18 @@ ATLAS works perfectly without a GPU:
 
 The system includes intelligent fallback logic:
 
-### Scenario 1: CUDA Kernel Error
+### Scenario 1: RTX 5090 CUDA Kernel Error
 ```
-⚠️  CUDA error detected, falling back to CPU: no kernel image is available
+🚀 GPU detected: NVIDIA GeForce RTX 5090 (compute capability 12.0)
+⚠️  RTX 50 series detected - PyTorch may not support this yet
+⚠️  CUDA error detected, falling back to CPU: no kernel image is available for execution on the device
 💻 Switching to CPU mode for embeddings
 ✅ Embeddings initialized on CPU (fallback)
 ```
 
-**Cause:** GPU too new for current PyTorch version, incompatible operations
+**Cause:** RTX 5090's compute capability 12.0 (sm_120) not yet supported by PyTorch
 
-**Solution:** System automatically falls back to CPU, continues working
+**Solution:** System automatically falls back to CPU. Wait for PyTorch to add sm_120 support, or use CPU mode
 
 ### Scenario 2: GPU Memory Insufficient
 ```

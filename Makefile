@@ -49,7 +49,7 @@ hansard-analysis: venv ## Run Hansard parliamentary data analysis with visualiza
 .PHONY: venv
 venv: $(VENV_DIR)/bin/activate
 
-$(VENV_DIR)/bin/activate: config/requirements.lock
+$(VENV_DIR)/bin/activate: pyproject.toml
 	@if [ ! -d "$(VENV_DIR)" ]; then \
 		echo "📦 Creating virtual environment..."; \
 		python3 -m venv $(VENV_DIR) 2>/dev/null || { \
@@ -63,9 +63,15 @@ $(VENV_DIR)/bin/activate: config/requirements.lock
 			exit 1; \
 		}; \
 	fi
-	@if [ ! -f "config/requirements.lock" ]; then echo "❌ Missing config/requirements.lock. Run 'make l' first."; exit 1; fi
+	@if [ ! -f "pyproject.toml" ]; then echo "❌ Missing pyproject.toml. This file is required for dependencies."; exit 1; fi
 	@if [ -f "$(VENV_DIR)/bin/pip" ]; then \
-		$(VENV_DIR)/bin/pip install -r config/requirements.lock; \
+		if command -v nvidia-smi &>/dev/null; then \
+			echo "GPU detected - installing GPU variant"; \
+			$(VENV_DIR)/bin/pip install -e ".[cuda121]"; \
+		else \
+			echo "No GPU detected - installing CPU variant"; \
+			$(VENV_DIR)/bin/pip install -e ".[cpu]" --extra-index-url https://download.pytorch.org/whl/cpu; \
+		fi \
 	else \
 		echo "❌ Virtual environment not properly created. Please install python3-venv package."; \
 		exit 1; \

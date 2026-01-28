@@ -32,16 +32,23 @@ fi
 echo "🔌 Activating virtual environment..."
 source .venv/bin/activate
 
-# Check if requirements.lock exists
-if [ ! -f "config/requirements.lock" ]; then
-    echo "❌ Error: config/requirements.lock not found!"
-    echo "💡 Try running 'make l' first to generate the lock file"
+# Check if pyproject.toml exists
+if [ ! -f "pyproject.toml" ]; then
+    echo "❌ Error: pyproject.toml not found!"
+    echo "💡 This file is required for dependency management"
     exit 1
 fi
 
 # Install dependencies
 echo "📥 Installing dependencies..."
-pip install -r config/requirements.lock
+# Install dependencies based on GPU availability
+if command -v nvidia-smi &>/dev/null; then
+    echo "GPU detected - installing GPU variant"
+    pip install -e ".[cuda121]"  # Adjust variant as needed
+else
+    echo "No GPU detected - installing CPU variant"
+    pip install -e ".[cpu]" --extra-index-url https://download.pytorch.org/whl/cpu
+fi
 
 # Check if prepare script exists
 if [ ! -f "utils/scripts/prepare_model.py" ]; then

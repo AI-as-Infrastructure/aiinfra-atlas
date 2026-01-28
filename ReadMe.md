@@ -75,7 +75,7 @@ ATLAS uses a simplified command structure for common operations. Here are the ma
 - `make dsr` - Delete remote staging environment
 
 ### Utilities
-- `make l` - Generate requirements.lock
+- `make l` - Generate requirements.lock from pyproject.toml
 - `make c` - Check Python environment
 - `make vs` - Create vector store (automatically uses GPU if available)
 - `make r` - Generate retriever
@@ -138,7 +138,7 @@ make r       # Generates a compatible retriever using create/create_hansard_retr
 
 Both targets will:
 - Ensure the Python virtual environment is set up and dependencies are installed
-- Use the unified project requirements.txt for consistency
+- Use the unified project pyproject.toml for consistency
 - Output results to the `create/output/` directory
 
 This workflow ensures that your retrievers are always in sync with your vector store schema and configuration. 

@@ -119,7 +119,14 @@ fi
 # Activate venv and install dependencies
 . .venv/bin/activate
 pip install --upgrade pip
-pip install -r config/requirements.lock
+# Install dependencies based on GPU availability
+if command -v nvidia-smi &>/dev/null; then
+    echo "GPU detected - installing GPU variant"
+    pip install -e ".[cuda121]"  # Adjust variant as needed
+else
+    echo "No GPU detected - installing CPU variant"
+    pip install -e ".[cpu]" --extra-index-url https://download.pytorch.org/whl/cpu
+fi
 
 # Ensure correct Node.js version is loaded via nvm before using npm
 cd frontend

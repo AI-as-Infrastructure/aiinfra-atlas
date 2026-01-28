@@ -101,11 +101,19 @@ echo "Environment file updated"
 python3.10 -m venv .venv
 . .venv/bin/activate
 pip install --upgrade pip
-if [ ! -f "config/requirements.lock" ]; then
-  echo "❌ Error: config/requirements.lock not found. Run 'make l' first."
+if [ ! -f "pyproject.toml" ]; then
+  echo "❌ Error: pyproject.toml not found. This file is required for dependencies."
   exit 1
 fi
-pip install -r config/requirements.lock gunicorn
+# Install dependencies based on GPU availability
+if command -v nvidia-smi &>/dev/null; then
+    echo "GPU detected - installing GPU variant"
+    pip install -e ".[cuda121]"  # Adjust variant as needed
+else
+    echo "No GPU detected - installing CPU variant"
+    pip install -e ".[cpu]" --extra-index-url https://download.pytorch.org/whl/cpu
+fi
+pip install gunicorn
 
 # Prepare embedding model if using default model
 EMBEDDING_MODEL=$(grep '^EMBEDDING_MODEL=' "config/.env.staging" | cut -d '=' -f 2- | tr -d '"')

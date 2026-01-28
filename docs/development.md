@@ -140,7 +140,7 @@ make c
 cd backend
 python3.10 -m venv .venv
 source .venv/bin/activate
-pip install -r ../config/requirements.txt
+uv pip install -e "..[cpu]"  # or appropriate variant for your GPU
 
 # Return to project root
 cd ..
@@ -378,7 +378,7 @@ rm -rf backend/.venv
 cd backend
 python3.10 -m venv .venv
 source .venv/bin/activate
-pip install -r ../config/requirements.txt
+uv pip install -e "..[cpu]"  # or appropriate variant for your GPU
 ```
 
 **3. Node.js Version Issues:**

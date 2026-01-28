@@ -109,7 +109,7 @@ The system automatically detects the provider from your LLM configuration. No ad
 For the most accurate token estimation, ensure tiktoken is installed:
 
 ```bash
-pip install tiktoken==0.9.0  # Already in requirements.txt
+pip install tiktoken==0.9.0  # Already in pyproject.toml
 ```
 
 ## Phoenix UI Display
