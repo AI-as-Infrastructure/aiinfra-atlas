@@ -25,8 +25,12 @@ rm -rf dist
 rm -f .env
 cd ..
 
-# Clean up telemetry span registry 
+# Clean up telemetry span registry
 echo "Cleaning up telemetry database..."
 rm -f telemetry_span_registry.db
+
+# Clean up Python package metadata
+echo "Cleaning up Python package metadata..."
+rm -rf *.egg-info 2>/dev/null || true
 
 echo "Cleanup complete!" 
