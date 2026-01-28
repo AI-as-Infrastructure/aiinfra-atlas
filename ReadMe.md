@@ -13,7 +13,11 @@ The project is under active development and makes heavy use of AI coding support
 
 - **Python:** 3.10 (required for backend and all scripts)
 - **Node.js:** 22.14.0 (required for frontend; enforced via .nvmrc and package.json)
-- **requirements.lock** is used at build time. The repo version is portable across systems. GPU support is auto-configured at startup based on detected hardware.
+- **uv:** Modern Python package installer (optional but recommended for 10-100x faster dependency installation)
+  - Install: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+  - Falls back to pip if not available
+- **Dependency Management:** Uses `pyproject.toml` with optional dependencies for PyTorch GPU/CPU variants
+- GPU support is auto-configured at startup based on detected hardware
 
 
 ## Core Components

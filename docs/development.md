@@ -19,6 +19,7 @@ This guide covers setting up and working with the ATLAS development environment.
 
 - **Python 3.10** (recommended via pyenv or system package)
 - **Node.js 22.14.0** (install via nvm for version management)
+- **uv** (optional but recommended for 10-100x faster dependency installation)
 - **Git with LFS** (for large model files)
 - **Redis** (for caching and async operations)
 
@@ -44,6 +45,20 @@ source ~/.bashrc
 nvm install 22.14.0
 nvm use 22.14.0
 nvm alias default 22.14.0
+```
+
+**uv (optional but recommended):**
+```bash
+# Install uv for 10-100x faster dependency installation
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Restart shell or source the environment
+source $HOME/.local/bin/env
+
+# Verify installation
+uv --version
+
+# Note: If uv is not installed, the system will automatically fall back to pip
 ```
 
 **Redis:**
