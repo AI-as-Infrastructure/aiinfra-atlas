@@ -14,67 +14,59 @@ The corpus wizard allows:
 
 ## Key Design Principles
 
-### 1. Isolated Environment
-- **Corpus operations use `.venv_corpus`** - separate from main dev environment
-- **Main app uses `.venv`** - for running the backend/frontend servers
-- **Clean separation** - corpus building won't affect your dev dependencies
+### 1. Automatic GPU Detection & Configuration
+- **Zero-configuration GPU support** - `make b` detects your GPU and installs appropriate PyTorch
+- **Broad GPU compatibility** - Supports all NVIDIA generations (GTX 10xx through RTX 50xx)
+- **Smart PyTorch selection** - Automatically chooses CUDA 11.8, 12.1, or 12.4+ based on your GPU
+- **Graceful fallback** - Falls back to CPU if GPU initialization fails
+- **Transparent operation** - UI shows actual mode (GPU/CPU) after any fallback
+- **Single unified environment** - Everything runs from main `.venv`
 
-### 2. Explicit Setup
-- **Choose CPU or GPU version** - User decides based on their hardware
-- **`make corpus-wizard-cpu`** - Smaller download (~200MB), no GPU needed
-- **`make corpus-wizard-gpu`** - Larger download (~2GB), for NVIDIA GPUs
-
-### 3. Clean Removal
-- **`make corpus-clean`** - Removes corpus environment cleanly
-- **Preserves data** - Keeps your configurations, backups, and active corpus
-- **Ready for `make b/p`** - After cleanup, dev/prod environments work normally
+### 2. Simplified Workflow
+- **Just `make b` and `make f`** - No special setup commands needed
+- **GPU-accelerated when available** - Automatically uses GPU for 5-10x faster corpus building
+- **Works without GPU** - Seamlessly falls back to CPU if no GPU detected
 
 ## Quick Start
 
 ### Initial Setup
 
-Choose the setup based on your hardware:
+Simply start the backend and frontend servers:
 
 ```bash
-# For systems WITHOUT NVIDIA GPU (smaller ~200MB download)
-make corpus-wizard-cpu
+# Terminal 1: Start backend (GPU auto-detected and configured)
+make b
 
-# For systems WITH NVIDIA GPU (larger ~2GB download, faster processing)
-make corpus-wizard-gpu
-
-# Start servers if not running
-make b  # Terminal 1: Backend
-make f  # Terminal 2: Frontend
+# Terminal 2: Start frontend
+make f
 
 # Navigate to corpus wizard
 # Open http://localhost:5173/corpus-wizard
 ```
 
-#### Which version to choose?
-- **`make corpus-wizard-cpu`** - Choose this if:
-  - You don't have an NVIDIA GPU
-  - You want smaller download size (~200MB)
-  - You're fine with CPU-based processing
+The backend startup script will automatically:
+1. **Detect your GPU** using `nvidia-smi`
+2. **Identify compute capability** (e.g., 6.1, 8.6, 12.0)
+3. **Select appropriate PyTorch:**
+   - CUDA 11.8 for older GPUs (GTX 10xx, RTX 20xx/30xx)
+   - CUDA 12.1 for RTX 40xx series
+   - CUDA 12.4+ nightly for RTX 50xx series
+4. **Install and configure** PyTorch with GPU support (~2GB) or CPU-only (~200MB)
+5. **Test GPU functionality** and fall back to CPU if initialization fails
+6. **Log detailed info** about GPU detection and mode selection
 
-- **`make corpus-wizard-gpu`** - Choose this if:
-  - You have an NVIDIA GPU with CUDA support
-  - You want faster embedding generation
-  - You don't mind larger download (~2GB)
+See [GPU Compatibility Guide](gpu_compatibility.md) for complete details.
 
 ### Quick Corpus Swapping
 ```bash
-# Switch to pre-configured corpora
-make use-hansard  # Hansard parliamentary corpus
-make use-darwin   # Darwin correspondence corpus
+# Backup current corpus
+make corpus-backup
 
-# Or use any saved configuration
-make corpus-swap CORPUS=my_custom_corpus
-```
+# Restore from most recent backup
+make corpus-restore
 
-### Cleanup
-```bash
-# Remove corpus environment (preserves data)
-make corpus-clean
+# List available corpus configurations
+make corpus-list
 ```
 
 ### Production Deployment
@@ -103,52 +95,29 @@ Navigate to `/corpus-wizard` in your browser to access the wizard interface.
 
 #### Complete Command Reference
 
-**Setup & Management:**
-```bash
-# CPU-only setup (smaller download ~200MB)
-make corpus-wizard-cpu
-
-# GPU/CUDA setup (larger download ~2GB, for NVIDIA GPUs)
-make corpus-wizard-gpu
-
-# Clean up corpus environment (preserves data)
-make corpus-clean
-
-# List available corpus configurations
-make corpus-list
-```
-
 **Corpus Operations:**
 ```bash
-# Build corpus from configuration
-make corpus-build CONFIG=corpus_configs/my_corpus.yaml
+# List available corpus configurations
+make corpus-list
 
 # Backup current corpus
 make corpus-backup
 
 # Restore from most recent backup
 make corpus-restore
-
-# Swap to different corpus
-make corpus-swap CORPUS=my_custom_corpus
-```
-
-**Quick Swap Commands:**
-```bash
-# Pre-configured corpus shortcuts
-make use-hansard  # Hansard parliamentary corpus
-make use-darwin   # Darwin correspondence corpus
 ```
 
 #### Environment Structure
 
 ```
 aiinfra-atlas/
-├── .venv/              # Main development environment (for make b/f/p)
-├── .venv_corpus/       # Isolated corpus environment (for corpus operations)
+├── .venv/              # Main environment (backend, frontend, corpus building)
 ├── corpus_configs/     # Saved corpus configurations
 ├── corpus_backups/     # Automatic backups
-└── backend/targets/    # Active corpus vector store
+└── backend/
+    ├── corpus/         # Active corpus
+    │   └── tmp/        # Temporary corpus builds
+    └── targets/        # Active corpus vector store
 ```
 
 ## Architecture

@@ -91,13 +91,15 @@ class VectorStoreManager:
         """Get or create embedding model (cached)."""
         if model_name not in self._embeddings_cache:
             logger.debug(f"Loading embedding model: {model_name}")
-            
-            # Try GPU first, fall back to CPU if there are compatibility issues
+
+            # Use the embeddings module which handles GPU detection
+            from backend.modules.embeddings import get_embeddings_model
+
             try:
-                embeddings = HuggingFaceEmbeddings(model_name=model_name)
-                # Test a simple encoding to verify GPU compatibility
+                embeddings = get_embeddings_model(model_name=model_name)
+                # Test a simple encoding to verify it works
                 embeddings.embed_query("test")
-                logger.debug(f"Successfully loaded {model_name} with GPU support")
+                logger.debug(f"Successfully loaded {model_name}")
             except RuntimeError as e:
                 if "CUDA error: no kernel image is available" in str(e):
                     logger.warning(f"CUDA compatibility issue with {model_name}, falling back to CPU")

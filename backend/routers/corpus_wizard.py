@@ -174,6 +174,37 @@ async def suggest_filters(
     })
 
 
+@router.get("/corpus-mode")
+async def get_corpus_mode():
+    """
+    Get the configured corpus wizard mode (GPU or CPU).
+    Reads from the mode file saved by backend startup (make b).
+    """
+    mode_file = Path(".venv/.corpus_mode")
+
+    # Default to CPU if no mode file exists
+    mode = "cpu"
+
+    if mode_file.exists():
+        try:
+            mode = mode_file.read_text().strip().lower()
+            logger.info(f"Corpus wizard mode from file: {mode}")
+        except Exception as e:
+            logger.warning(f"Could not read corpus mode file: {e}")
+    else:
+        logger.info("No corpus mode file found, defaulting to CPU")
+
+    # Check if GPU is actually available when GPU mode is configured
+    gpu_available = torch.cuda.is_available()
+
+    return JSONResponse({
+        "configured_mode": mode,
+        "gpu_available": gpu_available,
+        "effective_mode": mode if (mode == "cpu" or gpu_available) else "cpu",
+        "warning": None if (mode == "cpu" or gpu_available) else "GPU mode configured but no GPU detected - will use CPU"
+    })
+
+
 @router.get("/system-requirements")
 async def get_system_requirements(
     doc_count: int = Query(1000, description="Number of documents in corpus")

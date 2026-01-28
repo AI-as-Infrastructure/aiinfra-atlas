@@ -483,6 +483,10 @@
 
           <div class="build-stats">
             <div class="stat-row">
+              <span>Build Mode:</span>
+              <span>{{ corpusBuildMode.toUpperCase() }} {{ corpusBuildMode === 'gpu' ? '🚀' : '💻' }}</span>
+            </div>
+            <div class="stat-row">
               <span>Documents Processed:</span>
               <span>{{ buildProgress.processed_documents || 0 }} / {{ buildProgress.total_documents || '?' }}</span>
             </div>
@@ -766,6 +770,7 @@ export default {
     const building = ref(false)
     const buildProgress = ref({})
     const buildLogs = ref([])
+    const corpusBuildMode = ref('cpu')
     const buildId = ref(null)
     const buildResults = ref(null)
 
@@ -1066,6 +1071,23 @@ export default {
           }
         }
 
+        // Get configured corpus mode (GPU or CPU)
+        let corpusMode = 'cpu'
+        try {
+          const modeResponse = await fetch('/api/corpus-wizard/corpus-mode')
+          if (modeResponse.ok) {
+            const modeData = await modeResponse.json()
+            corpusMode = modeData.effective_mode
+            corpusBuildMode.value = corpusMode // Store for display
+            if (modeData.warning) {
+              console.warn(`Corpus mode warning: ${modeData.warning}`)
+            }
+            console.log(`Using corpus mode: ${corpusMode} (configured: ${modeData.configured_mode}, GPU available: ${modeData.gpu_available})`)
+          }
+        } catch (error) {
+          console.warn('Could not get corpus mode, defaulting to CPU:', error)
+        }
+
         // Start build
         const response = await fetch('/api/corpus-wizard/build', {
           method: 'POST',
@@ -1074,7 +1096,7 @@ export default {
           },
           body: JSON.stringify({
             config: config,
-            mode: 'cpu' // Default to CPU mode
+            mode: corpusMode
           })
         })
 
@@ -1098,6 +1120,11 @@ export default {
       eventSource.onmessage = (event) => {
         const progress = JSON.parse(event.data)
         buildProgress.value = progress
+
+        // Update actual mode if provided (handles GPU fallback)
+        if (progress.actual_mode) {
+          corpusBuildMode.value = progress.actual_mode
+        }
 
         // Add log entry
         if (progress.current_document) {
@@ -1276,6 +1303,7 @@ export default {
       buildProgress,
       buildLogs,
       buildResults,
+      corpusBuildMode,
       startBuild,
       retryBuild,
 

@@ -13,7 +13,7 @@ The project is under active development and makes heavy use of AI coding support
 
 - **Python:** 3.10 (required for backend and all scripts)
 - **Node.js:** 22.14.0 (required for frontend; enforced via .nvmrc and package.json)
-- **requirements.lock** is used at build time. The repo version could well have been generated on a Linux GPU-based system. Delete the file and run ```make l``` if necessary for your system.
+- **requirements.lock** is used at build time. The repo version is portable across systems. GPU support is auto-configured at startup based on detected hardware.
 
 
 ## Core Components
@@ -73,11 +73,11 @@ ATLAS uses a simplified command structure for common operations. Here are the ma
 ### Utilities
 - `make l` - Generate requirements.lock
 - `make c` - Check Python environment
-- `make vs` - Create vector store (shared app venv)
-- `make vs-cpu` - Create vector store (isolated CPU venv)
-- `make vs-gpu` - Create vector store (isolated GPU venv; defaults to CUDA 12.8 for RTX 50‑series)
+- `make vs` - Create vector store (automatically uses GPU if available)
 - `make r` - Generate retriever
 - `make xs` - Create XML vector store
+
+**Note:** GPU support is automatically detected and configured during `make b`. No separate GPU commands needed.
 
 ### Analysis and Monitoring
 - `make backup-prod` - Backup Phoenix telemetry data from production
@@ -108,15 +108,14 @@ ATLAS requires a vector store for semantic search. You have two options:
    - Provides better semantic search capabilities
    - Run the following command:
    ```bash
-   make vs          # shared app venv
-   # or
-   make vs-cpu      # isolated CPU venv
-   make vs-gpu      # isolated GPU venv (defaults to CUDA 12.8 / RTX 50‑series)
+   make vs  # Automatically uses GPU if available
    ```
    This will:
    - Generate embeddings using the BERT model
+   - Automatically detect and use GPU for 5-10x faster processing
+   - Fall back to CPU if no GPU available
    - Create a vector store in `backend/targets/chroma_db/`
-   - May take several minutes depending on your system
+   - May take 45-60 seconds with GPU, 3-5 minutes with CPU
 
 Note: The vector store generation process is optional but recommended for optimal performance. The default vector store included in the repository has been pre-generated using the create store process and includes fine-tuned embeddings. However, to use these fine-tuned embeddings, you'll need the corresponding fine-tuned model files in your models directory. If you don't have these files, the system will fall back to using mean pooling for embeddings.
 
@@ -148,7 +147,7 @@ This workflow ensures that your retrievers are always in sync with your vector s
 - [Backups](docs/backups.md) - Phoenix telemetry data backup configuration and automation
 - [Configuration Guide](docs/configuration.md) - Environment files, API keys, and system configuration
 - [Data Privacy](docs/data_privacy.md) - Anonymity, telemetry, and PII avoidance
-- [GPU Compatibility](docs/gpu_compatibility.md) - Optional NVIDIA GPU setup for performance enhancement (RTX 5090/50‑series default with CUDA 12.8, guidance for other GPUs)
+- [GPU Compatibility](docs/gpu_compatibility.md) - Automatic GPU detection and configuration (supports all NVIDIA generations: GTX 10xx through RTX 50xx)
 - [Test Targets](docs/test_targets.md) - LLM configurations, vector store integration, and target management
 - [Key Modules](docs/key_modules.md) - Core backend modules and their responsibilities
 - [Vector Store Manifest](docs/manifest.md) - Corpus‑agnostic schema, generation, and usage

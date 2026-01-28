@@ -123,8 +123,6 @@ venv.bk/
 .venv-vs-cpu/
 .venv.vs-gpu/
 .venv.vs-cpu/
-# Corpus wizard isolated environment
-.venv_corpus/
 
 # VS Code
 .vscode/

@@ -56,6 +56,7 @@ class UniversalCorpusBuilder:
         """
         self.config = config
         self.mode = mode
+        self.actual_mode = mode  # Track actual mode after any fallback
         self.progress_tracker = None
         self.documents = []
         self.vector_store = None
@@ -122,7 +123,7 @@ class UniversalCorpusBuilder:
             await self._load_documents(source_path)
 
             # Step 3: Initialize embeddings
-            self._initialize_embeddings()
+            await self._initialize_embeddings()
 
             # Step 4: Create vector store
             await self._create_vector_store()
@@ -335,28 +336,78 @@ class UniversalCorpusBuilder:
         # Default filter if exists
         return self.config.filters.filters[0] if self.config.filters.filters else None
 
-    def _initialize_embeddings(self):
+    async def _initialize_embeddings(self):
         """Initialize embedding model."""
         logger.info(f"Initializing embeddings: {self.config.embedding.model_id}")
 
         device = "cuda" if self.mode == "gpu" and torch.cuda.is_available() else "cpu"
+        self.actual_mode = device  # Track actual mode from the start
 
-        model_kwargs = {"device": device}
+        # Log GPU information if available
         if device == "cuda":
-            model_kwargs["trust_remote_code"] = True
+            logger.info(f"🚀 Attempting GPU acceleration for embeddings")
+            logger.info(f"   Detected GPU: {torch.cuda.get_device_name(0)}")
+            # Check compute capability for newer GPUs
+            major, minor = torch.cuda.get_device_capability(0)
+            logger.info(f"   Compute capability: {major}.{minor}")
+            if major >= 12:
+                logger.info(f"   ⚠️  RTX 50 series detected - PyTorch may not support this yet")
+                logger.info(f"   Will fall back to CPU if GPU operations fail")
+            elif major >= 9:
+                logger.info(f"   Note: Newer GPU architecture detected (RTX 40/50 series)")
+        else:
+            logger.info(f"💻 Using CPU for embeddings (no GPU detected)")
 
-        encode_kwargs = {
-            "normalize_embeddings": True,
-            "batch_size": self.config.embedding.batch_size
-        }
+        # Use the centralized embeddings module which handles GPU detection and fallback
+        from backend.modules.embeddings import get_embeddings_model
 
-        self.embeddings = HuggingFaceEmbeddings(
-            model_name=self.config.embedding.model_id,
-            model_kwargs=model_kwargs,
-            encode_kwargs=encode_kwargs
-        )
+        try:
+            self.embeddings = get_embeddings_model(
+                model_name=self.config.embedding.model_id,
+                config={"embedding_model": self.config.embedding.model_id}
+            )
 
-        logger.info(f"Embeddings initialized on {device}")
+            # Test if embeddings actually work on the selected device
+            test_texts = ["test sentence one", "test sentence two", "test sentence three"]
+            _ = self.embeddings.embed_documents(test_texts)
+
+            # The centralized module may have fallen back to CPU, so check actual device
+            # Get the actual device being used
+            if hasattr(self.embeddings, 'client') and hasattr(self.embeddings.client, 'device'):
+                actual_device = str(self.embeddings.client.device)
+                if 'cuda' in actual_device:
+                    self.actual_mode = "gpu"
+                    logger.info(f"✅ SUCCESS: Embeddings running on GPU")
+                    logger.info(f"   Build will use GPU acceleration")
+                else:
+                    self.actual_mode = "cpu"
+                    if device == "cuda":
+                        logger.warning(f"⚠️  FALLBACK: GPU requested but embeddings running on CPU")
+                        logger.info(f"   Build will continue using CPU (slower but stable)")
+                    else:
+                        logger.info(f"✅ SUCCESS: Embeddings running on CPU")
+            else:
+                # If we can't determine device, assume it matches what was requested
+                logger.info(f"✅ Embeddings initialized on {device.upper()}")
+
+        except Exception as e:
+            logger.error(f"Failed to initialize embeddings: {e}")
+            # If GPU fails, actual_mode should reflect CPU
+            if "CUDA" in str(e) or "no kernel image" in str(e):
+                self.actual_mode = "cpu"
+                logger.error(f"❌ GPU initialization failed (PyTorch compatibility issue)")
+                logger.info(f"   This typically means your GPU is too new for current PyTorch")
+                logger.info(f"   System will use CPU mode instead")
+            raise
+
+        # Send progress update with actual mode if there's a callback
+        if self.progress_tracker and self.progress_tracker.callback:
+            await self.progress_tracker.callback({
+                "status": "building",
+                "percentage": 10,
+                "message": f"Embeddings initialized on {self.actual_mode.upper()}",
+                "actual_mode": self.actual_mode
+            })
 
     async def _create_vector_store(self):
         """Create vector store with documents."""
@@ -415,6 +466,7 @@ class UniversalCorpusBuilder:
                 if self.progress_tracker.callback:
                     progress = self.progress_tracker.get_progress()
                     progress["current_document"] = f"Processing document {i+1}/{len(self.documents)}"
+                    progress["actual_mode"] = self.actual_mode  # Add actual mode to progress
                     await self.progress_tracker.callback(progress)
 
         logger.info(f"Created {len(all_chunks)} chunks from {len(self.documents)} documents")

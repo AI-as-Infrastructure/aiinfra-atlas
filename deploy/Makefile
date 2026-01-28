@@ -115,23 +115,12 @@ pm: ## Prepare embedding model
 	@bash -c "source .venv/bin/activate && python utils/scripts/prepare_model.py"
 
 # Corpus Wizard Commands
-corpus-wizard-cpu: ## Setup corpus wizard with CPU-only PyTorch (smaller ~200MB download)
-	@chmod +x utils/scripts/corpus_wizard_setup_cpu.sh 2>/dev/null || true
-	@./utils/scripts/corpus_wizard_setup_cpu.sh
-
-corpus-wizard-gpu: ## Setup corpus wizard with GPU/CUDA PyTorch (larger ~2GB download, for NVIDIA GPUs)
-	@chmod +x utils/scripts/corpus_wizard_setup_gpu.sh 2>/dev/null || true
-	@./utils/scripts/corpus_wizard_setup_gpu.sh
-
-corpus-clean: ## Clean up corpus wizard environment (preserves configs and backups)
-	@chmod +x utils/scripts/corpus_wizard_clean.sh 2>/dev/null || true
-	@./utils/scripts/corpus_wizard_clean.sh
-
-# Note: corpus-build has been removed. Use the corpus wizard UI instead:
-# 1. Run 'make corpus-wizard-cpu' or 'make corpus-wizard-gpu' to setup
-# 2. Run 'make f' to start the frontend
-# 3. Run 'make b' to start the backend
-# 4. Navigate to http://localhost:5173 and use the Corpus Wizard
+# Note: The corpus wizard uses the main .venv environment
+# GPU support is automatically detected and configured when running 'make b'
+# To use the corpus wizard:
+# 1. Run 'make b' to start the backend (GPU will be auto-detected and configured)
+# 2. Run 'make f' to start the frontend (in new terminal)
+# 3. Navigate to http://localhost:5173/corpus-wizard
 
 corpus-backup: ## Backup current corpus configuration and vector store
 	@echo "📦 Backing up current corpus..."
