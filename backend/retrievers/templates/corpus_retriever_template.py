@@ -102,15 +102,28 @@ class {CorpusClass}Retriever(BaseRetriever):
         # Add "All" option
         options.append({{"value": "all", "label": "All Collections"}})
 
-        # Get filter_1 options from manifest
-        if self.manifest and "filters" in self.manifest:
-            for filter_def in self.manifest["filters"]:
-                if filter_def.get("id") == "filter_1":
-                    for value in filter_def.get("values", []):
+        # Get filter options from manifest.fields.corpus.values
+        if self.manifest:
+            # Try new manifest structure first (fields.corpus.values)
+            if "fields" in self.manifest and "corpus" in self.manifest["fields"]:
+                corpus_field = self.manifest["fields"]["corpus"]
+                if "values" in corpus_field:
+                    for value in corpus_field["values"]:
+                        # Create a human-readable label from the value
+                        label = value.replace("_", " ").title() if isinstance(value, str) else str(value)
                         options.append({{
                             "value": value,
-                            "label": value.replace("_", " ").title()
+                            "label": label
                         }})
+            # Fallback to legacy structure for backward compatibility
+            elif "filters" in self.manifest:
+                for filter_def in self.manifest["filters"]:
+                    if filter_def.get("id") == "filter_1":
+                        for value in filter_def.get("values", []):
+                            options.append({{
+                                "value": value,
+                                "label": value.replace("_", " ").title()
+                            }})
 
         return options
 

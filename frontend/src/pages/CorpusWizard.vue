@@ -543,8 +543,113 @@
         </div>
       </div>
 
-      <!-- Step 7: Test & Activate -->
+      <!-- Step 7: Target Configuration -->
       <div v-if="currentStep === 7" class="wizard-step">
+        <h2>Configure Test Target</h2>
+        <p class="help-text">Configure the LLM and search parameters for your corpus.</p>
+
+        <div class="target-config-form">
+          <h3>LLM Configuration</h3>
+          <div class="form-row">
+            <div class="form-group">
+              <label>LLM Provider *</label>
+              <select v-model="targetConfig.llm_provider" class="form-control">
+                <option value="ANTHROPIC">Anthropic (Claude)</option>
+                <option value="OPENAI">OpenAI (GPT)</option>
+                <option value="GOOGLE">Google (Gemini)</option>
+                <option value="BEDROCK">AWS Bedrock</option>
+                <option value="OLLAMA">Ollama (Local)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Model *</label>
+              <input
+                v-model="targetConfig.llm_model"
+                type="text"
+                placeholder="e.g., claude-3-sonnet-20240229"
+                class="form-control"
+              />
+              <small class="help-text">Default: claude-3-sonnet-20240229</small>
+            </div>
+          </div>
+
+          <h3>Search Parameters</h3>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Search K (Documents to retrieve) *</label>
+              <input
+                v-model.number="targetConfig.search_k"
+                type="number"
+                min="1"
+                max="100"
+                class="form-control"
+              />
+              <small class="help-text">Number of documents to pass to LLM (default: 20)</small>
+            </div>
+            <div class="form-group">
+              <label>Score Threshold</label>
+              <input
+                v-model.number="targetConfig.search_score_threshold"
+                type="number"
+                min="0"
+                max="1"
+                step="0.1"
+                class="form-control"
+              />
+              <small class="help-text">Minimum similarity score (default: 0.5)</small>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>Citation Limit</label>
+              <input
+                v-model.number="targetConfig.citation_limit"
+                type="number"
+                min="1"
+                max="50"
+                class="form-control"
+              />
+              <small class="help-text">Maximum citations to display (default: 10)</small>
+            </div>
+            <div class="form-group">
+              <label>Target Name *</label>
+              <input
+                v-model="targetConfig.target_name"
+                type="text"
+                placeholder="e.g., k20_claude4"
+                class="form-control"
+              />
+              <small class="help-text">Name for the target configuration file</small>
+            </div>
+          </div>
+
+          <h3>Unified Configuration Preview</h3>
+          <div class="config-preview">
+            <div class="config-section">
+              <h4>Corpus Settings (from build)</h4>
+              <ul>
+                <li><strong>Corpus Name:</strong> {{ metadata.name }}</li>
+                <li><strong>Embedding Model:</strong> {{ selectedModel }}</li>
+                <li><strong>Collection Name:</strong> {{ metadata.name?.toLowerCase().replace(/ /g, '_') || 'corpus' }}</li>
+              </ul>
+            </div>
+            <div class="config-section">
+              <h4>Target Settings (current)</h4>
+              <ul>
+                <li><strong>LLM Provider:</strong> {{ targetConfig.llm_provider }}</li>
+                <li><strong>LLM Model:</strong> {{ targetConfig.llm_model }}</li>
+                <li><strong>Search K:</strong> {{ targetConfig.search_k }}</li>
+                <li><strong>Score Threshold:</strong> {{ targetConfig.search_score_threshold }}</li>
+                <li><strong>Composite Target:</strong> {{ targetConfig.target_name }}_{{ metadata.name?.toLowerCase().replace(/ /g, '_') || 'corpus' }}</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 8: Test & Activate -->
+      <div v-if="currentStep === 8" class="wizard-step">
         <h2>Test & Activate Corpus</h2>
 
         <div class="activation-content">
@@ -641,6 +746,78 @@
             </table>
           </div>
 
+          <!-- Unified Configuration Review -->
+          <div v-if="validationData && validationData.all_valid" class="unified-config-section">
+            <h3>Configuration Review</h3>
+            <p>Review the complete configuration that will be applied:</p>
+
+            <div class="config-review-grid">
+              <div class="config-section">
+                <h4>Corpus Settings</h4>
+                <div class="config-item">
+                  <span class="config-label">Name:</span>
+                  <span class="config-value">{{ metadata.name }}</span>
+                </div>
+                <div class="config-item">
+                  <span class="config-label">Collection:</span>
+                  <span class="config-value">{{ metadata.name }}_collection</span>
+                </div>
+                <div class="config-item">
+                  <span class="config-label">Embedding Model:</span>
+                  <span class="config-value">{{ selectedModel }}</span>
+                </div>
+                <div class="config-item">
+                  <span class="config-label">Documents:</span>
+                  <span class="config-value">{{ previewData?.total_documents || 0 }}</span>
+                </div>
+                <div class="config-item">
+                  <span class="config-label">Filters:</span>
+                  <span class="config-value">{{ filters.length }} configured</span>
+                </div>
+              </div>
+
+              <div class="config-section">
+                <h4>Target Settings</h4>
+                <div class="config-item">
+                  <span class="config-label">LLM Provider:</span>
+                  <span class="config-value">{{ targetConfig.llm_provider }}</span>
+                </div>
+                <div class="config-item">
+                  <span class="config-label">Model:</span>
+                  <span class="config-value">{{ targetConfig.llm_model }}</span>
+                </div>
+                <div class="config-item">
+                  <span class="config-label">Search K:</span>
+                  <span class="config-value">{{ targetConfig.search_k }}</span>
+                </div>
+                <div class="config-item">
+                  <span class="config-label">Search Type:</span>
+                  <span class="config-value">{{ targetConfig.search_type }}</span>
+                </div>
+                <div class="config-item">
+                  <span class="config-label">Score Threshold:</span>
+                  <span class="config-value">{{ targetConfig.score_threshold }}</span>
+                </div>
+              </div>
+
+              <div class="config-section">
+                <h4>Generated Files</h4>
+                <div class="config-item">
+                  <span class="config-label">Target Name:</span>
+                  <span class="config-value">k{{ targetConfig.search_k }}_{{ targetConfig.llm_model.replace(/-/g, '_').replace(/\./g, '_') }}.txt</span>
+                </div>
+                <div class="config-item">
+                  <span class="config-label">Retriever:</span>
+                  <span class="config-value">{{ metadata.name }}_retriever.py</span>
+                </div>
+                <div class="config-item">
+                  <span class="config-label">Site Title:</span>
+                  <span class="config-value">{{ metadata.name }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- Activation -->
           <div v-if="validationData && validationData.all_valid" class="activation-section">
             <h3>Ready to Activate?</h3>
@@ -719,6 +896,7 @@ export default {
       'Preview',
       'Model',
       'Build',
+      'Target Config',
       'Activate'
     ]
 
@@ -773,6 +951,16 @@ export default {
     const corpusBuildMode = ref('cpu')
     const buildId = ref(null)
     const buildResults = ref(null)
+
+    // Target configuration state with k20_claude4 defaults
+    const targetConfig = ref({
+      llm_provider: 'ANTHROPIC',
+      llm_model: 'claude-3-sonnet-20240229',
+      search_k: 20,
+      search_score_threshold: 0.5,
+      citation_limit: 10,
+      target_name: 'k20_claude4'
+    })
 
     // Validation & Activation
     const validationData = ref(null)
@@ -1182,12 +1370,13 @@ export default {
     const activateCorpus = async () => {
       activating.value = true
       try {
-        const response = await fetch('/api/corpus-wizard/activate', {
+        const response = await fetch(`/api/corpus-wizard/activate/${metadata.value.name}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             build_id: buildId.value,
-            corpus_name: metadata.value.name
+            display_name: metadata.value.name,
+            target_config: targetConfig.value
           })
         })
         const result = await response.json()
@@ -1306,6 +1495,9 @@ export default {
       corpusBuildMode,
       startBuild,
       retryBuild,
+
+      // Target configuration
+      targetConfig,
 
       // Validation & Activation
       validationData,
@@ -2023,6 +2215,66 @@ textarea.form-control {
 
 .test-result:last-child {
   border-bottom: none;
+}
+
+.unified-config-section {
+  background: #f0f7ff;
+  border: 1px solid #b3d9ff;
+  padding: 1.5rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+}
+
+.unified-config-section h3 {
+  margin-top: 0;
+  color: #181818;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.config-review-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+  margin-top: 1rem;
+}
+
+.config-section {
+  background: white;
+  padding: 1rem;
+  border-radius: 6px;
+  border: 1px solid #e0e0e0;
+}
+
+.config-section h4 {
+  margin: 0 0 1rem 0;
+  color: #333;
+  font-size: 1rem;
+  font-weight: 600;
+  border-bottom: 1px solid #e0e0e0;
+  padding-bottom: 0.5rem;
+}
+
+.config-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+  border-bottom: 1px dashed #f0f0f0;
+}
+
+.config-item:last-child {
+  border-bottom: none;
+}
+
+.config-label {
+  color: #666;
+  font-weight: 500;
+}
+
+.config-value {
+  color: #181818;
+  font-weight: 600;
+  text-align: right;
 }
 
 .activation-section {

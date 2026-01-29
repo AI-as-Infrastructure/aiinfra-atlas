@@ -610,16 +610,32 @@ class UniversalCorpusBuilder:
         # Get filter information for 2-filter system
         filter_1_info = None
         filter_2_info = None
+        filter_1_values = set()
+        filter_2_values = set()
+
+        # Collect unique filter values from documents
+        if self.documents and self.config.filters:
+            for doc in self.documents:
+                metadata = doc.metadata
+                if len(self.config.filters.filters) >= 1:
+                    filter_1_id = self.config.filters.filters[0].id
+                    if filter_1_id in metadata:
+                        filter_1_values.add(metadata[filter_1_id])
+                if len(self.config.filters.filters) >= 2:
+                    filter_2_id = self.config.filters.filters[1].id
+                    if filter_2_id in metadata:
+                        filter_2_values.add(metadata[filter_2_id])
+
         if self.config.filters:
             if len(self.config.filters.filters) >= 1:
                 filter_1_info = {
                     "label": self.config.filters.filters[0].label or self.config.filters.filters[0].id,
-                    "values": []  # Will be populated from actual documents
+                    "values": sorted(list(filter_1_values))  # Sorted list of actual values
                 }
             if len(self.config.filters.filters) >= 2:
                 filter_2_info = {
                     "label": self.config.filters.filters[1].label or self.config.filters.filters[1].id,
-                    "values": []
+                    "values": sorted(list(filter_2_values))
                 }
 
         # Create manifest with enhanced embedding documentation
@@ -654,7 +670,7 @@ class UniversalCorpusBuilder:
             "fields": {
                 "corpus": {
                     "type": "enum",
-                    "values": [f.id for f in self.config.filters.filters]
+                    "values": sorted(list(filter_1_values)) if filter_1_values else []
                 }
             }
         }
