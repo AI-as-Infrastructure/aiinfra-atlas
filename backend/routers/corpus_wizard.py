@@ -1032,35 +1032,24 @@ async def get_current_corpus_info():
 async def validate_corpus(build_id: str):
     """
     Validate a built corpus before activation.
-    Works by checking actual files, not just build state.
     """
     try:
-        # Check output files directly - don't require build_id in memory
-        output_path = Path("backend/corpus/tmp")
+        # Check if build exists and is completed
+        if build_id not in wizard_state['build_progress']:
+            raise HTTPException(status_code=404, detail="Build not found")
 
-        # If the tmp directory doesn't exist, no corpus has been built
-        if not output_path.exists():
+        build_info = wizard_state['build_progress'][build_id]
+        if build_info.get('status') != 'completed':
             return JSONResponse({
                 "all_valid": False,
                 "structure_valid": False,
                 "metadata_valid": False,
                 "search_functional": False,
-                "message": "No corpus found. Please build a corpus first."
+                "message": "Build not yet completed"
             })
 
-        # Check if build is in progress (optional - only if state exists)
-        if build_id in wizard_state['build_progress']:
-            build_info = wizard_state['build_progress'][build_id]
-            if build_info.get('status') != 'completed':
-                return JSONResponse({
-                    "all_valid": False,
-                    "structure_valid": False,
-                    "metadata_valid": False,
-                    "search_functional": False,
-                    "message": "Build not yet completed"
-                })
-
-        # Validate the actual corpus files
+        # Check output files
+        output_path = Path("backend/corpus/tmp")
         chroma_path = output_path / "chroma_db"
         manifest_path = output_path / "manifest.json"
 
@@ -1080,8 +1069,6 @@ async def validate_corpus(build_id: str):
                 search_functional = False
 
         all_valid = structure_valid and metadata_valid and search_functional
-
-        logger.info(f"Validation results: structure={structure_valid}, metadata={metadata_valid}, search={search_functional}, all={all_valid}")
 
         return JSONResponse({
             "all_valid": all_valid,

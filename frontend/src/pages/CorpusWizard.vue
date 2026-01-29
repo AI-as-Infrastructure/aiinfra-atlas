@@ -527,8 +527,8 @@
             <div class="success-message">
               ✅ Build completed successfully!
             </div>
-            <button @click="() => currentStep++" class="btn btn-primary">
-              Continue to Activation
+            <button @click="nextStep" class="btn btn-primary">
+              Continue to Target Config
             </button>
           </div>
 
@@ -722,6 +722,12 @@
               </ul>
             </div>
           </div>
+
+          <div class="step-actions">
+            <button @click="nextStep" :disabled="!canProceed" class="btn btn-primary">
+              Continue to Validation & Activation
+            </button>
+          </div>
         </div>
       </div>
 
@@ -757,6 +763,9 @@
               </div>
               <div v-else-if="validationData.all_valid === false" class="validation-error">
                 ❌ Some validation checks failed. Please rebuild the corpus.
+              </div>
+              <div v-else class="validation-warning">
+                ⚠️ Validation status unclear (all_valid={{ validationData.all_valid }}). Debug info in console.
               </div>
             </div>
           </div>
@@ -970,7 +979,7 @@
         Previous
       </button>
       <button
-        v-if="currentStep < steps.length && currentStep !== 6"
+        v-if="currentStep < steps.length && currentStep !== 6 && currentStep !== 7"
         @click="nextStep"
         :disabled="!canProceed"
         class="btn btn-primary"
@@ -1119,8 +1128,11 @@ export default {
 
     // Navigation
     const nextStep = async () => {
+      console.log('[Navigation] Before increment - currentStep:', currentStep.value, 'canProceed:', canProceed.value)
+
       if (canProceed.value && currentStep.value < steps.length) {
         currentStep.value++
+        console.log('[Navigation] After increment - currentStep:', currentStep.value, 'step name:', steps[currentStep.value - 1])
 
         // Perform step-specific actions AFTER incrementing step
         if (currentStep.value === 4) {
@@ -1128,10 +1140,13 @@ export default {
           if (!previewData.value) {
             // User can manually click to load preview
           }
-        } else if (currentStep.value === 7) {
-          // Entering Activation step - get current corpus info
+        } else if (currentStep.value === 8) {
+          // Entering Activation step (step 8) - get current corpus info
+          console.log('[Navigation] Loading current corpus info for step 8')
           await loadCurrentCorpusInfo()
         }
+      } else {
+        console.log('[Navigation] Cannot proceed - canProceed:', canProceed.value, 'currentStep:', currentStep.value, 'steps.length:', steps.length)
       }
     }
 
@@ -1292,23 +1307,37 @@ export default {
         const response = await fetch(`/api/corpus-wizard/validate/${buildId.value}`, {
           method: 'POST'
         })
-        validationData.value = await response.json()
-        console.log('Validation response:', validationData.value)  // Debug log
 
-        // Compute all_valid if not provided by backend or if logic is incorrect
-        if (validationData.value) {
-          const computedAllValid = validationData.value.structure_valid &&
-                                   validationData.value.metadata_valid &&
-                                   validationData.value.search_functional
-
-          // Use computed value if backend didn't provide it or if there's a mismatch
-          if (validationData.value.all_valid === undefined || validationData.value.all_valid !== computedAllValid) {
-            console.log('Fixing all_valid:', validationData.value.all_valid, '->', computedAllValid)
-            validationData.value.all_valid = computedAllValid
-          }
+        if (!response.ok) {
+          throw new Error(`Validation failed with status ${response.status}`)
         }
 
-        validationComplete.value = validationData.value.all_valid
+        const data = await response.json()
+        console.log('Validation response:', data)
+
+        // Always compute all_valid from individual checks to ensure consistency
+        const computedAllValid = Boolean(
+          data.structure_valid &&
+          data.metadata_valid &&
+          data.search_functional
+        )
+
+        console.log('Individual checks:', {
+          structure: data.structure_valid,
+          metadata: data.metadata_valid,
+          search: data.search_functional,
+          backend_all_valid: data.all_valid,
+          computed_all_valid: computedAllValid
+        })
+
+        // Set validation data with computed all_valid
+        validationData.value = {
+          ...data,
+          all_valid: computedAllValid
+        }
+
+        validationComplete.value = computedAllValid
+        console.log('Validation complete. all_valid =', validationData.value.all_valid)
       } catch (error) {
         console.error('Validation failed:', error)
         alert('Failed to validate corpus: ' + error.message)
