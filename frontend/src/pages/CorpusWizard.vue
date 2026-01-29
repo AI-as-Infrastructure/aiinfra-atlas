@@ -752,10 +752,10 @@
                 <span>✓</span> Search functionality
               </div>
 
-              <div v-if="validationData.all_valid" class="validation-success">
+              <div v-if="validationData.all_valid === true" class="validation-success">
                 ✅ All validation checks passed! You can now test and activate your corpus.
               </div>
-              <div v-else-if="validationData" class="validation-error">
+              <div v-else-if="validationData.all_valid === false" class="validation-error">
                 ❌ Some validation checks failed. Please rebuild the corpus.
               </div>
             </div>
@@ -1293,6 +1293,21 @@ export default {
           method: 'POST'
         })
         validationData.value = await response.json()
+        console.log('Validation response:', validationData.value)  // Debug log
+
+        // Compute all_valid if not provided by backend or if logic is incorrect
+        if (validationData.value) {
+          const computedAllValid = validationData.value.structure_valid &&
+                                   validationData.value.metadata_valid &&
+                                   validationData.value.search_functional
+
+          // Use computed value if backend didn't provide it or if there's a mismatch
+          if (validationData.value.all_valid === undefined || validationData.value.all_valid !== computedAllValid) {
+            console.log('Fixing all_valid:', validationData.value.all_valid, '->', computedAllValid)
+            validationData.value.all_valid = computedAllValid
+          }
+        }
+
         validationComplete.value = validationData.value.all_valid
       } catch (error) {
         console.error('Validation failed:', error)
