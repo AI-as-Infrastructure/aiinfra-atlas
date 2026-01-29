@@ -731,9 +731,9 @@
 
         <div class="activation-content">
           <!-- Pre-activation Check -->
-          <div v-if="!validationComplete" class="validation-section">
+          <div class="validation-section">
             <h3>Pre-activation Validation</h3>
-            <p>Validating your new corpus before activation...</p>
+            <p v-if="!validationData">Validating your new corpus before activation...</p>
 
             <div v-if="!validationData" class="validation-loading">
               <button @click="runValidation" :disabled="validating" class="btn btn-primary">
@@ -753,7 +753,10 @@
               </div>
 
               <div v-if="validationData.all_valid" class="validation-success">
-                ✅ All validation checks passed!
+                ✅ All validation checks passed! You can now test and activate your corpus.
+              </div>
+              <div v-else-if="validationData" class="validation-error">
+                ❌ Some validation checks failed. Please rebuild the corpus.
               </div>
             </div>
           </div>
@@ -2291,6 +2294,7 @@ textarea.form-control {
   border: 1px solid #ddd;
   padding: 1.5rem;
   border-radius: 8px;
+  margin-top: 2rem;
   margin-bottom: 2rem;
 }
 
@@ -2998,6 +3002,17 @@ textarea.form-control {
   background: #d4edda;
   color: #155724;
   border: 1px solid #c3e6cb;
+  border-radius: 8px;
+  text-align: center;
+  font-weight: 600;
+}
+
+.validation-error {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
   border-radius: 8px;
   text-align: center;
   font-weight: 600;
