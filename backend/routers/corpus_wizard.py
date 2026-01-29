@@ -1222,17 +1222,16 @@ async def activate_corpus(
             target_content.append("")
             target_content.append(f"LLM_PROVIDER={target_config.get('llm_provider', 'anthropic')}")
             target_content.append(f"LLM_MODEL={target_config.get('llm_model', 'claude-3-5-haiku-20241022')}")
-            target_content.append(f"SEARCH_K={target_config.get('search_k', 20)}")
             target_content.append(f"SEARCH_TYPE={target_config.get('search_type', 'similarity')}")
+            target_content.append(f"SEARCH_K={target_config.get('search_k', 20)}")
             target_content.append(f"SCORE_THRESHOLD={target_config.get('score_threshold', 0.7)}")
-
-            # Add temperature if specified
-            if 'temperature' in target_config:
-                target_content.append(f"TEMPERATURE={target_config['temperature']}")
-
-            # Add max_tokens if specified
-            if 'max_tokens' in target_config:
-                target_content.append(f"MAX_TOKENS={target_config['max_tokens']}")
+            target_content.append(f"TEMPERATURE={target_config.get('temperature', 0.7)}")
+            target_content.append(f"MAX_TOKENS={target_config.get('max_tokens', 4096)}")
+            target_content.append(f"CITATION_LIMIT={target_config.get('citation_limit', 10)}")
+            target_content.append(f"ALGORITHM={target_config.get('algorithm', 'ensemble')}")
+            target_content.append(f"LARGE_RETRIEVAL_SIZE={target_config.get('large_retrieval_size', 120)}")
+            target_content.append(f"VECTOR_DATABASE={target_config.get('vector_database', 'chromadb')}")
+            target_content.append(f"POOLING={target_config.get('pooling', 'mean')}")
 
             # Write target configuration file
             with open(target_file, 'w') as f:

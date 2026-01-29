@@ -554,11 +554,11 @@
             <div class="form-group">
               <label>LLM Provider *</label>
               <select v-model="targetConfig.llm_provider" class="form-control">
-                <option value="ANTHROPIC">Anthropic (Claude)</option>
-                <option value="OPENAI">OpenAI (GPT)</option>
-                <option value="GOOGLE">Google (Gemini)</option>
-                <option value="BEDROCK">AWS Bedrock</option>
-                <option value="OLLAMA">Ollama (Local)</option>
+                <option value="anthropic">Anthropic (Claude)</option>
+                <option value="openai">OpenAI (GPT)</option>
+                <option value="google">Google (Gemini)</option>
+                <option value="bedrock">AWS Bedrock</option>
+                <option value="ollama">Ollama (Local)</option>
               </select>
             </div>
             <div class="form-group">
@@ -589,14 +589,14 @@
             <div class="form-group">
               <label>Score Threshold</label>
               <input
-                v-model.number="targetConfig.search_score_threshold"
+                v-model.number="targetConfig.score_threshold"
                 type="number"
                 min="0"
                 max="1"
                 step="0.1"
                 class="form-control"
               />
-              <small class="help-text">Minimum similarity score (default: 0.5)</small>
+              <small class="help-text">Minimum similarity score (default: 0.7)</small>
             </div>
           </div>
 
@@ -624,6 +624,73 @@
             </div>
           </div>
 
+          <h3>Additional Settings</h3>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Search Type</label>
+              <select v-model="targetConfig.search_type" class="form-control">
+                <option value="similarity">Similarity</option>
+                <option value="mmr">Maximum Marginal Relevance</option>
+                <option value="similarity_score_threshold">Score Threshold</option>
+              </select>
+              <small class="help-text">Search algorithm to use</small>
+            </div>
+            <div class="form-group">
+              <label>Temperature</label>
+              <input
+                v-model.number="targetConfig.temperature"
+                type="number"
+                min="0"
+                max="2"
+                step="0.1"
+                class="form-control"
+              />
+              <small class="help-text">Response randomness (0-2, default: 0.7)</small>
+            </div>
+            <div class="form-group">
+              <label>Max Tokens</label>
+              <input
+                v-model.number="targetConfig.max_tokens"
+                type="number"
+                min="100"
+                max="100000"
+                class="form-control"
+              />
+              <small class="help-text">Maximum response length (default: 4096)</small>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>Algorithm</label>
+              <select v-model="targetConfig.algorithm" class="form-control">
+                <option value="ensemble">Ensemble (Vector + BM25)</option>
+                <option value="vector">Vector Only</option>
+                <option value="bm25">BM25 Only</option>
+              </select>
+              <small class="help-text">Retrieval algorithm (default: ensemble)</small>
+            </div>
+            <div class="form-group">
+              <label>Large Retrieval Size</label>
+              <input
+                v-model.number="targetConfig.large_retrieval_size"
+                type="number"
+                min="10"
+                max="500"
+                class="form-control"
+              />
+              <small class="help-text">Documents for large corpus queries (default: 120)</small>
+            </div>
+            <div class="form-group">
+              <label>Vector Database</label>
+              <select v-model="targetConfig.vector_database" class="form-control">
+                <option value="chromadb">ChromaDB</option>
+                <option value="redis">Redis</option>
+              </select>
+              <small class="help-text">Vector store backend (default: chromadb)</small>
+            </div>
+          </div>
+
           <h3>Unified Configuration Preview</h3>
           <div class="config-preview">
             <div class="config-section">
@@ -631,17 +698,27 @@
               <ul>
                 <li><strong>Corpus Name:</strong> {{ metadata.name }}</li>
                 <li><strong>Embedding Model:</strong> {{ selectedModel }}</li>
-                <li><strong>Collection Name:</strong> {{ metadata.name?.toLowerCase().replace(/ /g, '_') || 'corpus' }}</li>
+                <li><strong>Collection Name:</strong> {{ metadata.name?.toLowerCase().replace(/ /g, '_') || 'corpus' }}_collection</li>
+                <li><strong>Chunk Size:</strong> {{ embeddings.chunk_size || 1000 }}</li>
+                <li><strong>Chunk Overlap:</strong> {{ embeddings.chunk_overlap || 200 }}</li>
+                <li><strong>Pooling:</strong> {{ targetConfig.pooling }}</li>
               </ul>
             </div>
             <div class="config-section">
-              <h4>Target Settings (current)</h4>
+              <h4>Target Settings</h4>
               <ul>
                 <li><strong>LLM Provider:</strong> {{ targetConfig.llm_provider }}</li>
                 <li><strong>LLM Model:</strong> {{ targetConfig.llm_model }}</li>
+                <li><strong>Search Type:</strong> {{ targetConfig.search_type }}</li>
                 <li><strong>Search K:</strong> {{ targetConfig.search_k }}</li>
-                <li><strong>Score Threshold:</strong> {{ targetConfig.search_score_threshold }}</li>
-                <li><strong>Composite Target:</strong> {{ targetConfig.target_name }}_{{ metadata.name?.toLowerCase().replace(/ /g, '_') || 'corpus' }}</li>
+                <li><strong>Score Threshold:</strong> {{ targetConfig.score_threshold || targetConfig.search_score_threshold }}</li>
+                <li><strong>Temperature:</strong> {{ targetConfig.temperature }}</li>
+                <li><strong>Max Tokens:</strong> {{ targetConfig.max_tokens }}</li>
+                <li><strong>Citation Limit:</strong> {{ targetConfig.citation_limit }}</li>
+                <li><strong>Algorithm:</strong> {{ targetConfig.algorithm }}</li>
+                <li><strong>Large Retrieval Size:</strong> {{ targetConfig.large_retrieval_size }}</li>
+                <li><strong>Vector Database:</strong> {{ targetConfig.vector_database }}</li>
+                <li><strong>Composite Target:</strong> k{{ targetConfig.search_k }}_{{ targetConfig.llm_model.replace(/-/g, '_') }}_{{ metadata.name?.toLowerCase().replace(/ /g, '_') || 'corpus' }}_collection</li>
               </ul>
             </div>
           </div>
@@ -787,16 +864,40 @@
                   <span class="config-value">{{ targetConfig.llm_model }}</span>
                 </div>
                 <div class="config-item">
-                  <span class="config-label">Search K:</span>
-                  <span class="config-value">{{ targetConfig.search_k }}</span>
-                </div>
-                <div class="config-item">
                   <span class="config-label">Search Type:</span>
                   <span class="config-value">{{ targetConfig.search_type }}</span>
                 </div>
                 <div class="config-item">
+                  <span class="config-label">Search K:</span>
+                  <span class="config-value">{{ targetConfig.search_k }}</span>
+                </div>
+                <div class="config-item">
                   <span class="config-label">Score Threshold:</span>
                   <span class="config-value">{{ targetConfig.score_threshold }}</span>
+                </div>
+                <div class="config-item">
+                  <span class="config-label">Temperature:</span>
+                  <span class="config-value">{{ targetConfig.temperature }}</span>
+                </div>
+                <div class="config-item">
+                  <span class="config-label">Max Tokens:</span>
+                  <span class="config-value">{{ targetConfig.max_tokens }}</span>
+                </div>
+                <div class="config-item">
+                  <span class="config-label">Citation Limit:</span>
+                  <span class="config-value">{{ targetConfig.citation_limit }}</span>
+                </div>
+                <div class="config-item">
+                  <span class="config-label">Algorithm:</span>
+                  <span class="config-value">{{ targetConfig.algorithm }}</span>
+                </div>
+                <div class="config-item">
+                  <span class="config-label">Large Retrieval:</span>
+                  <span class="config-value">{{ targetConfig.large_retrieval_size }}</span>
+                </div>
+                <div class="config-item">
+                  <span class="config-label">Vector DB:</span>
+                  <span class="config-value">{{ targetConfig.vector_database }}</span>
                 </div>
               </div>
 
@@ -954,12 +1055,18 @@ export default {
 
     // Target configuration state with k20_claude4 defaults
     const targetConfig = ref({
-      llm_provider: 'ANTHROPIC',
-      llm_model: 'claude-3-sonnet-20240229',
+      llm_provider: 'anthropic',
+      llm_model: 'claude-3-5-haiku-20241022',
+      search_type: 'similarity',
       search_k: 20,
-      search_score_threshold: 0.5,
+      score_threshold: 0.7,
+      temperature: 0.7,
+      max_tokens: 4096,
+      algorithm: 'ensemble',
+      large_retrieval_size: 120,
       citation_limit: 10,
-      target_name: 'k20_claude4'
+      vector_database: 'chromadb',
+      pooling: 'mean'
     })
 
     // Validation & Activation
@@ -996,7 +1103,11 @@ export default {
           return selectedModel.value && selectedModel.value.length > 0
         case 6: // Build
           return buildProgress.value.status === 'completed'
-        case 7: // Activate
+        case 7: // Target Config
+          return targetConfig.value.llm_provider &&
+                 targetConfig.value.llm_model &&
+                 targetConfig.value.search_k > 0
+        case 8: // Activate
           return validationData.value && validationData.value.all_valid
         default:
           return true
