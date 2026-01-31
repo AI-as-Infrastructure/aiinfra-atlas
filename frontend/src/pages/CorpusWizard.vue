@@ -72,7 +72,11 @@
             type="text"
             placeholder="e.g., Darwin Correspondence Project"
             class="form-control"
+            :class="{ 'error': metadata.name && !isValidCorpusName }"
           />
+          <small v-if="metadata.name && !isValidCorpusName" class="error-text">
+            Title must be 3-512 characters and contain only letters, numbers, spaces, dots, underscores, or hyphens
+          </small>
         </div>
 
         <div class="form-group">
@@ -711,7 +715,7 @@
                 <li><strong>LLM Model:</strong> {{ targetConfig.llm_model }}</li>
                 <li><strong>Search Type:</strong> {{ targetConfig.search_type }}</li>
                 <li><strong>Search K:</strong> {{ targetConfig.search_k }}</li>
-                <li><strong>Score Threshold:</strong> {{ targetConfig.score_threshold || targetConfig.search_score_threshold }}</li>
+                <li><strong>Score Threshold:</strong> {{ targetConfig.score_threshold }}</li>
                 <li><strong>Temperature:</strong> {{ targetConfig.temperature }}</li>
                 <li><strong>Max Tokens:</strong> {{ targetConfig.max_tokens }}</li>
                 <li><strong>Citation Limit:</strong> {{ targetConfig.citation_limit }}</li>
@@ -991,7 +995,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import BuildProgress from '@/components/wizard/BuildProgress.vue'
 
 export default {
@@ -1078,7 +1082,11 @@ export default {
       large_retrieval_size: 120,
       citation_limit: 10,
       vector_database: 'chromadb',
-      pooling: 'mean'
+      pooling: 'mean',
+      target_name: 'k20_claude4',  // Add default target_name
+      // Include chunk settings for unified config
+      chunk_size: 1000,
+      chunk_overlap: 200
     })
 
     // Validation & Activation
@@ -1096,15 +1104,31 @@ export default {
     // SSE connection for build progress
     let eventSource = null
 
+    // Sync chunk settings between model selection and target config
+    watch(chunkSize, (newValue) => {
+      targetConfig.value.chunk_size = newValue
+    })
+
+    watch(chunkOverlap, (newValue) => {
+      targetConfig.value.chunk_overlap = newValue
+    })
+
+    // Validation computed properties
+    const isValidCorpusName = computed(() => {
+      if (!metadata.value.name) return false
+      const processedName = metadata.value.name.toLowerCase().replace(/\s+/g, '_')
+      return processedName.length >= 3 &&
+             processedName.length <= 512 &&
+             /^[a-zA-Z0-9][a-zA-Z0-9._-]*[a-zA-Z0-9]$/.test(processedName)
+    })
+
     // Check if can proceed to next step
     const canProceed = computed(() => {
       switch (currentStep.value) {
         case 1: // Workflow
           return workflowType.value === 'text' // Only text workflow is available
         case 2: // Metadata
-          return metadata.value.name &&
-                 metadata.value.name.length > 0 &&
-                 metadata.value.copyright_status
+          return isValidCorpusName.value && metadata.value.copyright_status
         case 3: // Sources
           return source.value.location &&
                  source.value.location.length > 0 &&
@@ -1672,7 +1696,8 @@ export default {
       backupId,
       activateCorpus,
 
-      // Navigation
+      // Navigation & Validation
+      isValidCorpusName,
       canProceed,
       nextStep,
       previousStep,
@@ -2662,8 +2687,14 @@ textarea.form-control {
 
 .error-text {
   color: #dc3545;
-  margin-top: 1rem;
-  font-weight: 500;
+  margin-top: 0.25rem;
+  font-size: 0.875rem;
+  display: block;
+}
+
+.form-control.error {
+  border-color: #dc3545;
+  box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25);
 }
 
 .preview-section {

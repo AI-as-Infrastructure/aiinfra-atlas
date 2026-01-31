@@ -492,7 +492,36 @@ class UniversalCorpusBuilder:
         persist_dir.mkdir(parents=True, exist_ok=True)
 
         # Generate collection name from metadata
-        collection_name = self.config.metadata.name.lower().replace(" ", "_").replace("-", "_")
+        if not self.config.metadata.name:
+            raise ValueError("Corpus name is required but was not provided")
+
+        # Process the name: lowercase, replace spaces and hyphens with underscores
+        raw_name = self.config.metadata.name.lower().replace(" ", "_").replace("-", "_")
+
+        # Ensure the collection name meets ChromaDB requirements
+        # Must be 3-63 chars, start and end with alphanumeric
+        if len(raw_name) < 3:
+            collection_name = f"corpus_{raw_name}"
+        elif len(raw_name) > 63:
+            collection_name = raw_name[:63]
+        else:
+            collection_name = raw_name
+
+        # Ensure it starts and ends with alphanumeric
+        import re
+        if not re.match(r'^[a-zA-Z0-9]', collection_name):
+            collection_name = f"c_{collection_name}"
+        if not re.match(r'[a-zA-Z0-9]$', collection_name):
+            collection_name = f"{collection_name}_c"
+
+        # Final validation
+        if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9._-]*[a-zA-Z0-9]$', collection_name):
+            raise ValueError(f"Invalid collection name after processing: {collection_name}")
+
+        logger.info(f"Using collection name: {collection_name}")
+
+        # Store collection name for use in manifest
+        self.collection_name = collection_name
 
         # Batch process embeddings to avoid blocking
         logger.info(f"Creating vector store with {len(all_chunks)} chunks in batches...")
@@ -659,7 +688,7 @@ class UniversalCorpusBuilder:
             "embeddings": self.config.embedding.dict(),  # Keep for compatibility
             "vector_store": {
                 "type": "chromadb",
-                "collection_name": self.config.metadata.name.lower().replace(" ", "_"),
+                "collection_name": getattr(self, 'collection_name', self.config.metadata.name.lower().replace(" ", "_")),
                 "persist_directory": str(self.output_dir / "chroma_db")
             },
             "filters": {
