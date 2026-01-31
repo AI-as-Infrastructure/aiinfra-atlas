@@ -19,6 +19,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 import logging
 import json
+import re
 
 # Import corpus modules
 from backend.modules.corpus_config import (
@@ -954,6 +955,14 @@ async def preview_documents(request: Dict[str, Any] = Body(...)):
 
         if not documents:
             warnings.append("No documents found with specified extensions")
+            # If date extraction is configured but no documents found, this is an error
+            if source.get('date_pattern'):
+                return JSONResponse({
+                    "error": "Date extraction configured but no documents found. Check your source path and file extensions.",
+                    "source_path": str(source_path),
+                    "file_extensions": extensions,
+                    "path_exists": source_path.exists()
+                }, status_code=400)
         if source.get('extract_inline_urls') and docs_with_urls == 0:
             warnings.append("URL extraction enabled but no URLs found in sample documents")
         if source.get('date_pattern') and docs_with_dates == 0 and source.get('date_pattern') != 'custom':
@@ -1028,33 +1037,40 @@ async def get_current_corpus_info():
         })
 
 
-@router.post("/validate/{build_id}")
-async def validate_corpus(build_id: str):
+@router.post("/validate")
+async def validate_corpus():
     """
     Validate a built corpus before activation.
+
+    This checks the actual filesystem for corpus files rather than relying on
+    in-memory state, making it robust against server restarts.
     """
     try:
-        # Check if build exists and is completed
-        if build_id not in wizard_state['build_progress']:
-            raise HTTPException(status_code=404, detail="Build not found")
+        import time
 
-        build_info = wizard_state['build_progress'][build_id]
-        if build_info.get('status') != 'completed':
-            return JSONResponse({
-                "all_valid": False,
-                "structure_valid": False,
-                "metadata_valid": False,
-                "search_functional": False,
-                "message": "Build not yet completed"
-            })
-
-        # Check output files
+        # Check output files directly on filesystem
         output_path = Path("backend/corpus/tmp")
         chroma_path = output_path / "chroma_db"
         manifest_path = output_path / "manifest.json"
 
+        # Check if files exist
         structure_valid = chroma_path.exists() and chroma_path.is_dir()
         metadata_valid = manifest_path.exists()
+
+        # Optional: Check if build is recent (within last 2 hours)
+        build_is_fresh = False
+        build_age_message = None
+        if manifest_path.exists():
+            age_seconds = time.time() - manifest_path.stat().st_mtime
+            age_minutes = age_seconds / 60
+            build_is_fresh = age_seconds < 7200  # 2 hours
+
+            if age_minutes < 60:
+                build_age_message = f"Build completed {int(age_minutes)} minutes ago"
+            else:
+                build_age_message = f"Build completed {int(age_minutes/60)} hours ago"
+        else:
+            build_age_message = "No corpus build found"
 
         # Try a test search to verify functionality
         search_functional = False
@@ -1074,9 +1090,15 @@ async def validate_corpus(build_id: str):
             "all_valid": all_valid,
             "structure_valid": structure_valid,
             "metadata_valid": metadata_valid,
-            "search_functional": search_functional
+            "search_functional": search_functional,
+            "build_is_fresh": build_is_fresh,
+            "build_age": build_age_message,
+            "message": "Validation based on filesystem state" if all_valid else build_age_message
         })
 
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
     except Exception as e:
         logger.error(f"Validation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1085,86 +1107,307 @@ async def validate_corpus(build_id: str):
 @router.post("/test-search")
 async def test_search(request: Dict[str, Any] = Body(...)):
     """
-    Run a test search on the newly built corpus.
+    Run a test search on the newly built corpus in tmp directory.
+
+    Supports filtering by directory structure patterns to test filter functionality.
     """
     try:
-        build_id = request.get('build_id')
         query = request.get('query', 'test query')
         limit = request.get('limit', 5)
+        selected_filter = request.get('filter')  # Optional filter to apply
 
-        # Check if build exists
-        if build_id not in wizard_state['build_progress']:
-            raise HTTPException(status_code=404, detail="Build not found")
+        # Check if build exists in tmp directory
+        output_path = Path("backend/corpus/tmp")
+        chroma_path = output_path / "chroma_db"
+        manifest_path = output_path / "manifest.json"
 
-        # Mock search results for now
-        # In production, would use the actual vector store
+        if not chroma_path.exists() or not manifest_path.exists():
+            raise HTTPException(status_code=404, detail="No corpus build found in tmp directory")
+
+        import chromadb
+        from chromadb.config import Settings
+
+        # Load the test corpus
+        chroma_client = chromadb.PersistentClient(
+            path=str(chroma_path),
+            settings=Settings(anonymized_telemetry=False)
+        )
+
+        # Read manifest to get collection name
+        with open(manifest_path, 'r') as f:
+            manifest = json.load(f)
+
+        collection_name = manifest.get("vector_store", {}).get("collection_name", "default_collection")
+        collection = chroma_client.get_collection(name=collection_name)
+
+        # Get the embedding model that was used to build the corpus
+        embedding_model_info = manifest.get("embedding_model", {})
+        if isinstance(embedding_model_info, dict):
+            model_id = embedding_model_info.get("id", "sentence-transformers/all-MiniLM-L6-v2")
+        else:
+            # Handle old format where it's just a string
+            model_id = embedding_model_info or "sentence-transformers/all-MiniLM-L6-v2"
+
+        # Load the same embedding model that was used to build the corpus
+        from sentence_transformers import SentenceTransformer
+        logger.info(f"Loading embedding model for test search: {model_id}")
+        embedding_model = SentenceTransformer(model_id)
+
+        # Generate embeddings for the query using the same model
+        query_embeddings = embedding_model.encode([query]).tolist()
+
+        # Build where clause for filter if provided
+        where_clause = None
+        if selected_filter and selected_filter != 'all':
+            # Filter by corpus/filter_1 metadata field (exact match)
+            # The selected_filter should match the filter ID stored in metadata
+            where_clause = {
+                "$or": [
+                    {"filter_1": {"$eq": selected_filter}},
+                    {"corpus": {"$eq": selected_filter}}  # Legacy field support
+                ]
+            }
+            logger.info(f"Applying filter: {selected_filter}, where clause: {where_clause}")
+
+        # Perform search with optional filter using query_embeddings instead of query_texts
+        search_params = {
+            "query_embeddings": query_embeddings,
+            "n_results": limit
+        }
+
+        if where_clause:
+            search_params["where"] = where_clause
+
+        search_results = collection.query(**search_params)
+
+        # Format results with citations using the main app's format
+        from backend.retrievers.base_retriever import format_document_for_citation
+        from langchain_core.documents import Document
+
         results = []
-        for i in range(min(3, limit)):
-            results.append({
-                "content": f"Sample document content for result {i+1}. This is a test result demonstrating the search functionality...",
-                "score": 0.9 - (i * 0.1),
-                "metadata": {
-                    "source": f"document_{i+1}.txt",
-                    "date": "2024-01-15"
-                }
-            })
+        if search_results and search_results.get('documents'):
+            for i, doc in enumerate(search_results['documents'][0][:limit]):
+                metadata = search_results.get('metadatas', [[]])[0][i] if search_results.get('metadatas') else {}
+                distance = search_results.get('distances', [[]])[0][i] if search_results.get('distances') else 0.0
 
-        return JSONResponse({
+                # Create a Document object to match what the main retriever uses
+                doc_obj = Document(page_content=doc, metadata=metadata)
+
+                # Use the same citation formatting as the main app
+                citation = format_document_for_citation(doc_obj, idx=i)
+
+                # Add score to the citation
+                if citation:
+                    citation["score"] = 1.0 - distance  # Convert distance to similarity
+                    results.append(citation)
+
+        response_data = {
             "query": query,
             "results": results,
-            "total_found": len(results)
-        })
+            "total_found": len(results),
+            "filter_applied": selected_filter if selected_filter and selected_filter != 'all' else None
+        }
 
+        return JSONResponse(response_data)
+
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Test search failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Test search failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 
 @router.post("/activate")
 async def activate_corpus_by_build(request: Dict[str, Any] = Body(...)):
     """
     Activate a corpus from a specific build.
+
+    This uses filesystem-based validation and fast rename operations
+    for instant activation of large corpus directories.
     """
     try:
-        build_id = request.get('build_id')
+        import os
+        import time
+
         corpus_name = request.get('corpus_name')
 
-        # Validate build exists and is completed
-        if build_id not in wizard_state['build_progress']:
-            raise HTTPException(status_code=404, detail="Build not found")
+        # Validate build exists using filesystem check
+        output_path = Path("backend/corpus/tmp")
+        manifest_path = output_path / "manifest.json"
+        chroma_path = output_path / "chroma_db"
 
-        build_info = wizard_state['build_progress'][build_id]
-        if build_info.get('status') != 'completed':
-            raise HTTPException(status_code=400, detail="Build not completed")
+        # Check if tmp directory exists
+        if not output_path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail="No corpus build found. Please complete the corpus building process (steps 1-7) before activating."
+            )
+
+        # Check if required files exist
+        if not manifest_path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail="Build incomplete: manifest.json not found. Please rebuild the corpus."
+            )
+
+        if not chroma_path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail="Build incomplete: vector store (chroma_db) not found. Please rebuild the corpus."
+            )
+
+        # Check build age (optional - warn if old)
+        age_seconds = time.time() - manifest_path.stat().st_mtime
+        if age_seconds > 7200:  # 2 hours
+            logger.warning(f"Activating a build that's {age_seconds/60:.0f} minutes old")
 
         # Create backup
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         backup_id = f"backup_{timestamp}"
 
         # Paths
-        output_path = Path("backend/corpus/tmp")
         corpus_path = Path("backend/corpus")
 
-        # Backup current corpus if it exists
-        if corpus_path.exists() and any(corpus_path.iterdir()):
+        # Backup current corpus if it exists (excluding tmp directory)
+        # We only backup the activated corpus files, not the build staging area
+        corpus_files_to_backup = ["chroma_db", "manifest.json", "bm25_corpus.jsonl"]
+        has_corpus_files = any((corpus_path / f).exists() for f in corpus_files_to_backup)
+
+        if has_corpus_files:
             backup_dir = Path(f"corpus_backups/{backup_id}")
             backup_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(corpus_path, backup_dir / "corpus")
-            logger.info(f"Backed up current corpus to {backup_dir}")
+            backup_corpus_path = backup_dir / "corpus"
+            backup_corpus_path.mkdir(parents=True, exist_ok=True)
 
-        # Clear and move new corpus
-        if corpus_path.exists():
-            shutil.rmtree(corpus_path)
-        corpus_path.mkdir(parents=True, exist_ok=True)
+            # Backup only the active corpus files, not tmp/
+            for file_name in corpus_files_to_backup:
+                source_file = corpus_path / file_name
+                if not source_file.exists():
+                    continue
 
-        # Move files from tmp to corpus
-        for item in output_path.iterdir():
-            if item.name in ["chroma_db", "manifest.json", "bm25_corpus.jsonl"]:
-                dest = corpus_path / item.name
-                if item.is_dir():
-                    shutil.move(str(item), str(dest))
+                dest_file = backup_corpus_path / file_name
+                try:
+                    if source_file.is_dir():
+                        shutil.copytree(source_file, dest_file)
+                    else:
+                        shutil.copy2(source_file, dest_file)
+                    logger.info(f"Backed up {file_name} to {backup_dir}")
+                except Exception as e:
+                    logger.warning(f"Failed to backup {file_name}: {e}")
+        elif not corpus_path.exists():
+            corpus_path.mkdir(parents=True, exist_ok=True)
+
+        # Move files from tmp to corpus using fast rename
+        files_to_move = ["chroma_db", "manifest.json", "bm25_corpus.jsonl"]
+        for file_name in files_to_move:
+            source = output_path / file_name
+            if not source.exists():
+                continue
+
+            dest = corpus_path / file_name
+
+            # Remove destination if it exists (should be empty after backup)
+            if dest.exists():
+                if dest.is_dir():
+                    shutil.rmtree(dest)
                 else:
-                    shutil.copy(str(item), str(dest))
+                    dest.unlink()
+
+            # Try fast rename first, fall back to shutil for cross-filesystem
+            try:
+                os.rename(str(source), str(dest))
+                logger.info(f"Moved {file_name} to backend/corpus/ (fast rename)")
+            except OSError:
+                # Cross-filesystem move, use shutil
+                if source.is_dir():
+                    shutil.move(str(source), str(dest))
+                else:
+                    shutil.copy2(str(source), str(dest))
+                    source.unlink()
+                logger.info(f"Moved {file_name} to backend/corpus/ (cross-filesystem)")
+
+        # Save target configuration and update .env
+        target_config = request.get('target_config', {})
+        if target_config:
+            # Get or create target name
+            target_name = target_config.get('target_name', f"{corpus_name.lower().replace(' ', '_')}_target")
+
+            # Create target file
+            target_file_path = Path(f"backend/targets/{target_name}.txt")
+            target_content = f"""# Target configuration created by Corpus Wizard
+# Created: {datetime.now().isoformat()}
+
+LLM_PROVIDER={target_config.get('llm_provider', 'anthropic')}
+LLM_MODEL={target_config.get('llm_model', 'claude-3-5-haiku-20241022')}
+SEARCH_TYPE={target_config.get('search_type', 'similarity')}
+SEARCH_K={target_config.get('search_k', 20)}
+SEARCH_SCORE_THRESHOLD={target_config.get('score_threshold', 0.7)}
+CITATION_LIMIT={target_config.get('citation_limit', 10)}
+LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS={target_config.get('large_retrieval_size', 120)}
+LARGE_RETRIEVAL_SIZE_ALL_CORPUS={target_config.get('large_retrieval_size', 120)}
+ALGORITHM={target_config.get('algorithm', 'ensemble')}
+TEMPERATURE={target_config.get('temperature', 0.7)}
+MAX_TOKENS={target_config.get('max_tokens', 4096)}
+POOLING={target_config.get('pooling', 'mean')}
+TARGET_VERSION=1.0
+"""
+
+            with open(target_file_path, 'w') as f:
+                f.write(target_content)
+            logger.info(f"Created target configuration: {target_file_path}")
+
+            # Update .env file with new configuration
+            # Only update if in configure mode
+            from backend.modules.mode_manager import mode_manager, SystemMode
+
+            if mode_manager.get_mode() == SystemMode.CONFIGURE:
+                # Read manifest to get collection name and metadata
+                with open(manifest_path, 'r') as f:
+                    manifest = json.load(f)
+
+                collection_name = manifest.get("collection_name", f"{corpus_name.lower().replace(' ', '_')}_collection")
+                embedding_model = manifest.get("embedding_model", "sentence-transformers/all-MiniLM-L6-v2")
+
+                # Read current environment
+                env_file_path = Path(f"config/.env.{mode_manager.current_environment}")
+
+                if env_file_path.exists():
+                    with open(env_file_path, 'r') as f:
+                        env_lines = f.readlines()
+
+                    # Update relevant lines
+                    updates = {
+                        'TEST_TARGET': target_name,
+                        'CHROMA_COLLECTION_NAME': collection_name,
+                        'EMBEDDING_MODEL': embedding_model,
+                        'CHUNK_SIZE': str(target_config.get('chunk_size', 1000)),
+                        'CHUNK_OVERLAP': str(target_config.get('chunk_overlap', 200)),
+                        'POOLING': target_config.get('pooling', 'mean')
+                    }
+
+                    new_lines = []
+                    updated_keys = set()
+
+                    for line in env_lines:
+                        updated = False
+                        for key, value in updates.items():
+                            if line.startswith(f"{key}="):
+                                new_lines.append(f"{key}={value}\n")
+                                updated_keys.add(key)
+                                updated = True
+                                break
+                        if not updated:
+                            new_lines.append(line)
+
+                    # Write updated .env file
+                    with open(env_file_path, 'w') as f:
+                        f.writelines(new_lines)
+
+                    logger.info(f"Updated {env_file_path} with corpus configuration")
+                else:
+                    logger.warning(f"Environment file {env_file_path} not found, skipping .env update")
+            else:
+                logger.info("Not in configure mode, skipping .env update")
 
         # Clear wizard state
         wizard_state['enabled'] = False
@@ -1172,6 +1415,7 @@ async def activate_corpus_by_build(request: Dict[str, Any] = Body(...)):
         return JSONResponse({
             "success": True,
             "backup_id": backup_id,
+            "target_name": target_config.get('target_name', corpus_name) if target_config else None,
             "message": "Corpus activated successfully"
         })
 
@@ -1199,6 +1443,9 @@ async def activate_corpus(
     - Generated retriever → backend/retrievers/
     """
     try:
+        # Import mode_manager at function start
+        from backend.modules.mode_manager import mode_manager
+
         # Extract target configuration from request
         target_config = request.get('target_config', {})
 
@@ -1256,10 +1503,14 @@ async def activate_corpus(
                 f.write('\n'.join(target_content))
             logger.info(f"Generated target configuration file: {target_file}")
 
-            # Update TEST_TARGET in environment files
-            env_files = ['config/.env.development', 'config/.env.staging', 'config/.env.production']
-            for env_file in env_files:
+            # Update TEST_TARGET in current environment file
+            # Check if we're in deploy mode
+            if not mode_manager.is_locked():
+                # Only update files in configure mode
+                current_env = os.getenv("ENVIRONMENT", "development").lower()
+                env_file = f'config/.env.{current_env}'
                 env_path = Path(env_file)
+
                 if env_path.exists():
                     # Read the file
                     with open(env_path, 'r') as f:
@@ -1281,12 +1532,22 @@ async def activate_corpus(
                     with open(env_path, 'w') as f:
                         f.writelines(lines)
                     logger.info(f"Updated TEST_TARGET in {env_file} to {target_name}")
+                else:
+                    logger.warning(f"Environment file not found: {env_file}")
+
+            # Always update runtime environment
+            os.environ["TEST_TARGET"] = target_name
 
         # Update VITE_SITE_TITLE with corpus display name
         display_name = request.get('display_name', corpus_name)
-        env_files = ['config/.env.development', 'config/.env.staging', 'config/.env.production']
-        for env_file in env_files:
+
+        # Check if we're in deploy mode
+        if not mode_manager.is_locked():
+            # Only update files in configure mode
+            current_env = os.getenv("ENVIRONMENT", "development").lower()
+            env_file = f'config/.env.{current_env}'
             env_path = Path(env_file)
+
             if env_path.exists():
                 # Read the file
                 with open(env_path, 'r') as f:
@@ -1351,11 +1612,19 @@ async def activate_corpus(
             source = output_path / file_name
             if source.exists():
                 dest = corpus_path / file_name
-                if source.is_dir():
-                    shutil.move(str(source), str(dest))
-                else:
-                    shutil.copy(str(source), str(dest))
-                logger.info(f"Moved {file_name} to backend/corpus/")
+                # Try os.rename first (instant on same filesystem)
+                # Fall back to shutil.move if cross-filesystem
+                try:
+                    os.rename(str(source), str(dest))
+                    logger.info(f"Moved {file_name} to backend/corpus/ (fast rename)")
+                except OSError:
+                    # Cross-filesystem move, use shutil
+                    if source.is_dir():
+                        shutil.move(str(source), str(dest))
+                    else:
+                        shutil.copy(str(source), str(dest))
+                        source.unlink()  # Remove source after copy
+                    logger.info(f"Moved {file_name} to backend/corpus/ (cross-filesystem)")
 
         # Move test target configs to backend/targets/
         targets_path.mkdir(parents=True, exist_ok=True)
@@ -1377,13 +1646,16 @@ async def activate_corpus(
             shutil.copy(str(retriever_file), str(dest))
             logger.info(f"Copied {retriever_file.name} to backend/retrievers/")
 
-            # Update RETRIEVER_MODULE in .env files
+            # Update RETRIEVER_MODULE in current environment file
             retriever_module = retriever_file.stem  # Remove .py extension
 
-            # Update all .env files
-            env_files = ['config/.env.development', 'config/.env.staging', 'config/.env.production']
-            for env_file in env_files:
+            # Check if we're in deploy mode
+            if not mode_manager.is_locked():
+                # Only update files in configure mode
+                current_env = os.getenv("ENVIRONMENT", "development").lower()
+                env_file = f'config/.env.{current_env}'
                 env_path = Path(env_file)
+
                 if env_path.exists():
                     # Read the file
                     with open(env_path, 'r') as f:
@@ -1412,6 +1684,11 @@ async def activate_corpus(
                         f.writelines(lines)
 
                     logger.info(f"Updated RETRIEVER_MODULE in {env_file} to {retriever_module}")
+                else:
+                    logger.warning(f"Environment file not found: {env_file}")
+
+            # Always update runtime environment
+            os.environ["RETRIEVER_MODULE"] = retriever_module
 
         # Clean up tmp directory
         shutil.rmtree(output_path)
@@ -1585,3 +1862,260 @@ async def _build_corpus_task(build_id: str, config: CorpusConfig):
             'error': str(e),
             'failed_at': datetime.now().isoformat()
         })
+
+
+# Target management endpoints for ConfigManager
+
+@router.get("/list-targets")
+async def list_targets():
+    """List all configured test targets."""
+    try:
+        targets = []
+        targets_path = Path("backend/targets")
+
+        if targets_path.exists():
+            for target_file in targets_path.glob("*.txt"):
+                # Skip template files
+                if target_file.name.startswith("_") or target_file.name.startswith("."):
+                    continue
+
+                try:
+                    config = {}
+                    with open(target_file) as f:
+                        for line in f:
+                            line = line.strip()
+                            if line and not line.startswith("#") and "=" in line:
+                                key, value = line.split("=", 1)
+                                config[key.strip()] = value.strip().strip('"').strip("'")
+
+                    # Map config keys to frontend expectations
+                    targets.append({
+                        "id": target_file.stem,
+                        "llm_provider": config.get("LLM_PROVIDER", ""),
+                        "llm_model": config.get("LLM_MODEL", ""),
+                        "search_k": int(config.get("SEARCH_K", 20)),
+                        "search_score_threshold": float(config.get("SEARCH_SCORE_THRESHOLD", 0.7)),
+                        "large_retrieval_size_single": int(config.get("LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS", 120)),
+                        "large_retrieval_size_all": int(config.get("LARGE_RETRIEVAL_SIZE_ALL_CORPUS", 120)),
+                        "algorithm": config.get("ALGORITHM", "ensemble"),
+                        "citation_limit": int(config.get("CITATION_LIMIT", 10)),
+                        "temperature": float(config.get("TEMPERATURE", 0.7)),
+                        "max_tokens": int(config.get("MAX_TOKENS", 4096)),
+                        "pooling": config.get("POOLING", "mean")
+                    })
+                except Exception as e:
+                    logger.error(f"Error reading target {target_file.name}: {e}")
+
+        # Get default target from environment
+        default_target = os.getenv("TEST_TARGET")
+
+        return JSONResponse({
+            "targets": targets,
+            "default": default_target
+        })
+
+    except Exception as e:
+        logger.error(f"Failed to list targets: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/add-target")
+async def add_target(target_config: Dict[str, Any] = Body(...)):
+    """Add a new test target configuration."""
+    try:
+        target_id = target_config.get("id")
+        if not target_id:
+            raise HTTPException(status_code=400, detail="Target ID is required")
+
+        # Validate target ID format
+        if not re.match(r'^[a-zA-Z0-9_-]+$', target_id):
+            raise HTTPException(status_code=400, detail="Invalid target ID format")
+
+        targets_path = Path("backend/targets")
+        targets_path.mkdir(exist_ok=True)
+
+        target_file = targets_path / f"{target_id}.txt"
+        if target_file.exists():
+            raise HTTPException(status_code=400, detail="Target already exists")
+
+        # Generate target file content
+        content = []
+        content.append(f"# Target configuration created by ConfigManager")
+        content.append(f"# Created: {datetime.now().isoformat()}")
+        content.append("")
+        content.append(f"LLM_PROVIDER={target_config.get('llm_provider', 'anthropic')}")
+        content.append(f"LLM_MODEL={target_config.get('llm_model', '')}")
+        content.append(f"SEARCH_TYPE={target_config.get('search_type', 'similarity')}")
+        content.append(f"SEARCH_K={target_config.get('search_k', 20)}")
+        content.append(f"SEARCH_SCORE_THRESHOLD={target_config.get('search_score_threshold', 0.7)}")
+        content.append(f"CITATION_LIMIT={target_config.get('citation_limit', 10)}")
+        content.append(f"LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS={target_config.get('large_retrieval_size_single', 120)}")
+        content.append(f"LARGE_RETRIEVAL_SIZE_ALL_CORPUS={target_config.get('large_retrieval_size_all', 120)}")
+        content.append(f"ALGORITHM={target_config.get('algorithm', 'ensemble')}")
+        content.append(f"TEMPERATURE={target_config.get('temperature', 0.7)}")
+        content.append(f"MAX_TOKENS={target_config.get('max_tokens', 4096)}")
+        content.append(f"POOLING={target_config.get('pooling', 'mean')}")
+        content.append(f"TARGET_VERSION=1.0")
+
+        with open(target_file, 'w') as f:
+            f.write('\n'.join(content))
+
+        logger.info(f"Created target configuration: {target_id}")
+
+        return JSONResponse({
+            "success": True,
+            "message": f"Target {target_id} created successfully"
+        })
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to add target: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/update-target/{target_id}")
+async def update_target(target_id: str, target_config: Dict[str, Any] = Body(...)):
+    """Update an existing test target configuration."""
+    try:
+        targets_path = Path("backend/targets")
+        target_file = targets_path / f"{target_id}.txt"
+
+        if not target_file.exists():
+            raise HTTPException(status_code=404, detail="Target not found")
+
+        # Generate updated content
+        content = []
+        content.append(f"# Target configuration updated by ConfigManager")
+        content.append(f"# Updated: {datetime.now().isoformat()}")
+        content.append("")
+        content.append(f"LLM_PROVIDER={target_config.get('llm_provider', 'anthropic')}")
+        content.append(f"LLM_MODEL={target_config.get('llm_model', '')}")
+        content.append(f"SEARCH_TYPE={target_config.get('search_type', 'similarity')}")
+        content.append(f"SEARCH_K={target_config.get('search_k', 20)}")
+        content.append(f"SEARCH_SCORE_THRESHOLD={target_config.get('search_score_threshold', 0.7)}")
+        content.append(f"CITATION_LIMIT={target_config.get('citation_limit', 10)}")
+        content.append(f"LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS={target_config.get('large_retrieval_size_single', 120)}")
+        content.append(f"LARGE_RETRIEVAL_SIZE_ALL_CORPUS={target_config.get('large_retrieval_size_all', 120)}")
+        content.append(f"ALGORITHM={target_config.get('algorithm', 'ensemble')}")
+        content.append(f"TEMPERATURE={target_config.get('temperature', 0.7)}")
+        content.append(f"MAX_TOKENS={target_config.get('max_tokens', 4096)}")
+        content.append(f"POOLING={target_config.get('pooling', 'mean')}")
+        content.append(f"TARGET_VERSION=1.0")
+
+        with open(target_file, 'w') as f:
+            f.write('\n'.join(content))
+
+        logger.info(f"Updated target configuration: {target_id}")
+
+        return JSONResponse({
+            "success": True,
+            "message": f"Target {target_id} updated successfully"
+        })
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update target: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/delete-target/{target_id}")
+async def delete_target(target_id: str):
+    """Delete a test target configuration."""
+    try:
+        targets_path = Path("backend/targets")
+        target_file = targets_path / f"{target_id}.txt"
+
+        if not target_file.exists():
+            raise HTTPException(status_code=404, detail="Target not found")
+
+        # Check if this is the current default target
+        current_target = os.getenv("TEST_TARGET")
+        if current_target == target_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot delete the current default target. Please set a different default first."
+            )
+
+        target_file.unlink()
+        logger.info(f"Deleted target configuration: {target_id}")
+
+        return JSONResponse({
+            "success": True,
+            "message": f"Target {target_id} deleted successfully"
+        })
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete target: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/set-default-target/{target_id}")
+async def set_default_target(target_id: str):
+    """Set a target as the default TEST_TARGET."""
+    try:
+        from backend.modules.mode_manager import mode_manager
+
+        targets_path = Path("backend/targets")
+        target_file = targets_path / f"{target_id}.txt"
+
+        if not target_file.exists():
+            raise HTTPException(status_code=404, detail="Target not found")
+
+        # Check if we're in deploy mode
+        if mode_manager.is_locked():
+            # In deploy mode, only update runtime environment
+            os.environ["TEST_TARGET"] = target_id
+            logger.info(f"Updated runtime TEST_TARGET to {target_id} (deploy mode - no file changes)")
+
+            return JSONResponse({
+                "success": True,
+                "message": f"Set {target_id} as runtime target (deploy mode)",
+                "deploy_mode": True
+            })
+
+        # In configure mode, update the current environment's .env file
+        current_env = os.getenv("ENVIRONMENT", "development").lower()
+        env_file = f'config/.env.{current_env}'
+        env_path = Path(env_file)
+
+        if env_path.exists():
+            with open(env_path, 'r') as f:
+                lines = f.readlines()
+
+            # Update TEST_TARGET line
+            updated = False
+            for i, line in enumerate(lines):
+                if line.strip().startswith('TEST_TARGET=') or line.strip().startswith('# TEST_TARGET='):
+                    lines[i] = f'TEST_TARGET={target_id}\n'
+                    updated = True
+                    break
+
+            # If not found, add it
+            if not updated:
+                lines.append(f'TEST_TARGET={target_id}\n')
+
+            # Write back
+            with open(env_path, 'w') as f:
+                f.writelines(lines)
+
+            logger.info(f"Updated TEST_TARGET in {env_file} to {target_id}")
+        else:
+            logger.warning(f"Environment file not found: {env_file}")
+
+        # Update current environment
+        os.environ["TEST_TARGET"] = target_id
+
+        return JSONResponse({
+            "success": True,
+            "message": f"Set {target_id} as default target"
+        })
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to set default target: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

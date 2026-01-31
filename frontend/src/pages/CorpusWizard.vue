@@ -549,6 +549,7 @@
 
       <!-- Step 7: Target Configuration -->
       <div v-if="currentStep === 7" class="wizard-step">
+        {{ console.log('[Render] Step 7 is rendering - currentStep:', currentStep) }}
         <h2>Configure Test Target</h2>
         <p class="help-text">Configure the LLM and search parameters for your corpus.</p>
 
@@ -703,8 +704,8 @@
                 <li><strong>Corpus Name:</strong> {{ metadata.name }}</li>
                 <li><strong>Embedding Model:</strong> {{ selectedModel }}</li>
                 <li><strong>Collection Name:</strong> {{ metadata.name?.toLowerCase().replace(/ /g, '_') || 'corpus' }}_collection</li>
-                <li><strong>Chunk Size:</strong> {{ embeddings.chunk_size || 1000 }}</li>
-                <li><strong>Chunk Overlap:</strong> {{ embeddings.chunk_overlap || 200 }}</li>
+                <li><strong>Chunk Size:</strong> {{ targetConfig.chunk_size || 1000 }}</li>
+                <li><strong>Chunk Overlap:</strong> {{ targetConfig.chunk_overlap || 200 }}</li>
                 <li><strong>Pooling:</strong> {{ targetConfig.pooling }}</li>
               </ul>
             </div>
@@ -737,6 +738,7 @@
 
       <!-- Step 8: Test & Activate -->
       <div v-if="currentStep === 8" class="wizard-step">
+        {{ console.log('[Render] Step 8 is rendering - currentStep:', currentStep) }}
         <h2>Test & Activate Corpus</h2>
 
         <div class="activation-content">
@@ -752,14 +754,22 @@
             </div>
 
             <div v-if="validationData" class="validation-results">
-              <div class="validation-item" :class="{ success: validationData.structure_valid }">
-                <span>✓</span> Vector store structure
+              <!-- Build age info -->
+              <div v-if="validationData.build_age" class="build-age-info">
+                <span>🕒</span> {{ validationData.build_age }}
+                <span v-if="!validationData.build_is_fresh" class="age-warning">
+                  (May need rebuild if configuration changed)
+                </span>
               </div>
-              <div class="validation-item" :class="{ success: validationData.metadata_valid }">
-                <span>✓</span> Metadata integrity
+
+              <div class="validation-item" :class="{ success: validationData.structure_valid, error: !validationData.structure_valid }">
+                <span>{{ validationData.structure_valid ? '✓' : '❌' }}</span> Vector store structure
               </div>
-              <div class="validation-item" :class="{ success: validationData.search_functional }">
-                <span>✓</span> Search functionality
+              <div class="validation-item" :class="{ success: validationData.metadata_valid, error: !validationData.metadata_valid }">
+                <span>{{ validationData.metadata_valid ? '✓' : '❌' }}</span> Metadata integrity
+              </div>
+              <div class="validation-item" :class="{ success: validationData.search_functional, error: !validationData.search_functional }">
+                <span>{{ validationData.search_functional ? '✓' : '❌' }}</span> Search functionality
               </div>
 
               <div v-if="validationData.all_valid === true" class="validation-success">
@@ -779,6 +789,17 @@
             <h3>Test Your Corpus</h3>
             <p>Run a test search to verify the corpus is working correctly.</p>
 
+            <!-- Filter Selection -->
+            <div v-if="previewData?.filters && previewData.filters.length > 0" class="filter-selection">
+              <label for="test-filter" class="form-label">Filter (optional):</label>
+              <select id="test-filter" v-model="testFilter" class="form-select">
+                <option value="all">All Documents</option>
+                <option v-for="filter in previewData.filters.filter(f => f.id !== 'all')" :key="filter.id" :value="filter.id">
+                  {{ filter.label }} ({{ filter.document_count }} docs)
+                </option>
+              </select>
+            </div>
+
             <div class="test-search-form">
               <input
                 v-model="testQuery"
@@ -787,22 +808,28 @@
                 class="form-control"
                 @keyup.enter="runTestSearch"
               />
-              <button @click="runTestSearch" :disabled="testing" class="btn btn-primary">
+              <button @click="runTestSearch" :disabled="testing || !testQuery" class="btn btn-primary">
                 {{ testing ? 'Searching...' : 'Test Search' }}
               </button>
             </div>
 
             <div v-if="testResults" class="test-results">
-              <h4>Search Results ({{ testResults.length }} documents found)</h4>
+              <div class="results-header">
+                <h4>Search Results ({{ testResults.length }} documents found)</h4>
+                <span v-if="testResults.filterApplied" class="filter-badge">
+                  Filter: {{ testResults.filterApplied }}
+                </span>
+              </div>
               <div v-for="(result, index) in testResults.slice(0, 3)" :key="index" class="test-result">
                 <div class="result-header">
                   <span class="result-number">{{ index + 1 }}.</span>
                   <span class="result-score">Score: {{ result.score.toFixed(3) }}</span>
                 </div>
                 <div class="result-content">{{ result.excerpt }}</div>
-                <div v-if="result.metadata" class="result-metadata">
-                  <span v-if="result.metadata.source">Source: {{ result.metadata.source }}</span>
-                  <span v-if="result.metadata.date">Date: {{ result.metadata.date }}</span>
+                <div class="result-citation">
+                  <strong>Source:</strong> {{ result.source || 'Unknown' }}
+                  <span v-if="result.corpus"> | <strong>Corpus:</strong> {{ result.corpus }}</span>
+                  <span v-if="result.enrichment?.date"> | <strong>Date:</strong> {{ result.enrichment.date }}</span>
                 </div>
               </div>
             </div>
@@ -865,7 +892,7 @@
                 </div>
                 <div class="config-item">
                   <span class="config-label">Filters:</span>
-                  <span class="config-value">{{ filters.length }} configured</span>
+                  <span class="config-value">{{ previewData?.filters?.length || 0 }} configured</span>
                 </div>
               </div>
 
@@ -963,6 +990,23 @@
               <div v-if="activationResult.success" class="success-message">
                 ✅ Corpus activated successfully!
                 <p>Backup saved as: {{ activationResult.backup_id }}</p>
+
+                <div class="post-activation-actions">
+                  <h4>What would you like to do next?</h4>
+                  <div class="action-buttons">
+                    <button @click="continueConfiguring" class="btn btn-secondary">
+                      📝 Continue Configuring
+                      <small>Add more test targets or modify settings</small>
+                    </button>
+                    <button @click="enterDeployMode" class="btn btn-primary">
+                      🚀 Start Using ATLAS
+                      <small>Enter Deploy Mode for testing</small>
+                    </button>
+                  </div>
+                  <p class="mode-note">
+                    <strong>Note:</strong> Deploy Mode locks configuration until server restart.
+                  </p>
+                </div>
               </div>
               <div v-else class="error-message">
                 ❌ Activation failed: {{ activationResult.error }}
@@ -996,6 +1040,7 @@
 
 <script>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import BuildProgress from '@/components/wizard/BuildProgress.vue'
 
 export default {
@@ -1004,6 +1049,8 @@ export default {
     BuildProgress
   },
   setup() {
+    const router = useRouter()
+
     // Wizard state
     const currentStep = ref(1)
     const steps = [
@@ -1095,6 +1142,7 @@ export default {
     const validating = ref(false)
     const testQuery = ref('')
     const testResults = ref(null)
+    const testFilter = ref('all')  // Default to 'all' filter
     const testing = ref(false)
     const currentCorpusInfo = ref(null)
     const activating = ref(false)
@@ -1152,11 +1200,18 @@ export default {
 
     // Navigation
     const nextStep = async () => {
-      console.log('[Navigation] Before increment - currentStep:', currentStep.value, 'canProceed:', canProceed.value)
+      console.log('[Navigation] nextStep called - currentStep:', currentStep.value, 'canProceed:', canProceed.value)
+      console.log('[Navigation] Current step name:', steps[currentStep.value - 1])
+
+      // Debug targetConfig when on step 6
+      if (currentStep.value === 6) {
+        console.log('[Navigation] Build completed, moving to Target Config step')
+        console.log('[Navigation] targetConfig values:', targetConfig.value)
+      }
 
       if (canProceed.value && currentStep.value < steps.length) {
         currentStep.value++
-        console.log('[Navigation] After increment - currentStep:', currentStep.value, 'step name:', steps[currentStep.value - 1])
+        console.log('[Navigation] After increment - new currentStep:', currentStep.value, 'new step name:', steps[currentStep.value - 1])
 
         // Perform step-specific actions AFTER incrementing step
         if (currentStep.value === 4) {
@@ -1328,7 +1383,8 @@ export default {
     const runValidation = async () => {
       validating.value = true
       try {
-        const response = await fetch(`/api/corpus-wizard/validate/${buildId.value}`, {
+        // Use filesystem-based validation - no build_id needed
+        const response = await fetch('/api/corpus-wizard/validate', {
           method: 'POST'
         })
 
@@ -1525,22 +1581,39 @@ export default {
 
     const runTestSearch = async () => {
       testing.value = true
+      testResults.value = null  // Clear previous results
       try {
         const response = await fetch('/api/corpus-wizard/test-search', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            build_id: buildId.value,
             query: testQuery.value,
+            filter: testFilter.value,
             limit: 5
           })
         })
+
+        if (!response.ok) {
+          const error = await response.json()
+          throw new Error(error.detail || 'Search request failed')
+        }
+
         const data = await response.json()
+        // Results are already formatted as citations from the backend
         testResults.value = data.results.map(r => ({
-          excerpt: r.content.substring(0, 200) + '...',
+          excerpt: r.content,  // Already truncated by backend
           score: r.score,
-          metadata: r.metadata
+          metadata: r.metadata,
+          source: r.source,
+          corpus: r.corpus,
+          enrichment: r.enrichment,
+          idx: r.idx
         }))
+
+        // Store filter info if applied
+        testResults.value.filterApplied = data.filter_applied
+        testResults.value.totalFound = data.total_found
+
       } catch (error) {
         console.error('Test search failed:', error)
         alert('Failed to run test search: ' + error.message)
@@ -1552,11 +1625,11 @@ export default {
     const activateCorpus = async () => {
       activating.value = true
       try {
-        const response = await fetch(`/api/corpus-wizard/activate/${metadata.value.name}`, {
+        const response = await fetch('/api/corpus-wizard/activate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            build_id: buildId.value,
+            corpus_name: metadata.value.name,
             display_name: metadata.value.name,
             target_config: targetConfig.value
           })
@@ -1574,6 +1647,33 @@ export default {
         }
       } finally {
         activating.value = false
+      }
+    }
+
+    const continueConfiguring = () => {
+      // Navigate to configuration manager
+      router.push('/config-manager')
+    }
+
+    const enterDeployMode = async () => {
+      if (confirm('Enter Deploy Mode? Configuration will be locked until server restart.')) {
+        try {
+          const response = await fetch('/api/mode/deploy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+          })
+
+          if (response.ok) {
+            // Successfully entered deploy mode, go to chat
+            router.push('/chat')
+          } else {
+            const error = await response.json()
+            alert(`Failed to enter deploy mode: ${error.detail}`)
+          }
+        } catch (error) {
+          console.error('Failed to enter deploy mode:', error)
+          alert('Failed to enter deploy mode')
+        }
       }
     }
 
@@ -1687,6 +1787,7 @@ export default {
       validating,
       runValidation,
       testQuery,
+      testFilter,
       testResults,
       testing,
       runTestSearch,
@@ -1695,6 +1796,8 @@ export default {
       activationResult,
       backupId,
       activateCorpus,
+      continueConfiguring,
+      enterDeployMode,
 
       // Navigation & Validation
       isValidCorpusName,
@@ -3056,6 +3159,22 @@ textarea.form-control {
   margin-top: 1.5rem;
 }
 
+.build-age-info {
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  color: #495057;
+}
+
+.age-warning {
+  color: #856404;
+  font-style: italic;
+  font-size: 0.9em;
+  margin-left: 0.5rem;
+}
+
 .validation-item {
   padding: 0.75rem;
   margin-bottom: 0.5rem;
@@ -3069,6 +3188,12 @@ textarea.form-control {
   border-color: #28a745;
   color: #155724;
   background: #d4edda;
+}
+
+.validation-item.error {
+  border-color: #dc3545;
+  color: #721c24;
+  background: #f8d7da;
 }
 
 .validation-success {
@@ -3094,6 +3219,26 @@ textarea.form-control {
 }
 
 /* Test Search */
+.filter-selection {
+  margin-bottom: 1rem;
+}
+
+.filter-selection .form-label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.filter-selection .form-select {
+  width: 100%;
+  max-width: 400px;
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.95rem;
+}
+
 .test-search-form {
   display: flex;
   gap: 1rem;
@@ -3102,6 +3247,26 @@ textarea.form-control {
 
 .test-search-form .form-control {
   flex: 1;
+}
+
+.results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.results-header h4 {
+  margin: 0;
+}
+
+.filter-badge {
+  background: #007bff;
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 500;
 }
 
 .result-header {
@@ -3219,5 +3384,46 @@ textarea.form-control {
   border: 1px solid #f5c6cb;
   padding: 1rem;
   border-radius: 8px;
+}
+
+/* Post-activation actions */
+.post-activation-actions {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid #c3e6cb;
+}
+
+.post-activation-actions h4 {
+  color: #155724;
+  margin-bottom: 1rem;
+}
+
+.post-activation-actions .action-buttons {
+  display: flex;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.post-activation-actions .btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1rem;
+  text-align: center;
+}
+
+.post-activation-actions .btn small {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  opacity: 0.8;
+}
+
+.mode-note {
+  margin-top: 1rem;
+  font-size: 0.9rem;
+  color: #666;
+  font-style: italic;
 }
 </style>

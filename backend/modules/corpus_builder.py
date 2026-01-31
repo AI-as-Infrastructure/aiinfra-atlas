@@ -144,6 +144,14 @@ class UniversalCorpusBuilder:
             # Clean up checkpoint on success
             self.progress_tracker.cleanup_checkpoint()
 
+            # Calculate vector store size
+            vector_store_path = self.output_dir / "chroma_db"
+            vector_store_size = 0
+            if vector_store_path.exists():
+                for item in vector_store_path.rglob("*"):
+                    if item.is_file():
+                        vector_store_size += item.stat().st_size
+
             # Mark as complete
             if progress_callback:
                 await progress_callback({
@@ -160,6 +168,7 @@ class UniversalCorpusBuilder:
                 "config_path": str(config_path),
                 "retriever_path": str(retriever_path),
                 "documents_processed": len(self.documents),
+                "vector_store_size": vector_store_size,
                 "errors": self.progress_tracker.errors,
                 "warnings": self.progress_tracker.warnings
             }
@@ -527,20 +536,30 @@ class UniversalCorpusBuilder:
         logger.info(f"Creating vector store with {len(all_chunks)} chunks in batches...")
         batch_size = 100  # Process 100 chunks at a time
 
-        # Initialize Chroma client
-        from chromadb import Client
+        # Initialize Chroma persistent client
+        import chromadb
         from chromadb.config import Settings
-        client = Client(Settings(
-            persist_directory=str(persist_dir),
-            anonymized_telemetry=False
-        ))
+
+        # Use PersistentClient for automatic persistence
+        client = chromadb.PersistentClient(
+            path=str(persist_dir),
+            settings=Settings(
+                anonymized_telemetry=False,
+                allow_reset=True
+            )
+        )
+
+        logger.info(f"Initialized ChromaDB persistent client at {persist_dir}")
 
         # Create or get collection
         try:
-            collection = client.get_collection(name=collection_name)
-            client.delete_collection(name=collection_name)
-        except:
-            pass
+            # Check if collection exists
+            existing_collections = [col.name for col in client.list_collections()]
+            if collection_name in existing_collections:
+                logger.info(f"Deleting existing collection: {collection_name}")
+                client.delete_collection(name=collection_name)
+        except Exception as e:
+            logger.warning(f"No existing collection to delete: {e}")
 
         # Wrap LangChain embeddings for ChromaDB compatibility
         chroma_embeddings = ChromaEmbeddingFunction(self.embeddings)
@@ -583,6 +602,18 @@ class UniversalCorpusBuilder:
             # Small async sleep to allow other tasks
             await asyncio.sleep(0.1)
 
+            logger.debug(f"Added batch {i//batch_size + 1} to collection")
+
+        # Verify collection has data
+        try:
+            count = collection.count()
+            logger.info(f"Collection {collection_name} now contains {count} vectors")
+
+            if count == 0:
+                raise ValueError("Collection is empty after adding documents!")
+        except Exception as e:
+            logger.error(f"Error verifying collection: {e}")
+
         # Create Chroma vector store wrapper with persist directory
         from langchain_community.vectorstores import Chroma
         self.vector_store = Chroma(
@@ -592,9 +623,14 @@ class UniversalCorpusBuilder:
             persist_directory=str(persist_dir)
         )
 
-        # Persist the vector store
-        self.vector_store.persist()
-        logger.info(f"Vector store created and persisted to {persist_dir}")
+        # Note: ChromaDB PersistentClient auto-persists, no need to call persist()
+        # Verify files were created
+        chroma_files = list(persist_dir.glob("*"))
+        logger.info(f"ChromaDB files created: {len(chroma_files)} files in {persist_dir}")
+        for file in chroma_files[:5]:  # Log first 5 files
+            logger.debug(f"  - {file.name}")
+
+        logger.info(f"Vector store created and auto-persisted to {persist_dir}")
 
         # Update progress
         if self.progress_tracker.callback:
@@ -636,36 +672,38 @@ class UniversalCorpusBuilder:
         for filter_id, progress in self.progress_tracker.filter_progress.items():
             stats["filters"][filter_id] = progress
 
-        # Get filter information for 2-filter system
-        filter_1_info = None
-        filter_2_info = None
-        filter_1_values = set()
-        filter_2_values = set()
+        # Get filter information for ALL filters
+        filters_info = {}
 
         # Collect unique filter values from documents
         if self.documents and self.config.filters:
+            # Initialize value sets for each filter
+            filter_values = {}
+            for filter_def in self.config.filters.filters:
+                filter_values[filter_def.id] = set()
+
+            # Collect values from documents
             for doc in self.documents:
                 metadata = doc.metadata
-                if len(self.config.filters.filters) >= 1:
-                    filter_1_id = self.config.filters.filters[0].id
-                    if filter_1_id in metadata:
-                        filter_1_values.add(metadata[filter_1_id])
-                if len(self.config.filters.filters) >= 2:
-                    filter_2_id = self.config.filters.filters[1].id
-                    if filter_2_id in metadata:
-                        filter_2_values.add(metadata[filter_2_id])
+                for filter_def in self.config.filters.filters:
+                    filter_id = filter_def.id
+                    if filter_id in metadata:
+                        filter_values[filter_id].add(metadata[filter_id])
 
-        if self.config.filters:
-            if len(self.config.filters.filters) >= 1:
-                filter_1_info = {
-                    "label": self.config.filters.filters[0].label or self.config.filters.filters[0].id,
-                    "values": sorted(list(filter_1_values))  # Sorted list of actual values
+            # Build filter info dictionary
+            for i, filter_def in enumerate(self.config.filters.filters, 1):
+                filter_key = f"filter_{i}"
+                filters_info[filter_key] = {
+                    "id": filter_def.id,
+                    "label": filter_def.label or filter_def.id,
+                    "type": filter_def.type if hasattr(filter_def, 'type') else "directory",
+                    "pattern": filter_def.pattern if hasattr(filter_def, 'pattern') else None,
+                    "values": sorted(list(filter_values[filter_def.id]))
                 }
-            if len(self.config.filters.filters) >= 2:
-                filter_2_info = {
-                    "label": self.config.filters.filters[1].label or self.config.filters.filters[1].id,
-                    "values": sorted(list(filter_2_values))
-                }
+
+        # For backward compatibility, also set filter_1 and filter_2
+        filter_1_info = filters_info.get("filter_1")
+        filter_2_info = filters_info.get("filter_2")
 
         # Create manifest with enhanced embedding documentation
         manifest = {
@@ -691,15 +729,12 @@ class UniversalCorpusBuilder:
                 "collection_name": getattr(self, 'collection_name', self.config.metadata.name.lower().replace(" ", "_")),
                 "persist_directory": str(self.output_dir / "chroma_db")
             },
-            "filters": {
-                "filter_1": filter_1_info,
-                "filter_2": filter_2_info
-            },
+            "filters": filters_info,
             "statistics": stats,
             "fields": {
                 "corpus": {
                     "type": "enum",
-                    "values": sorted(list(filter_1_values)) if filter_1_values else []
+                    "values": sorted(list(filter_values.get("all", set()))) if filter_values.get("all") else []
                 }
             }
         }
