@@ -604,6 +604,58 @@ async def fix_detected_issues(
     })
 
 
+@router.get("/check-existing")
+async def check_existing_corpus():
+    """
+    Check if an existing corpus is present and return its metadata.
+
+    Returns:
+        JSONResponse with corpus metadata if exists, empty response if not
+    """
+    try:
+        corpus_path = Path("backend/corpus")
+        manifest_path = corpus_path / "manifest.json"
+
+        if not manifest_path.exists():
+            return JSONResponse({
+                "exists": False
+            })
+
+        # Read existing manifest
+        with open(manifest_path, 'r') as f:
+            manifest = json.load(f)
+
+        # Calculate corpus size
+        corpus_size = 0
+        chroma_path = corpus_path / "chroma_db"
+        if chroma_path.exists():
+            for item in chroma_path.rglob("*"):
+                if item.is_file():
+                    corpus_size += item.stat().st_size
+
+        # Get build date from manifest or file modification time
+        build_date = manifest.get("build_date", "Unknown")
+        if build_date == "Unknown":
+            build_date = datetime.fromtimestamp(manifest_path.stat().st_mtime).isoformat()
+
+        return JSONResponse({
+            "exists": True,
+            "corpus_name": manifest.get("corpus_name", "Unknown"),
+            "build_date": build_date,
+            "document_count": manifest.get("total_documents", 0),
+            "chunk_count": manifest.get("total_chunks", 0),
+            "size_bytes": corpus_size,
+            "size_mb": round(corpus_size / (1024 * 1024), 2)
+        })
+
+    except Exception as e:
+        logger.error(f"Error checking existing corpus: {e}")
+        return JSONResponse({
+            "exists": False,
+            "error": str(e)
+        })
+
+
 @router.post("/build")
 async def build_corpus(
     background_tasks: BackgroundTasks,
@@ -668,6 +720,9 @@ async def build_corpus(
         # Generate build ID
         build_id = f"build_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
+        # Extract target configuration if provided
+        target_config = frontend_config.get("target", {}) if "target" in frontend_config else {}
+
         # Initialize progress tracking
         wizard_state['current_build'] = build_id
         wizard_state['build_progress'][build_id] = {
@@ -677,7 +732,9 @@ async def build_corpus(
             "processed_documents": 0,
             "current_document": "",
             "started_at": datetime.now().isoformat(),
-            "mode": build_request.mode
+            "mode": build_request.mode,
+            "target_config": target_config,  # Store target config for later use
+            "corpus_name": config.metadata.name  # Store corpus name for target generation
         }
 
         # Start build in background - use asyncio to ensure proper async execution
@@ -1049,7 +1106,7 @@ async def validate_corpus():
         import time
 
         # Check output files directly on filesystem
-        output_path = Path("backend/corpus/tmp")
+        output_path = Path("backend/corpus")
         chroma_path = output_path / "chroma_db"
         manifest_path = output_path / "manifest.json"
 
@@ -1104,10 +1161,11 @@ async def validate_corpus():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/test-search")
-async def test_search(request: Dict[str, Any] = Body(...)):
+# DEPRECATED: Test search removed in favor of testing via main app
+# @router.post("/test-search")
+async def _deprecated_test_search(request: Dict[str, Any] = Body(...)):
     """
-    Run a test search on the newly built corpus in tmp directory.
+    [DEPRECATED] Run a test search on the newly built corpus in tmp directory.
 
     Supports filtering by directory structure patterns to test filter functionality.
     """
@@ -1217,10 +1275,11 @@ async def test_search(request: Dict[str, Any] = Body(...)):
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 
-@router.post("/activate")
-async def activate_corpus_by_build(request: Dict[str, Any] = Body(...)):
+# DEPRECATED: Activation removed - corpus is immediately available after build
+# @router.post("/activate")
+async def _deprecated_activate_corpus_by_build(request: Dict[str, Any] = Body(...)):
     """
-    Activate a corpus from a specific build.
+    [DEPRECATED] Activate a corpus from a specific build.
 
     This uses filesystem-based validation and fast rename operations
     for instant activation of large corpus directories.
@@ -1427,14 +1486,15 @@ TARGET_VERSION=1.0
         })
 
 
-@router.post("/activate/{corpus_name}")
-async def activate_corpus(
+# DEPRECATED: Activation removed - corpus is immediately available after build
+# @router.post("/activate/{corpus_name}")
+async def _deprecated_activate_corpus(
     corpus_name: str,
     request: Dict[str, Any] = Body(...),
     backup: bool = Query(True, description="Backup current corpus")
 ):
     """
-    Activate a newly built corpus.
+    [DEPRECATED] Activate a newly built corpus.
 
     This moves corpus files from backend/corpus/tmp/ to their proper locations:
     - Corpus data (chroma_db, manifest, bm25) → backend/corpus/
@@ -1740,8 +1800,8 @@ async def get_unified_config(build_id: str):
         if build_id not in wizard_state['build_progress']:
             raise HTTPException(status_code=404, detail="Build not found")
 
-        # Read manifest from tmp directory
-        manifest_path = Path("backend/corpus/tmp/manifest.json")
+        # Read manifest from corpus directory
+        manifest_path = Path("backend/corpus/manifest.json")
         if not manifest_path.exists():
             return JSONResponse({
                 "error": "Manifest not found. Build may not be complete."
@@ -1836,8 +1896,8 @@ async def _build_corpus_task(build_id: str, config: CorpusConfig):
 
         # Initialize builder
         mode = wizard_state['build_progress'][build_id].get('mode', 'cpu')
-        # Use the tmp directory for corpus building
-        output_dir = Path("backend/corpus/tmp")
+        # Build directly in the final corpus directory
+        output_dir = Path("backend/corpus")
         logger.info(f"Creating UniversalCorpusBuilder with mode={mode}, output={output_dir}")
         builder = UniversalCorpusBuilder(config, mode, output_dir)
         logger.info("Builder created successfully, starting build...")
@@ -1845,6 +1905,110 @@ async def _build_corpus_task(build_id: str, config: CorpusConfig):
         # Build corpus
         results = await builder.build(progress_callback)
         logger.info(f"Build completed with results: {results}")
+
+        # Process target configuration after successful build
+        target_config = wizard_state['build_progress'][build_id].get('target_config', {})
+        corpus_name = wizard_state['build_progress'][build_id].get('corpus_name', 'corpus')
+
+        if target_config:
+            try:
+                # Import mode_manager
+                from backend.modules.mode_manager import mode_manager
+
+                # Generate and save target configuration file
+                targets_path = Path("backend/targets")
+                targets_path.mkdir(parents=True, exist_ok=True)
+
+                # Generate target filename based on settings
+                target_name = f"k{target_config.get('search_k', 20)}_{target_config.get('llm_model', 'claude4').replace('-', '_').replace('.', '_')}"
+                target_file = targets_path / f"{target_name}.txt"
+
+                # Generate target configuration content
+                target_content = []
+                target_content.append(f"# Target configuration generated by Corpus Wizard")
+                target_content.append(f"# Created: {datetime.now().isoformat()}")
+                target_content.append(f"# Corpus: {corpus_name}")
+                target_content.append("")
+                # Core LLM configuration
+                target_content.append(f"LLM_PROVIDER={target_config.get('llm_provider', 'anthropic')}")
+                target_content.append(f"LLM_MODEL={target_config.get('llm_model', 'claude-3-5-haiku-20241022')}")
+                # Search configuration
+                target_content.append(f"SEARCH_TYPE={target_config.get('search_type', 'similarity')}")
+                target_content.append(f"SEARCH_K={target_config.get('search_k', 20)}")
+                target_content.append(f"SEARCH_SCORE_THRESHOLD={target_config.get('score_threshold', 0.7)}")
+                target_content.append(f"CITATION_LIMIT={target_config.get('citation_limit', 10)}")
+                # Retrieval size configuration
+                large_size = target_config.get('large_retrieval_size', 120)
+                target_content.append(f"LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS={large_size}")
+                target_content.append(f"LARGE_RETRIEVAL_SIZE_ALL_CORPUS={large_size}")
+                # Algorithm and chunking configuration
+                target_content.append(f"ALGORITHM={target_config.get('algorithm', 'ensemble')}")
+                chunk_size = target_config.get('chunk_size', 1000)
+                chunk_overlap = target_config.get('chunk_overlap', 200)
+                target_content.append(f"CHUNK_SIZE={chunk_size}")
+                target_content.append(f"CHUNK_OVERLAP={chunk_overlap}")
+                # Vector database and pooling
+                target_content.append(f"VECTOR_DATABASE={target_config.get('vector_database', 'chromadb')}")
+                target_content.append(f"POOLING={target_config.get('pooling', 'mean')}")
+                # Target version for tracking
+                target_content.append(f"TARGET_VERSION=1.0")
+                # Optional temperature and max tokens
+                target_content.append(f"TEMPERATURE={target_config.get('temperature', 0.7)}")
+                target_content.append(f"MAX_TOKENS={target_config.get('max_tokens', 4096)}")
+
+                # Write target configuration file
+                with open(target_file, 'w') as f:
+                    f.write('\n'.join(target_content))
+                logger.info(f"Generated target configuration file: {target_file}")
+
+                # Update TEST_TARGET in .env files if not locked
+                if not mode_manager.is_locked():
+                    # Update all environment files
+                    env_files = ['config/.env.development', 'config/.env.staging', 'config/.env.production']
+
+                    for env_file in env_files:
+                        env_path = Path(env_file)
+                        if env_path.exists():
+                            # Read the file
+                            with open(env_path, 'r') as f:
+                                lines = f.readlines()
+
+                            # Update TEST_TARGET line
+                            updated = False
+                            for i, line in enumerate(lines):
+                                if line.strip().startswith('TEST_TARGET=') or line.strip().startswith('# TEST_TARGET='):
+                                    lines[i] = f'TEST_TARGET={target_name}\n'
+                                    updated = True
+                                    break
+
+                            # If not found, add it
+                            if not updated:
+                                lines.append(f'TEST_TARGET={target_name}\n')
+
+                            # Write back
+                            with open(env_path, 'w') as f:
+                                f.writelines(lines)
+                            logger.info(f"Updated TEST_TARGET in {env_file}")
+
+                    # Also update the template file
+                    template_path = Path('config/.env.template')
+                    if template_path.exists():
+                        with open(template_path, 'r') as f:
+                            lines = f.readlines()
+
+                        for i, line in enumerate(lines):
+                            if line.strip().startswith('TEST_TARGET='):
+                                lines[i] = f'TEST_TARGET={target_name}\n'
+                                break
+
+                        with open(template_path, 'w') as f:
+                            f.writelines(lines)
+                        logger.info(f"Updated TEST_TARGET in template")
+
+            except Exception as e:
+                logger.error(f"Failed to process target configuration: {e}")
+                # Don't fail the build for target config issues
+                wizard_state['build_progress'][build_id]['target_error'] = str(e)
 
         # Mark as completed
         wizard_state['build_progress'][build_id].update({

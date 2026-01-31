@@ -729,15 +729,25 @@
           </div>
 
           <div class="step-actions">
-            <button @click="nextStep" :disabled="!canProceed" class="btn btn-primary">
-              Continue to Validation & Activation
-            </button>
+            <div class="corpus-ready-notice">
+              <h3>✅ Corpus is Ready!</h3>
+              <p>Your corpus has been successfully built and is <strong>immediately available for use</strong>.</p>
+              <p>The target configuration has been saved and the TEST_TARGET environment variable has been updated.</p>
+              <div class="action-buttons">
+                <button @click="goToMainApp" class="btn btn-success">
+                  🚀 Go to Main Application
+                </button>
+                <button @click="startNewCorpus" class="btn btn-secondary">
+                  📝 Build Another Corpus
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- Step 8: Test & Activate -->
-      <div v-if="currentStep === 8" class="wizard-step">
+      <!-- Step 8: Test & Activate (REMOVED - corpus is immediately available after build) -->
+      <!-- <div v-if="currentStep === 8" class="wizard-step">
         {{ console.log('[Render] Step 8 is rendering - currentStep:', currentStep) }}
         <h2>Test & Activate Corpus</h2>
 
@@ -1014,7 +1024,7 @@
             </div>
           </div>
         </div>
-      </div>
+      </div> -->
     </div>
 
     <!-- Navigation -->
@@ -1060,8 +1070,7 @@ export default {
       'Preview',
       'Model',
       'Build',
-      'Target Config',
-      'Activate'
+      'Target Config'
     ]
 
     // Workflow type
@@ -1233,6 +1242,44 @@ export default {
       if (currentStep.value > 1) {
         currentStep.value--
       }
+    }
+
+    // Navigation to main app
+    const goToMainApp = () => {
+      // Navigate to the main application
+      router.push('/')
+    }
+
+    // Start a new corpus build
+    const startNewCorpus = () => {
+      // Reset wizard to first step
+      currentStep.value = 1
+      // Reset form data
+      metadata.value = {
+        name: '',
+        description: '',
+        source_doi: '',
+        copyright: ''
+      }
+      source.value = {
+        type: 'local',
+        path: '',
+        github_repo: '',
+        github_branch: 'main',
+        date_pattern: 'none',
+        custom_date_pattern: '',
+        extract_inline_urls: false
+      }
+      selectedModel.value = 'sentence-transformers/all-MiniLM-L6-v2'
+      chunkSize.value = 1000
+      chunkOverlap.value = 200
+      previewData.value = null
+      building.value = false
+      buildProgress.value = { status: 'idle' }
+      buildResults.value = null
+      testQuery.value = ''
+      testResults.value = null
+      validationData.value = null
     }
 
     // Regex validation methods
@@ -1466,6 +1513,39 @@ export default {
       building.value = true
 
       try {
+        // Check for existing corpus and warn about overwrite
+        try {
+          const existingResponse = await fetch('/api/corpus-wizard/check-existing')
+          if (existingResponse.ok) {
+            const existingData = await existingResponse.json()
+            if (existingData.exists) {
+              // Show warning dialog
+              const confirmMessage = `
+Warning: An existing corpus will be overwritten!
+
+Existing Corpus Details:
+- Name: ${existingData.corpus_name}
+- Build Date: ${existingData.build_date}
+- Documents: ${existingData.document_count}
+- Chunks: ${existingData.chunk_count}
+- Size: ${existingData.size_mb} MB
+
+This action cannot be undone. The existing corpus will be permanently deleted.
+
+Do you want to continue?`
+
+              if (!confirm(confirmMessage)) {
+                building.value = false
+                return
+              }
+              console.log('User confirmed corpus overwrite')
+            }
+          }
+        } catch (error) {
+          console.warn('Could not check for existing corpus:', error)
+          // Continue anyway - don't block build if check fails
+        }
+
         // Prepare configuration
         const config = {
           metadata: {
@@ -1804,6 +1884,8 @@ export default {
       canProceed,
       nextStep,
       previousStep,
+      goToMainApp,
+      startNewCorpus,
 
       // Utilities
       saveConfiguration,
