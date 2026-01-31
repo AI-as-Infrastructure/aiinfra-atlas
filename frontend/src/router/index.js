@@ -6,22 +6,33 @@ import InterRaterPage from '@/pages/InterRaterPage.vue'
 import AmplifyCallback from '@/pages/AmplifyCallback.vue'
 import LoginPage from '@/pages/LoginPage.vue'
 import CorpusWizard from '@/pages/CorpusWizard.vue'
+import ModeSelector from '@/components/ModeSelector.vue'
+import ConfigManager from '@/pages/ConfigManager.vue'
 import { isCognitoEnabled, isAuthenticated } from '@/auth/amplify-auth'
 
 const routes = [
-  { path: '/', component: ChatContainer, meta: { requiresAuth: true } },
+  // Main application route (requires deployment mode)
+  { path: '/chat', component: ChatContainer, meta: { requiresAuth: true, requiresDeploy: true }, name: 'chat' },
+
+  // Mode selection (entry point after auth)
+  { path: '/', component: ModeSelector, meta: { requiresAuth: true }, name: 'mode-selector' },
+  { path: '/mode', component: ModeSelector, meta: { requiresAuth: true }, name: 'mode' },
+
+  // Configuration routes (require configuration mode)
+  { path: '/corpus-wizard', component: CorpusWizard, name: 'corpus-wizard', meta: { requiresConfigure: true } },
+  { path: '/config-manager', component: ConfigManager, name: 'config-manager', meta: { requiresConfigure: true } },
+  { path: '/setup', redirect: '/corpus-wizard' },  // Alias for corpus wizard
+
+  // Public routes
   { path: '/about', component: AboutPage },
   { path: '/faq', component: FAQPage },
-  { path: '/inter-rater', component: InterRaterPage, meta: { requiresAuth: true } },
 
-  // Corpus wizard route (admin functionality - no auth required for development)
-  { path: '/corpus-wizard', component: CorpusWizard, name: 'corpus-wizard' },
+  // Inter-rater (requires deployment mode)
+  { path: '/inter-rater', component: InterRaterPage, meta: { requiresAuth: true, requiresDeploy: true } },
 
   // Authentication routes
   { path: '/login', component: LoginPage, name: 'login' },
   { path: '/callback', component: AmplifyCallback, name: 'callback' },
-
-  // No debug pages needed
 ]
 
 const router = createRouter({
@@ -29,10 +40,40 @@ const router = createRouter({
   routes,
 })
 
-// Navigation guard for authentication
+// Helper function to check system mode
+async function checkSystemMode() {
+  try {
+    const response = await fetch('/api/mode/status')
+    if (response.ok) {
+      const data = await response.json()
+      return data
+    }
+  } catch (error) {
+    console.error('Failed to check system mode:', error)
+  }
+  return { mode: null, config_complete: false }
+}
+
+// Navigation guard for authentication and mode
 router.beforeEach(async (to, from, next) => {
   // Skip auth check if Cognito is disabled
   if (!isCognitoEnabled()) {
+    // Even without auth, check mode for configuration vs deploy routes
+    const modeStatus = await checkSystemMode()
+
+    // Mode-based routing
+    if (to.meta.requiresDeploy && modeStatus.mode !== 'deploy') {
+      // Trying to access deploy-only route without being in deploy mode
+      next('/')  // Go to mode selector
+      return
+    }
+
+    if (to.meta.requiresConfigure && modeStatus.mode === 'deploy') {
+      // Trying to access configuration route while in deploy mode
+      next('/chat')
+      return
+    }
+
     next()
     return
   }
@@ -94,22 +135,37 @@ router.beforeEach(async (to, from, next) => {
   // For routes requiring authentication, check if user is logged in
   try {
     const authenticated = await isAuthenticated()
-    
+
     if (to.matched.some(record => record.meta.requiresAuth) && !authenticated) {
       console.log('Authentication required but not authenticated, redirecting to login')
       next({ path: '/login' })
       return
     }
-    
-    // User is authenticated or route doesn't require auth
+
+    // If authenticated, also check mode requirements
+    if (authenticated) {
+      const modeStatus = await checkSystemMode()
+
+      // Mode-based routing for authenticated users
+      if (to.meta.requiresDeploy && modeStatus.mode !== 'deploy') {
+        console.log('Deploy mode required but not in deploy mode, redirecting to mode selector')
+        next('/')  // Go to mode selector
+        return
+      }
+
+      if (to.meta.requiresConfigure && modeStatus.mode === 'deploy') {
+        console.log('Configure mode required but in deploy mode, redirecting to chat')
+        next('/chat')
+        return
+      }
+    }
+
+    // User is authenticated and mode requirements are met
     next()
   } catch (error) {
     console.error('Auth check error:', error)
     next({ path: '/login' })
   }
-
-  // All checks passed, proceed
-  next()
 })
 
 export default router

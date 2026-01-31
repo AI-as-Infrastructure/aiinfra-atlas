@@ -77,6 +77,7 @@ from backend.routers import (
     inter_rater_router,
     retriever_router,
     corpus_wizard_router,
+    mode_router,
 )
 
 # Import configuration initialization
@@ -146,6 +147,7 @@ async def handle_forwarded_proto(request: Request, call_next):
 app.include_router(telemetry_router)
 
 # Include API routers
+app.include_router(mode_router)  # Mode management should be first
 app.include_router(core_router)
 app.include_router(query_router)
 app.include_router(feedback_router)
