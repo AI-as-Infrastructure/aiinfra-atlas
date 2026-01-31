@@ -794,57 +794,6 @@
             </div>
           </div>
 
-          <!-- Test Search -->
-          <div v-if="validationData && validationData.all_valid" class="test-section">
-            <h3>Test Your Corpus</h3>
-            <p>Run a test search to verify the corpus is working correctly.</p>
-
-            <!-- Filter Selection -->
-            <div v-if="previewData?.filters && previewData.filters.length > 0" class="filter-selection">
-              <label for="test-filter" class="form-label">Filter (optional):</label>
-              <select id="test-filter" v-model="testFilter" class="form-select">
-                <option value="all">All Documents</option>
-                <option v-for="filter in previewData.filters.filter(f => f.id !== 'all')" :key="filter.id" :value="filter.id">
-                  {{ filter.label }} ({{ filter.document_count }} docs)
-                </option>
-              </select>
-            </div>
-
-            <div class="test-search-form">
-              <input
-                v-model="testQuery"
-                type="text"
-                placeholder="Enter a test query..."
-                class="form-control"
-                @keyup.enter="runTestSearch"
-              />
-              <button @click="runTestSearch" :disabled="testing || !testQuery" class="btn btn-primary">
-                {{ testing ? 'Searching...' : 'Test Search' }}
-              </button>
-            </div>
-
-            <div v-if="testResults" class="test-results">
-              <div class="results-header">
-                <h4>Search Results ({{ testResults.length }} documents found)</h4>
-                <span v-if="testResults.filterApplied" class="filter-badge">
-                  Filter: {{ testResults.filterApplied }}
-                </span>
-              </div>
-              <div v-for="(result, index) in testResults.slice(0, 3)" :key="index" class="test-result">
-                <div class="result-header">
-                  <span class="result-number">{{ index + 1 }}.</span>
-                  <span class="result-score">Score: {{ result.score.toFixed(3) }}</span>
-                </div>
-                <div class="result-content">{{ result.excerpt }}</div>
-                <div class="result-citation">
-                  <strong>Source:</strong> {{ result.source || 'Unknown' }}
-                  <span v-if="result.corpus"> | <strong>Corpus:</strong> {{ result.corpus }}</span>
-                  <span v-if="result.enrichment?.date"> | <strong>Date:</strong> {{ result.enrichment.date }}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
           <!-- Corpus Comparison -->
           <div v-if="validationData && validationData.all_valid" class="comparison-section">
             <h3>Corpus Comparison</h3>
@@ -1149,10 +1098,6 @@ export default {
     const validationData = ref(null)
     const validationComplete = ref(false)
     const validating = ref(false)
-    const testQuery = ref('')
-    const testResults = ref(null)
-    const testFilter = ref('all')  // Default to 'all' filter
-    const testing = ref(false)
     const currentCorpusInfo = ref(null)
     const activating = ref(false)
     const activationResult = ref(null)
@@ -1277,8 +1222,6 @@ export default {
       building.value = false
       buildProgress.value = { status: 'idle' }
       buildResults.value = null
-      testQuery.value = ''
-      testResults.value = null
       validationData.value = null
     }
 
@@ -1659,49 +1602,6 @@ Do you want to continue?`
       }
     }
 
-    const runTestSearch = async () => {
-      testing.value = true
-      testResults.value = null  // Clear previous results
-      try {
-        const response = await fetch('/api/corpus-wizard/test-search', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            query: testQuery.value,
-            filter: testFilter.value,
-            limit: 5
-          })
-        })
-
-        if (!response.ok) {
-          const error = await response.json()
-          throw new Error(error.detail || 'Search request failed')
-        }
-
-        const data = await response.json()
-        // Results are already formatted as citations from the backend
-        testResults.value = data.results.map(r => ({
-          excerpt: r.content,  // Already truncated by backend
-          score: r.score,
-          metadata: r.metadata,
-          source: r.source,
-          corpus: r.corpus,
-          enrichment: r.enrichment,
-          idx: r.idx
-        }))
-
-        // Store filter info if applied
-        testResults.value.filterApplied = data.filter_applied
-        testResults.value.totalFound = data.total_found
-
-      } catch (error) {
-        console.error('Test search failed:', error)
-        alert('Failed to run test search: ' + error.message)
-      } finally {
-        testing.value = false
-      }
-    }
-
     const activateCorpus = async () => {
       activating.value = true
       try {
@@ -1866,11 +1766,6 @@ Do you want to continue?`
       validationComplete,
       validating,
       runValidation,
-      testQuery,
-      testFilter,
-      testResults,
-      testing,
-      runTestSearch,
       currentCorpusInfo,
       activating,
       activationResult,
@@ -2540,49 +2435,6 @@ textarea.form-control {
 }
 
 .build-summary li:last-child {
-  border-bottom: none;
-}
-
-.test-section {
-  background: #f8f9fa;
-  border: 1px solid #ddd;
-  padding: 1.5rem;
-  border-radius: 8px;
-  margin-top: 2rem;
-  margin-bottom: 2rem;
-}
-
-.test-section h3 {
-  margin-top: 0;
-  color: #181818;
-  font-weight: 600;
-}
-
-.test-section .form-control {
-  margin-bottom: 1rem;
-}
-
-.test-results {
-  margin-top: 1rem;
-  padding: 1rem;
-  background: #fff;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-}
-
-.test-results h4 {
-  color: #181818;
-  font-weight: 600;
-  margin-top: 0;
-}
-
-.test-result {
-  padding: 0.5rem 0;
-  border-bottom: 1px solid #eee;
-  color: #181818;
-}
-
-.test-result:last-child {
   border-bottom: none;
 }
 
@@ -3298,85 +3150,6 @@ textarea.form-control {
   border-radius: 8px;
   text-align: center;
   font-weight: 600;
-}
-
-/* Test Search */
-.filter-selection {
-  margin-bottom: 1rem;
-}
-
-.filter-selection .form-label {
-  display: block;
-  margin-bottom: 0.5rem;
-  font-weight: 600;
-  color: #333;
-}
-
-.filter-selection .form-select {
-  width: 100%;
-  max-width: 400px;
-  padding: 0.5rem;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 0.95rem;
-}
-
-.test-search-form {
-  display: flex;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-}
-
-.test-search-form .form-control {
-  flex: 1;
-}
-
-.results-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
-}
-
-.results-header h4 {
-  margin: 0;
-}
-
-.filter-badge {
-  background: #007bff;
-  color: white;
-  padding: 0.25rem 0.75rem;
-  border-radius: 12px;
-  font-size: 0.85rem;
-  font-weight: 500;
-}
-
-.result-header {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 0.5rem;
-  font-weight: 600;
-}
-
-.result-number {
-  color: #181818;
-}
-
-.result-score {
-  color: #666;
-  font-size: 0.9rem;
-}
-
-.result-content {
-  color: #666;
-  margin-bottom: 0.5rem;
-}
-
-.result-metadata {
-  font-size: 0.9rem;
-  color: #666;
-  display: flex;
-  gap: 1rem;
 }
 
 /* Comparison Table */
