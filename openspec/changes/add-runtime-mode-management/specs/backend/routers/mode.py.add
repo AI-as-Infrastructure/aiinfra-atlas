@@ -1,0 +1,152 @@
+"""
+API endpoints for runtime mode management.
+
+Provides endpoints for checking and changing system operational mode
+between configuration and deployment states.
+"""
+
+import logging
+from fastapi import APIRouter, Request, HTTPException, Depends
+from fastapi.responses import JSONResponse
+from typing import Dict, Any
+
+from backend.modules.mode_manager import mode_manager, SystemMode
+from backend.modules.auth import require_auth, get_user_id
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(tags=["mode"])
+
+
+@router.get("/api/mode/status")
+async def get_mode_status() -> Dict[str, Any]:
+    """
+    Get current mode and configuration status.
+
+    Returns comprehensive information about the system's operational mode,
+    including whether configuration is complete and if the system is locked.
+
+    Returns:
+        Dict containing:
+        - mode: Current mode (configure/deploy)
+        - locked: Whether mode is locked (deploy mode)
+        - config_complete: Whether configuration is ready for deployment
+        - has_corpus: Whether a corpus exists
+        - has_targets: Whether test targets exist
+        - corpus_info: Information about current corpus (if exists)
+        - target_count: Number of configured test targets
+    """
+    from backend.modules.config_loader import ConfigLoader
+
+    config_loader = ConfigLoader()
+    config = config_loader.load_config()
+
+    status = mode_manager.get_status()
+
+    # Add configuration details
+    status.update({
+        "has_corpus": bool(config.get("corpus")),
+        "has_targets": bool(config.get("targets", {}).get("configurations")),
+        "corpus_info": config.get("corpus") if config.get("corpus") else None,
+        "target_count": len(config.get("targets", {}).get("configurations", {})),
+        "default_target": config.get("targets", {}).get("default")
+    })
+
+    return status
+
+
+@router.post("/api/mode/deploy")
+async def enter_deploy_mode(
+    request: Request,
+    user_id: str = Depends(get_user_id)
+) -> Dict[str, Any]:
+    """
+    Transition to deploy mode (one-way operation).
+
+    This is a one-way operation that locks the system configuration.
+    Once in deploy mode, the server must be restarted to make changes.
+
+    Args:
+        request: FastAPI request object
+        user_id: Authenticated user ID
+
+    Returns:
+        Dict with mode transition confirmation
+
+    Raises:
+        HTTPException 400: If configuration is incomplete or already in deploy mode
+    """
+    # Validate configuration is complete
+    if not mode_manager.has_complete_configuration():
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot enter deploy mode without complete configuration. "
+                   "Please ensure you have built a corpus and configured at least one test target."
+        )
+
+    try:
+        # Set mode (one-way transition)
+        result = mode_manager.set_mode(SystemMode.DEPLOY, user_id)
+
+        # Log the transition for audit trail
+        logger.info(f"System entered deploy mode by user {user_id}: {result}")
+
+        return {
+            **result,
+            "message": "Successfully entered deploy mode. Configuration is now locked."
+        }
+
+    except ValueError as e:
+        # Already in deploy mode
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/api/mode/configure")
+async def enter_configure_mode(
+    user_id: str = Depends(get_user_id)
+) -> Dict[str, Any]:
+    """
+    Enter or remain in configure mode.
+
+    This endpoint is idempotent - calling it in configure mode is safe.
+    However, it cannot be used to exit deploy mode.
+
+    Args:
+        user_id: Authenticated user ID
+
+    Returns:
+        Dict with mode status
+
+    Raises:
+        HTTPException 400: If currently in deploy mode
+    """
+    if mode_manager.is_locked():
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot change from deploy mode without server restart. "
+                   "Please restart the server to modify configuration."
+        )
+
+    # Set or confirm configure mode
+    result = mode_manager.set_mode(SystemMode.CONFIGURE, user_id)
+
+    return {
+        **result,
+        "message": "System is in configuration mode"
+    }
+
+
+@router.get("/api/mode/can-configure")
+async def can_configure() -> Dict[str, bool]:
+    """
+    Check if configuration changes are allowed.
+
+    Simple endpoint for UI to check if configuration options
+    should be enabled or disabled.
+
+    Returns:
+        Dict with can_configure boolean
+    """
+    return {
+        "can_configure": not mode_manager.is_locked()
+    }

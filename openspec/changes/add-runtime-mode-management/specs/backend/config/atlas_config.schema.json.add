@@ -1,0 +1,241 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ATLAS Centralized Configuration",
+  "description": "Centralized configuration for ATLAS test harness, replacing scattered configuration files",
+  "type": "object",
+  "required": ["version", "corpus", "targets"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Configuration schema version",
+      "enum": ["2.0"]
+    },
+    "corpus": {
+      "type": "object",
+      "description": "Corpus configuration",
+      "required": ["name", "collection_name", "embedding_model", "chunk_size", "chunk_overlap"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Human-readable corpus name",
+          "minLength": 3,
+          "maxLength": 100
+        },
+        "collection_name": {
+          "type": "string",
+          "description": "ChromaDB collection name",
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*[a-zA-Z0-9]$",
+          "minLength": 3,
+          "maxLength": 63
+        },
+        "embedding_model": {
+          "type": "string",
+          "description": "Embedding model identifier",
+          "examples": ["sentence-transformers/all-mpnet-base-v2", "Livingwithmachines/bert_1890_1900"]
+        },
+        "chunk_size": {
+          "type": "integer",
+          "description": "Text chunk size for embeddings",
+          "minimum": 100,
+          "maximum": 10000,
+          "default": 1000
+        },
+        "chunk_overlap": {
+          "type": "integer",
+          "description": "Overlap between chunks",
+          "minimum": 0,
+          "maximum": 500,
+          "default": 200
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Corpus creation timestamp"
+        },
+        "document_count": {
+          "type": "integer",
+          "description": "Total number of documents in corpus"
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Additional corpus metadata",
+          "properties": {
+            "description": {
+              "type": "string"
+            },
+            "copyright_status": {
+              "type": "string"
+            },
+            "doi": {
+              "type": "string"
+            },
+            "source_location": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "targets": {
+      "type": "object",
+      "description": "Test target configurations",
+      "required": ["default", "configurations"],
+      "properties": {
+        "default": {
+          "type": "string",
+          "description": "Default target identifier"
+        },
+        "configurations": {
+          "type": "object",
+          "description": "Map of target ID to configuration",
+          "additionalProperties": {
+            "type": "object",
+            "required": [
+              "llm_provider",
+              "llm_model",
+              "search_type",
+              "search_k",
+              "search_score_threshold",
+              "large_retrieval_size_single",
+              "large_retrieval_size_all"
+            ],
+            "properties": {
+              "llm_provider": {
+                "type": "string",
+                "enum": ["anthropic", "openai", "google", "bedrock", "ollama"],
+                "description": "LLM provider"
+              },
+              "llm_model": {
+                "type": "string",
+                "description": "Model identifier",
+                "examples": [
+                  "claude-3-haiku-20240307",
+                  "gpt-4-turbo-preview",
+                  "gemini-pro"
+                ]
+              },
+              "search_type": {
+                "type": "string",
+                "enum": ["similarity", "mmr", "similarity_score_threshold"],
+                "description": "Vector search type",
+                "default": "similarity"
+              },
+              "search_k": {
+                "type": "integer",
+                "description": "Number of documents to retrieve",
+                "minimum": 1,
+                "maximum": 100,
+                "default": 20
+              },
+              "search_score_threshold": {
+                "type": "number",
+                "description": "Minimum similarity score for retrieval",
+                "minimum": 0,
+                "maximum": 1,
+                "default": 0.7
+              },
+              "citation_limit": {
+                "type": "integer",
+                "description": "Maximum citations per response",
+                "minimum": 1,
+                "maximum": 50,
+                "default": 10
+              },
+              "large_retrieval_size_single": {
+                "type": "integer",
+                "description": "Initial retrieval size for single corpus",
+                "minimum": 10,
+                "maximum": 500,
+                "default": 120
+              },
+              "large_retrieval_size_all": {
+                "type": "integer",
+                "description": "Initial retrieval size for all corpora",
+                "minimum": 10,
+                "maximum": 500,
+                "default": 120
+              },
+              "algorithm": {
+                "type": "string",
+                "enum": ["ensemble", "vector", "bm25", "hnsw"],
+                "description": "Retrieval algorithm",
+                "default": "ensemble"
+              },
+              "temperature": {
+                "type": "number",
+                "description": "LLM temperature",
+                "minimum": 0,
+                "maximum": 2,
+                "default": 0.7
+              },
+              "max_tokens": {
+                "type": "integer",
+                "description": "Maximum tokens in response",
+                "minimum": 100,
+                "maximum": 100000,
+                "default": 4096
+              },
+              "pooling": {
+                "type": "string",
+                "enum": ["mean", "cls", "max"],
+                "description": "Embedding pooling strategy",
+                "default": "mean"
+              },
+              "created_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "Target creation timestamp"
+              },
+              "created_by": {
+                "type": "string",
+                "description": "User who created this target"
+              }
+            }
+          }
+        }
+      }
+    },
+    "filters": {
+      "type": "array",
+      "description": "Active corpus filters",
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "type"],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["directory", "metadata", "custom"]
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "system": {
+      "type": "object",
+      "description": "System-wide settings",
+      "properties": {
+        "atlas_version": {
+          "type": "string",
+          "description": "ATLAS version",
+          "default": "1.0.0"
+        },
+        "multi_corpus_enabled": {
+          "type": "boolean",
+          "description": "Enable multi-corpus features",
+          "default": false
+        }
+      }
+    }
+  }
+}
