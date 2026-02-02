@@ -98,60 +98,17 @@ def _get_default_config() -> Dict[str, Any]:
             "algorithm": "hnsw",
             "chunk_size": 1000,
             "chunk_overlap": 200,
-            "pooling": os.getenv("POOLING", "mean"),
+            "pooling": "mean",
             "target_id": "default",
             "target_version": "1.0",
-            "request_timeout": int(os.getenv("RETRIEVER_REQUEST_TIMEOUT", "30")),
-            "connection_timeout": int(os.getenv("RETRIEVER_CONNECTION_TIMEOUT", "10"))
+            "request_timeout": 30,
+            "connection_timeout": 10
         }
     }
 
-def _load_environment_variables(config: Dict[str, Any]) -> None:
-    """Load configuration from environment variables."""
-    # Enhanced environment variable mapping
-    env_mappings = {
-        "ATLAS_VERSION": ["ATLAS_VERSION"],
-        "CHROMA_PERSIST_DIRECTORY": ["retriever_config", "chroma_persist_directory"],
-        "CHROMA_COLLECTION_NAME": ["retriever_config", "chroma_collection_name"],
-        "EMBEDDING_MODEL": ["retriever_config", "embedding_model"],
-        "LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS": ["retriever_config", "LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS"],
-        "LARGE_RETRIEVAL_SIZE_ALL_CORPUS": ["retriever_config", "LARGE_RETRIEVAL_SIZE_ALL_CORPUS"],
-        "TEST_TARGET": ["retriever_config", "target_id"],
-        "INDEX_NAME": ["retriever_config", "index_name"],
-        "POOLING": ["retriever_config", "pooling"]
-    }
-    
-    # Type conversions
-    type_conversions = {
-        "LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS": int,
-        "LARGE_RETRIEVAL_SIZE_ALL_CORPUS": int,
-        "SEARCH_K": int,
-        "CITATION_LIMIT": int,
-        "SEARCH_SCORE_THRESHOLD": float,
-        "CHUNK_SIZE": int,
-        "CHUNK_OVERLAP": int
-    }
-    
-    for env_var, config_path in env_mappings.items():
-        value = os.getenv(env_var)
-        if value is not None:
-            # Apply type conversion if needed
-            if env_var in type_conversions:
-                try:
-                    value = type_conversions[env_var](value)
-                except ValueError:
-                    logger.warning(f"Could not convert {env_var}={value} to {type_conversions[env_var].__name__}")
-                    continue
-            
-            # Update the config at the specified path
-            current = config
-            for i, key in enumerate(config_path):
-                if i == len(config_path) - 1:
-                    current[key] = value
-                else:
-                    if key not in current:
-                        current[key] = {}
-                    current = current[key]
+# REMOVED: _load_environment_variables function
+# Configuration now comes ONLY from corpus_active.json
+# No environment variable fallbacks for corpus configuration
 
 def _load_target_config(config: Dict[str, Any], target_id: str) -> None:
     """Load target-specific configuration."""
@@ -277,51 +234,125 @@ def _initialize_retriever(config: Dict[str, Any]) -> None:
     try:
         logger.debug("Initializing retriever with configuration")
         retriever_config = config.get("retriever_config", {})
-        _retriever_instance = load_retriever(config=retriever_config)
-        if _retriever_instance is None:
-            logger.warning("No retriever configured. Please use the corpus wizard to set up a corpus.")
-            # Set to None but don't raise an error - allows corpus wizard to work
+
+        # Get retriever_module from config - REQUIRED
+        retriever_module = retriever_config.get("retriever_module")
+
+        if not retriever_module:
+            logger.warning("No retriever_module in configuration. Run corpus wizard to set up a corpus.")
             _retriever = None
-        else:
-            _retriever = _retriever_instance
-            logger.debug("Retriever initialized successfully")
+            _retriever_instance = None
+            return
+
+        # Load the retriever with the specified module
+        _retriever_instance = load_retriever(retriever_name=retriever_module, config=retriever_config)
+
+        if _retriever_instance is None:
+            raise ValueError(f"Failed to load retriever module: {retriever_module}")
+
+        _retriever = _retriever_instance
+        logger.debug(f"Retriever initialized successfully: {retriever_module}")
+
     except Exception as e:
         logger.error(f"Failed to initialize retriever: {e}")
         raise
 
+def _load_corpus_active_config() -> Optional[Dict[str, Any]]:
+    """Load active corpus configuration from corpus_active.json."""
+    corpus_active_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                     'config', 'corpus_active.json')
+
+    if os.path.exists(corpus_active_path):
+        try:
+            with open(corpus_active_path, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.warning(f"Failed to load corpus_active.json: {e}")
+
+    return None
+
 def initialize_config() -> Dict[str, Any]:
-    """Initialize configuration from environment variables and files."""
+    """Initialize configuration from corpus_active.json ONLY. Fails fast if not found."""
     global _config, _retriever, _retriever_instance
-    
+
     if _config is not None:
         logger.debug("Config already initialized, returning cached instance")
         return _config
 
     # Start with default configuration
     _config = _get_default_config()
-    
-    # Load configuration from environment variables
-    _load_environment_variables(_config)
-    
+
+    # Load from corpus_active.json - REQUIRED
+    corpus_active = _load_corpus_active_config()
+
+    if not corpus_active:
+        error_msg = (
+            "No corpus_active.json found at backend/config/corpus_active.json. "
+            "Please run the corpus wizard to set up a corpus, or create corpus_active.json manually. "
+            "The system no longer supports configuration through environment variables."
+        )
+        logger.error(error_msg)
+        # Don't raise here - let corpus wizard work without a corpus
+        logger.warning("Continuing without corpus configuration to allow corpus wizard to run")
+        _retriever = None
+        _retriever_instance = None
+        return _config
+
+    logger.info(f"Loading configuration from corpus_active.json")
+
+    # Load corpus configuration - all fields required
+    required_fields = ["retriever_module", "collection_name", "embedding_model", "target"]
+    missing_fields = [f for f in required_fields if not corpus_active.get(f)]
+
+    if missing_fields:
+        error_msg = f"corpus_active.json is missing required fields: {', '.join(missing_fields)}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    # Override with corpus configuration
+    _config["retriever_config"]["retriever_module"] = corpus_active["retriever_module"]
+    _config["retriever_config"]["collection_name"] = corpus_active["collection_name"]
+    _config["retriever_config"]["chroma_persist_directory"] = corpus_active.get("chroma_persist_directory", "backend/corpus/chroma_db")
+    _config["retriever_config"]["embedding_model"] = corpus_active["embedding_model"]
+    _config["retriever_config"]["chroma_collection_name"] = corpus_active["collection_name"]  # Add for compatibility
+
+    # Add additional configuration fields from corpus_active.json
+    if "chunk_size" in corpus_active:
+        _config["retriever_config"]["chunk_size"] = corpus_active["chunk_size"]
+    if "chunk_overlap" in corpus_active:
+        _config["retriever_config"]["chunk_overlap"] = corpus_active["chunk_overlap"]
+    if "text_splitter_type" in corpus_active:
+        _config["retriever_config"]["text_splitter_type"] = corpus_active["text_splitter_type"]
+    if "pooling" in corpus_active:
+        _config["retriever_config"]["pooling"] = corpus_active["pooling"]
+    if "algorithm" in corpus_active:
+        _config["retriever_config"]["algorithm"] = corpus_active["algorithm"]
+    if "batch_size" in corpus_active:
+        _config["retriever_config"]["batch_size"] = corpus_active["batch_size"]
+    if "large_retrieval_size_single_corpus" in corpus_active:
+        _config["retriever_config"]["LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS"] = corpus_active["large_retrieval_size_single_corpus"]
+    if "large_retrieval_size_all_corpus" in corpus_active:
+        _config["retriever_config"]["LARGE_RETRIEVAL_SIZE_ALL_CORPUS"] = corpus_active["large_retrieval_size_all_corpus"]
+
     # Load target-specific configuration
-    target_id = os.getenv("TEST_TARGET", "default")
+    target_id = corpus_active["target"]
     _load_target_config(_config, target_id)
-    
+
     # Store target ID in config for reference
     if "retriever_config" in _config and isinstance(_config["retriever_config"], dict):
         _config["retriever_config"]["target_id"] = target_id
-    
+
     # Validate the configuration
     errors = validate_config_schema(_config)
     if errors:
         error_msg = f"Configuration validation failed: {'; '.join(errors)}"
         logger.error(error_msg)
         raise ValueError(error_msg)
-    
+
     # Initialize retriever with the configuration
     _initialize_retriever(_config)
-    
-    logger.debug(f"Configuration initialized with target: {target_id}")
+
+    logger.debug(f"Configuration initialized with target: {target_id} from corpus_active.json")
     return _config
 
 def get_config() -> Dict[str, Any]:
@@ -351,7 +382,8 @@ def get_retriever_instance():
 def get_full_config() -> Dict[str, Any]:
     """Get configuration including metadata."""
     config = get_config()
-    retriever_type = os.getenv("RETRIEVER_MODULE", "not_configured")
+    retriever_config = config.get("retriever_config", {})
+    retriever_type = retriever_config.get("retriever_module", "not_configured")
     return {
         **config,
         "retriever_type": retriever_type,

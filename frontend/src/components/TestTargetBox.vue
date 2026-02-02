@@ -20,6 +20,7 @@ const configDescriptions = {
   search_score_threshold: "The minimum similarity score required for document retrieval.",
   chunk_size: "The size of each text chunk stored in the vector index.",
   chunk_overlap: "The overlap between text chunks for better context.",
+  text_splitter_type: "The method used for splitting documents into chunks.",
   pooling: "The pooling strategy used to aggregate token embeddings (cls, mean, mean+max).",
   llm_provider: "The provider of the language model.",
   llm_model: "The language model used to generate answers.",
@@ -44,7 +45,8 @@ function formatFieldName(key) {
     composite_target: 'Composite Target',
     ATLAS_VERSION: 'Atlas Version',
     LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS: 'Retrieval Size Single Corpus',
-    LARGE_RETRIEVAL_SIZE_ALL_CORPUS: 'Retrieval Size All Corpora'
+    LARGE_RETRIEVAL_SIZE_ALL_CORPUS: 'Retrieval Size All Corpora',
+    text_splitter_type: 'Text Splitter Type'
   };
   if (exceptions[key]) return exceptions[key];
   return key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
@@ -69,6 +71,7 @@ const fieldGroups = {
     'search_score_threshold',
     'chunk_size',
     'chunk_overlap',
+    'text_splitter_type',
     'pooling'
   ],
   other: [] // Will contain any remaining fields

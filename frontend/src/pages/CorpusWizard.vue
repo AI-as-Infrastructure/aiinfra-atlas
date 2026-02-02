@@ -438,6 +438,19 @@
 
           <div class="form-row">
             <div class="form-group">
+              <label>Text Splitter Type</label>
+              <select v-model="textSplitterType" class="form-control">
+                <option value="RecursiveCharacterTextSplitter">Recursive Character Splitter (Recommended)</option>
+                <option value="CharacterTextSplitter">Simple Character Splitter</option>
+                <option value="TokenTextSplitter">Token-based Splitter</option>
+                <option value="SentenceTextSplitter">Sentence-based Splitter</option>
+              </select>
+              <small>Method for splitting documents into chunks</small>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
               <label>Chunk Size (characters)</label>
               <input
                 v-model.number="chunkSize"
@@ -447,7 +460,7 @@
                 step="100"
                 class="form-control"
               />
-              <small>Default: 1000 characters</small>
+              <small>Default: 1500 characters</small>
             </div>
 
             <div class="form-group">
@@ -460,7 +473,7 @@
                 step="50"
                 class="form-control"
               />
-              <small>Default: 200 characters</small>
+              <small>Default: 150 characters</small>
             </div>
           </div>
         </div>
@@ -676,15 +689,26 @@
               <small class="help-text">Retrieval algorithm (default: ensemble)</small>
             </div>
             <div class="form-group">
-              <label>Large Retrieval Size</label>
+              <label>Retrieval Size (Single Corpus)</label>
               <input
-                v-model.number="targetConfig.large_retrieval_size"
+                v-model.number="targetConfig.large_retrieval_size_single_corpus"
                 type="number"
                 min="10"
                 max="500"
                 class="form-control"
               />
-              <small class="help-text">Documents for large corpus queries (default: 120)</small>
+              <small class="help-text">Initial retrieval from single corpus (default: 120)</small>
+            </div>
+            <div class="form-group">
+              <label>Retrieval Size (All Corpora)</label>
+              <input
+                v-model.number="targetConfig.large_retrieval_size_all_corpus"
+                type="number"
+                min="10"
+                max="500"
+                class="form-control"
+              />
+              <small class="help-text">Per-corpus retrieval for multi-corpus (default: 80)</small>
             </div>
             <div class="form-group">
               <label>Vector Database</label>
@@ -745,236 +769,7 @@
           </div>
         </div>
       </div>
-
-      <!-- Step 8: Test & Activate (REMOVED - corpus is immediately available after build) -->
-      <!-- <div v-if="currentStep === 8" class="wizard-step">
-        {{ console.log('[Render] Step 8 is rendering - currentStep:', currentStep) }}
-        <h2>Test & Activate Corpus</h2>
-
-        <div class="activation-content">
-          <!-- Pre-activation Check -->
-          <div class="validation-section">
-            <h3>Pre-activation Validation</h3>
-            <p v-if="!validationData">Validating your new corpus before activation...</p>
-
-            <div v-if="!validationData" class="validation-loading">
-              <button @click="runValidation" :disabled="validating" class="btn btn-primary">
-                {{ validating ? 'Validating...' : 'Run Validation' }}
-              </button>
-            </div>
-
-            <div v-if="validationData" class="validation-results">
-              <!-- Build age info -->
-              <div v-if="validationData.build_age" class="build-age-info">
-                <span>🕒</span> {{ validationData.build_age }}
-                <span v-if="!validationData.build_is_fresh" class="age-warning">
-                  (May need rebuild if configuration changed)
-                </span>
-              </div>
-
-              <div class="validation-item" :class="{ success: validationData.structure_valid, error: !validationData.structure_valid }">
-                <span>{{ validationData.structure_valid ? '✓' : '❌' }}</span> Vector store structure
-              </div>
-              <div class="validation-item" :class="{ success: validationData.metadata_valid, error: !validationData.metadata_valid }">
-                <span>{{ validationData.metadata_valid ? '✓' : '❌' }}</span> Metadata integrity
-              </div>
-              <div class="validation-item" :class="{ success: validationData.search_functional, error: !validationData.search_functional }">
-                <span>{{ validationData.search_functional ? '✓' : '❌' }}</span> Search functionality
-              </div>
-
-              <div v-if="validationData.all_valid === true" class="validation-success">
-                ✅ All validation checks passed! You can now test and activate your corpus.
-              </div>
-              <div v-else-if="validationData.all_valid === false" class="validation-error">
-                ❌ Some validation checks failed. Please rebuild the corpus.
-              </div>
-              <div v-else class="validation-warning">
-                ⚠️ Validation status unclear (all_valid={{ validationData.all_valid }}). Debug info in console.
-              </div>
-            </div>
-          </div>
-
-          <!-- Corpus Comparison -->
-          <div v-if="validationData && validationData.all_valid" class="comparison-section">
-            <h3>Corpus Comparison</h3>
-            <table class="comparison-table">
-              <thead>
-                <tr>
-                  <th>Metric</th>
-                  <th>Current Corpus</th>
-                  <th>New Corpus</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Documents</td>
-                  <td>{{ currentCorpusInfo?.document_count || 'N/A' }}</td>
-                  <td>{{ buildProgress.processed_documents }}</td>
-                </tr>
-                <tr>
-                  <td>Vector Store Size</td>
-                  <td>{{ formatBytes(currentCorpusInfo?.size) || 'N/A' }}</td>
-                  <td>{{ formatBytes(buildResults?.vector_store_size) }}</td>
-                </tr>
-                <tr>
-                  <td>Model</td>
-                  <td>{{ currentCorpusInfo?.model || 'N/A' }}</td>
-                  <td>{{ selectedModel }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <!-- Unified Configuration Review -->
-          <div v-if="validationData && validationData.all_valid" class="unified-config-section">
-            <h3>Configuration Review</h3>
-            <p>Review the complete configuration that will be applied:</p>
-
-            <div class="config-review-grid">
-              <div class="config-section">
-                <h4>Corpus Settings</h4>
-                <div class="config-item">
-                  <span class="config-label">Name:</span>
-                  <span class="config-value">{{ metadata.name }}</span>
-                </div>
-                <div class="config-item">
-                  <span class="config-label">Collection:</span>
-                  <span class="config-value">{{ metadata.name }}_collection</span>
-                </div>
-                <div class="config-item">
-                  <span class="config-label">Embedding Model:</span>
-                  <span class="config-value">{{ selectedModel }}</span>
-                </div>
-                <div class="config-item">
-                  <span class="config-label">Documents:</span>
-                  <span class="config-value">{{ previewData?.total_documents || 0 }}</span>
-                </div>
-                <div class="config-item">
-                  <span class="config-label">Filters:</span>
-                  <span class="config-value">{{ previewData?.filters?.length || 0 }} configured</span>
-                </div>
-              </div>
-
-              <div class="config-section">
-                <h4>Target Settings</h4>
-                <div class="config-item">
-                  <span class="config-label">LLM Provider:</span>
-                  <span class="config-value">{{ targetConfig.llm_provider }}</span>
-                </div>
-                <div class="config-item">
-                  <span class="config-label">Model:</span>
-                  <span class="config-value">{{ targetConfig.llm_model }}</span>
-                </div>
-                <div class="config-item">
-                  <span class="config-label">Search Type:</span>
-                  <span class="config-value">{{ targetConfig.search_type }}</span>
-                </div>
-                <div class="config-item">
-                  <span class="config-label">Search K:</span>
-                  <span class="config-value">{{ targetConfig.search_k }}</span>
-                </div>
-                <div class="config-item">
-                  <span class="config-label">Score Threshold:</span>
-                  <span class="config-value">{{ targetConfig.score_threshold }}</span>
-                </div>
-                <div class="config-item">
-                  <span class="config-label">Temperature:</span>
-                  <span class="config-value">{{ targetConfig.temperature }}</span>
-                </div>
-                <div class="config-item">
-                  <span class="config-label">Max Tokens:</span>
-                  <span class="config-value">{{ targetConfig.max_tokens }}</span>
-                </div>
-                <div class="config-item">
-                  <span class="config-label">Citation Limit:</span>
-                  <span class="config-value">{{ targetConfig.citation_limit }}</span>
-                </div>
-                <div class="config-item">
-                  <span class="config-label">Algorithm:</span>
-                  <span class="config-value">{{ targetConfig.algorithm }}</span>
-                </div>
-                <div class="config-item">
-                  <span class="config-label">Large Retrieval:</span>
-                  <span class="config-value">{{ targetConfig.large_retrieval_size }}</span>
-                </div>
-                <div class="config-item">
-                  <span class="config-label">Vector DB:</span>
-                  <span class="config-value">{{ targetConfig.vector_database }}</span>
-                </div>
-              </div>
-
-              <div class="config-section">
-                <h4>Generated Files</h4>
-                <div class="config-item">
-                  <span class="config-label">Target Name:</span>
-                  <span class="config-value">k{{ targetConfig.search_k }}_{{ targetConfig.llm_model.replace(/-/g, '_').replace(/\./g, '_') }}.txt</span>
-                </div>
-                <div class="config-item">
-                  <span class="config-label">Retriever:</span>
-                  <span class="config-value">{{ metadata.name }}_retriever.py</span>
-                </div>
-                <div class="config-item">
-                  <span class="config-label">Site Title:</span>
-                  <span class="config-value">{{ metadata.name }}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Activation -->
-          <div v-if="validationData && validationData.all_valid" class="activation-section">
-            <h3>Ready to Activate?</h3>
-            <div class="activation-warning">
-              <p>⚠️ <strong>Important:</strong></p>
-              <ul>
-                <li>Your current corpus will be backed up</li>
-                <li>The new corpus will become active immediately</li>
-                <li>To rollback: <code>make restore-corpus BACKUP_ID={{ backupId }}</code></li>
-              </ul>
-            </div>
-
-            <div class="activation-buttons">
-              <button @click="activateCorpus" :disabled="activating" class="btn btn-success">
-                {{ activating ? 'Activating...' : 'Activate Corpus' }}
-              </button>
-              <button @click="saveConfiguration" class="btn btn-secondary">
-                Save Configuration Only
-              </button>
-              <button @click="downloadConfig" class="btn btn-secondary">
-                Download Configuration
-              </button>
-            </div>
-
-            <div v-if="activationResult" class="activation-result">
-              <div v-if="activationResult.success" class="success-message">
-                ✅ Corpus activated successfully!
-                <p>Backup saved as: {{ activationResult.backup_id }}</p>
-
-                <div class="post-activation-actions">
-                  <h4>What would you like to do next?</h4>
-                  <div class="action-buttons">
-                    <button @click="continueConfiguring" class="btn btn-secondary">
-                      📝 Continue Configuring
-                      <small>Add more test targets or modify settings</small>
-                    </button>
-                    <button @click="enterDeployMode" class="btn btn-primary">
-                      🚀 Start Using ATLAS
-                      <small>Enter Deploy Mode for testing</small>
-                    </button>
-                  </div>
-                  <p class="mode-note">
-                    <strong>Note:</strong> Deploy Mode locks configuration until server restart.
-                  </p>
-                </div>
-              </div>
-              <div v-else class="error-message">
-                ❌ Activation failed: {{ activationResult.error }}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div> -->
-    </div>
+    </div> <!-- Close wizard-content -->
 
     <!-- Navigation -->
     <div class="wizard-navigation">
@@ -1050,8 +845,9 @@ export default {
     const modelChoice = ref('default')
     const selectedModel = ref(defaultModel.value)
     const customModel = ref('')
-    const chunkSize = ref(1000)
-    const chunkOverlap = ref(200)
+    const chunkSize = ref(1500)
+    const chunkOverlap = ref(150)
+    const textSplitterType = ref('RecursiveCharacterTextSplitter')
 
     // Preview
     const previewData = ref(null)
@@ -1084,14 +880,16 @@ export default {
       temperature: 0.7,
       max_tokens: 4096,
       algorithm: 'ensemble',
-      large_retrieval_size: 120,
+      large_retrieval_size_single_corpus: 120,
+      large_retrieval_size_all_corpus: 80,
       citation_limit: 10,
       vector_database: 'chromadb',
       pooling: 'mean',
       target_name: 'k20_claude4',  // Add default target_name
       // Include chunk settings for unified config
-      chunk_size: 1000,
-      chunk_overlap: 200
+      chunk_size: 1500,
+      chunk_overlap: 150,
+      text_splitter_type: 'RecursiveCharacterTextSplitter'
     })
 
     // Validation & Activation
@@ -1191,8 +989,8 @@ export default {
 
     // Navigation to main app
     const goToMainApp = () => {
-      // Navigate to the main application
-      router.push('/')
+      // Navigate to the main chat application
+      router.push('/chat')
     }
 
     // Start a new corpus build
@@ -1505,6 +1303,7 @@ Do you want to continue?`
             pooling: 'mean',
             chunk_size: chunkSize.value,
             chunk_overlap: chunkOverlap.value,
+            text_splitter_type: textSplitterType.value,
             batch_size: 100
           },
           vector_store: {
@@ -1514,9 +1313,9 @@ Do you want to continue?`
           },
           search: {
             type: 'hybrid',
-            k_default: 10,
-            large_single_corpus: 120,
-            large_all_corpus: 80
+            k_default: targetConfig.value.search_k || 20,
+            large_single_corpus: targetConfig.value.large_retrieval_size_single_corpus || 120,
+            large_all_corpus: targetConfig.value.large_retrieval_size_all_corpus || 80
           }
         }
 
@@ -1537,7 +1336,7 @@ Do you want to continue?`
           console.warn('Could not get corpus mode, defaulting to CPU:', error)
         }
 
-        // Start build
+        // Start build with target configuration
         const response = await fetch('/api/corpus-wizard/build', {
           method: 'POST',
           headers: {
@@ -1545,7 +1344,8 @@ Do you want to continue?`
           },
           body: JSON.stringify({
             config: config,
-            mode: corpusMode
+            mode: corpusMode,
+            target: targetConfig.value  // Include target configuration for saving after build
           })
         })
 
@@ -1736,6 +1536,7 @@ Do you want to continue?`
       customModel,
       chunkSize,
       chunkOverlap,
+      textSplitterType,
 
       // Preview
       previewData,

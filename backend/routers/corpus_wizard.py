@@ -72,6 +72,7 @@ class BuildRequest(BaseModel):
     """Request to build a corpus."""
     config: Dict[str, Any]
     mode: str = Field("cpu", description="cpu or gpu")
+    target: Optional[Dict[str, Any]] = Field(None, description="Target configuration to save after build")
 
 
 # Global state for wizard mode and build progress
@@ -445,6 +446,19 @@ async def validate_sample(
     Validate corpus with a minimal viable sample.
     """
     try:
+        # First check if source path exists
+        source_path_obj = Path(source_path)
+        if not source_path_obj.exists():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Source path does not exist: {source_path}"
+            )
+        if not source_path_obj.is_dir():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Source path is not a directory: {source_path}"
+            )
+
         sampler = CorpusSampler(source_path)
         validator = CorpusValidator(source_path)
 
@@ -706,6 +720,8 @@ async def build_corpus(
                 "model_id": frontend_config["embeddings"]["model"],
                 "chunk_size": frontend_config["embeddings"]["chunk_size"],
                 "chunk_overlap": frontend_config["embeddings"]["chunk_overlap"],
+                "text_splitter_type": frontend_config["embeddings"].get("text_splitter_type", "RecursiveCharacterTextSplitter"),
+                "pooling": frontend_config["embeddings"].get("pooling", "mean"),
                 "batch_size": frontend_config["embeddings"]["batch_size"]
             },
             "processing": {
@@ -721,7 +737,7 @@ async def build_corpus(
         build_id = f"build_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
         # Extract target configuration if provided
-        target_config = frontend_config.get("target", {}) if "target" in frontend_config else {}
+        target_config = build_request.target if build_request.target else {}
 
         # Initialize progress tracking
         wizard_state['current_build'] = build_id
@@ -1294,6 +1310,32 @@ async def _build_corpus_task(build_id: str, config: CorpusConfig):
         results = await builder.build(progress_callback)
         logger.info(f"Build completed with results: {results}")
 
+        # Copy retriever and manifest files to their operational locations
+        try:
+            import shutil
+
+            # Copy retriever to retrievers directory
+            retriever_source = Path(results.get('retriever_path', ''))
+            if retriever_source.exists():
+                retriever_name = retriever_source.name
+                retriever_dest = Path("backend/retrievers") / retriever_name
+                shutil.copy2(retriever_source, retriever_dest)
+                logger.info(f"Copied retriever to: {retriever_dest}")
+
+                # Update RETRIEVER_MODULE in results
+                results['retriever_module'] = retriever_name.replace('.py', '')
+
+            # Copy manifest to targets directory
+            manifest_source = Path(results.get('manifest_path', ''))
+            if manifest_source.exists():
+                manifest_dest = Path("backend/targets/manifest.json")
+                shutil.copy2(manifest_source, manifest_dest)
+                logger.info(f"Copied manifest to: {manifest_dest}")
+        except Exception as e:
+            logger.error(f"Failed to copy retriever/manifest files: {e}")
+            # Don't fail the build, just log the error
+            wizard_state['build_progress'][build_id]['copy_error'] = str(e)
+
         # Process target configuration after successful build
         target_config = wizard_state['build_progress'][build_id].get('target_config', {})
         corpus_name = wizard_state['build_progress'][build_id].get('corpus_name', 'corpus')
@@ -1326,9 +1368,8 @@ async def _build_corpus_task(build_id: str, config: CorpusConfig):
                 target_content.append(f"SEARCH_SCORE_THRESHOLD={target_config.get('score_threshold', 0.7)}")
                 target_content.append(f"CITATION_LIMIT={target_config.get('citation_limit', 10)}")
                 # Retrieval size configuration
-                large_size = target_config.get('large_retrieval_size', 120)
-                target_content.append(f"LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS={large_size}")
-                target_content.append(f"LARGE_RETRIEVAL_SIZE_ALL_CORPUS={large_size}")
+                target_content.append(f"LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS={target_config.get('large_retrieval_size_single_corpus', 120)}")
+                target_content.append(f"LARGE_RETRIEVAL_SIZE_ALL_CORPUS={target_config.get('large_retrieval_size_all_corpus', 80)}")
                 # Algorithm and chunking configuration
                 target_content.append(f"ALGORITHM={target_config.get('algorithm', 'ensemble')}")
                 chunk_size = target_config.get('chunk_size', 1000)
@@ -1349,49 +1390,34 @@ async def _build_corpus_task(build_id: str, config: CorpusConfig):
                     f.write('\n'.join(target_content))
                 logger.info(f"Generated target configuration file: {target_file}")
 
-                # Update TEST_TARGET in .env files if not locked
+                # Create or update corpus_active.json instead of .env files
                 if not mode_manager.is_locked():
-                    # Update all environment files
-                    env_files = ['config/.env.development', 'config/.env.staging', 'config/.env.production']
+                    corpus_active_path = Path("backend/config/corpus_active.json")
+                    corpus_active_path.parent.mkdir(parents=True, exist_ok=True)
 
-                    for env_file in env_files:
-                        env_path = Path(env_file)
-                        if env_path.exists():
-                            # Read the file
-                            with open(env_path, 'r') as f:
-                                lines = f.readlines()
+                    corpus_active_config = {
+                        "retriever_module": results.get('retriever_module', f'{corpus_name}_retriever'),
+                        "target": target_name,
+                        "corpus_name": corpus_name,
+                        "collection_name": results.get('collection_name', f'{corpus_name}_c'),
+                        "corpus_path": "backend/corpus",
+                        "chroma_persist_directory": "backend/corpus/chroma_db",
+                        "embedding_model": config.embeddings.model,
+                        "chunk_size": config.embedding.chunk_size,
+                        "chunk_overlap": config.embedding.chunk_overlap,
+                        "text_splitter_type": config.embedding.text_splitter_type if hasattr(config.embedding, 'text_splitter_type') else "RecursiveCharacterTextSplitter",
+                        "pooling": config.embedding.pooling if hasattr(config.embedding, 'pooling') else "mean",
+                        "algorithm": "hnsw",  # Default algorithm used by ChromaDB
+                        "batch_size": config.embedding.batch_size if hasattr(config.embedding, 'batch_size') else 100,
+                        "large_retrieval_size_single_corpus": target_config.get('large_retrieval_size_single_corpus', 120),
+                        "large_retrieval_size_all_corpus": target_config.get('large_retrieval_size_all_corpus', 80),
+                        "last_updated": datetime.now().isoformat(),
+                        "created_by": "corpus_wizard"
+                    }
 
-                            # Update TEST_TARGET line
-                            updated = False
-                            for i, line in enumerate(lines):
-                                if line.strip().startswith('TEST_TARGET=') or line.strip().startswith('# TEST_TARGET='):
-                                    lines[i] = f'TEST_TARGET={target_name}\n'
-                                    updated = True
-                                    break
-
-                            # If not found, add it
-                            if not updated:
-                                lines.append(f'TEST_TARGET={target_name}\n')
-
-                            # Write back
-                            with open(env_path, 'w') as f:
-                                f.writelines(lines)
-                            logger.info(f"Updated TEST_TARGET in {env_file}")
-
-                    # Also update the template file
-                    template_path = Path('config/.env.template')
-                    if template_path.exists():
-                        with open(template_path, 'r') as f:
-                            lines = f.readlines()
-
-                        for i, line in enumerate(lines):
-                            if line.strip().startswith('TEST_TARGET='):
-                                lines[i] = f'TEST_TARGET={target_name}\n'
-                                break
-
-                        with open(template_path, 'w') as f:
-                            f.writelines(lines)
-                        logger.info(f"Updated TEST_TARGET in template")
+                    with open(corpus_active_path, 'w') as f:
+                        json.dump(corpus_active_config, f, indent=2)
+                    logger.info(f"Created/updated corpus_active.json with active corpus configuration")
 
             except Exception as e:
                 logger.error(f"Failed to process target configuration: {e}")
@@ -1629,34 +1655,26 @@ async def set_default_target(target_id: str):
                 "deploy_mode": True
             })
 
-        # In configure mode, update the current environment's .env file
-        current_env = os.getenv("ENVIRONMENT", "development").lower()
-        env_file = f'config/.env.{current_env}'
-        env_path = Path(env_file)
+        # In configure mode, update corpus_active.json
+        corpus_active_path = Path("backend/config/corpus_active.json")
 
-        if env_path.exists():
-            with open(env_path, 'r') as f:
-                lines = f.readlines()
-
-            # Update TEST_TARGET line
-            updated = False
-            for i, line in enumerate(lines):
-                if line.strip().startswith('TEST_TARGET=') or line.strip().startswith('# TEST_TARGET='):
-                    lines[i] = f'TEST_TARGET={target_id}\n'
-                    updated = True
-                    break
-
-            # If not found, add it
-            if not updated:
-                lines.append(f'TEST_TARGET={target_id}\n')
-
-            # Write back
-            with open(env_path, 'w') as f:
-                f.writelines(lines)
-
-            logger.info(f"Updated TEST_TARGET in {env_file} to {target_id}")
+        # Load existing config or create new
+        if corpus_active_path.exists():
+            with open(corpus_active_path, 'r') as f:
+                corpus_active_config = json.load(f)
         else:
-            logger.warning(f"Environment file not found: {env_file}")
+            corpus_active_config = {}
+
+        # Update target
+        corpus_active_config["target"] = target_id
+        corpus_active_config["last_updated"] = datetime.now().isoformat()
+
+        # Write back
+        corpus_active_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(corpus_active_path, 'w') as f:
+            json.dump(corpus_active_config, f, indent=2)
+
+        logger.info(f"Updated target in corpus_active.json to {target_id}")
 
         # Update current environment
         os.environ["TEST_TARGET"] = target_id

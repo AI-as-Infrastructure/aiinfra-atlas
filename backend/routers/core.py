@@ -61,6 +61,7 @@ def get_config_endpoint():
         "algorithm": retriever_config.get("algorithm"),
         "chunk_size": retriever_config.get("chunk_size"),
         "chunk_overlap": retriever_config.get("chunk_overlap"),
+        "text_splitter_type": retriever_config.get("text_splitter_type"),
         "index_name": retriever_config.get("index_name"),
 
         # Include LLM configuration

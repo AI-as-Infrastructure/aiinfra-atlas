@@ -167,6 +167,7 @@ class UniversalCorpusBuilder:
                 "bm25_corpus_path": str(bm25_path),
                 "config_path": str(config_path),
                 "retriever_path": str(retriever_path),
+                "collection_name": self.collection_name,  # Include the actual collection name used
                 "documents_processed": len(self.documents),
                 "vector_store_size": vector_store_size,
                 "errors": self.progress_tracker.errors,
@@ -645,16 +646,44 @@ class UniversalCorpusBuilder:
 
     def _get_text_splitter(self):
         """Get appropriate text splitter based on configuration."""
-        if self.config.embedding.chunk_size:
+        chunk_size = self.config.embedding.chunk_size or 1500
+        chunk_overlap = self.config.embedding.chunk_overlap or 150
+        splitter_type = getattr(self.config.embedding, 'text_splitter_type', 'RecursiveCharacterTextSplitter')
+
+        if splitter_type == 'RecursiveCharacterTextSplitter':
             return RecursiveCharacterTextSplitter(
-                chunk_size=self.config.embedding.chunk_size,
-                chunk_overlap=self.config.embedding.chunk_overlap,
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
                 length_function=len
             )
-        else:
+        elif splitter_type == 'CharacterTextSplitter':
             return CharacterTextSplitter(
-                chunk_size=1000,
-                chunk_overlap=100,
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+                length_function=len
+            )
+        elif splitter_type == 'TokenTextSplitter':
+            # For token-based splitting, we can use RecursiveCharacterTextSplitter with different separators
+            return RecursiveCharacterTextSplitter(
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+                length_function=len,
+                separators=["\n\n", "\n", " ", ""]
+            )
+        elif splitter_type == 'SentenceTextSplitter':
+            # For sentence-based splitting
+            return RecursiveCharacterTextSplitter(
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+                length_function=len,
+                separators=[".", "!", "?", "\n\n", "\n", " ", ""]
+            )
+        else:
+            # Default to RecursiveCharacterTextSplitter
+            logger.warning(f"Unknown text splitter type: {splitter_type}, using RecursiveCharacterTextSplitter")
+            return RecursiveCharacterTextSplitter(
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
                 length_function=len
             )
 
@@ -734,7 +763,7 @@ class UniversalCorpusBuilder:
             "fields": {
                 "corpus": {
                     "type": "enum",
-                    "values": sorted(list(filter_values.get("all", set()))) if filter_values.get("all") else []
+                    "values": [filter_def.id for filter_def in (self.config.filters.filters if self.config.filters else [])]
                 }
             }
         }
@@ -811,7 +840,8 @@ class UniversalCorpusBuilder:
             creation_time=datetime.now().strftime("%H:%M:%S"),
             filter_1_label=filter_1_label,
             filter_2_label=filter_2_label,
-            embedding_model=self.config.embedding.model_id
+            embedding_model=self.config.embedding.model_id,
+            collection_name=self.collection_name  # Use the actual collection name from vector store creation
         )
 
         # Save retriever
