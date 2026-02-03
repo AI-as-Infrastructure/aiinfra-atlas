@@ -21,6 +21,7 @@ from langchain_core.documents import Document
 
 from backend.retrievers.base_retriever import BaseRetriever
 from backend.modules.manifest_loader import load_manifest
+from backend.modules.llm import create_llm
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -43,9 +44,19 @@ class {CorpusClass}Retriever(BaseRetriever):
         # Load manifest for filter options
         self.manifest = load_manifest()
 
+        # Store corpus IDs for balanced search operations
+        self._corpus_ids = []
+        if self.manifest and "fields" in self.manifest and "corpus" in self.manifest["fields"]:
+            values = self.manifest["fields"]["corpus"].get("values", [])
+            self._corpus_ids = [v for v in values if v != "all"]
+
+        # Store LARGE_RETRIEVAL_SIZE values for balanced retrieval
+        self.large_single = config.get("LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS", 120)
+        self.large_all = config.get("LARGE_RETRIEVAL_SIZE_ALL_CORPUS", 80)
+
         # Initialize ChromaDB connection
         persist_directory = config.get("chroma_persist_directory", "backend/corpus/chroma_db")
-        collection_name = config.get("chroma_collection_name", "{corpus_name}_collection")
+        collection_name = config.get("chroma_collection_name", "{collection_name}")
 
         # Initialize embedding model
         model_name = config.get("embedding_model", "{embedding_model}")
@@ -64,6 +75,16 @@ class {CorpusClass}Retriever(BaseRetriever):
             embedding_function=self.embeddings,
             persist_directory=persist_directory
         )
+
+        # Initialize LLM
+        provider = config.get("llm_provider", "anthropic")
+        model = config.get("llm_model", "claude-3-5-haiku-20241022")
+        try:
+            self.llm = create_llm(provider=provider, model_name=model)
+            logger.info(f"Initialized LLM: {{provider}}/{{model}}")
+        except Exception as e:
+            logger.warning(f"Failed to initialize LLM: {{e}}. LLM features will be unavailable.")
+            self.llm = None
 
         # Store configuration
         self.supports_filtering = True
@@ -109,6 +130,9 @@ class {CorpusClass}Retriever(BaseRetriever):
                 corpus_field = self.manifest["fields"]["corpus"]
                 if "values" in corpus_field:
                     for value in corpus_field["values"]:
+                        # Skip 'all' since we already added it as "All Collections"
+                        if value == "all":
+                            continue
                         # Create a human-readable label from the value
                         label = value.replace("_", " ").title() if isinstance(value, str) else str(value)
                         options.append({{
@@ -127,6 +151,88 @@ class {CorpusClass}Retriever(BaseRetriever):
 
         return options
 
+    def _candidate_pool_size(self, corpus_filter: Optional[str]) -> int:
+        """Decide how many candidates to fetch for retrieval.
+
+        - If a specific corpus is selected: use LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS
+        - If 'all' or not specified: use LARGE_RETRIEVAL_SIZE_ALL_CORPUS
+        Always floor to 10x the configured search_k to preserve recall.
+        """
+        is_all = (not corpus_filter) or (corpus_filter == "all")
+        base = self.large_all if is_all else self.large_single
+        return max(base, self.search_kwargs.get("k", 20) * 10)
+
+    def _per_corpus_candidate_size(self, corpus_filter: Optional[str]) -> int:
+        """Calculate candidates per corpus for balanced retrieval."""
+        if corpus_filter and corpus_filter != "all":
+            # Single corpus - use full allocation
+            return self._candidate_pool_size(corpus_filter)
+
+        # Multi-corpus - divide pool across corpora for balance
+        total_pool = self._candidate_pool_size(corpus_filter)
+        corpora_count = len(self._corpus_ids) if self._corpus_ids else 1
+        per_corpus = total_pool // corpora_count
+        return max(per_corpus, self.search_kwargs.get("k", 20))
+
+    def _ensure_balanced_final_selection(self, docs: List[Document], target_k: int, corpus_filter: Optional[str]) -> List[Document]:
+        """Apply stratified final selection to ensure balanced corpus representation."""
+        if corpus_filter and corpus_filter != "all":
+            # Single corpus - no balancing needed
+            return docs[:target_k]
+
+        if not docs or not self._corpus_ids:
+            return docs[:target_k]
+
+        # Group documents by corpus
+        corpus_docs = {{cid: [] for cid in self._corpus_ids}}
+        unknown_docs = []
+
+        for doc in docs:
+            corpus = doc.metadata.get("filter_1", doc.metadata.get("corpus"))
+            if corpus in corpus_docs:
+                corpus_docs[corpus].append(doc)
+            else:
+                unknown_docs.append(doc)
+
+        # Calculate target per corpus (roughly equal distribution)
+        corpora_count = len(self._corpus_ids)
+        per_corpus_target = max(1, target_k // corpora_count)  # At least 1 per corpus
+        remainder = target_k % corpora_count
+
+        # Build balanced selection
+        balanced_selection = []
+
+        # First pass: take target amount from each corpus
+        for corpus in self._corpus_ids:
+            available = corpus_docs[corpus][:per_corpus_target]
+            balanced_selection.extend(available)
+
+        # Second pass: distribute remainder documents
+        for i in range(remainder):
+            if i < len(self._corpus_ids):
+                corpus = self._corpus_ids[i]
+                # Take next available document if we haven't exhausted this corpus
+                if len(corpus_docs[corpus]) > per_corpus_target:
+                    balanced_selection.append(corpus_docs[corpus][per_corpus_target])
+
+        # Third pass: fill any remaining slots if we're still short
+        if len(balanced_selection) < target_k:
+            # Add unknown docs first
+            for doc in unknown_docs:
+                if len(balanced_selection) >= target_k:
+                    break
+                balanced_selection.append(doc)
+
+            # Then take any remaining from corpus docs
+            for corpus in self._corpus_ids:
+                for doc in corpus_docs[corpus][per_corpus_target + 1:]:
+                    if len(balanced_selection) >= target_k:
+                        break
+                    if doc not in balanced_selection:
+                        balanced_selection.append(doc)
+
+        return balanced_selection[:target_k]
+
     async def _get_relevant_documents(
         self,
         query: str,
@@ -142,55 +248,199 @@ class {CorpusClass}Retriever(BaseRetriever):
         Returns:
             List of relevant documents
         """
-        # Build filter dictionary for ChromaDB
-        filter_dict = {{}}
-
-        # Extract filter values from kwargs
+        # Extract configuration
         config = kwargs.get("config", {{}})
+        corpus_filter = config.get("corpus_filter")
+        k = kwargs.get("k", self.search_kwargs.get("k", 20))
 
-        # Handle filter_1
-        filter_1 = config.get("filter_1")
-        if filter_1 and filter_1 != "all":
-            filter_dict["filter_1"] = filter_1
+        # Check if we need balanced retrieval
+        is_balanced_query = (not corpus_filter) or (corpus_filter == "all")
 
-        # Handle filter_2
-        filter_2 = config.get("filter_2")
-        if filter_2 and filter_2 != "all":
-            filter_dict["filter_2"] = filter_2
+        if is_balanced_query and self._corpus_ids:
+            # Balanced retrieval across all corpora
+            logger.info(f"Performing balanced retrieval across {{len(self._corpus_ids)}} corpora")
 
-        # Perform the search
-        k = kwargs.get("k", self.search_kwargs.get("k", 10))
+            # Calculate per-corpus candidate size
+            per_corpus_k = self._per_corpus_candidate_size(corpus_filter)
+            all_docs = []
 
-        if filter_dict:
-            # Search with filters
-            docs = self.vector_store.similarity_search(
-                query=query,
-                k=k,
-                filter=filter_dict
-            )
+            # Retrieve from each corpus separately for balanced representation
+            for corpus_id in self._corpus_ids:
+                corpus_filter_dict = {{"filter_1": corpus_id}}
+                try:
+                    corpus_docs = self.vector_store.similarity_search(
+                        query=query,
+                        k=per_corpus_k,
+                        filter=corpus_filter_dict
+                    )
+                    all_docs.extend(corpus_docs)
+                    logger.info(f"Retrieved {{len(corpus_docs)}} documents from corpus: {{corpus_id}}")
+                except Exception as e:
+                    logger.warning(f"Failed to retrieve from corpus {{corpus_id}}: {{e}}")
+
+            # Apply stratified selection to ensure balance
+            docs = self._ensure_balanced_final_selection(all_docs, k, corpus_filter)
+            logger.info(f"Balanced retrieval complete: {{len(docs)}} final documents")
+
         else:
-            # Search without filters
-            docs = self.vector_store.similarity_search(
-                query=query,
-                k=k
-            )
+            # Single corpus or fallback to standard search
+            filter_dict = {{}}
 
-        # Log retrieval info
-        logger.info(f"Retrieved {{len(docs)}} documents for query: {{query[:50]}}...")
-        if filter_dict:
-            logger.info(f"Applied filters: {{filter_dict}}")
+            # Handle explicit corpus filter
+            if corpus_filter and corpus_filter != "all":
+                filter_dict["filter_1"] = corpus_filter
+
+            # Also check for explicit filter_1 and filter_2 (for direct calls)
+            filter_1 = config.get("filter_1")
+            if filter_1 and filter_1 != "all":
+                filter_dict["filter_1"] = filter_1
+
+            filter_2 = config.get("filter_2")
+            if filter_2 and filter_2 != "all":
+                filter_dict["filter_2"] = filter_2
+
+            # Use larger candidate pool for single corpus
+            candidate_k = self._candidate_pool_size(corpus_filter)
+
+            if filter_dict:
+                # Search with filters
+                all_docs = self.vector_store.similarity_search(
+                    query=query,
+                    k=candidate_k,
+                    filter=filter_dict
+                )
+            else:
+                # Search without filters (shouldn't happen, but handle as fallback)
+                all_docs = self.vector_store.similarity_search(
+                    query=query,
+                    k=candidate_k
+                )
+
+            # Take top k documents
+            docs = all_docs[:k] if len(all_docs) > k else all_docs
+
+            logger.info(f"Retrieved {{len(docs)}} documents for query: {{query[:50]}}...")
+            if filter_dict:
+                logger.info(f"Applied filters: {{filter_dict}}")
+
+        # Log corpus distribution in final results
+        if is_balanced_query and docs:
+            corpus_dist = {{}}
+            for doc in docs:
+                corpus = doc.metadata.get("filter_1", doc.metadata.get("corpus", "unknown"))
+                corpus_dist[corpus] = corpus_dist.get(corpus, 0) + 1
+            logger.info(f"Final corpus distribution: {{corpus_dist}}")
+
+        return docs
+
+    def get_relevant_documents(
+        self,
+        query: str,
+        **kwargs: Any,
+    ) -> List[Document]:
+        """
+        Synchronous method to get relevant documents.
+        Directly performs the search without async.
+        """
+        # Use the same logic as async but synchronously
+        # This avoids event loop issues
+        return self._get_relevant_documents_sync(query, **kwargs)
+
+    def _get_relevant_documents_sync(
+        self,
+        query: str,
+        **kwargs: Any,
+    ) -> List[Document]:
+        """Internal sync implementation - same as async but without await."""
+        # Extract configuration
+        config = kwargs.get("config", {{}})
+        corpus_filter = config.get("corpus_filter")
+        k = kwargs.get("k", self.search_kwargs.get("k", 20))
+
+        # Check if we need balanced retrieval
+        is_balanced_query = (not corpus_filter) or (corpus_filter == "all")
+
+        if is_balanced_query and self._corpus_ids:
+            # Balanced retrieval across all corpora
+            logger.info(f"Performing balanced retrieval across {{len(self._corpus_ids)}} corpora")
+
+            # Calculate per-corpus candidate size
+            per_corpus_k = self._per_corpus_candidate_size(corpus_filter)
+            all_docs = []
+
+            # Retrieve from each corpus separately for balanced representation
+            for corpus_id in self._corpus_ids:
+                corpus_filter_dict = {{"filter_1": corpus_id}}
+                try:
+                    corpus_docs = self.vector_store.similarity_search(
+                        query=query,
+                        k=per_corpus_k,
+                        filter=corpus_filter_dict
+                    )
+                    all_docs.extend(corpus_docs)
+                    logger.info(f"Retrieved {{len(corpus_docs)}} documents from corpus: {{corpus_id}}")
+                except Exception as e:
+                    logger.warning(f"Failed to retrieve from corpus {{corpus_id}}: {{e}}")
+
+            # Apply stratified selection to ensure balance
+            docs = self._ensure_balanced_final_selection(all_docs, k, corpus_filter)
+            logger.info(f"Balanced retrieval complete: {{len(docs)}} final documents")
+
+        else:
+            # Single corpus or fallback to standard search
+            filter_dict = {{}}
+
+            # Handle explicit corpus filter
+            if corpus_filter and corpus_filter != "all":
+                filter_dict["filter_1"] = corpus_filter
+
+            # Also check for explicit filter_1 and filter_2 (for direct calls)
+            filter_1 = config.get("filter_1")
+            if filter_1 and filter_1 != "all":
+                filter_dict["filter_1"] = filter_1
+
+            filter_2 = config.get("filter_2")
+            if filter_2 and filter_2 != "all":
+                filter_dict["filter_2"] = filter_2
+
+            # Use larger candidate pool for single corpus
+            candidate_k = self._candidate_pool_size(corpus_filter)
+
+            if filter_dict:
+                # Search with filters
+                all_docs = self.vector_store.similarity_search(
+                    query=query,
+                    k=candidate_k,
+                    filter=filter_dict
+                )
+            else:
+                # Search without filters (shouldn't happen, but handle as fallback)
+                all_docs = self.vector_store.similarity_search(
+                    query=query,
+                    k=candidate_k
+                )
+
+            # Take top k documents
+            docs = all_docs[:k] if len(all_docs) > k else all_docs
+
+            logger.info(f"Retrieved {{len(docs)}} documents for query: {{query[:50]}}...")
+            if filter_dict:
+                logger.info(f"Applied filters: {{filter_dict}}")
+
+        # Log corpus distribution in final results
+        if is_balanced_query and docs:
+            corpus_dist = {{}}
+            for doc in docs:
+                corpus = doc.metadata.get("filter_1", doc.metadata.get("corpus", "unknown"))
+                corpus_dist[corpus] = corpus_dist.get(corpus, 0) + 1
+            logger.info(f"Final corpus distribution: {{corpus_dist}}")
 
         return docs
 
     def invoke(self, query: str, config: Optional[Dict] = None, k: int = 10) -> List[Document]:
         """
         Synchronous method to retrieve documents.
-
-        This method is provided for backward compatibility and testing.
+        Directly calls the sync version.
         """
-        import asyncio
-        return asyncio.run(self._get_relevant_documents(
-            query=query,
-            config=config,
-            k=k
-        ))
+        # Just call the sync version directly
+        return self.get_relevant_documents(query=query, config=config, k=k)

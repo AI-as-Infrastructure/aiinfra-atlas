@@ -19,27 +19,22 @@ logger = logging.getLogger(__name__)
 def load_retriever(retriever_name: str = None, config: Dict[str, Any] = None) -> Optional[BaseRetriever]:
     """Load and instantiate a retriever by name.
 
-    If no retriever_name is provided, it checks the RETRIEVER_MODULE environment variable.
-    If that is not set, returns None (no default retriever).
+    The retriever_name MUST be provided. No environment variable fallback.
 
     Args:
-        retriever_name: The name of the retriever to load (without .py extension)
+        retriever_name: The name of the retriever to load (without .py extension) - REQUIRED
         config: Configuration dictionary to pass to the retriever
 
     Returns:
         An instantiated retriever object or None if loading fails
     """
     if retriever_name is None:
-        # Check environment variable for retriever module
-        retriever_name = os.environ.get('RETRIEVER_MODULE')
+        logger.error("No retriever_name provided to load_retriever. Configuration must specify retriever_module.")
+        return None
 
-        if retriever_name is None:
-            logger.warning("No retriever configured. Please run the corpus wizard to set up a corpus.")
-            return None
-
-        # Handle module path format (modules.my_retriever -> my_retriever)
-        if '.' in retriever_name:
-            retriever_name = retriever_name.split('.')[-1]
+    # Handle module path format (modules.my_retriever -> my_retriever)
+    if '.' in retriever_name:
+        retriever_name = retriever_name.split('.')[-1]
     
     logger.info(f"Loading retriever: {retriever_name}")
     
