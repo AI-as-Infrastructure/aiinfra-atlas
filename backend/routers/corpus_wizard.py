@@ -1356,6 +1356,15 @@ async def _build_corpus_task(build_id: str, config: CorpusConfig):
 
                 # Update RETRIEVER_MODULE in results
                 results['retriever_module'] = retriever_name.replace('.py', '')
+            else:
+                # If retriever_path doesn't exist in results, try to get from corpus directory
+                corpus_retriever = Path("backend/corpus") / f"{corpus_name}_retriever.py"
+                if corpus_retriever.exists():
+                    retriever_name = corpus_retriever.name
+                    retriever_dest = Path("backend/retrievers") / retriever_name
+                    shutil.copy2(corpus_retriever, retriever_dest)
+                    logger.info(f"Copied retriever from corpus dir to: {retriever_dest}")
+                    results['retriever_module'] = retriever_name.replace('.py', '')
 
             # Copy manifest to targets directory
             manifest_source = Path(results.get('manifest_path', ''))
@@ -1423,33 +1432,40 @@ async def _build_corpus_task(build_id: str, config: CorpusConfig):
                 logger.info(f"Generated target configuration file: {target_file}")
 
                 # Create or update corpus_active.json instead of .env files
-                if not mode_manager.is_locked():
-                    corpus_active_path = Path("backend/config/corpus_active.json")
-                    corpus_active_path.parent.mkdir(parents=True, exist_ok=True)
+                # Always update corpus_active.json after successful build
+                corpus_active_path = Path("backend/config/corpus_active.json")
+                corpus_active_path.parent.mkdir(parents=True, exist_ok=True)
 
-                    corpus_active_config = {
-                        "retriever_module": results.get('retriever_module', f'{corpus_name}_retriever'),
-                        "target": target_name,
-                        "corpus_name": corpus_name,
-                        "collection_name": results.get('collection_name', f'{corpus_name}_c'),
-                        "corpus_path": "backend/corpus",
-                        "chroma_persist_directory": "backend/corpus/chroma_db",
-                        "embedding_model": config.embeddings.model,
-                        "chunk_size": config.embedding.chunk_size,
-                        "chunk_overlap": config.embedding.chunk_overlap,
-                        "text_splitter_type": config.embedding.text_splitter_type if hasattr(config.embedding, 'text_splitter_type') else "RecursiveCharacterTextSplitter",
-                        "pooling": config.embedding.pooling if hasattr(config.embedding, 'pooling') else "mean",
-                        "algorithm": "hnsw",  # Default algorithm used by ChromaDB
-                        "batch_size": config.embedding.batch_size if hasattr(config.embedding, 'batch_size') else 100,
-                        "large_retrieval_size_single_corpus": target_config.get('large_retrieval_size_single_corpus', 120),
-                        "large_retrieval_size_all_corpus": target_config.get('large_retrieval_size_all_corpus', 80),
-                        "last_updated": datetime.now().isoformat(),
-                        "created_by": "corpus_wizard"
-                    }
+                corpus_active_config = {
+                    "retriever_module": results.get('retriever_module', f'{corpus_name}_retriever'),
+                    "target": target_name,
+                    "corpus_name": corpus_name,
+                    "collection_name": results.get('collection_name', f'{corpus_name}_c'),
+                    "corpus_path": "backend/corpus",
+                    "chroma_persist_directory": "backend/corpus/chroma_db",
+                    "embedding_model": config.embeddings.model,
+                    "chunk_size": config.embedding.chunk_size,
+                    "chunk_overlap": config.embedding.chunk_overlap,
+                    "text_splitter_type": config.embedding.text_splitter_type if hasattr(config.embedding, 'text_splitter_type') else "RecursiveCharacterTextSplitter",
+                    "pooling": config.embedding.pooling if hasattr(config.embedding, 'pooling') else "mean",
+                    "algorithm": "hnsw",  # Default algorithm used by ChromaDB
+                    "batch_size": config.embedding.batch_size if hasattr(config.embedding, 'batch_size') else 100,
+                    "large_retrieval_size_single_corpus": target_config.get('large_retrieval_size_single_corpus', 120),
+                    "large_retrieval_size_all_corpus": target_config.get('large_retrieval_size_all_corpus', 80),
+                    "last_updated": datetime.now().isoformat(),
+                    "created_by": "corpus_wizard"
+                }
 
-                    with open(corpus_active_path, 'w') as f:
-                        json.dump(corpus_active_config, f, indent=2)
-                    logger.info(f"Created/updated corpus_active.json with active corpus configuration")
+                logger.info(f"Updating corpus_active.json with configuration for {corpus_name}")
+                logger.info(f"  Retriever: {corpus_active_config['retriever_module']}")
+                logger.info(f"  Collection: {corpus_active_config['collection_name']}")
+
+                with open(corpus_active_path, 'w') as f:
+                    json.dump(corpus_active_config, f, indent=2)
+                logger.info(f"Successfully updated corpus_active.json")
+
+                if mode_manager.is_locked():
+                    logger.warning("System is in deploy mode - corpus_active.json was still updated for consistency")
 
             except Exception as e:
                 logger.error(f"Failed to process target configuration: {e}")
