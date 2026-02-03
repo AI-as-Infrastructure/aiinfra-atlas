@@ -97,6 +97,32 @@ class UniversalCorpusBuilder:
 
         self.url_builder = URLBuilder(url_template)
 
+    def _clean_existing_corpus(self):
+        """Clean up existing corpus files for a fresh rebuild."""
+        import shutil
+
+        # List of files and directories to clean
+        items_to_clean = [
+            self.output_dir / "chroma_db",  # ChromaDB vector store
+            self.output_dir / "manifest.json",  # Corpus manifest
+            self.output_dir / "bm25_corpus.jsonl",  # BM25 corpus
+            self.output_dir / "tmp",  # Temporary files
+        ]
+
+        for item in items_to_clean:
+            if item.exists():
+                try:
+                    if item.is_dir():
+                        logger.info(f"Removing existing directory: {item}")
+                        shutil.rmtree(item)
+                    else:
+                        logger.info(f"Removing existing file: {item}")
+                        item.unlink()
+                except Exception as e:
+                    logger.warning(f"Failed to remove {item}: {e}")
+
+        logger.info("Corpus cleanup completed - starting fresh build")
+
     async def build(self, progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
         """
         Build corpus with progress tracking.
@@ -109,6 +135,9 @@ class UniversalCorpusBuilder:
         """
         logger.info(f"Starting corpus build: {self.config.metadata.name}")
         logger.info(f"Processing mode: {self.mode}")
+
+        # Clean up existing corpus files for a fresh build
+        self._clean_existing_corpus()
 
         # Initialize progress tracker
         self.progress_tracker = BuildProgressTracker(
