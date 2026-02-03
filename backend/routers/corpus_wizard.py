@@ -1300,15 +1300,47 @@ async def _build_corpus_task(build_id: str, config: CorpusConfig):
 
         # Initialize builder
         mode = wizard_state['build_progress'][build_id].get('mode', 'cpu')
-        # Build directly in the final corpus directory
-        output_dir = Path("backend/corpus")
-        logger.info(f"Creating UniversalCorpusBuilder with mode={mode}, output={output_dir}")
-        builder = UniversalCorpusBuilder(config, mode, output_dir)
+        # Build in temporary directory first to avoid conflicts with existing ChromaDB instances
+        temp_output_dir = Path("backend/corpus_build_temp")
+
+        # Clean temp directory if it exists from a previous failed build
+        if temp_output_dir.exists():
+            import shutil
+            logger.info(f"Cleaning existing temp directory: {temp_output_dir}")
+            shutil.rmtree(temp_output_dir)
+
+        logger.info(f"Creating UniversalCorpusBuilder with mode={mode}, output={temp_output_dir}")
+        builder = UniversalCorpusBuilder(config, mode, temp_output_dir)
         logger.info("Builder created successfully, starting build...")
 
-        # Build corpus
+        # Build corpus in temp directory
         results = await builder.build(progress_callback)
         logger.info(f"Build completed with results: {results}")
+
+        # Move from temp to final location
+        import shutil
+        final_corpus_dir = Path("backend/corpus")
+
+        try:
+            # Clean up final location
+            if final_corpus_dir.exists():
+                logger.info(f"Removing existing corpus directory: {final_corpus_dir}")
+                shutil.rmtree(final_corpus_dir)
+
+            # Move temp build to final location
+            logger.info(f"Moving built corpus from {temp_output_dir} to {final_corpus_dir}")
+            shutil.move(str(temp_output_dir), str(final_corpus_dir))
+
+            # Update results paths to reflect final location
+            for key in ['vector_store_path', 'manifest_path', 'bm25_corpus_path', 'config_path', 'retriever_path']:
+                if key in results and results[key]:
+                    results[key] = results[key].replace(str(temp_output_dir), str(final_corpus_dir))
+
+            logger.info("Successfully moved corpus to final location")
+
+        except Exception as e:
+            logger.error(f"Failed to move corpus to final location: {e}")
+            raise
 
         # Copy retriever and manifest files to their operational locations
         try:

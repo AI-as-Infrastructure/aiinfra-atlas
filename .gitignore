@@ -38,6 +38,9 @@ data/
 # Source examples directory - example corpus files for testing
 source_examples/
 
+# Corpus build temporary directory
+backend/corpus_build_temp/
+
 # Chroma database directories - exclude all binary DB files (too large for git)
 backend/chroma_db/
 */chroma_db/

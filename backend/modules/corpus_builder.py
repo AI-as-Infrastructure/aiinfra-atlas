@@ -101,7 +101,8 @@ class UniversalCorpusBuilder:
         """Clean up existing corpus files for a fresh rebuild."""
         import shutil
 
-        # List of files and directories to clean
+        # Since we're now building in a temp directory, just clean that directory
+        # No need to worry about ChromaDB connections since we start fresh
         items_to_clean = [
             self.output_dir / "chroma_db",  # ChromaDB vector store
             self.output_dir / "manifest.json",  # Corpus manifest
@@ -121,7 +122,7 @@ class UniversalCorpusBuilder:
                 except Exception as e:
                     logger.warning(f"Failed to remove {item}: {e}")
 
-        logger.info("Corpus cleanup completed - starting fresh build")
+        logger.info("Build directory cleanup completed")
 
     async def build(self, progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
         """
@@ -621,7 +622,7 @@ class UniversalCorpusBuilder:
         import chromadb
         from chromadb.config import Settings
 
-        # Use PersistentClient for automatic persistence
+        # Create a fresh client (directory should be clean from _clean_existing_corpus)
         client = chromadb.PersistentClient(
             path=str(persist_dir),
             settings=Settings(
@@ -630,25 +631,31 @@ class UniversalCorpusBuilder:
             )
         )
 
-        logger.info(f"Initialized ChromaDB persistent client at {persist_dir}")
-
-        # Create or get collection
-        try:
-            # Check if collection exists
-            existing_collections = [col.name for col in client.list_collections()]
-            if collection_name in existing_collections:
-                logger.info(f"Deleting existing collection: {collection_name}")
-                client.delete_collection(name=collection_name)
-        except Exception as e:
-            logger.warning(f"No existing collection to delete: {e}")
+        logger.info(f"Initialized ChromaDB client at {persist_dir}")
 
         # Wrap LangChain embeddings for ChromaDB compatibility
         chroma_embeddings = ChromaEmbeddingFunction(self.embeddings)
 
-        collection = client.create_collection(
-            name=collection_name,
-            embedding_function=chroma_embeddings
-        )
+        # Try to create collection (should be fresh after reset)
+        try:
+            collection = client.create_collection(
+                name=collection_name,
+                embedding_function=chroma_embeddings
+            )
+            logger.info(f"Created new collection: {collection_name}")
+        except Exception as e:
+            logger.error(f"Failed to create collection {collection_name}: {e}")
+            # Try to get existing collection as fallback
+            try:
+                logger.info(f"Attempting to get existing collection: {collection_name}")
+                collection = client.get_collection(
+                    name=collection_name,
+                    embedding_function=chroma_embeddings
+                )
+                logger.info(f"Using existing collection: {collection_name}")
+            except Exception as get_error:
+                logger.error(f"Failed to get existing collection: {get_error}")
+                raise ValueError(f"Cannot create or get ChromaDB collection: {get_error}")
 
         # Process in batches
         for i in range(0, len(all_chunks), batch_size):
