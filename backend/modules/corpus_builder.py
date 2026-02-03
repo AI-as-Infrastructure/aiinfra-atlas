@@ -323,10 +323,29 @@ class UniversalCorpusBuilder:
         import fnmatch
         import re
 
-        for filter_def in self.config.filters.filters:
+        # Skip "all" filter and try to match specific corpus filters first
+        non_all_filters = [f for f in self.config.filters.filters if f.type != "all" and f.id != "all"]
+        all_filter = next((f for f in self.config.filters.filters if f.type == "all" or f.id == "all"), None)
+
+        # First, try to match against specific corpus filters
+        for filter_def in non_all_filters:
             # Check pattern match
             if filter_def.pattern:
                 source_path = doc.metadata.get("source", "")
+
+                # For corpus filters, check if the path contains the corpus directory name
+                # e.g., for "United Kingdom", check if path contains "United Kingdom" or "United_Kingdom"
+                if filter_def.label:
+                    # Normalize label to handle spaces and underscores
+                    label_variations = [
+                        filter_def.label,
+                        filter_def.label.replace(" ", "_"),
+                        filter_def.label.replace("_", " ")
+                    ]
+                    for variant in label_variations:
+                        if variant in source_path:
+                            logger.debug(f"Matched document to corpus '{filter_def.label}' by path: {source_path}")
+                            return filter_def
 
                 # If pattern looks like a glob pattern (contains * or ?), use fnmatch
                 if '*' in filter_def.pattern or '?' in filter_def.pattern:
@@ -347,6 +366,38 @@ class UniversalCorpusBuilder:
                 if filter_def.metadata_field and filter_def.metadata_value:
                     if doc.metadata.get(filter_def.metadata_field) == filter_def.metadata_value:
                         return filter_def
+
+        # If no specific filter matched and we have an "all" filter, use it as fallback
+        # But tag it with the actual corpus from the path if possible
+        if all_filter:
+            source_path = doc.metadata.get("source", "")
+            # Try to extract corpus name from path
+            if "Australia" in source_path:
+                # Create a virtual filter for Australia
+                return FilterDefinition(
+                    id="australia",
+                    label="Australia",
+                    type="directory",
+                    pattern=None
+                )
+            elif "New_Zealand" in source_path or "New Zealand" in source_path:
+                # Create a virtual filter for New Zealand
+                return FilterDefinition(
+                    id="new_zealand",
+                    label="New Zealand",
+                    type="directory",
+                    pattern=None
+                )
+            elif "United_Kingdom" in source_path or "United Kingdom" in source_path:
+                # Create a virtual filter for United Kingdom
+                return FilterDefinition(
+                    id="united_kingdom",
+                    label="United Kingdom",
+                    type="directory",
+                    pattern=None
+                )
+            # Fall back to all filter if no corpus detected
+            return all_filter
 
         # Default filter if exists
         return self.config.filters.filters[0] if self.config.filters.filters else None
