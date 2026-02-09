@@ -3,30 +3,33 @@
 # Development environment cleanup script
 set -e
 
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "🧹 DEVELOPMENT ENVIRONMENT CLEANUP"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "This will REMOVE:"
-echo "  • Python virtual environments (.venv)"
-echo "  • Node modules and package-lock.json"
-echo "  • Frontend build artifacts (dist/)"
-echo "  • Telemetry database"
-echo "  • Python package metadata"
-echo ""
-echo "This will PRESERVE:"
-echo "  ✓ Corpus data"
-echo "  ✓ Configuration files"
-echo "  ✓ Custom retrievers"
-echo "  ✓ Test targets"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-echo "💡 TIP: Use 'make reset' for complete cleanup including corpus/configs"
-echo ""
-read -p "Continue with environment cleanup? (y/N): " confirmation
+# Check if being called with --force flag (from reset script)
+if [ "$1" != "--force" ]; then
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "🧹 DEVELOPMENT ENVIRONMENT CLEANUP"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "This will REMOVE:"
+    echo "  • Python virtual environments (.venv)"
+    echo "  • Node modules and package-lock.json"
+    echo "  • Frontend build artifacts (dist/)"
+    echo "  • Telemetry database"
+    echo "  • Python package metadata"
+    echo ""
+    echo "This will PRESERVE:"
+    echo "  ✓ Corpus data"
+    echo "  ✓ Configuration files"
+    echo "  ✓ Custom retrievers"
+    echo "  ✓ Test targets"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "💡 TIP: Use 'make reset' for complete cleanup including corpus/configs"
+    echo ""
+    read -p "Continue with environment cleanup? (y/N): " confirmation
 
-if [ "$confirmation" != "y" ] && [ "$confirmation" != "Y" ]; then
-    echo "Cleanup cancelled."
-    exit 0
+    if [ "$confirmation" != "y" ] && [ "$confirmation" != "Y" ]; then
+        echo "Cleanup cancelled."
+        exit 0
+    fi
 fi
 
 echo ""

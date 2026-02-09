@@ -34,7 +34,7 @@ echo "Starting complete reset..."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Step 1: Running standard development cleanup..."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-bash "$(dirname "$0")/clean_dev.sh"
+bash "$(dirname "$0")/clean_dev.sh" --force
 
 # Remove corpus data
 echo ""
@@ -62,14 +62,14 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "Step 3: Removing configuration files..."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# Remove corpus configuration
+# Remove corpus configuration from old location
 if [ -f "backend/config/corpus_active.json" ]; then
     echo "  Removing backend/config/corpus_active.json"
     rm -f backend/config/corpus_active.json
-    echo "  ✅ Active corpus configuration removed"
-else
-    echo "  ℹ️  No active corpus configuration found"
+    echo "  ✅ Active corpus configuration removed (old location)"
 fi
+
+# Note: corpus_active.json in backend/corpus/ will be removed with the entire corpus directory in step 2
 
 # Remove atlas configuration
 if [ -f "backend/config/atlas_config.json" ]; then
@@ -87,7 +87,7 @@ else
     echo "  ℹ️  No system settings found"
 fi
 
-# Remove custom retrievers (keep only base_retriever.py and utils)
+# Remove custom retrievers and adapters (keep only base_retriever.py and utils)
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Step 4: Removing custom retrievers..."
@@ -95,7 +95,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 if [ -d "backend/retrievers" ]; then
     # List files that will be removed
     removed_count=0
-    for file in backend/retrievers/*_retriever.py; do
+    for file in backend/retrievers/*_retriever.py backend/retrievers/*_adapter.py; do
         # Skip base_retriever.py and other utility files
         basename=$(basename "$file")
         if [[ "$basename" != "base_retriever.py" &&
@@ -111,9 +111,9 @@ if [ -d "backend/retrievers" ]; then
     done
 
     if [ $removed_count -gt 0 ]; then
-        echo "  ✅ Removed $removed_count custom retriever(s)"
+        echo "  ✅ Removed $removed_count custom retriever(s)/adapter(s)"
     else
-        echo "  ℹ️  No custom retrievers found"
+        echo "  ℹ️  No custom retrievers/adapters found"
     fi
 else
     echo "  ℹ️  Retrievers directory not found"
