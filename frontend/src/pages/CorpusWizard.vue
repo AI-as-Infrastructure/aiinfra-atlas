@@ -496,8 +496,8 @@
       </div>
 
 
-      <!-- Step 7: Build Progress -->
-      <div v-if="currentStep === 7" class="wizard-step">
+      <!-- Step 7: Build Progress (shown as step 8) -->
+      <div v-if="currentStep === 8" class="wizard-step">
         <h2>Building Vector Store</h2>
 
         <div v-if="!building && !buildProgress.status" class="build-start">
@@ -560,8 +560,8 @@
             <div class="success-message">
               ✅ Build completed successfully!
             </div>
-            <button @click="nextStep" class="btn btn-primary">
-              Continue to Target Config
+            <button @click="goToMainApp" class="btn btn-success">
+              🚀 Go to Main Application
             </button>
           </div>
 
@@ -576,8 +576,8 @@
         </div>
       </div>
 
-      <!-- Step 8: Target Configuration -->
-      <div v-if="currentStep === 8" class="wizard-step">
+      <!-- Step 8: Target Configuration (shown as step 7) -->
+      <div v-if="currentStep === 7" class="wizard-step">
         {{ console.log('[Render] Step 8 is rendering - currentStep:', currentStep) }}
         <h2>Configure Test Target</h2>
         <p class="help-text">Configure the LLM and search parameters for your corpus.</p>
@@ -841,8 +841,8 @@ export default {
       'Sources',
       'Preview',
       'Model',
-      'Build',
-      'Target Config'
+      'Target Config',
+      'Build'
     ]
 
     // Import dialog state
@@ -975,12 +975,12 @@ export default {
           return previewData.value && previewData.value.total_documents > 0
         case 6: // Model
           return selectedModel.value && selectedModel.value.length > 0
-        case 7: // Build
-          return buildProgress.value.status === 'completed'
-        case 8: // Target Config
+        case 7: // Target Config
           return targetConfig.value.llm_provider &&
                  targetConfig.value.llm_model &&
                  targetConfig.value.search_k > 0
+        case 8: // Build
+          return buildProgress.value.status === 'completed'
         default:
           return true
       }
