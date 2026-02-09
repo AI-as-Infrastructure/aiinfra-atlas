@@ -147,13 +147,17 @@ def debug_user_id_extraction(request: Request):
     """Debug endpoint to verify user ID extraction is working correctly."""
     from backend.services.anonymous_id_service import anonymous_id_service
 
+    # Get system configuration for inter-rater status
+    from backend.modules.system_configuration import get_system_config
+    system_config = get_system_config()
+
     result = {
         "timestamp": datetime.now().isoformat(),
         "environment": os.getenv("ENVIRONMENT", "unknown"),
         "cognito_settings": {
             "VITE_USE_COGNITO_AUTH": os.getenv("VITE_USE_COGNITO_AUTH", "false"),
             "cognito_enabled": is_cognito_enabled(),
-            "inter_rater_enabled": os.getenv("INTER_RATER_ENABLED", "false"),
+            "inter_rater_enabled": str(system_config.is_inter_rater_enabled()).lower(),
         },
         "anonymous_id_service": anonymous_id_service.validate_environment_isolation()
     }

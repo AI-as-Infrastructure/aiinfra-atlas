@@ -8,15 +8,18 @@ STACK_NAME ?= atlas-prod
 DOMAIN_NAME ?= atlas.aiinfra.org
 
 # Development Targets
-.PHONY: b f d stop-wizard
+.PHONY: b f d reset stop-wizard
 b: ## Start backend development server
 	@./deploy/dev/scripts/start_backend.sh
 
 f: ## Start frontend development server
 	@./deploy/dev/scripts/start_frontend.sh
 
-d: ## Destroy development environment (removes ALL venvs and node_modules)
+d: ## Clean dev environment (removes venv/node_modules, KEEPS corpus/configs)
 	@./deploy/dev/scripts/clean_dev.sh
+
+reset: ## COMPLETE RESET - removes EVERYTHING (venv, corpus, configs, retrievers)
+	@./deploy/dev/scripts/reset_dev.sh
 
 stop-wizard: ## Stop wizard/development servers gracefully (backend and frontend)
 	@./deploy/dev/scripts/stop_wizard.sh

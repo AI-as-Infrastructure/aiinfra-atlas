@@ -3,103 +3,103 @@
 ## Frontend - Export Functionality
 
 ### Main UI Updates
-- [ ] Add "Export Configuration" button above Test Target box
-- [ ] Create gear-download icon or use existing icon library
-- [ ] Add tooltip explaining configuration export
-- [ ] Style button to differentiate from session export
-- [ ] Position button appropriately in UI layout
+- [x] Add "Export Configuration" button above Test Target box
+- [x] Create gear-download icon or use existing icon library
+- [x] Add tooltip explaining configuration export
+- [x] Style button to differentiate from session export
+- [x] Position button appropriately in UI layout
 
 ### Export Dialog
-- [ ] Create configuration name/description input dialog
-- [ ] Implement export preview showing what will be saved
-- [ ] Add confirmation before download
-- [ ] Handle file download in browser
+- [x] Create configuration name/description input dialog
+- [x] Implement export preview showing what will be saved
+- [x] Add confirmation before download
+- [x] Handle file download in browser
 
 ### Export Logic
-- [ ] Create `useConfigurationExport` composable
-- [ ] Gather corpus configuration from store/API
-- [ ] Gather test target configuration
-- [ ] Gather system settings
-- [ ] Format as JSON with proper structure
-- [ ] Add metadata (timestamp, version, etc.)
-- [ ] Trigger browser download
+- [x] Create `useConfigurationExport` composable
+- [x] Gather corpus configuration from store/API
+- [x] Gather test target configuration
+- [x] Gather system settings
+- [x] Format as JSON with proper structure
+- [x] Add metadata (timestamp, version, etc.)
+- [x] Trigger browser download
 
 ## Frontend - Import Functionality
 
 ### Wizard Integration
-- [ ] Add "Import Configuration" button to CorpusMetadataForm
-- [ ] Create file picker for JSON files
-- [ ] Validate file type and size client-side
-- [ ] Show loading state during import
+- [x] Add "Import Configuration" button to CorpusMetadataForm
+- [x] Create file picker for JSON files
+- [x] Validate file type and size client-side
+- [x] Show loading state during import
 
 ### Import Dialog
-- [ ] Create `ConfigurationImportDialog.vue` component
-- [ ] Display parsed configuration in readable format
-- [ ] Highlight any issues or warnings
-- [ ] Show which settings will be applied
-- [ ] Allow editing of paths/URLs if needed
-- [ ] Add confirm/cancel actions
+- [x] Create `ConfigurationImportDialog.vue` component
+- [x] Display parsed configuration in readable format
+- [x] Highlight any issues or warnings
+- [x] Show which settings will be applied
+- [x] Allow editing of paths/URLs if needed
+- [x] Add confirm/cancel actions
 
 ### Import Logic
-- [ ] Create `useConfigurationImport` composable
-- [ ] Parse uploaded JSON file
-- [ ] Validate structure client-side
-- [ ] Send to backend for validation
-- [ ] Handle validation errors gracefully
-- [ ] Apply configuration on success
-- [ ] Update UI to reflect imported settings
+- [x] Create `useConfigurationImport` composable
+- [x] Parse uploaded JSON file
+- [x] Validate structure client-side
+- [x] Send to backend for validation
+- [x] Handle validation errors gracefully
+- [x] Apply configuration on success
+- [x] Update UI to reflect imported settings
 
 ## Backend - API Endpoints
 
 ### Export Endpoint
-- [ ] Create `/api/configuration/export` GET endpoint
-- [ ] Gather corpus configuration from corpus_active.json
-- [ ] Gather test target configuration from TargetConfig
-- [ ] Gather system settings from configuration module
-- [ ] Combine into unified export format
-- [ ] Add metadata and versioning
-- [ ] Return as JSON response
+- [x] Create `/api/configuration/export` GET endpoint
+- [x] Gather corpus configuration from corpus_active.json
+- [x] Gather test target configuration from TargetConfig
+- [x] Gather system settings from configuration module
+- [x] Combine into unified export format
+- [x] Add metadata and versioning
+- [x] Return as JSON response
 
 ### Import Endpoint
-- [ ] Create `/api/configuration/import` POST endpoint
-- [ ] Parse incoming JSON configuration
-- [ ] Validate configuration structure
-- [ ] Check version compatibility
-- [ ] Verify file paths/URLs accessibility
-- [ ] Apply corpus configuration
-- [ ] Apply test target configuration
-- [ ] Apply system settings
-- [ ] Return success/error response
+- [x] Create `/api/configuration/import` POST endpoint
+- [x] Parse incoming JSON configuration
+- [x] Validate configuration structure
+- [x] Check version compatibility
+- [x] Verify file paths/URLs accessibility
+- [x] Apply corpus configuration
+- [x] Apply test target configuration
+- [x] Apply system settings
+- [x] Return success/error response
 
 ### Validation Endpoint
-- [ ] Create `/api/configuration/validate` POST endpoint
-- [ ] Validate without applying changes
-- [ ] Check all paths and resources
-- [ ] Verify model availability
-- [ ] Return detailed validation report
+- [x] Create `/api/configuration/validate` POST endpoint
+- [x] Validate without applying changes
+- [x] Check all paths and resources
+- [x] Verify model availability
+- [x] Return detailed validation report
 
 ## Backend - Configuration Module
 
 ### Export Functions
-- [ ] Create `configuration_export.py` module
-- [ ] Implement `gather_corpus_config()` function
-- [ ] Implement `gather_target_config()` function
-- [ ] Implement `gather_system_config()` function
-- [ ] Create `build_export_json()` function
-- [ ] Add version compatibility information
+- [x] Create `configuration_export.py` module
+- [x] Implement `gather_corpus_config()` function
+- [x] Implement `gather_target_config()` function
+- [x] Implement `gather_system_config()` function
+- [x] Create `build_export_json()` function
+- [x] Add version compatibility information
 
 ### Import Functions
-- [ ] Create `configuration_import.py` module
-- [ ] Implement `validate_import_structure()` function
-- [ ] Implement `check_version_compatibility()` function
-- [ ] Implement `validate_resources()` function
-- [ ] Implement `apply_corpus_config()` function
-- [ ] Implement `apply_target_config()` function
-- [ ] Implement `apply_system_config()` function
+- [x] Create `configuration_import.py` module
+- [x] Implement `validate_import_structure()` function
+- [x] Implement `check_version_compatibility()` function
+- [x] Implement `validate_resources()` function
+- [x] Implement `apply_corpus_config()` function
+- [x] Implement `apply_target_config()` function
+- [x] Implement `apply_system_config()` function
 
 ### Utility Functions
-- [ ] Create path sanitization utilities
-- [ ] Implement configuration merge logic
+- [x] Create path sanitization utilities
+- [x] Implement configuration merge logic
 - [ ] Add rollback mechanism for failed imports
 - [ ] Create configuration diff function
 - [ ] Add configuration backup before import
@@ -149,14 +149,14 @@
 ## Security & Validation
 
 ### Input Validation
-- [ ] Validate JSON structure
-- [ ] Sanitize file paths
-- [ ] Check file size limits
-- [ ] Prevent path traversal attacks
-- [ ] Validate model names against whitelist
+- [x] Validate JSON structure
+- [x] Sanitize file paths
+- [x] Check file size limits
+- [x] Prevent path traversal attacks
+- [x] Validate model names against whitelist
 
 ### Data Protection
-- [ ] Ensure no API keys in export
+- [x] Ensure no API keys in export
 - [ ] Remove sensitive environment variables
 - [ ] Sanitize user-provided descriptions
 - [ ] Add rate limiting to import endpoint

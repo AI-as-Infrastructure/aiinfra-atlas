@@ -41,12 +41,16 @@ load_dotenv(dotenv_path=env_path, override=True)
 # Initialize telemetry after environment variables are loaded
 from backend.telemetry.core import initialize_telemetry
 from backend.telemetry import telemetry_initialized, telemetry_router
+from backend.modules.system_configuration import get_system_config
 
 environment = os.getenv("ENVIRONMENT", "development").lower()
-telemetry_enabled = os.getenv("TELEMETRY_ENABLED", "true").lower() in ["true", "1", "yes"]
+
+# Get telemetry setting from system configuration (with env override)
+system_config = get_system_config()
+telemetry_enabled = system_config.is_telemetry_enabled()
 
 if not telemetry_enabled:
-    logger.info("Telemetry disabled via TELEMETRY_ENABLED=false")
+    logger.info("Telemetry disabled via system configuration")
     telemetry_success = True
 else:
     try:
@@ -78,6 +82,8 @@ from backend.routers import (
     retriever_router,
     corpus_wizard_router,
     mode_router,
+    system_router,
+    configuration_router,
 )
 
 # Import configuration initialization
@@ -148,6 +154,8 @@ app.include_router(telemetry_router)
 
 # Include API routers
 app.include_router(mode_router)  # Mode management should be first
+app.include_router(system_router)  # System configuration
+app.include_router(configuration_router)  # Configuration export/import
 app.include_router(core_router)
 app.include_router(query_router)
 app.include_router(feedback_router)

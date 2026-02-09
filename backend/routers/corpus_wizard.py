@@ -682,6 +682,13 @@ async def build_corpus(
         # Transform frontend config to backend CorpusConfig format
         frontend_config = build_request.config
 
+        # Extract and save system configuration if provided
+        if "systemConfig" in frontend_config:
+            from backend.modules.system_configuration import get_system_config
+            system_config = get_system_config()
+            system_config.save_config(frontend_config["systemConfig"])
+            logger.info(f"Updated system configuration: {frontend_config['systemConfig']}")
+
         # Create the backend config structure
         backend_config = {
             "metadata": {
@@ -1466,6 +1473,64 @@ async def _build_corpus_task(build_id: str, config: CorpusConfig):
 
                 if mode_manager.is_locked():
                     logger.warning("System is in deploy mode - corpus_active.json was still updated for consistency")
+
+                # Update VITE_SITE_TITLE with corpus display_name
+                try:
+                    # Read the manifest to get display_name
+                    manifest_path = Path("backend/corpus/manifest.json")
+                    if manifest_path.exists():
+                        with open(manifest_path, 'r') as f:
+                            manifest_data = json.load(f)
+
+                        # Get display_name from manifest, fallback to name if not present
+                        display_name = manifest_data.get('metadata', {}).get('display_name', '')
+                        if not display_name:
+                            display_name = manifest_data.get('metadata', {}).get('name', 'ATLAS')
+
+                        logger.info(f"Updating VITE_SITE_TITLE to: {display_name}")
+
+                        # Determine which env file to update based on runtime mode
+                        if mode_manager.is_locked():
+                            logger.info("System in deploy mode - skipping VITE_SITE_TITLE file update")
+                        else:
+                            # Update the appropriate environment file
+                            env_file = Path("config/.env.development")
+
+                            if env_file.exists():
+                                # Read existing environment file
+                                lines = []
+                                title_updated = False
+
+                                with open(env_file, 'r') as f:
+                                    for line in f:
+                                        if line.startswith('VITE_SITE_TITLE='):
+                                            lines.append(f'VITE_SITE_TITLE="{display_name}"\n')
+                                            title_updated = True
+                                            logger.info(f"Updated VITE_SITE_TITLE in {env_file}")
+                                        else:
+                                            lines.append(line)
+
+                                # If VITE_SITE_TITLE wasn't found, add it
+                                if not title_updated:
+                                    lines.append(f'\n# Updated by corpus wizard\n')
+                                    lines.append(f'VITE_SITE_TITLE="{display_name}"\n')
+                                    logger.info(f"Added VITE_SITE_TITLE to {env_file}")
+
+                                # Write back to file
+                                with open(env_file, 'w') as f:
+                                    f.writelines(lines)
+
+                                logger.info(f"Successfully updated VITE_SITE_TITLE to '{display_name}'")
+                                logger.info("Note: Frontend restart may be required to see the title change")
+                            else:
+                                logger.warning(f"Environment file {env_file} not found - skipping VITE_SITE_TITLE update")
+                    else:
+                        logger.warning("Manifest file not found - skipping VITE_SITE_TITLE update")
+
+                except Exception as e:
+                    logger.error(f"Failed to update VITE_SITE_TITLE: {e}")
+                    # Don't fail the build for title update issues
+                    wizard_state['build_progress'][build_id]['title_update_error'] = str(e)
 
             except Exception as e:
                 logger.error(f"Failed to process target configuration: {e}")

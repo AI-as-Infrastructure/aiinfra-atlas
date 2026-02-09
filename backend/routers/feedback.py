@@ -45,7 +45,9 @@ async def submit_feedback(feedback: UserFeedback, request: Request):
                     status="error"
                 )
             # If inter-rater is enabled, set rater_id from authenticated user
-            if os.getenv("INTER_RATER_ENABLED", "false").lower() == "true":
+            from backend.modules.system_configuration import get_system_config
+            system_config = get_system_config()
+            if system_config.is_inter_rater_enabled():
                 feedback.rater_id = user.get("sub")
 
         # Get session ID and QA ID from the feedback

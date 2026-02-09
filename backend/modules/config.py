@@ -248,14 +248,18 @@ def _initialize_retriever(config: Dict[str, Any]) -> None:
         _retriever_instance = load_retriever(retriever_name=retriever_module, config=retriever_config)
 
         if _retriever_instance is None:
-            raise ValueError(f"Failed to load retriever module: {retriever_module}")
+            logger.warning(f"Failed to load retriever module: {retriever_module}. System will run without retriever until corpus is configured.")
+            _retriever = None
+            _retriever_instance = None
+            return
 
         _retriever = _retriever_instance
         logger.debug(f"Retriever initialized successfully: {retriever_module}")
 
     except Exception as e:
-        logger.error(f"Failed to initialize retriever: {e}")
-        raise
+        logger.error(f"Failed to initialize retriever: {e}. System will run without retriever.")
+        _retriever = None
+        _retriever_instance = None
 
 def _load_corpus_active_config() -> Optional[Dict[str, Any]]:
     """Load active corpus configuration from corpus_active.json."""

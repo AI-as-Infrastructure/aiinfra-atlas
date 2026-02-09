@@ -3,61 +3,61 @@
 ## Frontend Components
 
 ### Wizard Structure Updates
-- [ ] Update `frontend/src/views/CorpusWizard.vue` to add new configuration step
-- [ ] Shift step numbers for all subsequent steps (+1)
-- [ ] Update step navigation logic to handle new step
+- [x] Update `frontend/src/views/CorpusWizard.vue` to add new configuration step
+- [x] Shift step numbers for all subsequent steps (+1)
+- [x] Update step navigation logic to handle new step
 
 ### New Configuration Component
-- [ ] Create `frontend/src/components/wizard/SystemConfiguration.vue`
-- [ ] Implement telemetry toggle with description
-- [ ] Implement inter-rater feedback toggle with description
-- [ ] Add form validation for configuration settings
-- [ ] Style component to match existing wizard aesthetic
+- [x] Create `frontend/src/components/wizard/SystemConfiguration.vue`
+- [x] Implement telemetry toggle with description
+- [x] Implement inter-rater feedback toggle with description
+- [x] Add form validation for configuration settings
+- [x] Style component to match existing wizard aesthetic
 
 ### State Management
-- [ ] Add configuration state to wizard data model
-- [ ] Update wizard data validation to include configuration
-- [ ] Ensure configuration persists through wizard navigation
+- [x] Add configuration state to wizard data model
+- [x] Update wizard data validation to include configuration
+- [x] Ensure configuration persists through wizard navigation
 
 ## Backend Implementation
 
 ### Configuration Management
-- [ ] Create `backend/modules/system_configuration.py` module
-- [ ] Implement configuration file reader/writer
-- [ ] Add configuration validation logic
-- [ ] Create configuration merge strategy (file + env vars)
+- [x] Create `backend/modules/system_configuration.py` module
+- [x] Implement configuration file reader/writer
+- [x] Add configuration validation logic
+- [x] Create configuration merge strategy (file + env vars)
 
 ### API Endpoints
-- [ ] Create `backend/routers/system.py` router module
-- [ ] Implement `POST /api/system/configuration` endpoint
-- [ ] Add request/response models with Pydantic
-- [ ] Add appropriate authentication checks
-- [ ] Implement configuration persistence logic
+- [x] Create `backend/routers/system.py` router module
+- [x] Implement `POST /api/system/configuration` endpoint
+- [x] Add request/response models with Pydantic
+- [x] Add appropriate authentication checks
+- [x] Implement configuration persistence logic
 
 ### Runtime Configuration
-- [ ] Update `backend/app.py` to read system_settings.json on startup
-- [ ] Modify telemetry initialization to respect runtime settings
-- [ ] Update inter-rater feedback checks to use runtime configuration
-- [ ] Ensure environment variables can still override file settings
+- [x] Update `backend/app.py` to read system_settings.json on startup
+- [x] Modify telemetry initialization to respect runtime settings
+- [x] Update inter-rater feedback checks to use runtime configuration
+- [x] Ensure environment variables can still override file settings
 
 ### Configuration File
-- [ ] Create default `config/system_settings.json` template
-- [ ] Add system_settings.json to .gitignore
-- [ ] Document configuration file format
+- [x] Create default `config/system_settings.json` template
+- [x] Add system_settings.json to .gitignore
+- [x] Document configuration file format
 
 ## Integration Points
 
 ### Telemetry Integration
-- [ ] Update `backend/telemetry/core.py` to check runtime configuration
-- [ ] Modify telemetry initialization logic
-- [ ] Add configuration change logging
-- [ ] Test telemetry enable/disable at runtime
+- [x] Update `backend/telemetry/core.py` to check runtime configuration
+- [x] Modify telemetry initialization logic
+- [x] Add configuration change logging
+- [x] Test telemetry enable/disable at runtime
 
 ### Inter-Rater Integration
-- [ ] Update inter-rater feedback endpoints to check runtime config
-- [ ] Modify feedback UI components to respect settings
-- [ ] Hide/show feedback buttons based on configuration
-- [ ] Update `backend/routers/core.py` health check response
+- [x] Update inter-rater feedback endpoints to check runtime config
+- [x] Modify feedback UI components to respect settings
+- [x] Hide/show feedback buttons based on configuration
+- [x] Update `backend/routers/core.py` health check response
 
 ## Testing
 

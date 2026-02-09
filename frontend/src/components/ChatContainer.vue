@@ -25,6 +25,9 @@
 						<TelemetryToggle />
 					</div>
 					<div class="mb-4">
+						<ConfigurationExportButton />
+					</div>
+					<div class="mb-4">
 						<TestTargetBox />
 					</div>
 					<div class="export-btn-container">
@@ -42,6 +45,7 @@ import UserInput from './UserInput.vue'
 import TelemetryToggle from './TelemetryToggle.vue'
 import TestTargetBox from './TestTargetBox.vue'
 import ExportButton from './ExportButton.vue'
+import ConfigurationExportButton from './ConfigurationExportButton.vue'
 import { storeToRefs } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import { useSessionStore } from '@/stores/session'

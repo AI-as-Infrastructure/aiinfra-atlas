@@ -645,6 +645,23 @@ The build process provides real-time progress via Server-Sent Events:
    - Check disk space for backup
    - Ensure no processes are using the corpus
 
+## Post-Build Configuration
+
+After a successful corpus build:
+
+1. **Site Title Update**: The UI title (VITE_SITE_TITLE) is automatically updated to match your corpus display_name
+   - The change is written to `config/.env.development`
+   - **Note**: Frontend restart may be required to see the title change
+   - In deploy mode, the file update is skipped but logged
+
+2. **Target Configuration**: The wizard creates appropriate test target configurations
+   - Saved to `backend/targets/` directory
+   - Automatically selected as the active target
+
+3. **Corpus Activation**: The corpus is immediately available for use
+   - No separate activation step required
+   - Previous corpus (if any) is replaced atomically
+
 ## Best Practices
 
 1. **Test configurations locally first** before deploying to production
@@ -652,6 +669,7 @@ The build process provides real-time progress via Server-Sent Events:
 3. **Include complete metadata** for research reproducibility
 4. **Regular backups** are created automatically but can be triggered manually
 5. **Monitor disk usage** as corpora and backups can be large
+6. **Restart frontend after build** to see the updated site title
 
 ## Future Enhancements
 

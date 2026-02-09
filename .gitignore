@@ -3,6 +3,7 @@ config/.env.development
 config/.env.staging
 config/.env.production
 config/dev_certs
+config/system_settings.json
 create/txt/output/*
 letsencrypt/
 var/lib/letsencrypt/

@@ -26,8 +26,18 @@
     <div class="wizard-content">
       <!-- Step 1: Workflow Type Selection -->
       <div v-if="currentStep === 1" class="wizard-step">
-        <h2>Select Workflow Type</h2>
-        <p class="help-text">Choose how you want to process your corpus documents.</p>
+        <div class="is-flex is-justify-content-space-between is-align-items-center mb-4">
+          <div>
+            <h2>Select Workflow Type</h2>
+            <p class="help-text">Choose how you want to process your corpus documents.</p>
+          </div>
+          <button class="button is-info is-light" @click="showImportDialog = true">
+            <span class="icon">
+              <i>📥</i>
+            </span>
+            <span>Import Configuration</span>
+          </button>
+        </div>
 
         <div class="workflow-selector">
           <div
@@ -113,8 +123,14 @@
         </div>
       </div>
 
-      <!-- Step 3: Source Configuration -->
+      <!-- Step 3: System Configuration -->
       <div v-if="currentStep === 3" class="wizard-step">
+        <h3>Step 3: System Configuration</h3>
+        <SystemConfiguration v-model="systemConfig" />
+      </div>
+
+      <!-- Step 4: Source Configuration -->
+      <div v-if="currentStep === 4" class="wizard-step">
         <h2>Configure Document Sources</h2>
         <p class="help-text">Specify where your documents are located and how to process them.</p>
 
@@ -263,8 +279,8 @@
         </div>
       </div>
 
-      <!-- Step 4: Document Preview -->
-      <div v-if="currentStep === 4" class="wizard-step">
+      <!-- Step 5: Document Preview -->
+      <div v-if="currentStep === 5" class="wizard-step">
         <h2>Preview Documents</h2>
 
         <div v-if="!previewData" class="preview-loading">
@@ -378,8 +394,8 @@
         </div>
       </div>
 
-      <!-- Step 5: Model Selection -->
-      <div v-if="currentStep === 5" class="wizard-step">
+      <!-- Step 6: Model Selection -->
+      <div v-if="currentStep === 6" class="wizard-step">
         <h2>Select Embedding Model</h2>
         <p class="help-text">Choose an embedding model for creating vector representations of your documents.</p>
 
@@ -480,8 +496,8 @@
       </div>
 
 
-      <!-- Step 6: Build Progress -->
-      <div v-if="currentStep === 6" class="wizard-step">
+      <!-- Step 7: Build Progress -->
+      <div v-if="currentStep === 7" class="wizard-step">
         <h2>Building Vector Store</h2>
 
         <div v-if="!building && !buildProgress.status" class="build-start">
@@ -560,9 +576,9 @@
         </div>
       </div>
 
-      <!-- Step 7: Target Configuration -->
-      <div v-if="currentStep === 7" class="wizard-step">
-        {{ console.log('[Render] Step 7 is rendering - currentStep:', currentStep) }}
+      <!-- Step 8: Target Configuration -->
+      <div v-if="currentStep === 8" class="wizard-step">
+        {{ console.log('[Render] Step 8 is rendering - currentStep:', currentStep) }}
         <h2>Configure Test Target</h2>
         <p class="help-text">Configure the LLM and search parameters for your corpus.</p>
 
@@ -781,7 +797,7 @@
         Previous
       </button>
       <button
-        v-if="currentStep < steps.length && currentStep !== 6 && currentStep !== 7"
+        v-if="currentStep < steps.length && currentStep !== 7"
         @click="nextStep"
         :disabled="!canProceed"
         class="btn btn-primary"
@@ -789,6 +805,13 @@
         Next
       </button>
     </div>
+
+    <!-- Import Dialog -->
+    <ConfigurationImportDialog
+      :show="showImportDialog"
+      @close="showImportDialog = false"
+      @imported="handleConfigurationImported"
+    />
   </div>
 </template>
 
@@ -796,11 +819,15 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import BuildProgress from '@/components/wizard/BuildProgress.vue'
+import SystemConfiguration from '@/components/wizard/SystemConfiguration.vue'
+import ConfigurationImportDialog from '@/components/ConfigurationImportDialog.vue'
 
 export default {
   name: 'CorpusWizard',
   components: {
-    BuildProgress
+    BuildProgress,
+    SystemConfiguration,
+    ConfigurationImportDialog
   },
   setup() {
     const router = useRouter()
@@ -810,12 +837,16 @@ export default {
     const steps = [
       'Workflow',
       'Metadata',
+      'Configuration',
       'Sources',
       'Preview',
       'Model',
       'Build',
       'Target Config'
     ]
+
+    // Import dialog state
+    const showImportDialog = ref(false)
 
     // Workflow type
     const workflowType = ref('text')
@@ -826,6 +857,11 @@ export default {
       description: '',
       copyright_status: '',
       doi: ''
+    })
+
+    const systemConfig = ref({
+      telemetryEnabled: false,
+      interRaterEnabled: false
     })
 
     const source = ref({
@@ -929,22 +965,22 @@ export default {
           return workflowType.value === 'text' // Only text workflow is available
         case 2: // Metadata
           return isValidCorpusName.value && metadata.value.copyright_status
-        case 3: // Sources
+        case 3: // System Configuration
+          return true // System config has defaults, always allow proceeding
+        case 4: // Sources
           return source.value.location &&
                  source.value.location.length > 0 &&
                  source.value.file_extensions
-        case 4: // Preview
+        case 5: // Preview
           return previewData.value && previewData.value.total_documents > 0
-        case 5: // Model
+        case 6: // Model
           return selectedModel.value && selectedModel.value.length > 0
-        case 6: // Build
+        case 7: // Build
           return buildProgress.value.status === 'completed'
-        case 7: // Target Config
+        case 8: // Target Config
           return targetConfig.value.llm_provider &&
                  targetConfig.value.llm_model &&
                  targetConfig.value.search_k > 0
-        case 8: // Activate
-          return validationData.value && validationData.value.all_valid
         default:
           return true
       }
@@ -1294,6 +1330,7 @@ Do you want to continue?`
             workflow_type: workflowType.value,
             created_by: 'corpus_wizard'
           },
+          systemConfig: systemConfig.value,
           source: source.value,
           filters: previewData.value?.filters?.filter(f =>
             f.type === 'all' || selectedFilters.value.includes(f.id)
@@ -1457,6 +1494,68 @@ Do you want to continue?`
       }
     }
 
+    const handleConfigurationImported = (config) => {
+      // Apply imported configuration to wizard state
+      if (config) {
+        // Apply corpus configuration
+        if (config.corpus) {
+          // Apply metadata if available
+          if (config.corpus.metadata) {
+            metadata.value = {
+              ...metadata.value,
+              name: config.corpus.metadata.name || '',
+              description: config.corpus.metadata.description || '',
+              display_name: config.corpus.metadata.display_name || ''
+            }
+          }
+
+          // Apply source configuration if available
+          if (config.corpus.source) {
+            source.value = {
+              ...source.value,
+              type: config.corpus.source.type || 'local',
+              location: config.corpus.source.path || config.corpus.source.url || '',
+              extract_inline_urls: config.corpus.source.extract_inline_urls || false
+            }
+          }
+
+          // Apply embedding configuration if available
+          if (config.corpus.embedding) {
+            selectedModel.value = config.corpus.embedding.model || defaultModel.value
+            chunkSize.value = config.corpus.embedding.chunk_size || 1500
+            chunkOverlap.value = config.corpus.embedding.chunk_overlap || 150
+            textSplitterType.value = config.corpus.embedding.text_splitter_type || 'RecursiveCharacterTextSplitter'
+          }
+        }
+
+        // Apply system configuration if available
+        if (config.system) {
+          systemConfig.value = {
+            telemetryEnabled: config.system.telemetryEnabled || false,
+            interRaterEnabled: config.system.interRaterEnabled || false
+          }
+        }
+
+        // Apply target configuration if available
+        if (config.test_target) {
+          targetConfig.value = {
+            ...targetConfig.value,
+            llm_provider: config.test_target.provider || '',
+            llm_model: config.test_target.model || '',
+            search_k: config.test_target.search_k || 20,
+            search_type: config.test_target.search_type || 'similarity',
+            search_score_threshold: config.test_target.search_score_threshold || 0.7,
+            citation_limit: config.test_target.citation_limit || 10,
+            temperature: config.test_target.temperature || 0.7,
+            max_tokens: config.test_target.max_tokens || 4096
+          }
+        }
+
+        // Show success message
+        alert('Configuration imported successfully! Review the settings and proceed with the wizard.')
+      }
+    }
+
     const saveConfiguration = async () => {
       try {
         const config = {
@@ -1524,9 +1623,11 @@ Do you want to continue?`
       currentStep,
       steps,
       workflowType,
+      showImportDialog,
 
       // Form data
       metadata,
+      systemConfig,
       source,
 
       // Model selection
@@ -1586,6 +1687,7 @@ Do you want to continue?`
       // Utilities
       saveConfiguration,
       downloadConfig,
+      handleConfigurationImported,
       formatDuration,
       formatBytes,
       formatTime

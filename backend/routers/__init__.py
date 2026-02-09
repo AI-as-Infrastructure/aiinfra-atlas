@@ -14,6 +14,8 @@ from backend.routers.inter_rater import router as inter_rater_router
 from backend.routers.retriever import router as retriever_router
 from backend.routers.corpus_wizard import router as corpus_wizard_router
 from backend.routers.mode import router as mode_router
+from backend.routers.system import router as system_router
+from backend.routers.configuration import router as configuration_router
 
 __all__ = [
     "core_router",
@@ -26,4 +28,6 @@ __all__ = [
     "retriever_router",
     "corpus_wizard_router",
     "mode_router",
+    "system_router",
+    "configuration_router",
 ]
