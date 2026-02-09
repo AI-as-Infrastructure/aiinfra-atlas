@@ -168,8 +168,8 @@ class UniversalCorpusBuilder:
             # Step 7: Save configuration
             config_path = self._save_config()
 
-            # Step 8: Generate retriever from template
-            retriever_path = self._generate_retriever()
+            # Step 8: Generate corpus adapter from template
+            adapter_path = self._generate_corpus_adapter()
 
             # Clean up checkpoint on success
             self.progress_tracker.cleanup_checkpoint()
@@ -196,7 +196,7 @@ class UniversalCorpusBuilder:
                 "manifest_path": str(manifest_path),
                 "bm25_corpus_path": str(bm25_path),
                 "config_path": str(config_path),
-                "retriever_path": str(retriever_path),
+                "adapter_path": str(adapter_path),
                 "collection_name": self.collection_name,  # Include the actual collection name used
                 "documents_processed": len(self.documents),
                 "vector_store_size": vector_store_size,
@@ -898,9 +898,9 @@ class UniversalCorpusBuilder:
         logger.info(f"Configuration saved to {config_path}")
         return config_path
 
-    def _generate_retriever(self) -> Path:
-        """Generate corpus-specific retriever from template."""
-        logger.info("Generating corpus-specific retriever...")
+    def _generate_corpus_adapter(self) -> Path:
+        """Generate corpus-specific adapter from template."""
+        logger.info("Generating corpus-specific adapter...")
 
         # Read template
         template_path = Path(__file__).parent.parent / "retrievers" / "templates" / "corpus_retriever_template.py"
@@ -931,15 +931,15 @@ class UniversalCorpusBuilder:
             collection_name=self.collection_name  # Use the actual collection name from vector store creation
         )
 
-        # Save retriever
-        retriever_name = f"{corpus_name.replace('-', '_')}_retriever.py"
-        retriever_path = self.output_dir / retriever_name
+        # Save corpus adapter
+        adapter_name = f"{corpus_name.replace('-', '_')}_adapter.py"
+        adapter_path = self.output_dir / adapter_name
 
-        with open(retriever_path, 'w') as f:
+        with open(adapter_path, 'w') as f:
             f.write(retriever_code)
 
-        logger.info(f"Retriever generated: {retriever_path}")
-        return retriever_path
+        logger.info(f"Corpus adapter generated: {adapter_path}")
+        return adapter_path
 
 
 async def build_corpus_from_config(

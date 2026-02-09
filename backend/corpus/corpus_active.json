@@ -1,5 +1,5 @@
 {
-  "retriever_module": "new7_retriever",
+  "corpus_adapter": "new7_adapter",
   "target": "k20_claude_3_5_haiku_20241022",
   "corpus_name": "new7",
   "collection_name": "new7_c",

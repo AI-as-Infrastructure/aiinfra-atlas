@@ -235,26 +235,26 @@ def _initialize_retriever(config: Dict[str, Any]) -> None:
         logger.debug("Initializing retriever with configuration")
         retriever_config = config.get("retriever_config", {})
 
-        # Get retriever_module from config - REQUIRED
-        retriever_module = retriever_config.get("retriever_module")
+        # Get corpus_adapter from config - REQUIRED
+        corpus_adapter = retriever_config.get("corpus_adapter")
 
-        if not retriever_module:
-            logger.warning("No retriever_module in configuration. Run corpus wizard to set up a corpus.")
+        if not corpus_adapter:
+            logger.warning("No corpus_adapter in configuration. Run corpus wizard to set up a corpus.")
             _retriever = None
             _retriever_instance = None
             return
 
-        # Load the retriever with the specified module
-        _retriever_instance = load_retriever(retriever_name=retriever_module, config=retriever_config)
+        # Load the corpus adapter (which provides retriever functionality)
+        _retriever_instance = load_retriever(retriever_name=corpus_adapter, config=retriever_config)
 
         if _retriever_instance is None:
-            logger.warning(f"Failed to load retriever module: {retriever_module}. System will run without retriever until corpus is configured.")
+            logger.warning(f"Failed to load corpus adapter: {corpus_adapter}. System will run without retriever until corpus is configured.")
             _retriever = None
             _retriever_instance = None
             return
 
         _retriever = _retriever_instance
-        logger.debug(f"Retriever initialized successfully: {retriever_module}")
+        logger.debug(f"Corpus adapter initialized successfully: {corpus_adapter}")
 
     except Exception as e:
         logger.error(f"Failed to initialize retriever: {e}. System will run without retriever.")
@@ -264,7 +264,7 @@ def _initialize_retriever(config: Dict[str, Any]) -> None:
 def _load_corpus_active_config() -> Optional[Dict[str, Any]]:
     """Load active corpus configuration from corpus_active.json."""
     corpus_active_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                                     'config', 'corpus_active.json')
+                                     'corpus', 'corpus_active.json')
 
     if os.path.exists(corpus_active_path):
         try:
@@ -291,7 +291,7 @@ def initialize_config() -> Dict[str, Any]:
 
     if not corpus_active:
         error_msg = (
-            "No corpus_active.json found at backend/config/corpus_active.json. "
+            "No corpus_active.json found at backend/corpus/corpus_active.json. "
             "Please run the corpus wizard to set up a corpus, or create corpus_active.json manually. "
             "The system no longer supports configuration through environment variables."
         )
@@ -305,7 +305,7 @@ def initialize_config() -> Dict[str, Any]:
     logger.info(f"Loading configuration from corpus_active.json")
 
     # Load corpus configuration - all fields required
-    required_fields = ["retriever_module", "collection_name", "embedding_model", "target"]
+    required_fields = ["corpus_adapter", "collection_name", "embedding_model", "target"]
     missing_fields = [f for f in required_fields if not corpus_active.get(f)]
 
     if missing_fields:
@@ -314,7 +314,7 @@ def initialize_config() -> Dict[str, Any]:
         raise ValueError(error_msg)
 
     # Override with corpus configuration
-    _config["retriever_config"]["retriever_module"] = corpus_active["retriever_module"]
+    _config["retriever_config"]["corpus_adapter"] = corpus_active["corpus_adapter"]
     _config["retriever_config"]["collection_name"] = corpus_active["collection_name"]
     _config["retriever_config"]["chroma_persist_directory"] = corpus_active.get("chroma_persist_directory", "backend/corpus/chroma_db")
     _config["retriever_config"]["embedding_model"] = corpus_active["embedding_model"]
@@ -387,10 +387,10 @@ def get_full_config() -> Dict[str, Any]:
     """Get configuration including metadata."""
     config = get_config()
     retriever_config = config.get("retriever_config", {})
-    retriever_type = retriever_config.get("retriever_module", "not_configured")
+    corpus_adapter = retriever_config.get("corpus_adapter", "not_configured")
     return {
         **config,
-        "retriever_type": retriever_type,
+        "corpus_adapter": corpus_adapter,
         "retriever_instance": get_retriever_instance().__class__.__name__ if get_retriever_instance() else None,
         "initialized": True
     }

@@ -4,6 +4,27 @@ Base Retriever System for ATLAS
 This module contains:
 1. The BaseRetriever abstract class that all retrievers must implement
 2. Utility functions for retriever implementation and document processing
+
+Directory Structure:
+- backend/retrievers/ - Contains base classes and utilities (this directory)
+  - base_retriever.py - Base class for all retrievers
+  - retriever_config_utils.py - Configuration utilities
+  - templates/ - Templates for creating new retrievers
+
+- backend/corpus/ - Contains ALL build artifacts from the corpus wizard
+  - {corpus_name}_adapter.py - The corpus adapter (provides retrieval functionality)
+  - corpus_active.json - Active corpus configuration
+  - chroma_db/ - Vector store data
+  - manifest.json - Corpus metadata and statistics
+  - bm25_corpus.jsonl - BM25 search data
+  - corpus_config.yaml - Detailed corpus configuration
+
+Note: When the corpus wizard builds a corpus, ALL artifacts (including the corpus adapter)
+are stored together in backend/corpus/ for consistency and easy management.
+The retriever loader checks backend/corpus/ first (for corpus adapters), then
+backend/retrievers/ for backward compatibility with manually created retrievers.
+The corpus adapter inherits from BaseRetriever and provides corpus-specific
+retrieval capabilities.
 """
 
 import os

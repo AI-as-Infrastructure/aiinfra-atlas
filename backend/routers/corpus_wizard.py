@@ -1349,29 +1349,31 @@ async def _build_corpus_task(build_id: str, config: CorpusConfig):
             logger.error(f"Failed to move corpus to final location: {e}")
             raise
 
-        # Copy retriever and manifest files to their operational locations
+        # Set retriever module name and copy manifest to targets directory
         try:
             import shutil
 
-            # Copy retriever to retrievers directory
-            retriever_source = Path(results.get('retriever_path', ''))
-            if retriever_source.exists():
-                retriever_name = retriever_source.name
-                retriever_dest = Path("backend/retrievers") / retriever_name
-                shutil.copy2(retriever_source, retriever_dest)
-                logger.info(f"Copied retriever to: {retriever_dest}")
-
-                # Update RETRIEVER_MODULE in results
-                results['retriever_module'] = retriever_name.replace('.py', '')
+            # Just set the adapter module name - no need to copy since it stays in corpus/
+            adapter_source = Path(results.get('adapter_path', ''))
+            if adapter_source.exists():
+                adapter_name = adapter_source.name
+                results['corpus_adapter'] = adapter_name.replace('.py', '')
+                logger.info(f"Corpus adapter: {results['corpus_adapter']} (in backend/corpus/)")
             else:
-                # If retriever_path doesn't exist in results, try to get from corpus directory
-                corpus_retriever = Path("backend/corpus") / f"{corpus_name}_retriever.py"
-                if corpus_retriever.exists():
-                    retriever_name = corpus_retriever.name
-                    retriever_dest = Path("backend/retrievers") / retriever_name
-                    shutil.copy2(corpus_retriever, retriever_dest)
-                    logger.info(f"Copied retriever from corpus dir to: {retriever_dest}")
-                    results['retriever_module'] = retriever_name.replace('.py', '')
+                # If adapter_path doesn't exist in results, try to get from corpus directory
+                # First try the new naming convention
+                corpus_adapter = Path("backend/corpus") / f"{corpus_name}_adapter.py"
+                if corpus_adapter.exists():
+                    adapter_name = corpus_adapter.name
+                    results['corpus_adapter'] = adapter_name.replace('.py', '')
+                    logger.info(f"Corpus adapter: {results['corpus_adapter']} (in backend/corpus/)")
+                else:
+                    # Fallback to old naming for existing corpora
+                    corpus_retriever = Path("backend/corpus") / f"{corpus_name}_retriever.py"
+                    if corpus_retriever.exists():
+                        retriever_name = corpus_retriever.name
+                        results['corpus_adapter'] = retriever_name.replace('.py', '').replace('_retriever', '_adapter')
+                        logger.info(f"Corpus adapter: {results['corpus_adapter']} (fallback from old retriever naming)")
 
             # Copy manifest to targets directory
             manifest_source = Path(results.get('manifest_path', ''))
@@ -1440,11 +1442,10 @@ async def _build_corpus_task(build_id: str, config: CorpusConfig):
 
                 # Create or update corpus_active.json instead of .env files
                 # Always update corpus_active.json after successful build
-                corpus_active_path = Path("backend/config/corpus_active.json")
-                corpus_active_path.parent.mkdir(parents=True, exist_ok=True)
+                corpus_active_path = Path("backend/corpus/corpus_active.json")
 
                 corpus_active_config = {
-                    "retriever_module": results.get('retriever_module', f'{corpus_name}_retriever'),
+                    "corpus_adapter": results.get('corpus_adapter', f'{corpus_name}_adapter'),
                     "target": target_name,
                     "corpus_name": corpus_name,
                     "collection_name": results.get('collection_name', f'{corpus_name}_c'),
@@ -1464,7 +1465,7 @@ async def _build_corpus_task(build_id: str, config: CorpusConfig):
                 }
 
                 logger.info(f"Updating corpus_active.json with configuration for {corpus_name}")
-                logger.info(f"  Retriever: {corpus_active_config['retriever_module']}")
+                logger.info(f"  Corpus Adapter: {corpus_active_config['corpus_adapter']}")
                 logger.info(f"  Collection: {corpus_active_config['collection_name']}")
 
                 with open(corpus_active_path, 'w') as f:
@@ -1769,7 +1770,7 @@ async def set_default_target(target_id: str):
             })
 
         # In configure mode, update corpus_active.json
-        corpus_active_path = Path("backend/config/corpus_active.json")
+        corpus_active_path = Path("backend/corpus/corpus_active.json")
 
         # Load existing config or create new
         if corpus_active_path.exists():

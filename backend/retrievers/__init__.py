@@ -40,17 +40,32 @@ def load_retriever(retriever_name: str = None, config: Dict[str, Any] = None) ->
     
     # Removed vestigial SelfQueryRetriever config injection block. Only dynamic import and instantiation logic remains.
     try:
-        # Import the retriever module
-        module_path = f"backend.retrievers.{retriever_name}"
-        logger.info(f"Importing module: {module_path}")
-        
+        # Try to import the retriever module from corpus directory first (for wizard-built retrievers)
+        # then fall back to retrievers directory (for legacy or manually created retrievers)
+        retriever_module = None
+        import_error = None
+
+        # First try corpus directory (where wizard-built retrievers live alongside other build artifacts)
+        corpus_module_path = f"backend.corpus.{retriever_name}"
         try:
-            retriever_module = importlib.import_module(module_path)
-            logger.info(f"Successfully imported module: {module_path}")
+            logger.info(f"Trying to import module from corpus directory: {corpus_module_path}")
+            retriever_module = importlib.import_module(corpus_module_path)
+            logger.info(f"Successfully imported module from corpus: {corpus_module_path}")
         except ImportError as e:
-            logger.error(f"Failed to import retriever module '{module_path}': {e}")
-            logger.error(traceback.format_exc())
-            raise ValueError(f"Retriever module '{module_path}' could not be imported: {e}")
+            logger.debug(f"Module not found in corpus directory: {e}")
+            import_error = e
+
+        # If not found in corpus, try retrievers directory (for backward compatibility)
+        if retriever_module is None:
+            retrievers_module_path = f"backend.retrievers.{retriever_name}"
+            try:
+                logger.info(f"Trying to import module from retrievers directory: {retrievers_module_path}")
+                retriever_module = importlib.import_module(retrievers_module_path)
+                logger.info(f"Successfully imported module from retrievers: {retrievers_module_path}")
+            except ImportError as e:
+                logger.error(f"Failed to import retriever module from either location: {import_error} / {e}")
+                logger.error(traceback.format_exc())
+                raise ValueError(f"Retriever module '{retriever_name}' could not be imported from backend/corpus/ or backend/retrievers/: {e}")
         
         # Find the retriever class in the module (should be the only class that extends BaseRetriever)
         retriever_class = None
