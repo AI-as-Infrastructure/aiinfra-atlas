@@ -127,6 +127,8 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 if [ -d "backend/targets" ]; then
     # Remove all .txt files except template files
     removed_count=0
+    # Use nullglob to handle the case when no .txt files exist
+    shopt -s nullglob
     for file in backend/targets/*.txt; do
         basename=$(basename "$file")
         # Skip template files
@@ -136,6 +138,8 @@ if [ -d "backend/targets" ]; then
             ((removed_count++))
         fi
     done
+    # Reset nullglob to default state
+    shopt -u nullglob
 
     if [ $removed_count -gt 0 ]; then
         echo "  ✅ Removed $removed_count test target(s)"

@@ -22,6 +22,15 @@ def get_retriever_filters():
     """Return available filter capabilities for the current retriever."""
     try:
         retriever = get_retriever_instance()
+
+        # If no retriever is configured yet (e.g., before corpus is built)
+        if retriever is None:
+            logger.info("No retriever configured yet - returning empty filter capabilities")
+            return JSONResponse(content={
+                "filters": [],
+                "message": "No corpus configured. Please build a corpus using the wizard."
+            })
+
         filter_capabilities = retriever.get_filter_capabilities()
         return JSONResponse(content=filter_capabilities)
 
