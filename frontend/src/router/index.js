@@ -18,9 +18,9 @@ const routes = [
   { path: '/', component: ModeSelector, meta: { requiresAuth: true }, name: 'mode-selector' },
   { path: '/mode', component: ModeSelector, meta: { requiresAuth: true }, name: 'mode' },
 
-  // Configuration routes (require configuration mode)
-  { path: '/corpus-wizard', component: CorpusWizard, name: 'corpus-wizard', meta: { requiresConfigure: true } },
-  { path: '/config-manager', component: ConfigManager, name: 'config-manager', meta: { requiresConfigure: true } },
+  // Configuration routes (require authentication and configuration mode)
+  { path: '/corpus-wizard', component: CorpusWizard, name: 'corpus-wizard', meta: { requiresAuth: true, requiresConfigure: true } },
+  { path: '/config-manager', component: ConfigManager, name: 'config-manager', meta: { requiresAuth: true, requiresConfigure: true } },
   { path: '/setup', redirect: '/corpus-wizard' },  // Alias for corpus wizard
 
   // Public routes
