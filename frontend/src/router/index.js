@@ -61,6 +61,12 @@ router.beforeEach(async (to, from, next) => {
     // Even without auth, check mode for configuration vs deploy routes
     const modeStatus = await checkSystemMode()
 
+    // If in deploy mode and accessing root, redirect to chat
+    if (to.path === '/' && modeStatus.mode === 'deploy') {
+      next('/chat')
+      return
+    }
+
     // Mode-based routing
     if (to.meta.requiresDeploy && modeStatus.mode !== 'deploy') {
       // Trying to access deploy-only route without being in deploy mode
@@ -145,6 +151,13 @@ router.beforeEach(async (to, from, next) => {
     // If authenticated, also check mode requirements
     if (authenticated) {
       const modeStatus = await checkSystemMode()
+
+      // If in deploy mode and accessing root, redirect to chat
+      if ((to.path === '/' || to.path === '/mode') && modeStatus.mode === 'deploy') {
+        console.log('In deploy mode, redirecting from root to chat')
+        next('/chat')
+        return
+      }
 
       // Mode-based routing for authenticated users
       if (to.meta.requiresDeploy && modeStatus.mode !== 'deploy') {
