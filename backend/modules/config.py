@@ -279,9 +279,23 @@ def initialize_config() -> Dict[str, Any]:
     """Initialize configuration from corpus_active.json ONLY. Fails fast if not found."""
     global _config, _retriever, _retriever_instance
 
-    if _config is not None:
-        logger.debug("Config already initialized, returning cached instance")
+    # Check if we need to reload - if config exists but no retriever, try reloading
+    if _config is not None and _retriever is not None:
+        logger.debug("Config already initialized with retriever, returning cached instance")
         return _config
+
+    # If config exists but no retriever, check if corpus_active.json now exists
+    if _config is not None and _retriever is None:
+        corpus_active_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                         'corpus', 'corpus_active.json')
+        if not os.path.exists(corpus_active_path):
+            logger.debug("Config initialized but no corpus_active.json yet, returning cached instance")
+            return _config
+        # Corpus file now exists, force reload
+        logger.info("corpus_active.json now exists, forcing config reload")
+        _config = None
+        _retriever = None
+        _retriever_instance = None
 
     # Start with default configuration
     _config = _get_default_config()

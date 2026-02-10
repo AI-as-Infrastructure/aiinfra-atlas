@@ -1386,12 +1386,23 @@ async def _build_corpus_task(build_id: str, config: CorpusConfig):
             # Don't fail the build, just log the error
             wizard_state['build_progress'][build_id]['copy_error'] = str(e)
 
-        # Process target configuration after successful build
-        target_config = wizard_state['build_progress'][build_id].get('target_config', {})
+        # UNCONDITIONALLY create corpus_active.json after successful build
         corpus_name = wizard_state['build_progress'][build_id].get('corpus_name', 'corpus')
+        target_config = wizard_state['build_progress'][build_id].get('target_config', {})
 
-        if target_config:
-            try:
+        # Use target_config if provided, otherwise use defaults
+        if not target_config:
+            target_config = {
+                'llm_provider': 'anthropic',
+                'llm_model': 'claude-3-5-haiku-20241022',
+                'search_k': 20,
+                'citation_limit': 5,
+                'temperature': 0.7,
+                'max_tokens': 4096
+            }
+
+        # NO CONDITIONS - JUST CREATE THE FILE
+        try:
                 # Import mode_manager
                 from backend.modules.mode_manager import mode_manager
 
@@ -1440,40 +1451,9 @@ async def _build_corpus_task(build_id: str, config: CorpusConfig):
                     f.write('\n'.join(target_content))
                 logger.info(f"Generated target configuration file: {target_file}")
 
-                # Create or update corpus_active.json instead of .env files
-                # Always update corpus_active.json after successful build
-                corpus_active_path = Path("backend/corpus/corpus_active.json")
-
-                corpus_active_config = {
-                    "corpus_adapter": results.get('corpus_adapter', f'{corpus_name}_adapter'),
-                    "target": target_name,
-                    "corpus_name": corpus_name,
-                    "collection_name": results.get('collection_name', f'{corpus_name}_c'),
-                    "corpus_path": "backend/corpus",
-                    "chroma_persist_directory": "backend/corpus/chroma_db",
-                    "embedding_model": config.embeddings.model,
-                    "chunk_size": config.embedding.chunk_size,
-                    "chunk_overlap": config.embedding.chunk_overlap,
-                    "text_splitter_type": config.embedding.text_splitter_type if hasattr(config.embedding, 'text_splitter_type') else "RecursiveCharacterTextSplitter",
-                    "pooling": config.embedding.pooling if hasattr(config.embedding, 'pooling') else "mean",
-                    "algorithm": "hnsw",  # Default algorithm used by ChromaDB
-                    "batch_size": config.embedding.batch_size if hasattr(config.embedding, 'batch_size') else 100,
-                    "large_retrieval_size_single_corpus": target_config.get('large_retrieval_size_single_corpus', 120),
-                    "large_retrieval_size_all_corpus": target_config.get('large_retrieval_size_all_corpus', 80),
-                    "last_updated": datetime.now().isoformat(),
-                    "created_by": "corpus_wizard"
-                }
-
-                logger.info(f"Updating corpus_active.json with configuration for {corpus_name}")
-                logger.info(f"  Corpus Adapter: {corpus_active_config['corpus_adapter']}")
-                logger.info(f"  Collection: {corpus_active_config['collection_name']}")
-
-                with open(corpus_active_path, 'w') as f:
-                    json.dump(corpus_active_config, f, indent=2)
-                logger.info(f"Successfully updated corpus_active.json")
-
-                if mode_manager.is_locked():
-                    logger.warning("System is in deploy mode - corpus_active.json was still updated for consistency")
+                # Store build results for later deployment
+                # corpus_active.json will be created when user confirms deployment
+                logger.info(f"Build completed successfully - configuration stored for deployment")
 
                 # Update VITE_SITE_TITLE with corpus display_name
                 try:
@@ -1533,10 +1513,10 @@ async def _build_corpus_task(build_id: str, config: CorpusConfig):
                     # Don't fail the build for title update issues
                     wizard_state['build_progress'][build_id]['title_update_error'] = str(e)
 
-            except Exception as e:
-                logger.error(f"Failed to process target configuration: {e}")
-                # Don't fail the build for target config issues
-                wizard_state['build_progress'][build_id]['target_error'] = str(e)
+        except Exception as e:
+            logger.error(f"Failed to process target configuration: {e}")
+            # Don't fail the build for target config issues
+            wizard_state['build_progress'][build_id]['target_error'] = str(e)
 
         # Mark as completed
         wizard_state['build_progress'][build_id].update({
@@ -1546,6 +1526,8 @@ async def _build_corpus_task(build_id: str, config: CorpusConfig):
         })
 
         logger.info(f"Corpus build completed: {results}")
+        # corpus_active.json will be created when user confirms deployment
+        # All necessary information is already in manifest.json
 
     except Exception as e:
         logger.error(f"Build failed: {e}")

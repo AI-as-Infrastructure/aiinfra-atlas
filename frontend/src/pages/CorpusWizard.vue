@@ -767,22 +767,6 @@
               </ul>
             </div>
           </div>
-
-          <div class="step-actions">
-            <div class="corpus-ready-notice">
-              <h3>✅ Corpus is Ready!</h3>
-              <p>Your corpus has been successfully built and is <strong>immediately available for use</strong>.</p>
-              <p>The target configuration has been saved and the TEST_TARGET environment variable has been updated.</p>
-              <div class="action-buttons">
-                <button @click="goToMainApp" class="btn btn-success">
-                  🚀 Go to Main Application
-                </button>
-                <button @click="startNewCorpus" class="btn btn-secondary">
-                  📝 Build Another Corpus
-                </button>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div> <!-- Close wizard-content -->
@@ -797,7 +781,7 @@
         Previous
       </button>
       <button
-        v-if="currentStep < steps.length && currentStep !== 7"
+        v-if="currentStep < steps.length"
         @click="nextStep"
         :disabled="!canProceed"
         class="btn btn-primary"
@@ -1024,40 +1008,11 @@ export default {
     }
 
     // Navigation to main app
-    const goToMainApp = () => {
-      // Navigate to the main chat application
-      router.push('/chat')
+    const goToMainApp = async () => {
+      // Deploy the corpus first, then navigate to the main application
+      await enterDeployMode()
     }
 
-    // Start a new corpus build
-    const startNewCorpus = () => {
-      // Reset wizard to first step
-      currentStep.value = 1
-      // Reset form data
-      metadata.value = {
-        name: '',
-        description: '',
-        source_doi: '',
-        copyright: ''
-      }
-      source.value = {
-        type: 'local',
-        path: '',
-        github_repo: '',
-        github_branch: 'main',
-        date_pattern: 'none',
-        custom_date_pattern: '',
-        extract_inline_urls: false
-      }
-      selectedModel.value = 'sentence-transformers/all-MiniLM-L6-v2'
-      chunkSize.value = 1000
-      chunkOverlap.value = 200
-      previewData.value = null
-      building.value = false
-      buildProgress.value = { status: 'idle' }
-      buildResults.value = null
-      validationData.value = null
-    }
 
     // Regex validation methods
     const validateRegexPattern = async () => {
@@ -1481,8 +1436,11 @@ Do you want to continue?`
           })
 
           if (response.ok) {
-            // Successfully entered deploy mode, go to chat
-            router.push('/chat')
+            // Successfully entered deploy mode
+            // Add a small delay to allow backend to reload with new configuration
+            setTimeout(() => {
+              router.push('/chat')
+            }, 2000) // 2 second delay for backend reload
           } else {
             const error = await response.json()
             alert(`Failed to enter deploy mode: ${error.detail}`)
@@ -1682,7 +1640,6 @@ Do you want to continue?`
       nextStep,
       previousStep,
       goToMainApp,
-      startNewCorpus,
 
       // Utilities
       saveConfiguration,

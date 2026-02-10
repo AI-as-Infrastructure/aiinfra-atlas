@@ -8,6 +8,7 @@ between configuration and deployment states.
 import json
 import logging
 from pathlib import Path
+from datetime import datetime
 from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from typing import Dict, Any, Optional
@@ -181,6 +182,67 @@ async def enter_deploy_mode(
         )
 
     try:
+        # Create corpus_active.json from manifest before entering deploy mode
+        manifest_path = Path("backend/corpus/manifest.json")
+        if manifest_path.exists():
+            try:
+                with open(manifest_path) as f:
+                    manifest = json.load(f)
+
+                # Extract essential information from manifest
+                corpus_name = manifest.get("corpus_name", "corpus")
+
+                # Get the first available target configuration
+                targets_path = Path("backend/targets")
+                target_name = "k20_claude_3_5_haiku_20241022"  # Default target
+
+                # Find the first non-template target file
+                if targets_path.exists():
+                    for target_file in targets_path.glob("*.txt"):
+                        if not target_file.name.startswith("_") and not target_file.name.startswith("."):
+                            target_name = target_file.stem
+                            break
+
+                # Create minimal corpus_active.json configuration
+                # Most information will be read from manifest.json at runtime
+                corpus_active_config = {
+                    "corpus_adapter": f"{corpus_name}_adapter",
+                    "target": target_name,
+                    "corpus_name": corpus_name,
+                    "collection_name": manifest.get("vector_store", {}).get("collection_name", f"{corpus_name}_c"),
+                    "corpus_path": "backend/corpus",
+                    "chroma_persist_directory": "backend/corpus/chroma_db",
+                    "embedding_model": manifest.get("embedding_model", {}).get("id", "sentence-transformers/all-MiniLM-L6-v2"),
+                    "manifest_path": "backend/corpus/manifest.json",
+                    "last_updated": datetime.now().isoformat(),
+                    "created_by": "deployment_mode"
+                }
+
+                # Write corpus_active.json
+                corpus_active_path = Path("backend/corpus/corpus_active.json")
+                with open(corpus_active_path, 'w') as f:
+                    json.dump(corpus_active_config, f, indent=2)
+                logger.info(f"Created corpus_active.json for deployment with corpus '{corpus_name}' and target '{target_name}'")
+
+                # Touch a Python file to trigger uvicorn reload in development
+                import os
+                if os.getenv("ATLAS_ENV") == "development":
+                    config_file = Path("backend/modules/config.py")
+                    config_file.touch()
+                    logger.info("Triggered backend reload for development environment")
+
+            except Exception as e:
+                logger.error(f"Failed to create corpus_active.json: {e}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to activate corpus configuration: {e}"
+                )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="No corpus found. Please build a corpus using the wizard first."
+            )
+
         # Set mode (one-way transition)
         result = mode_manager.set_mode(SystemMode.DEPLOY, user_id)
 
