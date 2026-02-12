@@ -11,6 +11,9 @@ from datetime import datetime
 from typing import Dict, Any, Tuple, Optional, List
 import logging
 import re
+from urllib.parse import unquote
+
+from backend.modules.path_validator import validate_safe_path, validate_repo_subpath
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +144,9 @@ class ConfigurationImporter:
         """
         Sanitize file path to prevent directory traversal attacks.
 
+        Uses the centralized path_validator module for consistent security checks
+        across the application.
+
         Args:
             path: Path to sanitize
 
@@ -150,20 +156,48 @@ class ConfigurationImporter:
         if not path:
             return None
 
-        # Remove any parent directory references
-        path = re.sub(r'\.\.+[/\\]', '', path)
+        # URL decode to catch encoded traversal attempts
+        decoded_path = unquote(path)
 
-        # Remove leading slashes to make relative
-        path = path.lstrip('/\\')
-
-        # Ensure path doesn't start with system directories
-        dangerous_starts = ['/etc', '/usr', '/bin', '/sbin', '/var', '/tmp', 'C:\\Windows', 'C:\\Program']
-        for dangerous in dangerous_starts:
-            if path.lower().startswith(dangerous.lower()):
-                logger.warning(f"Rejected dangerous path: {path}")
+        # Check for traversal patterns (comprehensive list)
+        traversal_patterns = [
+            '..',           # Standard traversal
+            '.%2e',         # Mixed URL encoding
+            '%2e.',         # Mixed URL encoding
+            '%2e%2e',       # Full URL encoding
+            '..%00',        # Null byte injection
+            '..%5c',        # URL-encoded backslash
+        ]
+        lower_path = decoded_path.lower()
+        for pattern in traversal_patterns:
+            if pattern in lower_path:
+                logger.warning(f"Rejected path with traversal pattern: {path[:100]}")
                 return None
 
-        return path
+        # Remove leading slashes to make relative
+        cleaned = decoded_path.lstrip('/\\')
+
+        # Normalize path separators
+        cleaned = cleaned.replace('\\', '/')
+
+        # Ensure path doesn't reference system directories
+        dangerous_starts = [
+            'etc/', 'usr/', 'bin/', 'sbin/', 'var/', 'tmp/', 'root/', 'home/',
+            'proc/', 'sys/', 'dev/', 'boot/', 'lib/', 'opt/',
+            'windows/', 'program files/', 'programdata/', 'users/',
+        ]
+        lower_cleaned = cleaned.lower()
+        for dangerous in dangerous_starts:
+            if lower_cleaned.startswith(dangerous):
+                logger.warning(f"Rejected path referencing system directory: {path[:100]}")
+                return None
+
+        # Additional check: absolute paths (after stripping should not start with /)
+        if cleaned.startswith('/') or (len(cleaned) > 1 and cleaned[1] == ':'):
+            logger.warning(f"Rejected absolute path: {path[:100]}")
+            return None
+
+        return cleaned
 
     def validate_resources(self, config: Dict[str, Any]) -> Tuple[bool, List[str]]:
         """

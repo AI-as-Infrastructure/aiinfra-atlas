@@ -823,11 +823,17 @@ class UniversalCorpusBuilder:
 
         # Create manifest with enhanced embedding documentation
         manifest = {
-            "version": "1.2",
+            "version": "1.3",
             "created": datetime.now().isoformat(),
             "corpus_name": self.config.metadata.name,
             "metadata": self.config.metadata.dict(),
             "source": self.config.source.dict(),
+            # Inter-rater configuration (defaults to disabled)
+            "inter_rater": self.config.inter_rater.dict() if self.config.inter_rater else {
+                "enabled": False,
+                "max_ratings": 3,
+                "sessions_per_user": 5
+            },
             "embedding_model": {
                 "id": self.config.embedding.model_id,
                 "source": "huggingface",

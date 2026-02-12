@@ -20,6 +20,8 @@ import hashlib
 import json
 from datetime import datetime, timedelta
 
+from backend.modules.path_validator import validate_repo_subpath
+
 logger = logging.getLogger(__name__)
 
 
@@ -120,10 +122,32 @@ class GitHubCorpusManager:
         return hashlib.md5(key_string.encode()).hexdigest()
 
     def _get_cache_path(self, cache_key: str, sub_path: str = "") -> Path:
-        """Get path to cached repository."""
+        """
+        Get path to cached repository with sub_path validation.
+
+        Args:
+            cache_key: The cache key identifying the repository
+            sub_path: Optional subdirectory within the repository
+
+        Returns:
+            Path to the cached repository or subdirectory
+
+        Raises:
+            ValueError: If sub_path contains directory traversal attempts
+        """
         repo_path = self.cache_dir / cache_key
         if sub_path:
-            return repo_path / sub_path
+            # Validate sub_path to prevent directory traversal
+            validated_subpath = validate_repo_subpath(sub_path)
+            if validated_subpath:
+                full_path = repo_path / validated_subpath
+                # Extra safety: ensure resolved path is within repo_path
+                try:
+                    full_path.resolve().relative_to(repo_path.resolve())
+                except ValueError:
+                    logger.warning(f"Sub-path escape attempt: {sub_path[:100]}")
+                    raise ValueError("Invalid repository path: access denied")
+                return full_path
         return repo_path
 
     def _is_cached(self, cache_key: str) -> bool:

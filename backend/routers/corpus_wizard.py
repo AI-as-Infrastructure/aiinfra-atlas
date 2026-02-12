@@ -14,19 +14,32 @@ import shutil
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, Body
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, Body, Depends
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 import logging
 import json
 import re
 
+# Import authentication
+from backend.modules.auth import get_current_user, is_cognito_enabled
+
 # Import corpus modules
+from backend.modules.path_validator import (
+    validate_safe_path,
+    validate_identifier,
+    validate_display_name,
+    validate_github_url,
+    validate_repo_subpath,
+    validate_regex_pattern,
+)
 from backend.modules.corpus_config import (
     CorpusConfig, CorpusMetadata, SourceConfig, FilterDefinition,
     FilterConfig, CitationConfig, EmbeddingConfig, ProcessingConfig,
     CorpusConfigManager
 )
+from backend.modules.build_progress import build_progress_manager
+from backend.modules.target_utils import build_target_config_content
 from backend.modules.corpus_analyzer import CorpusAnalyzer
 from backend.modules.corpus_sampler import CorpusSampler
 from backend.modules.corpus_validator import CorpusValidator
@@ -76,6 +89,8 @@ class BuildRequest(BaseModel):
 
 
 # Global state for wizard mode and build progress
+# Note: build_progress_manager (imported from build_progress module) handles build state
+# wizard_state is retained for backward compatibility during transition
 wizard_state = {
     'enabled': False,
     'current_build': None,
@@ -86,7 +101,8 @@ wizard_state = {
 @router.post("/mode")
 async def set_wizard_mode(request: WizardModeRequest):
     """Enable or disable wizard mode."""
-    wizard_state['enabled'] = request.enabled
+    build_progress_manager.enabled = request.enabled
+    wizard_state['enabled'] = request.enabled  # Keep in sync for compatibility
 
     if request.enabled:
         logger.info("Corpus wizard mode enabled")
@@ -106,7 +122,7 @@ async def set_wizard_mode(request: WizardModeRequest):
 async def get_wizard_mode():
     """Check if wizard mode is active."""
     return JSONResponse({
-        "enabled": wizard_state['enabled']
+        "enabled": build_progress_manager.enabled
     })
 
 
@@ -120,15 +136,38 @@ async def analyze_corpus(request: AnalyzeRequest):
     try:
         # Handle GitHub sources
         if request.source_type == 'github':
+            # Validate GitHub URL before fetching
+            try:
+                validate_github_url(request.source_location)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+
+            # Validate repository subpath if provided
+            repo_path = request.metadata.get('repo_path', '') if request.metadata else ''
+            if repo_path:
+                try:
+                    repo_path = validate_repo_subpath(repo_path)
+                except ValueError as e:
+                    raise HTTPException(status_code=400, detail=str(e))
+
             github_manager = GitHubCorpusManager()
             local_path = github_manager.fetch_corpus(
                 repo_url=request.source_location,
                 branch=request.metadata.get('branch', 'main') if request.metadata else 'main',
-                path=request.metadata.get('repo_path', '') if request.metadata else ''
+                path=repo_path
             )
             source_path = str(local_path)
         else:
-            source_path = request.source_location
+            # Validate local path - must be within project directory
+            try:
+                validated_path = validate_safe_path(
+                    request.source_location,
+                    allowed_base=Path.cwd(),
+                    must_exist=True
+                )
+                source_path = str(validated_path)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
 
         # Analyze corpus
         analysis = analyzer.analyze_corpus(
@@ -139,11 +178,13 @@ async def analyze_corpus(request: AnalyzeRequest):
 
         return JSONResponse(analysis)
 
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Corpus analysis failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Analysis failed")
 
 
 @router.post("/suggest-filters")
@@ -344,12 +385,10 @@ async def validate_custom_model(model_id: str = Body(..., embed=True)):
 
 
 @router.post("/validate-regex")
-async def validate_regex_pattern(request: Dict[str, str] = Body(...)):
+async def validate_regex_pattern_endpoint(request: Dict[str, str] = Body(...)):
     """
     Validate a regex pattern for date extraction.
     """
-    import re
-
     pattern = request.get("pattern", "")
     test_string = request.get("test_string", "")
 
@@ -491,7 +530,7 @@ async def validate_sample(
 
     except Exception as e:
         logger.error(f"Sample validation failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Sample validation failed")
 
 
 @router.post("/preview-metadata")
@@ -531,7 +570,7 @@ async def preview_metadata_extraction(
 
     except Exception as e:
         logger.error(f"Metadata preview failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Metadata preview failed")
 
 
 @router.post("/estimate-time")
@@ -673,10 +712,13 @@ async def check_existing_corpus():
 @router.post("/build")
 async def build_corpus(
     background_tasks: BackgroundTasks,
-    build_request: BuildRequest
+    build_request: BuildRequest,
+    user: dict = Depends(get_current_user)
 ):
     """
     Start building a corpus vector store in the background.
+
+    Requires authentication when Cognito is enabled.
     """
     try:
         # Transform frontend config to backend CorpusConfig format
@@ -737,6 +779,15 @@ async def build_corpus(
             }
         }
 
+        # Add inter-rater configuration if provided by frontend
+        if "interRater" in frontend_config:
+            ir_config = frontend_config["interRater"]
+            backend_config["inter_rater"] = {
+                "enabled": ir_config.get("enabled", False),
+                "max_ratings": ir_config.get("maxRatings", 3),
+                "sessions_per_user": ir_config.get("sessionsPerUser", 5)
+            }
+
         # Parse configuration
         config = CorpusConfig(**backend_config)
 
@@ -746,7 +797,22 @@ async def build_corpus(
         # Extract target configuration if provided
         target_config = build_request.target if build_request.target else {}
 
-        # Initialize progress tracking
+        # Initialize progress tracking using BuildProgressManager
+        build_config = {
+            "mode": build_request.mode,
+            "target_config": target_config,
+            "corpus_name": config.metadata.name
+        }
+        await build_progress_manager.start_build(build_id, build_config)
+        await build_progress_manager.update_progress(build_id, {
+            "status": "starting",
+            "progress": 0,
+            "total_documents": 0,
+            "processed_documents": 0,
+            "current_document": ""
+        })
+
+        # Keep wizard_state in sync for compatibility during transition
         wizard_state['current_build'] = build_id
         wizard_state['build_progress'][build_id] = {
             "status": "starting",
@@ -756,8 +822,8 @@ async def build_corpus(
             "current_document": "",
             "started_at": datetime.now().isoformat(),
             "mode": build_request.mode,
-            "target_config": target_config,  # Store target config for later use
-            "corpus_name": config.metadata.name  # Store corpus name for target generation
+            "target_config": target_config,
+            "corpus_name": config.metadata.name
         }
 
         # Start build in background - use asyncio to ensure proper async execution
@@ -787,7 +853,7 @@ async def build_corpus(
 
     except Exception as e:
         logger.error(f"Failed to start corpus build: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to start corpus build")
 
 
 @router.get("/progress/{build_id}")
@@ -795,6 +861,12 @@ async def get_build_progress(build_id: str):
     """
     Get progress for a specific build.
     """
+    # Try BuildProgressManager first
+    progress = await build_progress_manager.get_progress(build_id)
+    if progress:
+        return JSONResponse(progress)
+
+    # Fallback to wizard_state for backward compatibility
     if build_id not in wizard_state['build_progress']:
         raise HTTPException(status_code=404, detail="Build not found")
 
@@ -806,14 +878,18 @@ async def stream_build_progress(build_id: str):
     """
     Stream build progress via Server-Sent Events.
     """
-    if build_id not in wizard_state['build_progress']:
+    # Check both manager and wizard_state for build existence
+    if not build_progress_manager.has_build(build_id) and build_id not in wizard_state['build_progress']:
         raise HTTPException(status_code=404, detail="Build not found")
 
     async def event_generator():
         last_update = None
         keepalive_counter = 0
         while True:
-            current_progress = wizard_state['build_progress'].get(build_id)
+            # Try BuildProgressManager first, then fallback to wizard_state
+            current_progress = await build_progress_manager.get_progress(build_id)
+            if not current_progress:
+                current_progress = wizard_state['build_progress'].get(build_id)
             if not current_progress:
                 break
 
@@ -857,21 +933,40 @@ async def preview_documents(request: Dict[str, Any] = Body(...)):
         source = request.get('source', {})
         metadata = request.get('metadata', {})
 
-        # Get source path
+        # Get source path with validation
         if source.get('type') == 'github':
+            # Validate GitHub URL
+            location = source.get('location', '')
+            try:
+                validate_github_url(location)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+
+            # Validate repository subpath
+            repo_path = source.get('path', '')
+            if repo_path:
+                try:
+                    repo_path = validate_repo_subpath(repo_path)
+                except ValueError as e:
+                    raise HTTPException(status_code=400, detail=str(e))
+
             github_manager = GitHubCorpusManager()
             source_path = github_manager.fetch_corpus(
-                repo_url=source.get('location'),
+                repo_url=location,
                 branch=source.get('branch', 'main'),
-                path=source.get('path', '')
+                path=repo_path
             )
         else:
+            # Validate local path - prevent path traversal
             location = source.get('location', '.')
-            # Handle relative paths - make them relative to the project root
-            source_path = Path(location)
-            if not source_path.is_absolute():
-                # If relative path, assume it's relative to project root
-                source_path = Path.cwd() / source_path
+            try:
+                source_path = validate_safe_path(
+                    location,
+                    allowed_base=Path.cwd(),
+                    must_exist=False  # We check existence separately for better error messages
+                )
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
 
         # Ensure source_path is a Path object
         if not isinstance(source_path, Path):
@@ -880,10 +975,10 @@ async def preview_documents(request: Dict[str, Any] = Body(...)):
         logger.info(f"Preview: Checking path {source_path}")
 
         if not source_path.exists():
-            logger.error(f"Source path does not exist: {source_path}")
+            logger.error(f"Source path does not exist")
             return JSONResponse({
-                "error": f"Source path does not exist: {source_path}",
-                "attempted_path": str(source_path),
+                "error": "Source path does not exist",
+                "attempted_path": str(source_path.name),  # Only show filename, not full path
                 "current_dir": str(Path.cwd())
             })
 
@@ -934,9 +1029,8 @@ async def preview_documents(request: Dict[str, Any] = Body(...)):
                             extracted_metadata['url'] = url
                             docs_with_urls += 1
 
-                    # Extract date from filename
+                    # Extract date from filename using shared regex validator
                     if source.get('date_pattern'):
-                        import re
                         pattern_map = {
                             'YYYY-MM-DD': r'(\d{4}-\d{2}-\d{2})',
                             'DD-MM-YYYY': r'(\d{2}-\d{2}-\d{4})',
@@ -945,17 +1039,14 @@ async def preview_documents(request: Dict[str, Any] = Body(...)):
                         }
                         pattern = pattern_map.get(source['date_pattern'])
                         if pattern:
-                            try:
-                                # Validate regex pattern first
-                                compiled_pattern = re.compile(pattern)
+                            # Use shared validator for safety
+                            is_valid, _, compiled_pattern = validate_regex_pattern(pattern)
+                            if is_valid and compiled_pattern:
                                 match = compiled_pattern.search(doc.name)
                                 if match:
                                     # Get first group or whole match
                                     extracted_metadata['date'] = match.group(1) if match.groups() else match.group(0)
                                     docs_with_dates += 1
-                            except re.error as e:
-                                # Pattern is invalid, will be reported in warnings
-                                pass
 
                     sample["extracted_metadata"] = extracted_metadata
 
@@ -1027,7 +1118,6 @@ async def preview_documents(request: Dict[str, Any] = Body(...)):
 
         # Validate custom regex pattern upfront
         if source.get('date_pattern') == 'custom' and source.get('custom_date_pattern'):
-            import re
             try:
                 re.compile(source.get('custom_date_pattern'))
             except re.error as e:
@@ -1048,13 +1138,11 @@ async def preview_documents(request: Dict[str, Any] = Body(...)):
         if source.get('date_pattern') and docs_with_dates == 0 and source.get('date_pattern') != 'custom':
             warnings.append("Date extraction configured but no dates found in filenames")
         if source.get('date_pattern') == 'custom' and docs_with_dates == 0 and source.get('custom_date_pattern'):
-            # Only warn if the pattern is valid
-            try:
-                import re
-                re.compile(source.get('custom_date_pattern'))
+            # Only warn if the pattern is valid - use shared validator
+            is_valid, error_msg, _ = validate_regex_pattern(source.get('custom_date_pattern'))
+            if is_valid:
                 warnings.append("Custom date pattern provided but no dates found in sample filenames")
-            except:
-                pass  # Invalid pattern already reported above
+            # Invalid patterns are handled by validate_regex_pattern logging
 
         return JSONResponse({
             "total_documents": len(documents),
@@ -1066,9 +1154,11 @@ async def preview_documents(request: Dict[str, Any] = Body(...)):
             "warnings": warnings
         })
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Preview failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Document preview failed")
 
 
 @router.get("/current-corpus")
@@ -1207,8 +1297,8 @@ async def get_unified_config(build_id: str):
     that will be used when the corpus is activated.
     """
     try:
-        # Check if build exists
-        if build_id not in wizard_state['build_progress']:
+        # Check if build exists (check manager first, then wizard_state)
+        if not build_progress_manager.has_build(build_id) and build_id not in wizard_state['build_progress']:
             raise HTTPException(status_code=404, detail="Build not found")
 
         # Read manifest from corpus directory
@@ -1294,7 +1384,11 @@ async def _build_corpus_task(build_id: str, config: CorpusConfig):
         # Import the corpus builder from backend modules
         from backend.modules.corpus_builder import UniversalCorpusBuilder
 
-        # Update status to show task started
+        # Update status to show task started - use both manager and wizard_state
+        await build_progress_manager.update_progress(build_id, {
+            'status': 'building',
+            'current_document': 'Initializing corpus builder...'
+        })
         wizard_state['build_progress'][build_id]['status'] = 'building'
         wizard_state['build_progress'][build_id]['current_document'] = 'Initializing corpus builder...'
         logger.info(f"Build task initialized for {config.metadata.name}")
@@ -1303,10 +1397,13 @@ async def _build_corpus_task(build_id: str, config: CorpusConfig):
         async def progress_callback(progress_data):
             """Update wizard state with progress."""
             logger.debug(f"Progress update for {build_id}: {progress_data.get('current_document', 'N/A')}")
+            # Update both manager and wizard_state
+            await build_progress_manager.update_progress(build_id, progress_data)
             wizard_state['build_progress'][build_id].update(progress_data)
 
-        # Initialize builder
-        mode = wizard_state['build_progress'][build_id].get('mode', 'cpu')
+        # Initialize builder - get mode from manager or wizard_state
+        build_state = build_progress_manager.get_progress_sync(build_id)
+        mode = build_state.get('config', {}).get('mode', 'cpu') if build_state else wizard_state['build_progress'][build_id].get('mode', 'cpu')
         # Build in temporary directory first to avoid conflicts with existing ChromaDB instances
         temp_output_dir = Path("backend/corpus_build_temp")
 
@@ -1384,11 +1481,18 @@ async def _build_corpus_task(build_id: str, config: CorpusConfig):
         except Exception as e:
             logger.error(f"Failed to copy retriever/manifest files: {e}")
             # Don't fail the build, just log the error
+            await build_progress_manager.update_progress(build_id, {'copy_error': str(e)})
             wizard_state['build_progress'][build_id]['copy_error'] = str(e)
 
         # UNCONDITIONALLY create corpus_active.json after successful build
-        corpus_name = wizard_state['build_progress'][build_id].get('corpus_name', 'corpus')
-        target_config = wizard_state['build_progress'][build_id].get('target_config', {})
+        # Get corpus_name and target_config from manager or wizard_state
+        build_state = build_progress_manager.get_progress_sync(build_id)
+        if build_state and build_state.get('config'):
+            corpus_name = build_state['config'].get('corpus_name', 'corpus')
+            target_config = build_state['config'].get('target_config', {})
+        else:
+            corpus_name = wizard_state['build_progress'][build_id].get('corpus_name', 'corpus')
+            target_config = wizard_state['build_progress'][build_id].get('target_config', {})
 
         # Use target_config if provided, otherwise use defaults
         if not target_config:
@@ -1405,50 +1509,28 @@ async def _build_corpus_task(build_id: str, config: CorpusConfig):
         try:
                 # Import mode_manager
                 from backend.modules.mode_manager import mode_manager
+                from backend.modules.target_utils import generate_target_id
 
                 # Generate and save target configuration file
                 targets_path = Path("backend/targets")
                 targets_path.mkdir(parents=True, exist_ok=True)
 
-                # Generate target filename based on settings
-                target_name = f"k{target_config.get('search_k', 20)}_{target_config.get('llm_model', 'claude4').replace('-', '_').replace('.', '_')}"
+                # Generate target filename using shared utility
+                target_name = generate_target_id(target_config)
                 target_file = targets_path / f"{target_name}.txt"
 
-                # Generate target configuration content
-                target_content = []
-                target_content.append(f"# Target configuration generated by Corpus Wizard")
-                target_content.append(f"# Created: {datetime.now().isoformat()}")
-                target_content.append(f"# Corpus: {corpus_name}")
-                target_content.append("")
-                # Core LLM configuration
-                target_content.append(f"LLM_PROVIDER={target_config.get('llm_provider', 'anthropic')}")
-                target_content.append(f"LLM_MODEL={target_config.get('llm_model', 'claude-3-5-haiku-20241022')}")
-                # Search configuration
-                target_content.append(f"SEARCH_TYPE={target_config.get('search_type', 'similarity')}")
-                target_content.append(f"SEARCH_K={target_config.get('search_k', 20)}")
-                target_content.append(f"SEARCH_SCORE_THRESHOLD={target_config.get('score_threshold', 0.7)}")
-                target_content.append(f"CITATION_LIMIT={target_config.get('citation_limit', 10)}")
-                # Retrieval size configuration
-                target_content.append(f"LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS={target_config.get('large_retrieval_size_single_corpus', 120)}")
-                target_content.append(f"LARGE_RETRIEVAL_SIZE_ALL_CORPUS={target_config.get('large_retrieval_size_all_corpus', 80)}")
-                # Algorithm and chunking configuration
-                target_content.append(f"ALGORITHM={target_config.get('algorithm', 'ensemble')}")
-                chunk_size = target_config.get('chunk_size', 1000)
-                chunk_overlap = target_config.get('chunk_overlap', 200)
-                target_content.append(f"CHUNK_SIZE={chunk_size}")
-                target_content.append(f"CHUNK_OVERLAP={chunk_overlap}")
-                # Vector database and pooling
-                target_content.append(f"VECTOR_DATABASE={target_config.get('vector_database', 'chromadb')}")
-                target_content.append(f"POOLING={target_config.get('pooling', 'mean')}")
-                # Target version for tracking
-                target_content.append(f"TARGET_VERSION=1.0")
-                # Optional temperature and max tokens
-                target_content.append(f"TEMPERATURE={target_config.get('temperature', 0.7)}")
-                target_content.append(f"MAX_TOKENS={target_config.get('max_tokens', 4096)}")
+                # Generate target configuration content using shared utility
+                target_content = build_target_config_content(
+                    target_config,
+                    action="generated",
+                    source="Corpus Wizard",
+                    corpus_name=corpus_name,
+                    include_extended=True
+                )
 
                 # Write target configuration file
                 with open(target_file, 'w') as f:
-                    f.write('\n'.join(target_content))
+                    f.write(target_content)
                 logger.info(f"Generated target configuration file: {target_file}")
 
                 # Store build results for later deployment
@@ -1464,10 +1546,12 @@ async def _build_corpus_task(build_id: str, config: CorpusConfig):
                             manifest_data = json.load(f)
 
                         # Get display_name from manifest, fallback to name if not present
-                        display_name = manifest_data.get('metadata', {}).get('display_name', '')
-                        if not display_name:
-                            display_name = manifest_data.get('metadata', {}).get('name', 'ATLAS')
+                        raw_display_name = manifest_data.get('metadata', {}).get('display_name', '')
+                        if not raw_display_name:
+                            raw_display_name = manifest_data.get('metadata', {}).get('name', 'ATLAS')
 
+                        # Sanitize display_name to prevent env file injection
+                        display_name = validate_display_name(raw_display_name, default='ATLAS')
                         logger.info(f"Updating VITE_SITE_TITLE to: {display_name}")
 
                         # Determine which env file to update based on runtime mode
@@ -1511,19 +1595,30 @@ async def _build_corpus_task(build_id: str, config: CorpusConfig):
                 except Exception as e:
                     logger.error(f"Failed to update VITE_SITE_TITLE: {e}")
                     # Don't fail the build for title update issues
+                    await build_progress_manager.update_progress(build_id, {'title_update_error': str(e)})
                     wizard_state['build_progress'][build_id]['title_update_error'] = str(e)
 
         except Exception as e:
             logger.error(f"Failed to process target configuration: {e}")
             # Don't fail the build for target config issues
+            await build_progress_manager.update_progress(build_id, {'target_error': str(e)})
             wizard_state['build_progress'][build_id]['target_error'] = str(e)
 
-        # Mark as completed
+        # Mark as completed - use both manager and wizard_state
+        await build_progress_manager.mark_complete(build_id, results)
         wizard_state['build_progress'][build_id].update({
             'status': 'completed',
             'completed_at': datetime.now().isoformat(),
             'results': results
         })
+
+        # Reload inter-rater service config from new manifest
+        try:
+            from backend.services.inter_rater_service import inter_rater_service
+            inter_rater_service.reload_config()
+            logger.info("Reloaded inter-rater service configuration from new corpus manifest")
+        except Exception as e:
+            logger.warning(f"Failed to reload inter-rater service config: {e}")
 
         logger.info(f"Corpus build completed: {results}")
         # corpus_active.json will be created when user confirms deployment
@@ -1531,6 +1626,8 @@ async def _build_corpus_task(build_id: str, config: CorpusConfig):
 
     except Exception as e:
         logger.error(f"Build failed: {e}")
+        # Mark as failed - use both manager and wizard_state
+        await build_progress_manager.mark_failed(build_id, str(e))
         wizard_state['build_progress'][build_id].update({
             'status': 'failed',
             'error': str(e),
@@ -1594,8 +1691,11 @@ async def list_targets():
 
 
 @router.post("/add-target")
-async def add_target(target_config: Dict[str, Any] = Body(...)):
-    """Add a new test target configuration."""
+async def add_target(
+    target_config: Dict[str, Any] = Body(...),
+    user: dict = Depends(get_current_user)
+):
+    """Add a new test target configuration. Requires authentication when Cognito is enabled."""
     try:
         target_id = target_config.get("id")
         if not target_id:
@@ -1612,27 +1712,11 @@ async def add_target(target_config: Dict[str, Any] = Body(...)):
         if target_file.exists():
             raise HTTPException(status_code=400, detail="Target already exists")
 
-        # Generate target file content
-        content = []
-        content.append(f"# Target configuration created by ConfigManager")
-        content.append(f"# Created: {datetime.now().isoformat()}")
-        content.append("")
-        content.append(f"LLM_PROVIDER={target_config.get('llm_provider', 'anthropic')}")
-        content.append(f"LLM_MODEL={target_config.get('llm_model', '')}")
-        content.append(f"SEARCH_TYPE={target_config.get('search_type', 'similarity')}")
-        content.append(f"SEARCH_K={target_config.get('search_k', 20)}")
-        content.append(f"SEARCH_SCORE_THRESHOLD={target_config.get('search_score_threshold', 0.7)}")
-        content.append(f"CITATION_LIMIT={target_config.get('citation_limit', 10)}")
-        content.append(f"LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS={target_config.get('large_retrieval_size_single', 120)}")
-        content.append(f"LARGE_RETRIEVAL_SIZE_ALL_CORPUS={target_config.get('large_retrieval_size_all', 120)}")
-        content.append(f"ALGORITHM={target_config.get('algorithm', 'ensemble')}")
-        content.append(f"TEMPERATURE={target_config.get('temperature', 0.7)}")
-        content.append(f"MAX_TOKENS={target_config.get('max_tokens', 4096)}")
-        content.append(f"POOLING={target_config.get('pooling', 'mean')}")
-        content.append(f"TARGET_VERSION=1.0")
+        # Generate target file content using shared utility
+        content = build_target_config_content(target_config, action="created")
 
         with open(target_file, 'w') as f:
-            f.write('\n'.join(content))
+            f.write(content)
 
         logger.info(f"Created target configuration: {target_id}")
 
@@ -1645,40 +1729,34 @@ async def add_target(target_config: Dict[str, Any] = Body(...)):
         raise
     except Exception as e:
         logger.error(f"Failed to add target: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to add target")
 
 
 @router.post("/update-target/{target_id}")
-async def update_target(target_id: str, target_config: Dict[str, Any] = Body(...)):
-    """Update an existing test target configuration."""
+async def update_target(
+    target_id: str,
+    target_config: Dict[str, Any] = Body(...),
+    user: dict = Depends(get_current_user)
+):
+    """Update an existing test target configuration. Requires authentication when Cognito is enabled."""
     try:
+        # Validate target_id to prevent path traversal
+        try:
+            validate_identifier(target_id, "target ID")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
         targets_path = Path("backend/targets")
         target_file = targets_path / f"{target_id}.txt"
 
         if not target_file.exists():
             raise HTTPException(status_code=404, detail="Target not found")
 
-        # Generate updated content
-        content = []
-        content.append(f"# Target configuration updated by ConfigManager")
-        content.append(f"# Updated: {datetime.now().isoformat()}")
-        content.append("")
-        content.append(f"LLM_PROVIDER={target_config.get('llm_provider', 'anthropic')}")
-        content.append(f"LLM_MODEL={target_config.get('llm_model', '')}")
-        content.append(f"SEARCH_TYPE={target_config.get('search_type', 'similarity')}")
-        content.append(f"SEARCH_K={target_config.get('search_k', 20)}")
-        content.append(f"SEARCH_SCORE_THRESHOLD={target_config.get('search_score_threshold', 0.7)}")
-        content.append(f"CITATION_LIMIT={target_config.get('citation_limit', 10)}")
-        content.append(f"LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS={target_config.get('large_retrieval_size_single', 120)}")
-        content.append(f"LARGE_RETRIEVAL_SIZE_ALL_CORPUS={target_config.get('large_retrieval_size_all', 120)}")
-        content.append(f"ALGORITHM={target_config.get('algorithm', 'ensemble')}")
-        content.append(f"TEMPERATURE={target_config.get('temperature', 0.7)}")
-        content.append(f"MAX_TOKENS={target_config.get('max_tokens', 4096)}")
-        content.append(f"POOLING={target_config.get('pooling', 'mean')}")
-        content.append(f"TARGET_VERSION=1.0")
+        # Generate updated content using shared utility
+        content = build_target_config_content(target_config, action="updated")
 
         with open(target_file, 'w') as f:
-            f.write('\n'.join(content))
+            f.write(content)
 
         logger.info(f"Updated target configuration: {target_id}")
 
@@ -1691,13 +1769,22 @@ async def update_target(target_id: str, target_config: Dict[str, Any] = Body(...
         raise
     except Exception as e:
         logger.error(f"Failed to update target: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to update target")
 
 
 @router.delete("/delete-target/{target_id}")
-async def delete_target(target_id: str):
-    """Delete a test target configuration."""
+async def delete_target(
+    target_id: str,
+    user: dict = Depends(get_current_user)
+):
+    """Delete a test target configuration. Requires authentication when Cognito is enabled."""
     try:
+        # Validate target_id to prevent path traversal
+        try:
+            validate_identifier(target_id, "target ID")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
         targets_path = Path("backend/targets")
         target_file = targets_path / f"{target_id}.txt"
 
@@ -1724,13 +1811,22 @@ async def delete_target(target_id: str):
         raise
     except Exception as e:
         logger.error(f"Failed to delete target: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to delete target")
 
 
 @router.post("/set-default-target/{target_id}")
-async def set_default_target(target_id: str):
-    """Set a target as the default TEST_TARGET."""
+async def set_default_target(
+    target_id: str,
+    user: dict = Depends(get_current_user)
+):
+    """Set a target as the default TEST_TARGET. Requires authentication when Cognito is enabled."""
     try:
+        # Validate target_id to prevent path traversal
+        try:
+            validate_identifier(target_id, "target ID")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
         from backend.modules.mode_manager import mode_manager
 
         targets_path = Path("backend/targets")
@@ -1784,4 +1880,4 @@ async def set_default_target(target_id: str):
         raise
     except Exception as e:
         logger.error(f"Failed to set default target: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to set default target")

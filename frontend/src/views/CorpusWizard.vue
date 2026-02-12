@@ -389,7 +389,13 @@ export default {
           },
           citation: wizardData.citation,
           embedding: wizardData.embedding,
-          processing: wizardData.processing
+          processing: wizardData.processing,
+          // Include inter-rater configuration if set
+          interRater: wizardData.processing.interRater || {
+            enabled: false,
+            maxRatings: 3,
+            sessionsPerUser: 5
+          }
         };
 
         const response = await axios.post('/api/corpus-wizard/build', {

@@ -5,17 +5,256 @@ This module provides progress tracking functionality for the corpus building pro
 including async callbacks, checkpoint/resume capability, and system statistics.
 """
 
+import asyncio
 import json
 import time
 import logging
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Callable
 from datetime import datetime
+from dataclasses import dataclass, field
 
 import psutil
 import torch
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class BuildState:
+    """State for a single corpus build."""
+    build_id: str
+    status: str = "initializing"
+    config: Dict[str, Any] = field(default_factory=dict)
+    started_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    completed_at: Optional[str] = None
+    failed_at: Optional[str] = None
+    error: Optional[str] = None
+    results: Optional[Dict[str, Any]] = None
+    progress: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "build_id": self.build_id,
+            "status": self.status,
+            "config": self.config,
+            "started_at": self.started_at,
+            "completed_at": self.completed_at,
+            "failed_at": self.failed_at,
+            "error": self.error,
+            "results": self.results,
+            **self.progress
+        }
+
+
+class BuildProgressManager:
+    """
+    Manages build progress state for all corpus builds.
+
+    This class encapsulates the global wizard state, providing thread-safe
+    access to build progress information.
+    """
+
+    def __init__(self):
+        self._builds: Dict[str, BuildState] = {}
+        self._lock = asyncio.Lock()
+        self._enabled = False
+        self._current_build: Optional[str] = None
+
+    @property
+    def enabled(self) -> bool:
+        """Check if wizard mode is enabled."""
+        return self._enabled
+
+    @enabled.setter
+    def enabled(self, value: bool):
+        """Set wizard mode enabled state."""
+        self._enabled = value
+
+    @property
+    def current_build(self) -> Optional[str]:
+        """Get the current active build ID."""
+        return self._current_build
+
+    async def start_build(
+        self,
+        build_id: str,
+        config: Dict[str, Any]
+    ) -> BuildState:
+        """
+        Start tracking a new build.
+
+        Args:
+            build_id: Unique identifier for the build
+            config: Build configuration
+
+        Returns:
+            The new BuildState instance
+        """
+        async with self._lock:
+            state = BuildState(
+                build_id=build_id,
+                status="initializing",
+                config=config
+            )
+            self._builds[build_id] = state
+            self._current_build = build_id
+            logger.info(f"Started tracking build: {build_id}")
+            return state
+
+    async def update_progress(
+        self,
+        build_id: str,
+        progress_data: Dict[str, Any]
+    ) -> bool:
+        """
+        Update progress for a build.
+
+        Args:
+            build_id: The build to update
+            progress_data: Progress data to merge
+
+        Returns:
+            True if update succeeded, False if build not found
+        """
+        async with self._lock:
+            if build_id not in self._builds:
+                logger.warning(f"Attempted to update unknown build: {build_id}")
+                return False
+
+            self._builds[build_id].progress.update(progress_data)
+
+            # Update status if provided
+            if "status" in progress_data:
+                self._builds[build_id].status = progress_data["status"]
+
+            return True
+
+    async def get_progress(self, build_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get progress for a specific build.
+
+        Args:
+            build_id: The build to query
+
+        Returns:
+            Progress dict or None if not found
+        """
+        async with self._lock:
+            if build_id not in self._builds:
+                return None
+            return self._builds[build_id].to_dict()
+
+    def get_progress_sync(self, build_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Synchronous version of get_progress for non-async contexts.
+
+        Args:
+            build_id: The build to query
+
+        Returns:
+            Progress dict or None if not found
+        """
+        if build_id not in self._builds:
+            return None
+        return self._builds[build_id].to_dict()
+
+    async def mark_complete(
+        self,
+        build_id: str,
+        results: Dict[str, Any]
+    ) -> bool:
+        """
+        Mark a build as completed successfully.
+
+        Args:
+            build_id: The build to mark complete
+            results: Build results
+
+        Returns:
+            True if successful, False if build not found
+        """
+        async with self._lock:
+            if build_id not in self._builds:
+                return False
+
+            state = self._builds[build_id]
+            state.status = "completed"
+            state.completed_at = datetime.now().isoformat()
+            state.results = results
+
+            if self._current_build == build_id:
+                self._current_build = None
+
+            logger.info(f"Build completed: {build_id}")
+            return True
+
+    async def mark_failed(
+        self,
+        build_id: str,
+        error: str
+    ) -> bool:
+        """
+        Mark a build as failed.
+
+        Args:
+            build_id: The build to mark failed
+            error: Error message
+
+        Returns:
+            True if successful, False if build not found
+        """
+        async with self._lock:
+            if build_id not in self._builds:
+                return False
+
+            state = self._builds[build_id]
+            state.status = "failed"
+            state.failed_at = datetime.now().isoformat()
+            state.error = error
+
+            if self._current_build == build_id:
+                self._current_build = None
+
+            logger.error(f"Build failed: {build_id} - {error}")
+            return True
+
+    def has_build(self, build_id: str) -> bool:
+        """Check if a build exists."""
+        return build_id in self._builds
+
+    def get_all_builds(self) -> Dict[str, Dict[str, Any]]:
+        """Get all build states as dictionaries."""
+        return {
+            bid: state.to_dict()
+            for bid, state in self._builds.items()
+        }
+
+    def clear_completed(self, max_age_hours: int = 24):
+        """
+        Remove completed builds older than max_age_hours.
+
+        Args:
+            max_age_hours: Maximum age in hours for completed builds
+        """
+        now = datetime.now()
+        to_remove = []
+
+        for build_id, state in self._builds.items():
+            if state.status in ("completed", "failed") and state.completed_at:
+                completed = datetime.fromisoformat(state.completed_at)
+                age_hours = (now - completed).total_seconds() / 3600
+                if age_hours > max_age_hours:
+                    to_remove.append(build_id)
+
+        for build_id in to_remove:
+            del self._builds[build_id]
+            logger.info(f"Cleaned up old build: {build_id}")
+
+
+# Global instance for use across the application
+build_progress_manager = BuildProgressManager()
 
 
 class BuildProgressTracker:

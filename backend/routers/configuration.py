@@ -4,7 +4,7 @@ Configuration Export/Import Router
 Provides API endpoints for exporting and importing ATLAS configurations.
 """
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Body
+from fastapi import APIRouter, HTTPException, UploadFile, File, Body, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Dict, Any, Optional
@@ -14,6 +14,7 @@ import io
 
 from backend.modules.configuration_export import get_configuration_exporter
 from backend.modules.configuration_import import get_configuration_importer
+from backend.modules.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/configuration", tags=["configuration"])
@@ -24,9 +25,13 @@ class ExportRequest(BaseModel):
     description: Optional[str] = None
 
 @router.get("/export")
-async def export_configuration(config_name: Optional[str] = None, description: Optional[str] = None):
+async def export_configuration(
+    config_name: Optional[str] = None,
+    description: Optional[str] = None,
+    user: dict = Depends(get_current_user)
+):
     """
-    Export current ATLAS configuration.
+    Export current ATLAS configuration. Requires authentication when Cognito is enabled.
 
     Args:
         config_name: Optional name for the configuration
@@ -50,16 +55,19 @@ async def export_configuration(config_name: Optional[str] = None, description: O
         )
 
     except Exception as e:
-        logger.error(f"Failed to export configuration: {e}")
+        logger.error(f"Failed to export configuration: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Configuration export failed: {str(e)}"
+            detail="Configuration export failed"
         )
 
 @router.post("/import")
-async def import_configuration(file: UploadFile = File(...)):
+async def import_configuration(
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user)
+):
     """
-    Import and apply an ATLAS configuration.
+    Import and apply an ATLAS configuration. Requires authentication when Cognito is enabled.
 
     Args:
         file: Uploaded JSON configuration file
@@ -80,9 +88,10 @@ async def import_configuration(file: UploadFile = File(...)):
         try:
             config_data = json.loads(contents)
         except json.JSONDecodeError as e:
+            logger.warning(f"Invalid JSON in configuration import: {e}")
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid JSON file: {str(e)}"
+                detail="Invalid JSON file format"
             )
 
         # Import configuration
@@ -109,10 +118,10 @@ async def import_configuration(file: UploadFile = File(...)):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to import configuration: {e}")
+        logger.error(f"Failed to import configuration: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Configuration import failed: {str(e)}"
+            detail="Configuration import failed"
         )
 
 @router.post("/validate")
@@ -139,10 +148,11 @@ async def validate_configuration(file: UploadFile = File(...)):
         try:
             config_data = json.loads(contents)
         except json.JSONDecodeError as e:
+            logger.warning(f"Invalid JSON in configuration validation: {e}")
             return JSONResponse(
                 content={
                     "valid": False,
-                    "errors": [f"Invalid JSON: {str(e)}"],
+                    "errors": ["Invalid JSON file format"],
                     "warnings": []
                 },
                 status_code=400
@@ -189,10 +199,10 @@ async def validate_configuration(file: UploadFile = File(...)):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to validate configuration: {e}")
+        logger.error(f"Failed to validate configuration: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Configuration validation failed: {str(e)}"
+            detail="Configuration validation failed"
         )
 
 @router.get("/current")
@@ -216,8 +226,8 @@ async def get_current_configuration():
         return JSONResponse(config)
 
     except Exception as e:
-        logger.error(f"Failed to get current configuration: {e}")
+        logger.error(f"Failed to get current configuration: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to retrieve configuration: {str(e)}"
+            detail="Failed to retrieve configuration"
         )
