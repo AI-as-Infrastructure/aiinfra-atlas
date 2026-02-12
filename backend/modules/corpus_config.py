@@ -105,6 +105,13 @@ class ProcessingConfig(BaseModel):
     sample_size: Optional[int] = Field(default=None, description="Sample size for validation")
 
 
+class InterRaterConfig(BaseModel):
+    """Configuration for inter-rater reliability feedback."""
+    enabled: bool = Field(default=False, description="Enable inter-rater feedback functionality")
+    max_ratings: int = Field(default=3, ge=1, le=10, description="Maximum inter-ratings per session")
+    sessions_per_user: int = Field(default=5, ge=1, le=50, description="Sessions shown to each user for inter-rating")
+
+
 class CorpusConfig(BaseModel):
     """Complete corpus configuration."""
     metadata: CorpusMetadata
@@ -113,6 +120,7 @@ class CorpusConfig(BaseModel):
     citation: CitationConfig
     embedding: EmbeddingConfig
     processing: ProcessingConfig
+    inter_rater: Optional[InterRaterConfig] = Field(default=None, description="Inter-rater reliability configuration")
     created_at: datetime = Field(default_factory=datetime.now)
     last_modified: datetime = Field(default_factory=datetime.now)
 

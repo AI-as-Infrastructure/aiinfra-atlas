@@ -23,12 +23,33 @@ def mock_phoenix_env(monkeypatch):
 
 
 @pytest.fixture
-def mock_inter_rater_env(monkeypatch):
-    """Fixture to set up inter-rater environment variables"""
-    monkeypatch.setenv('INTER_RATER_ENABLED', 'true')
-    monkeypatch.setenv('INTER_RATER_PROJECT', 'atlas-hansard')
-    monkeypatch.setenv('INTER_RATER_MAX_RATINGS', '3')
-    monkeypatch.setenv('INTER_RATER_SESSIONS_PER_USER', '5')
+def mock_inter_rater_manifest(tmp_path, monkeypatch):
+    """Fixture to set up inter-rater configuration via manifest file"""
+    import json
+
+    # Create a mock corpus directory with manifest
+    corpus_dir = tmp_path / "backend" / "corpus"
+    corpus_dir.mkdir(parents=True)
+
+    manifest = {
+        "metadata": {
+            "name": "test-corpus",
+            "display_name": "Test Corpus"
+        },
+        "inter_rater": {
+            "enabled": True,
+            "max_ratings": 3,
+            "sessions_per_user": 5
+        }
+    }
+
+    manifest_path = corpus_dir / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest))
+
+    # Change to temp directory so the service finds the manifest
+    monkeypatch.chdir(tmp_path)
+
+    return manifest_path
 
 
 @pytest.fixture

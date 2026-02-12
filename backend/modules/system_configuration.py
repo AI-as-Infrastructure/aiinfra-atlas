@@ -58,10 +58,15 @@ class SystemConfiguration:
             config['telemetryEnabled'] = os.getenv('ENABLE_TELEMETRY', '').lower() in ('true', '1', 'yes')
             logger.info(f"Telemetry overridden by environment: {config['telemetryEnabled']}")
 
-        # Check for ENABLE_INTER_RATER environment variable
-        if os.getenv('ENABLE_INTER_RATER'):
-            config['interRaterEnabled'] = os.getenv('ENABLE_INTER_RATER', '').lower() in ('true', '1', 'yes')
-            logger.info(f"Inter-rater feedback overridden by environment: {config['interRaterEnabled']}")
+        # Inter-rater configuration is now read from corpus manifest, not env vars
+        # Load from corpus manifest if available
+        try:
+            from backend.services.inter_rater_service import inter_rater_service
+            config['interRaterEnabled'] = inter_rater_service.is_enabled()
+            logger.debug(f"Inter-rater enabled from corpus manifest: {config['interRaterEnabled']}")
+        except Exception as e:
+            logger.debug(f"Could not load inter-rater config: {e}")
+            config['interRaterEnabled'] = False
 
         return config
 

@@ -2,11 +2,11 @@
 Inter-rater reliability feedback system for ATLAS
 
 This module provides inter-rater specific feedback functionality that is completely
-separate from the regular feedback system. It's only loaded when INTER_RATER_ENABLED=true.
+separate from the regular feedback system. Configuration is read from the corpus
+manifest.json file.
 """
 
 import logging
-import os
 from typing import Dict, Any, Optional
 # Note: BaseModel is imported from the base feedback module
 from .feedback import UserFeedback, submit_span_annotation
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 class InterRaterFeedback(UserFeedback):
     """Inter-rater feedback model extending the base UserFeedback model."""
-    
+
     # Inter-rater specific fields
     is_inter_rater: bool = True
     original_span_id: str  # Required - references the original span being re-rated
@@ -24,13 +24,15 @@ class InterRaterFeedback(UserFeedback):
 
 class InterRaterService:
     """Service for handling inter-rater feedback submissions."""
-    
+
     def __init__(self):
-        self.enabled = os.getenv("INTER_RATER_ENABLED", "false").lower() == "true"
-    
+        # Import here to avoid circular imports
+        from backend.services.inter_rater_service import inter_rater_service
+        self._service = inter_rater_service
+
     def is_enabled(self) -> bool:
-        """Check if inter-rater functionality is enabled."""
-        return self.enabled
+        """Check if inter-rater functionality is enabled (reads from corpus manifest)."""
+        return self._service.is_enabled()
     
     async def submit_inter_rater_feedback(self, session_id: str, qa_id: str, feedback_data: Dict[str, Any]) -> bool:
         """

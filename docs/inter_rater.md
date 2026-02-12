@@ -12,20 +12,41 @@ The inter-rater feature enables authenticated users to provide secondary (inter-
 - **Inter-rater annotations** in Phoenix are clearly labeled and separate from original ratings
 - **All 9 evaluation fields** are captured and stored in Phoenix
 
-## Configuration (.env)
-```bash
-# Enable/disable feature
-INTER_RATER_ENABLED=true
+## Configuration
 
-# Phoenix project (fallbacks supported in code)
-INTER_RATER_PROJECT=YourPhoenixProject
+**Important:** Inter-rater settings are now configured through the Corpus Wizard and stored in the corpus manifest (`backend/corpus/manifest.json`). Environment variables for inter-rater settings have been removed.
 
-# Allocation limits
-INTER_RATER_MAX_RATINGS=3          # Max inter-rater ratings per session (default: 3)
-INTER_RATER_SESSIONS_PER_USER=5    # Sessions offered per user (default: 5)
+### Corpus Wizard Configuration
+
+When building a new corpus using the Corpus Wizard, you can enable and configure inter-rater reliability in Step 7 (System Requirements):
+
+1. Navigate to the **Inter-Rater Reliability** section
+2. Toggle **Enable Inter-Rater Feedback** to on
+3. Configure the following settings:
+   - **Maximum Ratings per Session** (1-10): How many different users can rate each session
+   - **Sessions per User** (1-50): How many sessions each user will be asked to rate
+
+### Manifest Configuration
+
+The settings are stored in `backend/corpus/manifest.json`:
+
+```json
+{
+  "inter_rater": {
+    "enabled": true,
+    "max_ratings": 3,
+    "sessions_per_user": 5
+  }
+}
 ```
 
-Also ensure Cognito auth is enabled where required:
+### Phoenix Project
+
+The Phoenix project name is configured via the standard `PHOENIX_PROJECT_NAME` environment variable (no separate inter-rater project variable needed).
+
+### Authentication Requirement
+
+Ensure Cognito auth is enabled where required:
 ```bash
 VITE_USE_COGNITO_AUTH=true
 ```
@@ -34,30 +55,45 @@ VITE_USE_COGNITO_AUTH=true
 
 ### Choosing Optimal Values
 
-The relationship between `INTER_RATER_MAX_RATINGS` and `INTER_RATER_SESSIONS_PER_USER` determines coverage and workload distribution:
+The relationship between `max_ratings` and `sessions_per_user` determines coverage and workload distribution:
 
 **Small Teams (2-5 users):**
-```bash
-INTER_RATER_MAX_RATINGS=2          # 2 inter-raters per session
-INTER_RATER_SESSIONS_PER_USER=10   # 10 sessions per user
+```json
+{
+  "inter_rater": {
+    "enabled": true,
+    "max_ratings": 2,
+    "sessions_per_user": 10
+  }
+}
 ```
 - Good for quick validation with limited resources
 - Each session gets 2 independent ratings
 - Users rate more sessions but with lighter coverage
 
 **Medium Teams (5-10 users):**
-```bash
-INTER_RATER_MAX_RATINGS=3          # 3 inter-raters per session (recommended)
-INTER_RATER_SESSIONS_PER_USER=5    # 5 sessions per user (default)
+```json
+{
+  "inter_rater": {
+    "enabled": true,
+    "max_ratings": 3,
+    "sessions_per_user": 5
+  }
+}
 ```
 - Recommended for most use cases
 - Provides good statistical reliability
 - Balanced workload per user
 
 **Large Teams (10+ users):**
-```bash
-INTER_RATER_MAX_RATINGS=5          # 5 inter-raters per session
-INTER_RATER_SESSIONS_PER_USER=3    # 3 sessions per user
+```json
+{
+  "inter_rater": {
+    "enabled": true,
+    "max_ratings": 5,
+    "sessions_per_user": 3
+  }
+}
 ```
 - Maximum inter-rater reliability
 - Lower workload per user
@@ -67,13 +103,13 @@ INTER_RATER_SESSIONS_PER_USER=3    # 3 sessions per user
 
 To achieve full coverage of N sessions:
 ```
-Minimum users needed = (N × INTER_RATER_MAX_RATINGS) / INTER_RATER_SESSIONS_PER_USER
+Minimum users needed = (N × max_ratings) / sessions_per_user
 ```
 
 **Example:**
 - 20 sessions to cover
-- MAX_RATINGS=3
-- SESSIONS_PER_USER=5
+- max_ratings=3
+- sessions_per_user=5
 - Minimum users = (20 × 3) / 5 = **12 users needed**
 
 ### Workload Estimation
@@ -81,10 +117,10 @@ Minimum users needed = (N × INTER_RATER_MAX_RATINGS) / INTER_RATER_SESSIONS_PER
 Per-user time commitment:
 ```
 Time per session: ~5-10 minutes (all 9 fields)
-Total time = SESSIONS_PER_USER × 5-10 minutes
+Total time = sessions_per_user × 5-10 minutes
 ```
 
-With `SESSIONS_PER_USER=5`: **25-50 minutes per user**
+With `sessions_per_user=5`: **25-50 minutes per user**
 
 ## Architecture
 - Backend
@@ -106,9 +142,9 @@ With `SESSIONS_PER_USER=5`: **25-50 minutes per user**
    - **Only include sessions with existing feedback annotations** (no empty sessions)
    - **Exclude sessions authored by this anonymous user** (prevents self-rating)
    - **Exclude sessions already inter-rated by this user** (prevents duplicate rating)
-   - **Enforce `INTER_RATER_MAX_RATINGS`** limit (default: 3 per session)
+   - **Enforce `max_ratings`** limit (default: 3 per session)
    - **Apply deterministic user-specific allocation** (same user always gets same sessions)
-   - **Limit to `INTER_RATER_SESSIONS_PER_USER`** (default: 5 per user)
+   - **Limit to `sessions_per_user`** (default: 5 per user)
 5. Counts cached per user (short TTL). Cache invalidated when the user submits inter-rater feedback.
 
 ## Allocation Algorithm Details
@@ -120,18 +156,18 @@ The allocation system uses **deterministic user-specific allocation** to ensure:
 
 ### How It Works
 
-**Implementation:** `backend/services/inter_rater_service.py` (_allocate_sessions_to_user method, lines 51-123)
+**Implementation:** `backend/services/inter_rater_service.py` (_allocate_sessions_to_user method)
 
 1. **Sort Sessions:** All eligible sessions are sorted by `span_id` for consistent ordering
 2. **Hash User ID:** User's Cognito UUID is hashed to generate a starting position
-3. **Allocate Sequential Sessions:** Starting from hash position, allocate N sessions where N = `INTER_RATER_SESSIONS_PER_USER`
+3. **Allocate Sequential Sessions:** Starting from hash position, allocate N sessions where N = `sessions_per_user`
 4. **Wrap Around:** If needed, wrap around to the beginning (modulo operation)
 
 ### Example with 15 Sessions
 
 ```
 Configuration:
-- INTER_RATER_SESSIONS_PER_USER=5
+- sessions_per_user=5
 - 15 eligible sessions available (sorted by span_id)
 
 User A (hash=0):  → Sessions [0, 1, 2, 3, 4]
@@ -142,7 +178,7 @@ User D (hash=2):  → Sessions [2, 3, 4, 5, 6]  (overlaps with A and B)
 
 **Note:** Some overlap occurs naturally. This is acceptable because the system also checks:
 - User hasn't already rated the session
-- Session hasn't reached `INTER_RATER_MAX_RATINGS` capacity
+- Session hasn't reached `max_ratings` capacity
 
 ### Progressive Filling
 
@@ -170,7 +206,7 @@ After User C rates:
 - Session 003: 3/3 ratings [FULL - removed from allocation]
 ```
 
-Once a session reaches `INTER_RATER_MAX_RATINGS`, it's automatically excluded from future allocations.
+Once a session reaches `max_ratings`, it's automatically excluded from future allocations.
 
 ### Capacity and Coverage
 
@@ -239,20 +275,29 @@ Both main ratings and inter-ratings use the same field order - **all 9 fields ar
 - Inter-rater counting uses GET endpoint: `/v1/projects/{project}/span_annotations` with async httpx for non-blocking queries
 
 ## Troubleshooting
-- **No sessions available**: 
-  - Verify `INTER_RATER_ENABLED=true` in .env
-  - Check `INTER_RATER_PROJECT` matches your Phoenix project
+- **No sessions available**:
+  - Verify inter-rater is enabled in corpus manifest (`backend/corpus/manifest.json`)
+  - Check `PHOENIX_PROJECT_NAME` is set correctly in your .env file
   - Ensure initial feedback with **user_id** exists in Phoenix annotations
   - Verify user is authenticated (Cognito JWT token present)
-- **User sees own ratings**: 
+- **User sees own ratings**:
   - Fixed: Frontend now sends Authorization headers with all feedback submissions
   - Ensure user_id is properly captured during original feedback submission
-- **Missing evaluation fields**: 
+- **Missing evaluation fields**:
   - Fixed: All 9 fields including User Type are now stored in Phoenix
 - **Duplicate rating prevented**: Backend checks if the same rater already rated the same original span
 - **Count not updating immediately**: Cache invalidation happens after submission (handled in backend)
+- **Configuration not loading**:
+  - The inter-rater service reloads config from manifest after corpus builds
+  - To manually reload, rebuild the corpus or restart the backend server
 
 ## Recent Fixes
+
+### 2026-02 (February)
+- ✅ **Manifest-Based Configuration**: Inter-rater settings moved from .env files to corpus manifest (`backend/corpus/manifest.json`)
+- ✅ **Corpus Wizard Integration**: Inter-rater configuration can now be set during corpus build via the Corpus Wizard UI
+- ✅ **Environment Variable Cleanup**: Removed `INTER_RATER_ENABLED`, `INTER_RATER_PROJECT`, `INTER_RATER_MAX_RATINGS`, and `INTER_RATER_SESSIONS_PER_USER` from all .env files
+- ✅ **Auto-Reload**: Inter-rater service automatically reloads configuration after corpus builds
 
 ### 2026-01 (January)
 - ✅ **Numbered Annotations**: Inter-rater annotations now show as `[inter-rating-1]`, `[inter-rating-2]`, `[inter-rating-3]` instead of generic `[Inter-rater]` (GitHub issue #43)

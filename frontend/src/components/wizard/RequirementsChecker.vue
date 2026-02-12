@@ -205,6 +205,59 @@
         </div>
       </div>
 
+      <!-- Inter-Rater Reliability Settings -->
+      <div class="inter-rater-settings">
+        <h3>Inter-Rater Reliability</h3>
+        <p class="section-description">
+          Enable inter-rater reliability studies to allow multiple users to rate the same responses for quality assessment.
+        </p>
+
+        <div class="toggle-group">
+          <label class="toggle-label">
+            <input
+              type="checkbox"
+              v-model="interRaterEnabled"
+              class="toggle-input"
+            />
+            <span class="toggle-slider"></span>
+            <span class="toggle-text">Enable Inter-Rater Feedback</span>
+          </label>
+        </div>
+
+        <div v-if="interRaterEnabled" class="inter-rater-options">
+          <div class="settings-grid">
+            <div class="form-group">
+              <label for="max-ratings">Maximum Ratings per Session</label>
+              <input
+                id="max-ratings"
+                v-model.number="interRaterMaxRatings"
+                type="number"
+                min="1"
+                max="10"
+              />
+              <small>How many different users can rate each session (1-10)</small>
+            </div>
+
+            <div class="form-group">
+              <label for="sessions-per-user">Sessions per User</label>
+              <input
+                id="sessions-per-user"
+                v-model.number="interRaterSessionsPerUser"
+                type="number"
+                min="1"
+                max="50"
+              />
+              <small>How many sessions each user will be asked to rate (1-50)</small>
+            </div>
+          </div>
+
+          <div class="inter-rater-note">
+            <span class="note-icon">ℹ️</span>
+            <span>Inter-rater reliability requires user authentication to ensure different users rate each session.</span>
+          </div>
+        </div>
+      </div>
+
       <!-- Warnings -->
       <div v-if="systemInfo.warnings?.length > 0" class="warnings-section">
         <h3>⚠️ Warnings</h3>
@@ -281,6 +334,11 @@ export default {
       memory_limit_gb: null,
       ...props.modelValue
     });
+
+    // Inter-rater settings (stored separately for cleaner UI binding)
+    const interRaterEnabled = ref(props.modelValue?.interRater?.enabled || false);
+    const interRaterMaxRatings = ref(props.modelValue?.interRater?.maxRatings || 3);
+    const interRaterSessionsPerUser = ref(props.modelValue?.interRater?.sessionsPerUser || 5);
 
     const canProceed = computed(() => {
       if (!systemInfo.value) return false;
@@ -373,7 +431,16 @@ export default {
     };
 
     const handleNext = () => {
-      emit('update:modelValue', localData.value);
+      // Include inter-rater settings in the emitted data
+      const dataToEmit = {
+        ...localData.value,
+        interRater: {
+          enabled: interRaterEnabled.value,
+          maxRatings: interRaterMaxRatings.value,
+          sessionsPerUser: interRaterSessionsPerUser.value
+        }
+      };
+      emit('update:modelValue', dataToEmit);
       emit('next');
     };
 
@@ -407,7 +474,10 @@ export default {
       estimatedTimeFormatted,
       formatTime,
       selectMode,
-      handleNext
+      handleNext,
+      interRaterEnabled,
+      interRaterMaxRatings,
+      interRaterSessionsPerUser
     };
   }
 };
@@ -786,6 +856,101 @@ export default {
 
 .btn-secondary:hover {
   background: #7f8c8d;
+}
+
+/* Inter-Rater Reliability Settings */
+.inter-rater-settings {
+  background: #f8f9fa;
+  padding: 1.5rem;
+  border-radius: 8px;
+  margin-bottom: 2rem;
+  border: 1px solid #e0e0e0;
+}
+
+.inter-rater-settings h3 {
+  margin-top: 0;
+  color: #333;
+}
+
+.section-description {
+  color: #666;
+  margin-bottom: 1.5rem;
+  font-size: 0.9rem;
+}
+
+.toggle-group {
+  margin-bottom: 1.5rem;
+}
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  gap: 0.75rem;
+}
+
+.toggle-input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: relative;
+  display: inline-block;
+  width: 50px;
+  height: 26px;
+  background-color: #ccc;
+  border-radius: 26px;
+  transition: 0.3s;
+}
+
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  height: 20px;
+  width: 20px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  border-radius: 50%;
+  transition: 0.3s;
+}
+
+.toggle-input:checked + .toggle-slider {
+  background-color: #4caf50;
+}
+
+.toggle-input:checked + .toggle-slider::before {
+  transform: translateX(24px);
+}
+
+.toggle-text {
+  font-weight: 500;
+  color: #333;
+}
+
+.inter-rater-options {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e0e0e0;
+}
+
+.inter-rater-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: #e3f2fd;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  color: #1565c0;
+}
+
+.note-icon {
+  font-size: 1.1rem;
 }
 
 @media (max-width: 768px) {

@@ -16,17 +16,12 @@ from backend.modules.auth import verify_cognito_token, is_cognito_enabled
 from backend.services.anonymous_id_service import anonymous_id_service
 from .feedback import UserFeedback, FeedbackResponse, associate_feedback_with_spans
 
-# Conditionally import inter-rater functionality
-_inter_rater_enabled = os.getenv("INTER_RATER_ENABLED", "false").lower() == "true"
-
-if _inter_rater_enabled:
-    try:
-        from .inter_rater_feedback import InterRaterFeedback, get_inter_rater_service
-        INTER_RATER_AVAILABLE = True
-    except ImportError as e:
-        logger.warning(f"Inter-rater functionality requested but failed to import: {e}")
-        INTER_RATER_AVAILABLE = False
-else:
+# Import inter-rater functionality (enabled/disabled is determined by corpus manifest)
+try:
+    from .inter_rater_feedback import InterRaterFeedback, get_inter_rater_service
+    INTER_RATER_AVAILABLE = True
+except ImportError as e:
+    # This is fine - inter-rater module may not exist
     INTER_RATER_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
@@ -137,7 +132,15 @@ async def submit_feedback(feedback: Union[InterRaterFeedback, UserFeedback] if I
         logger.info(f"Feedback user ID extraction result: user_id={'present' if anon_user_id else 'NONE'}, details: {auth_extraction_details}")
 
         # Validate user_id for inter-rater functionality
-        inter_rater_enabled = os.getenv("INTER_RATER_ENABLED", "false").lower() == "true"
+        # Check if inter-rater is enabled via the service (reads from corpus manifest)
+        inter_rater_enabled = False
+        if INTER_RATER_AVAILABLE:
+            try:
+                ir_service = get_inter_rater_service()
+                inter_rater_enabled = ir_service.is_enabled()
+            except Exception:
+                pass
+
         if inter_rater_enabled and not anon_user_id:
             logger.error("CRITICAL: Inter-rater is enabled but no user_id captured for feedback - this will break inter-rater allocation!")
             logger.error(f"Auth details: {auth_extraction_details}")

@@ -3,10 +3,14 @@ Inter-rater reliability service for ATLAS.
 
 This module provides functionality for managing inter-rater reliability sessions,
 retrieving sessions for rating, and managing the inter-rater workflow.
+
+Configuration is read from the corpus manifest.json file. No environment variables
+are used for inter-rater settings.
 """
 
 import logging
 import os
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import json
@@ -14,22 +18,74 @@ import hashlib
 
 logger = logging.getLogger(__name__)
 
+# Default values for inter-rater configuration
+INTER_RATER_DEFAULTS = {
+    'enabled': False,
+    'max_ratings': 3,
+    'sessions_per_user': 5
+}
+
+
+def _load_inter_rater_config() -> Dict[str, Any]:
+    """
+    Load inter-rater configuration from corpus manifest.
+
+    Returns:
+        Dict with inter-rater configuration, using defaults if not found
+    """
+    manifest_path = Path("backend/corpus/manifest.json")
+
+    if not manifest_path.exists():
+        logger.debug("Corpus manifest not found, using default inter-rater config")
+        return INTER_RATER_DEFAULTS.copy()
+
+    try:
+        with open(manifest_path, 'r') as f:
+            manifest = json.load(f)
+
+        inter_rater_config = manifest.get('inter_rater', {})
+
+        # Merge with defaults for any missing keys
+        config = INTER_RATER_DEFAULTS.copy()
+        config.update(inter_rater_config)
+
+        logger.debug(f"Loaded inter-rater config from manifest: enabled={config['enabled']}")
+        return config
+
+    except Exception as e:
+        logger.warning(f"Failed to load inter-rater config from manifest: {e}")
+        return INTER_RATER_DEFAULTS.copy()
+
+
 class InterRaterService:
     """Service for managing inter-rater reliability functionality."""
-    
+
     def __init__(self):
-        self.enabled = os.getenv("INTER_RATER_ENABLED", "false").lower() == "true"
-        self.project_name = os.getenv("INTER_RATER_PROJECT", "atlas-hansard")
-        self.max_ratings = int(os.getenv("INTER_RATER_MAX_RATINGS", "3"))
-        self.sessions_per_user = int(os.getenv("INTER_RATER_SESSIONS_PER_USER", "5"))
-        
+        # Load configuration from corpus manifest (no env var fallback)
+        config = _load_inter_rater_config()
+
+        self.enabled = config.get('enabled', False)
+        self.max_ratings = config.get('max_ratings', 3)
+        self.sessions_per_user = config.get('sessions_per_user', 5)
+
+        # Project name comes from Phoenix config (for querying spans)
+        self.project_name = os.getenv("PHOENIX_PROJECT_NAME", "atlas-telemetry")
+
         # Simple in-memory cache for sessions (could be Redis in production)
         self._session_cache = {}
         self._cache_timeout = 60  # 1 minute - faster updates for development
-        
+
         # Stats cache to avoid duplicate API calls during the same request
         self._stats_cache = {}
         self._stats_cache_timeout = 10  # 10 seconds for stats - faster updates
+
+    def reload_config(self):
+        """Reload configuration from manifest. Call after corpus changes."""
+        config = _load_inter_rater_config()
+        self.enabled = config.get('enabled', False)
+        self.max_ratings = config.get('max_ratings', 3)
+        self.sessions_per_user = config.get('sessions_per_user', 5)
+        logger.info(f"Reloaded inter-rater config: enabled={self.enabled}")
     
     def is_enabled(self) -> bool:
         """Check if inter-rater functionality is enabled."""

@@ -37,8 +37,8 @@ class PhoenixAPIClient:
             self.client = None
             self.has_phoenix_client = False
             
-        # Align default with telemetry project if env not provided
-        self.project_name = os.getenv("INTER_RATER_PROJECT", os.getenv("PHOENIX_PROJECT_NAME", "atlas-telemetry"))
+        # Use the same project as telemetry
+        self.project_name = os.getenv("PHOENIX_PROJECT_NAME", "atlas-telemetry")
     
     async def query_spans_with_feedback(
         self, 
