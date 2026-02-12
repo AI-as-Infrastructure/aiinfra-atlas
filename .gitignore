@@ -41,6 +41,7 @@ source_examples/
 
 # Corpus build temporary directory
 backend/corpus_build_temp/
+backend/corpus/tmp/
 
 # Chroma database directories - exclude all binary DB files (too large for git)
 backend/chroma_db/
