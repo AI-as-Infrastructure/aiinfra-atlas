@@ -69,13 +69,11 @@ router.beforeEach(async (to, from, next) => {
 
     // Mode-based routing
     if (to.meta.requiresDeploy && modeStatus.mode !== 'deploy') {
-      // Trying to access deploy-only route without being in deploy mode
       next('/')  // Go to mode selector
       return
     }
 
     if (to.meta.requiresConfigure && modeStatus.mode === 'deploy') {
-      // Trying to access configuration route while in deploy mode
       next('/chat')
       return
     }
@@ -84,26 +82,14 @@ router.beforeEach(async (to, from, next) => {
     return
   }
 
-  // Debug current path
-  console.log('Route navigation:', to.path)
-  
-  // Special case for coming from logout page to login page - always allow
-  // if (to.path === '/login' && from.path === '/logout') {
-  //   console.log('Coming from logout, allowing access to login page')
-  //   next()
-  //   return
-  // }
-  
   // Callback and logout routes - always accessible
   if (to.path === '/callback') {
-    console.log('Allowing access to auth callback page:', to.path)
     next()
     return
   }
-  
+
   // Check for logout query parameter as a force-logout signal
   if (to.query.logout === 'true') {
-    console.log('Logout query parameter detected, treating as unauthenticated')
     next()
     return
   }
@@ -112,24 +98,21 @@ router.beforeEach(async (to, from, next) => {
   if (to.path === '/login' || to.path === '/about' || to.path === '/faq') {
     // Special case: force check of storage for explicit logout
     if (to.path === '/login' && localStorage.getItem('force_logout') === 'true') {
-      console.log('Force logout detected, allowing login page access')
       localStorage.removeItem('force_logout')
       next()
       return
     }
-    
+
     // Regular authentication check for other cases
     try {
       const authenticated = await isAuthenticated()
-      
+
       // If already authenticated and trying to access login, redirect to home
       if (to.path === '/login' && authenticated) {
-        console.log('Already authenticated, redirecting from login to home')
         next('/')
         return
       }
-      
-      console.log('Allowing access to public page')
+
       next()
     } catch (error) {
       console.error('Auth check error for public page:', error)
@@ -143,7 +126,6 @@ router.beforeEach(async (to, from, next) => {
     const authenticated = await isAuthenticated()
 
     if (to.matched.some(record => record.meta.requiresAuth) && !authenticated) {
-      console.log('Authentication required but not authenticated, redirecting to login')
       next({ path: '/login' })
       return
     }
@@ -154,20 +136,17 @@ router.beforeEach(async (to, from, next) => {
 
       // If in deploy mode and accessing root, redirect to chat
       if ((to.path === '/' || to.path === '/mode') && modeStatus.mode === 'deploy') {
-        console.log('In deploy mode, redirecting from root to chat')
         next('/chat')
         return
       }
 
       // Mode-based routing for authenticated users
       if (to.meta.requiresDeploy && modeStatus.mode !== 'deploy') {
-        console.log('Deploy mode required but not in deploy mode, redirecting to mode selector')
         next('/')  // Go to mode selector
         return
       }
 
       if (to.meta.requiresConfigure && modeStatus.mode === 'deploy') {
-        console.log('Configure mode required but in deploy mode, redirecting to chat')
         next('/chat')
         return
       }

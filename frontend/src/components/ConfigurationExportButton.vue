@@ -1,5 +1,11 @@
 <template>
-  <button class="button is-link is-light config-export-btn" @click="exportConfiguration" title="Export corpus and test target configuration">
+  <button
+    class="button is-link is-light config-export-btn"
+    @click="exportConfiguration"
+    :disabled="loading"
+    title="Export corpus and test target configuration"
+    aria-label="Export ATLAS configuration as JSON"
+  >
     <span class="icon">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
         <!-- Gear icon -->

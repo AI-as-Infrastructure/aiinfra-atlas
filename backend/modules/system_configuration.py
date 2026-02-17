@@ -81,8 +81,17 @@ class SystemConfiguration:
             Success status
         """
         try:
-            # Ensure config directory exists
-            self.config_path.parent.mkdir(parents=True, exist_ok=True)
+            # Ensure config directory exists and is writable
+            config_dir = self.config_path.parent
+            config_dir.mkdir(parents=True, exist_ok=True)
+
+            if not os.access(config_dir, os.W_OK):
+                logger.error(f"No write permission for config directory: {config_dir}")
+                return False
+
+            if self.config_path.exists() and not os.access(self.config_path, os.W_OK):
+                logger.error(f"No write permission for config file: {self.config_path}")
+                return False
 
             # Validate configuration
             validated_config = {

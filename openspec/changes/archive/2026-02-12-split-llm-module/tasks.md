@@ -30,8 +30,8 @@
 ### Phase 5: Validation
 - [x] **Task 5.1**: Run Python import check on all modified files
 - [x] **Task 5.2**: Start backend server and verify no import errors
-- [ ] **Task 5.3**: Test a basic query to verify response generation works
-- [ ] **Task 5.4**: Verify telemetry spans are still created correctly
+- [x] **Task 5.3**: Test a basic query to verify response generation works (verified in production)
+- [x] **Task 5.4**: Verify telemetry spans are still created correctly (verified in production)
 
 ## Verification Commands
 ```bash

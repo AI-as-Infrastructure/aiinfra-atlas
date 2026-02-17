@@ -14,7 +14,6 @@ import logging
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
 import os
-from phoenix import Client
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +38,19 @@ class PhoenixAPIClient:
             
         # Use the same project as telemetry
         self.project_name = os.getenv("PHOENIX_PROJECT_NAME", "atlas-telemetry")
+
+    def _get_phoenix_endpoint(self) -> str:
+        """Get configured Phoenix endpoint (strict, no fallback)."""
+        endpoint = os.getenv("PHOENIX_COLLECTOR_ENDPOINT", "").strip()
+        if not endpoint:
+            raise ValueError("PHOENIX_COLLECTOR_ENDPOINT is not configured")
+
+        if "app.phoenix.arize.com" in endpoint and "/s/" not in endpoint:
+            raise ValueError(
+                "PHOENIX_COLLECTOR_ENDPOINT must include '/s/<space-id>' when using Phoenix cloud"
+            )
+
+        return endpoint.rstrip("/")
     
     async def query_spans_with_feedback(
         self, 
@@ -359,7 +371,7 @@ class PhoenixAPIClient:
         try:
             import httpx
             
-            phoenix_endpoint = os.getenv('PHOENIX_COLLECTOR_ENDPOINT', 'https://app.phoenix.arize.com')
+            phoenix_endpoint = self._get_phoenix_endpoint()
             # Use correct v11.13.2 API format with project in path
             annotations_endpoint = f"{phoenix_endpoint}/v1/projects/{self.project_name}/span_annotations"
             
@@ -409,7 +421,7 @@ class PhoenixAPIClient:
         try:
             import httpx
             
-            phoenix_endpoint = os.getenv('PHOENIX_COLLECTOR_ENDPOINT', 'https://app.phoenix.arize.com')
+            phoenix_endpoint = self._get_phoenix_endpoint()
             # Use correct v11.13.2 API format with project in path
             annotations_endpoint = f"{phoenix_endpoint}/v1/projects/{self.project_name}/span_annotations"
             
@@ -554,14 +566,11 @@ class PhoenixAPIClient:
         Returns:
             True if user has already rated this span
         """
-        if not self.has_phoenix_client:
-            return False
-            
         try:
             # Query Phoenix annotations API for existing inter-rater feedback by this user
             import httpx
             
-            phoenix_endpoint = os.getenv('PHOENIX_COLLECTOR_ENDPOINT', 'https://app.phoenix.arize.com')
+            phoenix_endpoint = self._get_phoenix_endpoint()
             # Use correct v11.13.2 API format with project in path
             annotations_endpoint = f"{phoenix_endpoint}/v1/projects/{self.project_name}/span_annotations"
             
@@ -619,16 +628,11 @@ class PhoenixAPIClient:
         Returns:
             Number of inter-rater feedback entries
         """
-        if not self.has_phoenix_client:
-            sanitized_span_id = span_id[:8] + "..." if len(span_id) > 8 else span_id
-            logger.warning(f"Phoenix client not available - cannot get inter-rater count for span {sanitized_span_id}")
-            return 0
-
         try:
             # Query Phoenix annotations API for inter-rater feedback count
             import httpx
 
-            phoenix_endpoint = os.getenv('PHOENIX_COLLECTOR_ENDPOINT', 'https://app.phoenix.arize.com')
+            phoenix_endpoint = self._get_phoenix_endpoint()
             # Use correct v11.13.2 API format with project in path
             annotations_endpoint = f"{phoenix_endpoint}/v1/projects/{self.project_name}/span_annotations"
 

@@ -86,7 +86,27 @@ def initialize_telemetry() -> bool:
         raise ImportError(f"Phoenix telemetry is required but not available: {_phoenix_import_error}")
     
     # Get Phoenix configuration from environment
-    phoenix_endpoint = os.getenv("PHOENIX_COLLECTOR_ENDPOINT")
+    phoenix_space_id = os.getenv("PHOENIX_SPACE_ID", "").strip()
+    phoenix_endpoint = os.getenv("PHOENIX_COLLECTOR_ENDPOINT", "").strip()
+
+    if not phoenix_endpoint:
+        logger.warning("PHOENIX_COLLECTOR_ENDPOINT not configured - telemetry will be disabled")
+        _telemetry_initialized = True
+        return False
+
+    if "app.phoenix.arize.com" in phoenix_endpoint and "/s/" not in phoenix_endpoint:
+        if not phoenix_space_id:
+            logger.warning(
+                "PHOENIX_SPACE_ID is required when PHOENIX_COLLECTOR_ENDPOINT is the default Phoenix cloud host"
+            )
+            _telemetry_initialized = True
+            return False
+        logger.warning(
+            "PHOENIX_COLLECTOR_ENDPOINT must include the Phoenix space path '/s/<space-id>' for Phoenix cloud"
+        )
+        _telemetry_initialized = True
+        return False
+
     _project_name = os.getenv("PHOENIX_PROJECT_NAME", "atlas-telemetry")
     
     # For Phoenix Arize Cloud, use PHOENIX_CLIENT_HEADERS
@@ -117,11 +137,6 @@ def initialize_telemetry() -> bool:
             headers_dict["project_name"] = _project_name
             phoenix_client_headers = ",".join(f"{k}={v}" for k, v in headers_dict.items())
     # ---------------------------------------------------
-    
-    if not phoenix_endpoint:
-        logger.warning("PHOENIX_COLLECTOR_ENDPOINT not configured - telemetry will be disabled")
-        _telemetry_initialized = True  # Mark as initialized but disabled
-        return False
     
     if not phoenix_client_headers:
         logger.warning("PHOENIX_CLIENT_HEADERS not configured - telemetry will be disabled")

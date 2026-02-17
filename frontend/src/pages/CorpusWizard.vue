@@ -5,6 +5,9 @@
       <h1>ATLAS Corpus Configuration Wizard</h1>
       <p class="subtitle">Configure and swap text corpora for your research</p>
     </div>
+    <div v-if="importStatusMessage" :class="['notification', importStatusClass, 'is-light', 'mb-4']" aria-live="polite">
+      {{ importStatusMessage }}
+    </div>
     <!-- Force reload trigger -->
 
     <!-- Progress Steps -->
@@ -800,11 +803,12 @@
 </template>
 
 <script>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, defineAsyncComponent } from 'vue'
 import { useRouter } from 'vue-router'
 import BuildProgress from '@/components/wizard/BuildProgress.vue'
 import SystemConfiguration from '@/components/wizard/SystemConfiguration.vue'
-import ConfigurationImportDialog from '@/components/ConfigurationImportDialog.vue'
+
+const ConfigurationImportDialog = defineAsyncComponent(() => import('@/components/ConfigurationImportDialog.vue'))
 
 export default {
   name: 'CorpusWizard',
@@ -831,6 +835,8 @@ export default {
 
     // Import dialog state
     const showImportDialog = ref(false)
+    const importStatusMessage = ref('')
+    const importStatusClass = ref('is-success')
 
     // Workflow type
     const workflowType = ref('text')
@@ -1509,8 +1515,8 @@ Do you want to continue?`
           }
         }
 
-        // Show success message
-        alert('Configuration imported successfully! Review the settings and proceed with the wizard.')
+        importStatusClass.value = 'is-success'
+        importStatusMessage.value = 'Configuration imported successfully. Review the settings and proceed with the wizard.'
       }
     }
 
@@ -1582,6 +1588,8 @@ Do you want to continue?`
       steps,
       workflowType,
       showImportDialog,
+      importStatusMessage,
+      importStatusClass,
 
       // Form data
       metadata,

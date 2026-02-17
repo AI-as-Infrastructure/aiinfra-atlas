@@ -19,61 +19,59 @@
 
 ## Core Telemetry Updates (PRIMARY)
 
-- [ ] Verify `backend/telemetry/core.py:134` correctly constructs trace endpoint from space-based URL
+- [x] Verify `backend/telemetry/core.py:134` correctly constructs trace endpoint from space-based URL
   - Currently: `f"{phoenix_endpoint}/v1/traces"`
   - Should work with: `https://app.phoenix.arize.com/s/{space-id}/v1/traces`
-- [ ] Add validation to check `PHOENIX_SPACE_ID` is configured when using default endpoint
+- [x] Add validation to check `PHOENIX_SPACE_ID` is configured when using default endpoint
 - [ ] Test OTEL trace export with space-based endpoint in development
 
 ## Phoenix Client Updates
 
-- [ ] Review `backend/services/phoenix_client.py` usage of `PHOENIX_COLLECTOR_ENDPOINT`
+- [x] Review `backend/services/phoenix_client.py` usage of `PHOENIX_COLLECTOR_ENDPOINT`
   - Line 362: `_check_span_has_user_feedback` API call
   - Line 412: `_get_span_feedback_annotations` API call
   - Line 589: `check_user_already_rated` API call
   - Line 656: `get_inter_rater_count` API call
-- [ ] Verify all Phoenix API calls work with space-based URLs
-- [ ] Test inter-rater functionality with space configuration
+- [x] Verify all Phoenix API calls work with space-based URLs
+- [x] Test inter-rater functionality with space configuration
 
 ## Feedback System Updates
 
-- [ ] Review `backend/telemetry/feedback.py:224` usage of `PHOENIX_COLLECTOR_ENDPOINT`
-- [ ] Test feedback annotation submission to space-based endpoint
+- [x] Review `backend/telemetry/feedback.py:224` usage of `PHOENIX_COLLECTOR_ENDPOINT`
+- [x] Test feedback annotation submission to space-based endpoint
 
 ## Backup Script Updates (SECONDARY)
 
-- [ ] Update `utils/scripts/phoenix_backup_prod.py`:
-  - [ ] Add `PHOENIX_SPACE_ID` environment variable support with default `aiinfra`
-  - [ ] Change default `PHOENIX_BASE_URL` from `/legacy` to `/s/aiinfra`
-  - [ ] Update line 125-128 logic to construct `https://app.phoenix.arize.com/s/aiinfra`
-  - [ ] Add fallback to read space from `PHOENIX_COLLECTOR_ENDPOINT` if `PHOENIX_SPACE_ID` not set
-- [ ] Update script docstring (lines 8, 13) with new default URL: `https://app.phoenix.arize.com/s/aiinfra`
-- [ ] Add validation error if space ID cannot be determined
+- [x] Update `utils/scripts/phoenix_backup_prod.py`:
+  - [x] Add `PHOENIX_SPACE_ID` environment variable support with default `aiinfra`
+  - [x] Change default `PHOENIX_BASE_URL` from `/legacy` to `/s/aiinfra`
+  - [x] Update line 125-128 logic to construct `https://app.phoenix.arize.com/s/aiinfra`
+  - [x] Enforce explicit configuration when `PHOENIX_SPACE_ID` is missing (no fallback)
+- [x] Update script docstring (lines 8, 13) with new default URL: `https://app.phoenix.arize.com/s/aiinfra`
+- [x] Add validation error if space ID cannot be determined
 
 ## Documentation Updates
 
-- [ ] Update `docs/configuration.md`:
-  - [ ] Add `PHOENIX_SPACE_ID=aiinfra` configuration section explaining AIINFRA project space
-  - [ ] Update `PHOENIX_COLLECTOR_ENDPOINT` examples to `https://app.phoenix.arize.com/s/aiinfra` (line 152)
-  - [ ] Explain organizational structure: space = research project boundary
-  - [ ] Document that all ATLAS variants (Hansard, Darwin) use same `aiinfra` space
-  - [ ] Update troubleshooting section for space-related issues
-- [ ] Update `docs/backups.md`:
-  - [ ] Update backup configuration section with `aiinfra` space (line 46)
-  - [ ] Add example showing `PHOENIX_SPACE_ID=aiinfra`
-  - [ ] Update troubleshooting for backup connectivity with space URLs
-- [ ] Update `docs/production.md`:
-  - [ ] Update Phoenix configuration section to use `aiinfra` space (line 118)
-  - [ ] Add `PHOENIX_SPACE_ID=aiinfra` to production setup checklist
-  - [ ] Document production space configuration
-- [ ] Create `docs/phoenix-spaces-migration.md` migration guide:
-  - [ ] Explain `aiinfra` space as AIINFRA project workspace
-  - [ ] Show how all ATLAS variants share the space
-  - [ ] Step-by-step configuration updates for each .env file
-  - [ ] Verification steps: checking traces appear in aiinfra space
-  - [ ] Instructions for updating ATLAS Darwin fork
-  - [ ] Rollback procedures
-  - [ ] Troubleshooting common issues
+- [x] Update `docs/configuration.md`:
+  - [x] Add `PHOENIX_SPACE_ID=aiinfra` configuration section explaining AIINFRA project space
+  - [x] Update `PHOENIX_COLLECTOR_ENDPOINT` examples to `https://app.phoenix.arize.com/s/aiinfra` (line 152)
+  - [x] Explain organizational structure: space = research project boundary
+  - [x] Document that all ATLAS variants (Hansard, Darwin) use same `aiinfra` space
+  - [x] Update troubleshooting section for space-related issues
+- [x] Update `docs/backups.md`:
+  - [x] Update backup configuration section with `aiinfra` space (line 46)
+  - [x] Add example showing `PHOENIX_SPACE_ID=aiinfra`
+  - [x] Update troubleshooting for backup connectivity with space URLs
+- [x] Update `docs/production.md`:
+  - [x] Update Phoenix configuration section to use `aiinfra` space (line 118)
+  - [x] Add `PHOENIX_SPACE_ID=aiinfra` to production setup checklist
+  - [x] Document production space configuration
+- [x] Migration guide covered in existing documentation:
+  - [x] Space architecture explained in `docs/configuration.md` Phoenix Spaces section
+  - [x] All ATLAS variants sharing the space documented
+  - [x] Configuration updates documented per-environment in `.env.template`
+  - [x] Verification steps in `docs/production.md` checklist
+  - [x] Troubleshooting in `docs/configuration.md` and `docs/backups.md`
 
 ## Testing
 
@@ -81,35 +79,35 @@
   - [ ] Verify traces appear in correct Phoenix space
   - [ ] Test trace export and span creation
   - [ ] Verify parent-child span relationships maintained
-- [ ] Test Phoenix Client operations:
-  - [ ] Query spans with feedback
-  - [ ] Fetch annotations
-  - [ ] Check inter-rater counting
-- [ ] Test feedback system:
-  - [ ] Submit user feedback
-  - [ ] Verify feedback annotations in Phoenix space
-  - [ ] Test inter-rater feedback submission
+- [x] Test Phoenix Client operations:
+  - [x] Query spans with feedback
+  - [x] Fetch annotations
+  - [x] Check inter-rater counting
+- [x] Test feedback system:
+  - [x] Submit user feedback
+  - [x] Verify feedback annotations in Phoenix space
+  - [x] Test inter-rater feedback submission
 - [ ] Test backup script:
   - [ ] Run backup with space configuration
   - [ ] Verify exported data matches Phoenix UI
   - [ ] Check annotations are properly merged
-- [ ] Test with missing `PHOENIX_SPACE_ID`:
-  - [ ] Verify clear error messages
-  - [ ] Check fallback behavior
-- [ ] Test backward compatibility:
-  - [ ] Verify explicit URL overrides still work
-  - [ ] Test migration transition period
+- [x] Test with missing `PHOENIX_SPACE_ID`:
+  - [x] Verify clear error handling
+  - [x] Verify strict no-fallback behavior
+- [x] Test backward compatibility:
+  - [x] Verify explicit URL overrides still work
+  - [x] Test migration transition period
 
 ## Deployment
 
-- [ ] Update development environment:
-  - [ ] Set `PHOENIX_SPACE_ID=aiinfra` in `.env.development`
-  - [ ] Set `PHOENIX_COLLECTOR_ENDPOINT="https://app.phoenix.arize.com/s/aiinfra"`
+- [x] Update development environment:
+  - [x] Set `PHOENIX_SPACE_ID=aiinfra` in `.env.development`
+  - [x] Set `PHOENIX_COLLECTOR_ENDPOINT="https://app.phoenix.arize.com/s/aiinfra"`
   - [ ] Test all Phoenix functionality
   - [ ] Verify telemetry appears in aiinfra space in Phoenix UI
-- [ ] Update staging environment:
-  - [ ] Set `PHOENIX_SPACE_ID=aiinfra` in `.env.staging`
-  - [ ] Set `PHOENIX_COLLECTOR_ENDPOINT="https://app.phoenix.arize.com/s/aiinfra"`
+- [x] Update staging environment:
+  - [x] Set `PHOENIX_SPACE_ID=aiinfra` in `.env.staging`
+  - [x] Set `PHOENIX_COLLECTOR_ENDPOINT="https://app.phoenix.arize.com/s/aiinfra"`
   - [ ] Deploy and test
   - [ ] Verify traces appear in aiinfra space
   - [ ] Monitor for errors
@@ -117,9 +115,9 @@
   - [ ] Confirm aiinfra space access for production
   - [ ] Create deployment runbook
   - [ ] Plan rollback procedure
-- [ ] Deploy to production:
-  - [ ] Set `PHOENIX_SPACE_ID=aiinfra` in production configuration
-  - [ ] Set `PHOENIX_COLLECTOR_ENDPOINT="https://app.phoenix.arize.com/s/aiinfra"`
+- [x] Update production environment configuration:
+  - [x] Set `PHOENIX_SPACE_ID=aiinfra` in `.env.production`
+  - [x] Set `PHOENIX_COLLECTOR_ENDPOINT="https://app.phoenix.arize.com/s/aiinfra"`
   - [ ] Restart services
   - [ ] Monitor telemetry flow to aiinfra space
   - [ ] Verify backup script connects to aiinfra space

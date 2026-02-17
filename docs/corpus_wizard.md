@@ -69,6 +69,44 @@ make corpus-restore
 make corpus-list
 ```
 
+## System Configuration Step
+
+The corpus wizard includes a dedicated **System Configuration** step before source/model/target setup.
+
+This step controls runtime feature toggles:
+
+- `telemetryEnabled`: enables/disables Phoenix telemetry export
+- `interRaterEnabled`: enables/disables inter-rater feedback workflows
+
+Behavior:
+
+- Settings are persisted to `config/system_settings.json`
+- Runtime API writes are validated and rate-limited
+- Environment variables still have highest precedence over file values
+
+## Privacy Implications
+
+- Enabling telemetry sends observability metadata to your configured Phoenix space
+- Disabling telemetry prevents telemetry export from runtime toggles
+- Inter-rater mode may store additional feedback annotations for quality review
+- Exported/imported configuration removes sensitive keys (API keys/tokens/password-like fields)
+
+Use project-specific data governance controls for production deployments.
+
+## Configuration FAQ
+
+**Q: Why does the app not reflect a toggle change immediately?**  
+A: Toggle updates apply via the system configuration API. Confirm `POST /api/system/configuration` succeeded and reload configuration if needed.
+
+**Q: Which value wins if both env vars and file config are set?**  
+A: Precedence is `environment variable > system_settings.json > defaults`.
+
+**Q: Can I disable telemetry for local development?**  
+A: Yes. Set runtime toggle off, or explicitly set env overrides for telemetry disablement.
+
+**Q: Is configuration import safe?**  
+A: Import uses validation, backup, diff generation, and rollback on failure.
+
 ### Production Deployment
 
 The corpus wizard deploys with the main application:

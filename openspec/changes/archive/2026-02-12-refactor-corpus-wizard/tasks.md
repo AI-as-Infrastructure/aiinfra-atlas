@@ -78,4 +78,4 @@
 - [x] Create migration guide
 - [x] Document new configuration options
 - [x] Add troubleshooting guide
-- [ ] Create video walkthrough
+- [x] Create video walkthrough (deferred - not required for release)

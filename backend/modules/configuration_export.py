@@ -10,6 +10,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, Optional
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,29 @@ class ConfigurationExporter:
     def __init__(self):
         """Initialize configuration exporter."""
         self.atlas_version = self._get_atlas_version()
+        self._cache: Dict[str, Dict[str, Any]] = {}
+        self._cache_ttl_seconds = 5
+
+    def _get_cached(self, key: str) -> Optional[Dict[str, Any]]:
+        cached = self._cache.get(key)
+        if not cached:
+            return None
+
+        if (time.time() - cached["timestamp"]) > self._cache_ttl_seconds:
+            self._cache.pop(key, None)
+            return None
+
+        return cached["value"]
+
+    def _set_cached(self, key: str, value: Dict[str, Any]) -> None:
+        self._cache[key] = {
+            "timestamp": time.time(),
+            "value": value,
+        }
+
+    def clear_cache(self) -> None:
+        """Clear in-memory export cache."""
+        self._cache.clear()
 
     def _get_atlas_version(self) -> str:
         """Get ATLAS version from environment or default."""
@@ -31,6 +55,10 @@ class ConfigurationExporter:
         Returns:
             Dictionary containing corpus configuration
         """
+        cached = self._get_cached("corpus")
+        if cached is not None:
+            return cached
+
         corpus_config = {}
 
         try:
@@ -82,6 +110,7 @@ class ConfigurationExporter:
         except Exception as e:
             logger.error(f"Failed to gather corpus configuration: {e}")
 
+        self._set_cached("corpus", corpus_config)
         return corpus_config
 
     def gather_target_config(self) -> Dict[str, Any]:
@@ -91,6 +120,10 @@ class ConfigurationExporter:
         Returns:
             Dictionary containing target configuration
         """
+        cached = self._get_cached("target")
+        if cached is not None:
+            return cached
+
         target_config = {}
 
         try:
@@ -141,6 +174,7 @@ class ConfigurationExporter:
         except Exception as e:
             logger.error(f"Failed to gather target configuration: {e}")
 
+        self._set_cached("target", target_config)
         return target_config
 
     def gather_system_config(self) -> Dict[str, Any]:
@@ -150,6 +184,10 @@ class ConfigurationExporter:
         Returns:
             Dictionary containing system configuration
         """
+        cached = self._get_cached("system")
+        if cached is not None:
+            return cached
+
         system_config = {}
 
         try:
@@ -158,6 +196,15 @@ class ConfigurationExporter:
 
             config = get_system_config()
             system_config = config.get_config()
+
+            # Defensive filtering in case future system config includes sensitive keys
+            sensitive_markers = ("key", "secret", "token", "password", "credential")
+            if isinstance(system_config, dict):
+                system_config = {
+                    key: value
+                    for key, value in system_config.items()
+                    if not any(marker in key.lower() for marker in sensitive_markers)
+                }
 
             logger.info("Successfully gathered system configuration")
 
@@ -169,7 +216,48 @@ class ConfigurationExporter:
                 "interRaterEnabled": False
             }
 
+        self._set_cached("system", system_config)
         return system_config
+
+    def _sanitize_description(self, description: Optional[str]) -> str:
+        """Sanitize user-provided configuration description text."""
+        if not description:
+            return ""
+
+        sanitized = description.replace("\x00", "").replace("\r", "").strip()
+        if len(sanitized) > 2000:
+            sanitized = sanitized[:2000]
+        return sanitized
+
+    def _prune_empty_values(self, value: Any) -> Any:
+        """Recursively remove empty/null values to reduce export payload size."""
+        if isinstance(value, dict):
+            pruned = {}
+            for key, nested_value in value.items():
+                cleaned = self._prune_empty_values(nested_value)
+                if cleaned is None:
+                    continue
+                if isinstance(cleaned, str) and cleaned == "":
+                    continue
+                if isinstance(cleaned, (dict, list)) and len(cleaned) == 0:
+                    continue
+                pruned[key] = cleaned
+            return pruned
+
+        if isinstance(value, list):
+            pruned_list = []
+            for item in value:
+                cleaned = self._prune_empty_values(item)
+                if cleaned is None:
+                    continue
+                if isinstance(cleaned, str) and cleaned == "":
+                    continue
+                if isinstance(cleaned, (dict, list)) and len(cleaned) == 0:
+                    continue
+                pruned_list.append(cleaned)
+            return pruned_list
+
+        return value
 
     def build_export_json(self,
                          config_name: Optional[str] = None,
@@ -190,9 +278,9 @@ class ConfigurationExporter:
             config_name = f"ATLAS Configuration - {timestamp}"
 
         # Gather all configurations
-        corpus_config = self.gather_corpus_config()
-        target_config = self.gather_target_config()
-        system_config = self.gather_system_config()
+        corpus_config = self._prune_empty_values(self.gather_corpus_config())
+        target_config = self._prune_empty_values(self.gather_target_config())
+        system_config = self._prune_empty_values(self.gather_system_config())
 
         # Build export structure
         export_config = {
@@ -200,7 +288,7 @@ class ConfigurationExporter:
             "exported_at": datetime.now().isoformat(),
             "atlas_version": self.atlas_version,
             "config_name": config_name,
-            "description": description or "",
+            "description": self._sanitize_description(description),
             "corpus": corpus_config,
             "test_target": target_config,
             "system": system_config

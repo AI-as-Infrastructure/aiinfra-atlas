@@ -29,6 +29,7 @@ class ConfigurationImporter:
     def __init__(self):
         """Initialize configuration importer."""
         self.atlas_version = self._get_atlas_version()
+        self.backup_dir = Path("backend/targets/config_import_backups")
 
     def _get_atlas_version(self) -> str:
         """Get ATLAS version from environment or default."""
@@ -344,6 +345,82 @@ class ConfigurationImporter:
             logger.error(f"Failed to apply system configuration: {e}")
             return False
 
+    def create_configuration_backup(self) -> Optional[Path]:
+        """Create a backup of current configuration state before import."""
+        try:
+            from backend.modules.configuration_export import get_configuration_exporter
+
+            exporter = get_configuration_exporter()
+            snapshot = {
+                "created_at": datetime.now().isoformat(),
+                "atlas_config_version": "1.0",
+                "corpus": exporter.gather_corpus_config(),
+                "test_target": exporter.gather_target_config(),
+                "system": exporter.gather_system_config(),
+            }
+
+            self.backup_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = self.backup_dir / f"import_backup_{timestamp}.json"
+
+            with open(backup_path, "w") as f:
+                json.dump(snapshot, f, indent=2)
+
+            logger.info(f"Created configuration backup at {backup_path}")
+            return backup_path
+        except Exception as exc:
+            logger.error(f"Failed to create import backup: {exc}")
+            return None
+
+    def create_configuration_diff(self, current: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a simple recursive diff between current and incoming configuration."""
+        diff = {"added": [], "removed": [], "changed": []}
+
+        def _walk(path: str, left: Any, right: Any) -> None:
+            if isinstance(left, dict) and isinstance(right, dict):
+                left_keys = set(left.keys())
+                right_keys = set(right.keys())
+
+                for key in sorted(right_keys - left_keys):
+                    diff["added"].append(f"{path}.{key}" if path else key)
+                for key in sorted(left_keys - right_keys):
+                    diff["removed"].append(f"{path}.{key}" if path else key)
+                for key in sorted(left_keys & right_keys):
+                    child_path = f"{path}.{key}" if path else key
+                    _walk(child_path, left[key], right[key])
+                return
+
+            if left != right:
+                diff["changed"].append(path)
+
+        _walk("", current or {}, incoming or {})
+        return diff
+
+    def rollback_from_backup(self, backup_path: Path) -> bool:
+        """Rollback applied configuration to a previously saved backup snapshot."""
+        try:
+            with open(backup_path, "r") as f:
+                backup = json.load(f)
+
+            rollback_ok = True
+
+            if "corpus" in backup:
+                rollback_ok = self.apply_corpus_config(backup["corpus"]) and rollback_ok
+            if "test_target" in backup:
+                rollback_ok = self.apply_target_config(backup["test_target"]) and rollback_ok
+            if "system" in backup:
+                rollback_ok = self.apply_system_config(backup["system"]) and rollback_ok
+
+            if rollback_ok:
+                logger.info(f"Rollback succeeded using backup {backup_path}")
+            else:
+                logger.error(f"Rollback completed with errors using backup {backup_path}")
+
+            return rollback_ok
+        except Exception as exc:
+            logger.error(f"Rollback failed: {exc}")
+            return False
+
     def import_configuration(self, config_data: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
         """
         Import and apply a complete configuration.
@@ -360,8 +437,32 @@ class ConfigurationImporter:
             "target_applied": False,
             "system_applied": False,
             "errors": [],
-            "warnings": []
+            "warnings": [],
+            "backup_path": None,
+            "diff": {"added": [], "removed": [], "changed": []}
         }
+
+        # Capture current state and create backup for rollback safety
+        backup_path = self.create_configuration_backup()
+        if backup_path:
+            result["backup_path"] = str(backup_path)
+
+        try:
+            from backend.modules.configuration_export import get_configuration_exporter
+            exporter = get_configuration_exporter()
+            current_state = {
+                "corpus": exporter.gather_corpus_config(),
+                "test_target": exporter.gather_target_config(),
+                "system": exporter.gather_system_config(),
+            }
+            incoming_state = {
+                "corpus": config_data.get("corpus", {}),
+                "test_target": config_data.get("test_target", {}),
+                "system": config_data.get("system", {}),
+            }
+            result["diff"] = self.create_configuration_diff(current_state, incoming_state)
+        except Exception as exc:
+            logger.warning(f"Could not compute configuration diff: {exc}")
 
         # Validate structure
         is_valid, errors = self.validate_import_structure(config_data)
@@ -409,6 +510,15 @@ class ConfigurationImporter:
                 result["errors"].append("Failed to apply system configuration")
 
         result["success"] = success_count > 0 and len(result["errors"]) == 0
+
+        # Roll back any partial application if import failed and we have a backup
+        if not result["success"] and backup_path:
+            rolled_back = self.rollback_from_backup(backup_path)
+            if rolled_back:
+                result["warnings"].append("Import failed and rollback completed from backup")
+            else:
+                result["errors"].append("Import failed and rollback could not be completed")
+
         return result["success"], result
 
 # Singleton instance

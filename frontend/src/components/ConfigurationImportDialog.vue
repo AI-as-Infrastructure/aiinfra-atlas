@@ -1,12 +1,33 @@
 <template>
-  <div v-if="show" class="modal is-active">
+  <div
+    v-if="show"
+    class="modal is-active"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="import-config-title"
+    @keydown.esc.prevent="emit('close')"
+    ref="modalRoot"
+    tabindex="-1"
+  >
     <div class="modal-background" @click="$emit('close')"></div>
     <div class="modal-card">
       <header class="modal-card-head">
-        <p class="modal-card-title">Import Configuration</p>
+        <p id="import-config-title" class="modal-card-title">Import Configuration</p>
         <button class="delete" aria-label="close" @click="$emit('close')"></button>
       </header>
       <section class="modal-card-body">
+        <div v-if="statusMessage" class="notification is-info is-light" aria-live="polite">
+          {{ statusMessage }}
+        </div>
+        <div v-if="importSuccess" class="notification is-success is-light" aria-live="polite">
+          {{ importSuccess }}
+        </div>
+        <div v-if="importError" class="notification is-danger" aria-live="assertive">
+          {{ importError }}
+        </div>
+
+        <progress v-if="loading" class="progress is-info mb-4" max="100">Loading</progress>
+
         <!-- File Upload -->
         <div v-if="!configData" class="file-upload-section">
           <div class="field">
@@ -19,6 +40,8 @@
                   accept=".json"
                   @change="handleFileSelect"
                   ref="fileInput"
+                  aria-label="Choose configuration JSON file"
+                  title="Select a .json configuration file up to 10MB"
                 >
                 <span class="file-cta">
                   <span class="file-icon">
@@ -119,8 +142,9 @@
           @click="validateFile"
           :disabled="!selectedFile || loading"
           :class="{ 'is-loading': loading }"
+          aria-label="Validate selected configuration file"
         >
-          Validate
+          {{ loading ? 'Validating...' : 'Validate' }}
         </button>
         <button
           v-else
@@ -128,24 +152,26 @@
           @click="importConfiguration"
           :disabled="loading"
           :class="{ 'is-loading': loading }"
+          aria-label="Import validated configuration"
         >
-          Import
+          {{ loading ? 'Importing...' : 'Import' }}
         </button>
         <button
           v-if="configData"
           class="button"
           @click="reset"
+          aria-label="Choose a different configuration file"
         >
           Choose Different File
         </button>
-        <button class="button" @click="$emit('close')">Cancel</button>
+        <button class="button" @click="$emit('close')" aria-label="Cancel configuration import">Cancel</button>
       </footer>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, watch, nextTick } from 'vue'
 
 const props = defineProps({
   show: {
@@ -157,23 +183,46 @@ const props = defineProps({
 const emit = defineEmits(['close', 'imported'])
 
 const fileInput = ref(null)
+const modalRoot = ref(null)
 const selectedFile = ref(null)
 const fileName = ref('')
 const configData = ref(null)
 const loading = ref(false)
 const validationErrors = ref([])
 const validationWarnings = ref([])
+const statusMessage = ref('')
+const importError = ref('')
+const importSuccess = ref('')
+
+watch(
+  () => props.show,
+  async (isOpen) => {
+    if (!isOpen) return
+    await nextTick()
+    if (fileInput.value) {
+      fileInput.value.focus()
+      return
+    }
+    if (modalRoot.value) {
+      modalRoot.value.focus()
+    }
+  }
+)
 
 function handleFileSelect(event) {
   const file = event.target.files[0]
+  importError.value = ''
+  importSuccess.value = ''
   if (file) {
     if (file.size > 10 * 1024 * 1024) {
       validationErrors.value = ['File size exceeds 10MB limit']
+      statusMessage.value = ''
       return
     }
     selectedFile.value = file
     fileName.value = file.name
     validationErrors.value = []
+    statusMessage.value = 'File selected. Click Validate to preview import settings.'
   }
 }
 
@@ -183,6 +232,9 @@ async function validateFile() {
   loading.value = true
   validationErrors.value = []
   validationWarnings.value = []
+  importError.value = ''
+  importSuccess.value = ''
+  statusMessage.value = 'Validating configuration file...'
 
   try {
     const formData = new FormData()
@@ -194,9 +246,15 @@ async function validateFile() {
     })
 
     const result = await response.json()
+    if (!response.ok) {
+      validationErrors.value = result.errors || [result.detail || `Validation request failed (${response.status})`]
+      statusMessage.value = ''
+      return
+    }
 
     if (!result.valid) {
       validationErrors.value = result.errors || ['Invalid configuration file']
+      statusMessage.value = ''
       return
     }
 
@@ -204,10 +262,12 @@ async function validateFile() {
     const fileContent = await selectedFile.value.text()
     configData.value = JSON.parse(fileContent)
     validationWarnings.value = result.warnings || []
+    statusMessage.value = 'Validation passed. Review configuration preview, then click Import.'
 
   } catch (error) {
     console.error('Validation failed:', error)
     validationErrors.value = [`Validation failed: ${error.message}`]
+    statusMessage.value = ''
   } finally {
     loading.value = false
   }
@@ -217,6 +277,9 @@ async function importConfiguration() {
   if (!selectedFile.value) return
 
   loading.value = true
+  importError.value = ''
+  importSuccess.value = ''
+  statusMessage.value = 'Importing configuration and applying settings...'
 
   try {
     const formData = new FormData()
@@ -227,23 +290,18 @@ async function importConfiguration() {
       body: formData
     })
 
-    const result = await response.json()
+    const result = await response.json().catch(() => ({}))
 
     if (!result.success && response.status !== 207) {
       throw new Error(result.message || 'Import failed')
     }
 
-    // Show results
-    let message = 'Configuration imported successfully!\n\n'
-    if (result.corpus_applied) message += '✓ Corpus configuration applied\n'
-    if (result.target_applied) message += '✓ Target configuration applied\n'
-    if (result.system_applied) message += '✓ System settings applied\n'
-
+    let message = 'Configuration imported successfully.'
     if (result.warnings && result.warnings.length > 0) {
-      message += '\nWarnings:\n' + result.warnings.join('\n')
+      message += ` ${result.warnings.length} warning(s) returned.`
     }
-
-    alert(message)
+    importSuccess.value = message
+    statusMessage.value = ''
 
     // Emit imported event with the configuration data
     emit('imported', configData.value)
@@ -251,7 +309,8 @@ async function importConfiguration() {
 
   } catch (error) {
     console.error('Import failed:', error)
-    alert(`Import failed: ${error.message}`)
+    importError.value = `Import failed: ${error.message}`
+    statusMessage.value = ''
   } finally {
     loading.value = false
   }
@@ -263,6 +322,9 @@ function reset() {
   fileName.value = ''
   validationErrors.value = []
   validationWarnings.value = []
+  statusMessage.value = ''
+  importError.value = ''
+  importSuccess.value = ''
   if (fileInput.value) {
     fileInput.value.value = ''
   }

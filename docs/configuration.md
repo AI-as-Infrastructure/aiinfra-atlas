@@ -152,9 +152,9 @@ PHOENIX_PROJECT_NAME=ATLAS-Dev
 
 # Phoenix Spaces Configuration
 # Created by AIINFRA (https://aiinfra.anu.edu.au) - configure for your own Phoenix space
-# PHOENIX_SPACE_ID: Your Phoenix space identifier (e.g., 'atlas', 'research', etc.)
-PHOENIX_SPACE_ID=atlas
-PHOENIX_COLLECTOR_ENDPOINT="https://app.phoenix.arize.com/s/atlas"
+# PHOENIX_SPACE_ID: AIINFRA project space used across ATLAS deployments
+PHOENIX_SPACE_ID=aiinfra
+PHOENIX_COLLECTOR_ENDPOINT="https://app.phoenix.arize.com/s/aiinfra"
 PHOENIX_API_KEY="<DEFAULT>"
 PHOENIX_CLIENT_HEADERS="Authorization=Bearer <DEFAULT>"
 
@@ -168,6 +168,7 @@ OTEL_RESOURCE_ATTRIBUTES="service.name=atlas,project.name=ATLAS-Dev"
 - **Space = Organizational Boundary**: A Phoenix space provides isolation for your research project
 - **Projects within Space**: Different environments use different project names:
   - `ATLAS-Dev`, `ATLAS-Staging`, `ATLAS-Prod` (example naming)
+- **Shared AIINFRA Space**: Keep `PHOENIX_SPACE_ID=aiinfra` so all ATLAS variants (including Hansard and Darwin) report to the same organizational boundary
 - **Authentication**: Use Bearer token authentication obtained from Phoenix Cloud settings
 - **Finding Your Space**: Log into Phoenix Cloud and check the URL structure: `https://app.phoenix.arize.com/s/{space-id}/projects`
 - **Getting Started**: Create a space at https://app.phoenix.arize.com and generate API keys from settings
@@ -305,6 +306,112 @@ TELEMETRY_ENABLED=true             # Monitor performance
 ### Memory Issues
 - Error: Workers crashing or high memory usage
 - Solution: Adjust `GUNICORN_WORKERS`, `LLM_MAX_CONCURRENT`, and memory limits
+
+### Phoenix Spaces Issues
+- Error: "PHOENIX_SPACE_ID not configured" or traces not appearing
+- Solution: Ensure `PHOENIX_SPACE_ID=aiinfra` is set in your environment file and `PHOENIX_COLLECTOR_ENDPOINT` uses the `/s/aiinfra` path format
+- Error: 401/403 authentication errors against Phoenix
+- Solution: Verify your API key has write access to the `aiinfra` space in Phoenix Cloud settings. Generate a new space-specific key if needed.
+- Error: Traces appearing in legacy endpoint instead of space
+- Solution: Confirm `PHOENIX_COLLECTOR_ENDPOINT` is `https://app.phoenix.arize.com/s/aiinfra` (not the legacy `/v1/traces` URL)
+
+## Configuration Export and Import
+
+ATLAS supports full configuration portability through API endpoints and the corpus wizard UI.
+
+### What Export Includes
+
+- Corpus configuration (active corpus metadata, source and embedding/retrieval settings)
+- Test target configuration (provider, model, retrieval/search settings)
+- System settings (runtime toggles such as telemetry and inter-rater)
+- Export metadata (`atlas_config_version`, `exported_at`, `atlas_version`, `config_name`, `description`)
+
+### Export Endpoint
+
+- `GET /api/configuration/export`
+- Query parameters:
+  - `config_name` (optional)
+  - `description` (optional)
+  - `compress` (optional, boolean) — when `true`, returns `application/gzip` (`.json.gz`)
+
+Example:
+
+```bash
+curl -L "http://localhost:8000/api/configuration/export?config_name=Demo&description=Research%20baseline&compress=true" \
+  -o atlas-config.json.gz
+```
+
+### Import Endpoint
+
+- `POST /api/configuration/import` (multipart form with `file`)
+- Input limit: 10MB JSON file
+- Applies corpus, target, and system settings with backup + diff + rollback safety
+
+Example:
+
+```bash
+curl -X POST "http://localhost:8000/api/configuration/import" \
+  -F "file=@atlas-config.json"
+```
+
+### Validate Endpoint
+
+- `POST /api/configuration/validate` (multipart form with `file`)
+- Validates structure/resources/version without applying changes
+- Returns `valid`, `errors`, and `warnings`
+
+### Configuration Schema Reference (v1.0)
+
+Top-level structure:
+
+```json
+{
+  "atlas_config_version": "1.0",
+  "exported_at": "2026-02-17T00:00:00",
+  "atlas_version": "1.0.0",
+  "config_name": "My Configuration",
+  "description": "Optional description",
+  "corpus": {},
+  "test_target": {},
+  "system": {}
+}
+```
+
+Notes:
+- Empty/null fields are pruned during export to reduce payload size
+- Sensitive system keys (tokens/passwords/secrets) are excluded from export
+
+### Validation Rules
+
+- JSON must parse successfully
+- Required top-level structure must be present
+- Version compatibility must pass (`atlas_config_version`)
+- Referenced resources (paths/URLs/models) are validated and reported as warnings/errors
+- Import API is rate-limited for safety
+
+### Version Compatibility and Migration Guidance
+
+- Current export schema version: `1.0`
+- Always validate older exports before import using `/api/configuration/validate`
+- For future schema updates, treat migration as:
+  1. Validate old payload
+  2. Transform to new schema shape
+  3. Re-validate
+  4. Import and confirm diff output
+
+### Troubleshooting Export/Import
+
+- `400 Invalid JSON file format`: file is malformed JSON
+- `413 Configuration file too large`: file exceeds 10MB
+- `429 Too many import attempts`: wait for rate-limit window to reset
+- `207 Multi-Status`: import partially failed; inspect `errors`, `warnings`, `backup_path`, `diff`
+- If import fails, restore from `backup_path` recorded in response
+
+### Example Configuration Usage
+
+- Use wizard export to capture a known-good corpus/target/system baseline
+- Commit sanitized example exports to your internal runbooks (never include secrets)
+- Use validate endpoint in CI-style pre-checks before applying imports in shared environments
 
 ## Advanced Configuration
 

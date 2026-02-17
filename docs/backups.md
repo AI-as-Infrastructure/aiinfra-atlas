@@ -43,10 +43,10 @@ PHOENIX_BACKUP_DIR=./backend/telemetry/backup
 
 # Required: Phoenix Spaces Configuration
 # Created by AIINFRA (https://aiinfra.anu.edu.au) - configure for your own Phoenix space
-PHOENIX_SPACE_ID=atlas
+PHOENIX_SPACE_ID=aiinfra
 PHOENIX_API_KEY="your_phoenix_api_key"
 PHOENIX_CLIENT_HEADERS="Authorization=Bearer your_phoenix_api_key"
-PHOENIX_COLLECTOR_ENDPOINT="https://app.phoenix.arize.com/s/atlas"
+PHOENIX_COLLECTOR_ENDPOINT="https://app.phoenix.arize.com/s/aiinfra"
 
 # Optional: Control what gets exported
 PHOENIX_EXPORT_ANNOTATIONS=true  # Include span annotations (default: true)
@@ -245,11 +245,18 @@ The backup and analysis system supports ATLAS quality monitoring:
 **Backup fails with authentication error:**
 - Check `PHOENIX_CLIENT_HEADERS` in your `.env.production` file
 - Verify API key is current and has required permissions
-- Test Phoenix connectivity: `curl -H "api_key=your_key" https://app.phoenix.arize.com/v1/traces`
+- Test Phoenix connectivity: `curl -H "api_key=your_key" https://app.phoenix.arize.com/s/aiinfra/v1/traces`
+- Ensure the API key has access to the `aiinfra` space (check Phoenix Cloud > Settings > API Keys)
+
+**Backup fails to connect to Phoenix space:**
+- Verify `PHOENIX_SPACE_ID=aiinfra` is set in your environment file
+- Confirm `PHOENIX_COLLECTOR_ENDPOINT` uses the space-based URL format: `https://app.phoenix.arize.com/s/aiinfra`
+- If using a custom space, ensure the space exists and your API key has access
+- The backup script constructs the base URL from `PHOENIX_SPACE_ID` -- if missing, it will fail with a clear error
 
 **No data in backup files:**
 - Verify project names in `PHOENIX_PROJECT_BACKUPS` match Phoenix exactly
-- Check that projects have recent spans in Phoenix UI
+- Check that projects have recent spans in the Phoenix UI at `https://app.phoenix.arize.com/s/aiinfra/projects`
 - Review backup logs for filtering or date range issues
 
 **Analysis fails on backup data:**

@@ -86,6 +86,8 @@ For staging deployments, see the [Staging Environment Guide](staging.md).
 | `ENVIRONMENT` | Deployment environment | `production` |
 | `VITE_API_URL` | Frontend API URL | `https://your-domain.com` |
 | `REDIS_PASSWORD` | Redis authentication password | `secure-random-password` |
+| `PHOENIX_SPACE_ID` | Phoenix space identifier | `aiinfra` |
+| `PHOENIX_COLLECTOR_ENDPOINT` | Phoenix space endpoint | `https://app.phoenix.arize.com/s/aiinfra` |
 
 ### LLM Configuration
 
@@ -115,13 +117,20 @@ AWS_SECRET_ACCESS_KEY=...
 ```bash
 # Phoenix Spaces Configuration
 # Configure for your own Phoenix space
-PHOENIX_SPACE_ID=atlas
+PHOENIX_SPACE_ID=aiinfra
 PHOENIX_API_KEY=your_phoenix_api_key
 PHOENIX_CLIENT_HEADERS="Authorization=Bearer your_phoenix_api_key"
 PHOENIX_PROJECT_NAME=ATLAS-Prod
-PHOENIX_COLLECTOR_ENDPOINT="https://app.phoenix.arize.com/s/atlas"
+PHOENIX_COLLECTOR_ENDPOINT="https://app.phoenix.arize.com/s/aiinfra"
 ```
 **Note**: Create your own Phoenix space at https://app.phoenix.arize.com and configure these variables with your space ID and API keys. Different environments (Dev/Staging/Prod) should use different `PHOENIX_PROJECT_NAME` values within the same space.
+
+**Production Phoenix Setup Checklist:**
+1. Verify `PHOENIX_SPACE_ID=aiinfra` is set in `.env.production`
+2. Verify `PHOENIX_COLLECTOR_ENDPOINT` uses the space-based URL: `https://app.phoenix.arize.com/s/aiinfra`
+3. Confirm your API key has write access to the `aiinfra` space
+4. After deployment, verify traces appear at `https://app.phoenix.arize.com/s/aiinfra/projects`
+5. Test backup script connectivity: `make backup-prod`
 
 **Authentication (AWS Cognito):**
 ```bash
@@ -130,6 +139,41 @@ VITE_COGNITO_REGION=us-west-1
 VITE_COGNITO_USERPOOL_ID=us-west-1_...
 VITE_COGNITO_CLIENT_ID=...
 ```
+
+### Runtime System Configuration Options
+
+ATLAS supports runtime system toggles persisted in `config/system_settings.json`:
+
+- `telemetryEnabled`
+- `interRaterEnabled`
+
+Configuration precedence is:
+
+1. Environment variables
+2. `config/system_settings.json`
+3. Built-in defaults
+
+For production, keep environment overrides explicit for critical controls.
+
+### System Configuration API Endpoint
+
+Authenticated endpoint:
+
+- `POST /api/system/configuration`
+
+Request body:
+
+```json
+{
+	"telemetryEnabled": true,
+	"interRaterEnabled": false
+}
+```
+
+Related endpoints:
+
+- `GET /api/system/configuration`
+- `POST /api/system/configuration/reload`
 
 ## Maintenance
 

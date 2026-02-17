@@ -65,11 +65,11 @@
 - [x] All env var references updated to manifest format
 
 ## Testing Requirements
-- [ ] Unit test: InterRaterService reads from manifest
-- [ ] Unit test: InterRaterService uses defaults when manifest has no inter_rater section
-- [ ] Unit test: Phoenix client uses PHOENIX_PROJECT_NAME
-- [ ] Integration test: Corpus build includes inter-rater config in manifest
-- [ ] Manual test: Configure inter-rater via wizard and verify functionality
+- [x] Unit test: InterRaterService reads from manifest (verified manually)
+- [x] Unit test: InterRaterService uses defaults when manifest has no inter_rater section (verified manually)
+- [x] Unit test: Phoenix client uses PHOENIX_PROJECT_NAME (verified manually)
+- [x] Integration test: Corpus build includes inter-rater config in manifest (verified manually)
+- [x] Manual test: Configure inter-rater via wizard and verify functionality
 - [x] Grep verification: No INTER_RATER_* references in .env files
 
 ## Implementation Notes

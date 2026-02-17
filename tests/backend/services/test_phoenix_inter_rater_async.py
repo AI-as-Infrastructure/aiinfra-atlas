@@ -13,6 +13,11 @@ from unittest.mock import AsyncMock, Mock, patch
 import httpx
 
 
+@pytest.fixture(autouse=True)
+def configure_phoenix_endpoint(monkeypatch):
+    monkeypatch.setenv('PHOENIX_COLLECTOR_ENDPOINT', 'https://app.phoenix.arize.com/s/aiinfra')
+
+
 class TestPhoenixInterRaterCountAsync:
     """Test suite for async get_inter_rater_count method"""
 
@@ -190,6 +195,41 @@ class TestPhoenixInterRaterCountAsync:
 
             # Should return 0 on exception
             assert count == 0
+
+    @pytest.mark.asyncio
+    async def test_uses_configured_space_endpoint(self, monkeypatch):
+        monkeypatch.setenv('PHOENIX_COLLECTOR_ENDPOINT', 'https://app.phoenix.arize.com/s/aiinfra')
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {'data': []}
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
+
+        mock_context = AsyncMock()
+        mock_context.__aenter__.return_value = mock_client
+        mock_context.__aexit__.return_value = None
+
+        with patch('httpx.AsyncClient', return_value=mock_context):
+            from backend.services.phoenix_client import PhoenixAPIClient
+
+            client = PhoenixAPIClient()
+            await client.get_inter_rater_count('span_space')
+
+            called_url = mock_client.get.call_args.args[0]
+            assert called_url.startswith('https://app.phoenix.arize.com/s/aiinfra/v1/projects/')
+
+    @pytest.mark.asyncio
+    async def test_returns_zero_when_endpoint_not_configured(self, monkeypatch):
+        monkeypatch.delenv('PHOENIX_COLLECTOR_ENDPOINT', raising=False)
+
+        from backend.services.phoenix_client import PhoenixAPIClient
+
+        client = PhoenixAPIClient()
+        count = await client.get_inter_rater_count('span_missing_endpoint')
+
+        assert count == 0
 
 
 class TestAsyncIntegration:

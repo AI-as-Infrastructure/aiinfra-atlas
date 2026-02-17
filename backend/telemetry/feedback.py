@@ -221,7 +221,13 @@ async def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str =
         formatted_span_id = str(span_id)
     
     
-    phoenix_endpoint = os.getenv('PHOENIX_COLLECTOR_ENDPOINT', 'https://app.phoenix.arize.com')
+    phoenix_endpoint = os.getenv('PHOENIX_COLLECTOR_ENDPOINT', '').strip()
+    if not phoenix_endpoint:
+        logger.error("PHOENIX_COLLECTOR_ENDPOINT not configured - feedback annotation will fail")
+        return False
+    if "app.phoenix.arize.com" in phoenix_endpoint and "/s/" not in phoenix_endpoint:
+        logger.error("PHOENIX_COLLECTOR_ENDPOINT must include '/s/<space-id>' for Phoenix cloud")
+        return False
     # Use synchronous processing to get immediate feedback. For POST, use non-project path.
     annotation_endpoint = f"{phoenix_endpoint}/v1/span_annotations?sync=true"
     

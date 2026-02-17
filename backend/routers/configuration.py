@@ -5,12 +5,15 @@ Provides API endpoints for exporting and importing ATLAS configurations.
 """
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Body, Depends
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from typing import Dict, Any, Optional
 import json
+import gzip
 import logging
 import io
+import time
+from collections import defaultdict, deque
 
 from backend.modules.configuration_export import get_configuration_exporter
 from backend.modules.configuration_import import get_configuration_importer
@@ -18,6 +21,29 @@ from backend.modules.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/configuration", tags=["configuration"])
+
+IMPORT_WINDOW_SECONDS = 60
+IMPORT_RATE_LIMIT = 10
+_import_requests = defaultdict(deque)
+
+
+def _user_identifier(user: dict) -> str:
+    if not isinstance(user, dict):
+        return "anonymous"
+    return str(user.get("sub") or user.get("username") or user.get("email") or "anonymous")
+
+
+def _check_import_rate_limit(user_key: str) -> bool:
+    now = time.time()
+    request_times = _import_requests[user_key]
+    while request_times and now - request_times[0] > IMPORT_WINDOW_SECONDS:
+        request_times.popleft()
+
+    if len(request_times) >= IMPORT_RATE_LIMIT:
+        return False
+
+    request_times.append(now)
+    return True
 
 class ExportRequest(BaseModel):
     """Request model for configuration export."""
@@ -28,6 +54,7 @@ class ExportRequest(BaseModel):
 async def export_configuration(
     config_name: Optional[str] = None,
     description: Optional[str] = None,
+    compress: bool = False,
     user: dict = Depends(get_current_user)
 ):
     """
@@ -46,11 +73,24 @@ async def export_configuration(
         # Build export configuration
         export_config = exporter.build_export_json(config_name, description)
 
+        filename_base = f"atlas_config_{export_config['exported_at'][:10]}"
+
+        if compress:
+            payload = json.dumps(export_config, separators=(",", ":")).encode("utf-8")
+            compressed_payload = gzip.compress(payload)
+            return Response(
+                content=compressed_payload,
+                media_type="application/gzip",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{filename_base}.json.gz"'
+                },
+            )
+
         # Return as JSON response
         return JSONResponse(
             content=export_config,
             headers={
-                "Content-Disposition": f'attachment; filename="atlas_config_{export_config["exported_at"][:10]}.json"'
+                "Content-Disposition": f'attachment; filename="{filename_base}.json"'
             }
         )
 
@@ -76,6 +116,13 @@ async def import_configuration(
         Import result with success status and any warnings/errors
     """
     try:
+        user_key = _user_identifier(user)
+        if not _check_import_rate_limit(user_key):
+            raise HTTPException(
+                status_code=429,
+                detail="Too many import attempts. Please wait before retrying."
+            )
+
         # Check file size
         contents = await file.read()
         if len(contents) > 10 * 1024 * 1024:  # 10MB limit
@@ -97,6 +144,17 @@ async def import_configuration(
         # Import configuration
         importer = get_configuration_importer()
         success, result = importer.import_configuration(config_data)
+
+        logger.info(
+            "Configuration import requested",
+            extra={
+                "user": user_key,
+                "success": success,
+                "warnings": len(result.get("warnings", [])),
+                "errors": len(result.get("errors", [])),
+                "backup_path": result.get("backup_path"),
+            },
+        )
 
         if not success:
             # Return errors but don't fail completely
