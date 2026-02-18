@@ -43,14 +43,49 @@ Update the `/api/vector-store-info` endpoint and `VectorStoreInfo.vue` to displa
 
 Think carefully about what fields genuinely aid reproducibility vs adding noise. The goal is to help a researcher understand whether their results could differ due to environment differences.
 
-### 2. Citation Metadata Improvements
+### 2. Citation Metadata Regression (CHECKED: main branch comparison)
 
-The `source_url` field is stored in document metadata by `CitationEnricher` (`backend/modules/citation_enricher.py:55-56`) but is not explicitly surfaced in the citation object returned by `format_document_for_citation()` (`backend/retrievers/base_retriever.py:329-344`).
+The feature branch `format_document_for_citation()` in `backend/retrievers/base_retriever.py:283-344` is a **regression** compared to the main branch version in `backend/retrievers/hansard_retriever.py:649-675`.
+
+**Main branch returns** (13 explicit fields):
+```python
+{
+    "id": doc_id,
+    "retrieval_id": doc_id,
+    "title": meta.get("title", ...),
+    "url": meta.get("url", ""),
+    "date": meta.get("date", ""),
+    "page": meta.get("page", ""),
+    "corpus": meta.get("corpus", ""),
+    "text": preview,           # 300-char preview
+    "quote": preview,
+    "content": text,
+    "full_content": text,
+    "loc": meta.get("loc", ""),
+    "weight": 1.0,
+    "has_more": len(text) > 300,
+}
+```
+
+**Feature branch returns** (4 explicit fields + raw metadata dump):
+```python
+{
+    "content": content[:500],
+    "metadata": metadata,      # raw dict — not explicitly structured
+    "source": source,
+    "corpus": corpus_display,
+}
+```
+
+The feature branch is missing: `id`, `retrieval_id`, `title`, `url`, `date`, `page`, `text`, `quote`, `full_content`, `loc`, `weight`, `has_more`. The frontend `CitationList.vue` expects fields like `url`, `text`, `quote`, `full_content`, `retrieval_id`/`source_id`.
+
+Note: `source_url` is not surfaced on either branch. The main branch uses `url` (from `meta.get("url")`). The `CitationEnricher` stores `source_url` in document metadata but neither branch extracts it into the citation object.
 
 **Changes needed:**
-- Add `source_url` as an explicit field in the citation response object
-- Compare with main branch citation handling to ensure feature parity
-- Determine which additional metadata fields should be explicitly surfaced vs left in the raw metadata dict
+- Restore feature parity with main branch citation fields
+- Add `source_url` extraction (in addition to `url`) for documents enriched by `CitationEnricher`
+- Ensure the feature branch function works with the corpus wizard's dynamic filter system (filter_1/filter_2) while also supporting the main branch's static corpus field
+- Keep the feature branch improvements (enrichment fields, 500-char content) alongside the restored fields
 
 ### 3. VITE_SITE_TITLE Build Integration
 
@@ -84,3 +119,4 @@ This proposal covers UI polish and metadata improvements only. No changes to cor
 - Adding build metadata increases manifest size (minor)
 - VITE_SITE_TITLE investigation may reveal a bug requiring a separate fix
 - Existing v1.3 manifests will not display build environment data (no backward compatibility — users must rebuild their vector store to get v1.4 metadata)
+- Citation metadata regression is more significant than originally assessed — the feature branch citation object is missing 10+ fields that `CitationList.vue` expects. This must be fixed to restore working citation display

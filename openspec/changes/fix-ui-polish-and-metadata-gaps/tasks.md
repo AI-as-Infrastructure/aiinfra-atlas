@@ -15,16 +15,21 @@
 ### Frontend Display
 - [ ] 1.8 Update `frontend/src/components/VectorStoreInfo.vue` to display build metadata in the modal
 
-## 2. Citation Metadata Improvements
+## 2. Citation Metadata Regression Fix
+
+**Main branch comparison complete**: Feature branch is missing 10+ fields that `CitationList.vue` expects. See `proposal.md` section 2 for full field-by-field comparison.
 
 ### Backend
-- [ ] 2.1 Compare `format_document_for_citation()` in `backend/retrievers/base_retriever.py:283-344` with main branch to ensure feature parity
-- [ ] 2.2 Add `source_url` as an explicit field in the citation response dictionary (extract from `metadata.get('source_url')`)
-- [ ] 2.3 Review which additional metadata fields should be explicitly surfaced vs left in the raw metadata dict
+- [x] 2.1 Compare `format_document_for_citation()` in `backend/retrievers/base_retriever.py:283-344` with main branch `backend/retrievers/hansard_retriever.py:649-675` — **DONE: regression confirmed**
+- [ ] 2.2 Restore missing fields: `id`, `retrieval_id`, `title`, `url`, `date`, `page`, `text`, `quote`, `full_content`, `loc`, `weight`, `has_more`
+- [ ] 2.3 Add `source_url` extraction from metadata (not present on either branch currently)
+- [ ] 2.4 Keep feature branch improvements: dynamic filter_1/filter_2 corpus display, enrichment fields
+- [ ] 2.5 Merge both approaches: main branch's explicit field extraction + feature branch's filter system and enrichment
 
 ### Frontend
-- [ ] 2.4 Verify frontend citation display renders `source_url` when present (as a clickable link)
-- [ ] 2.5 Test with documents that have `source_url` set and documents that do not
+- [ ] 2.6 Verify `CitationList.vue` renders correctly with restored fields (`url`, `text`, `quote`, `full_content`)
+- [ ] 2.7 Add `source_url` rendering as clickable link when present
+- [ ] 2.8 Test with documents that have various metadata combinations
 
 ## 3. VITE_SITE_TITLE Build Integration
 
