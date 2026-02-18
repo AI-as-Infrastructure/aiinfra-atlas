@@ -16,7 +16,7 @@ The build section SHALL include at minimum: compute mode (GPU/CPU), build durati
 - **WHEN** a user views the Vector Store Overview modal
 - **THEN** the build environment section SHALL be displayed showing compute mode, platform, GPU/CPU details, and software versions
 
-#### Scenario: Backward compatibility with v1.3 manifests
+#### Scenario: v1.3 manifests not supported
 - **WHEN** a v1.3 manifest (without `build` section) is loaded
-- **THEN** the Vector Store Overview SHALL display all existing fields without error
-- **AND** the build environment section SHALL be omitted or show "Not available"
+- **THEN** the build environment section SHALL NOT be displayed
+- **AND** no backward compatibility handling is required — users MUST rebuild their vector store to produce a v1.4 manifest

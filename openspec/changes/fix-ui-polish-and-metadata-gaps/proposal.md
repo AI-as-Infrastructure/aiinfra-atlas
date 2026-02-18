@@ -81,6 +81,6 @@ This proposal covers UI polish and metadata improvements only. No changes to cor
 
 ## Risks
 
-- Bumping manifest version to 1.4 requires backward compatibility in manifest readers
 - Adding build metadata increases manifest size (minor)
 - VITE_SITE_TITLE investigation may reveal a bug requiring a separate fix
+- Existing v1.3 manifests will not display build environment data (no backward compatibility — users must rebuild their vector store to get v1.4 metadata)

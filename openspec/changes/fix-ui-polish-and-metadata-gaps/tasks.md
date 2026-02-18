@@ -7,7 +7,6 @@
 - [ ] 1.2 Call `SystemRequirementsChecker.get_system_info()` from `backend/modules/system_requirements.py:206-241` during manifest generation
 - [ ] 1.3 Capture build duration (start/end timing around build process)
 - [ ] 1.4 Bump manifest version from `1.3` to `1.4`
-- [ ] 1.5 Ensure backward compatibility — manifest readers must handle missing `build` section gracefully
 
 ### API Endpoint
 - [ ] 1.6 Update `/api/vector-store-info` endpoint in `backend/routers/retriever.py:42-149` to format and display `build` section
@@ -15,7 +14,6 @@
 
 ### Frontend Display
 - [ ] 1.8 Update `frontend/src/components/VectorStoreInfo.vue` to display build metadata in the modal
-- [ ] 1.9 Test display with both v1.3 manifests (no build section) and v1.4 manifests (with build section)
 
 ## 2. Citation Metadata Improvements
 
@@ -57,4 +55,3 @@
 - [ ] 6.4 Verify VITE_SITE_TITLE reflects corpus display name after build + restart
 - [ ] 6.5 Verify Test Target box no longer shows redundant label
 - [ ] 6.6 Verify export buttons are side by side with consistent styling
-- [ ] 6.7 Test backward compatibility with existing v1.3 manifests (no build section)
