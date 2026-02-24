@@ -24,14 +24,12 @@
 					<div class="mb-4">
 						<TelemetryToggle />
 					</div>
-					<div class="mb-4">
+					<div class="mb-4 export-buttons">
 						<ConfigurationExportButton />
+						<ExportButton />
 					</div>
 					<div class="mb-4">
 						<TestTargetBox />
-					</div>
-					<div class="export-btn-container">
-						<ExportButton />
 					</div>
 				</div>
 			</div>
@@ -189,12 +187,13 @@ watch(qaId, (newQaId) => {
 	gap: 0.5rem;
 }
 
-.export-btn-container {
-	margin-top: 0;
+.export-buttons {
+	display: flex;
+	gap: 0.5rem;
 }
-.export-btn-container button,
-.export-btn-container .button {
-	width: 100%;
+.export-buttons .button {
+	flex: 1;
+	font-size: 0.85rem;
 }
 
 /* Ensure columns have proper spacing */

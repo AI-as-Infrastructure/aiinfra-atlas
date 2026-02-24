@@ -310,12 +310,13 @@ def generate_response(
                     # Add output.value for Phoenix high-level overview
                     llm_span.set_attribute("output.value", preview)
 
-                    # NEW: propagate preview to the parent/root RAG pipeline span so that it shows in Phoenix overview
+                    # Propagate preview to the parent/root RAG pipeline span so that it shows in Phoenix overview
                     try:
                         from backend.telemetry.spans import find_session_root_span_id, update_span_attributes
                         root_span_id = find_session_root_span_id(session_id)
                         # Only update if we found a distinct root span (i.e., not the same as this LLM span)
-                        if root_span_id and root_span_id != span_id:
+                        llm_span_id = str(llm_span.get_span_context().span_id)
+                        if root_span_id and root_span_id != llm_span_id:
                             update_span_attributes(
                                 root_span_id,
                                 {
@@ -327,12 +328,11 @@ def generate_response(
                     except Exception as root_update_error:
                         logger.debug(
                             f"Could not propagate output.value to root span: {root_update_error}",
-                            exc_info=True,
                         )
 
                 except Exception as e:
                     # Handle streaming errors
-                    logger.error(f"Error during streaming: {e}", exc_info=True)
+                    logger.error(f"Error during streaming: {e}")
 
                     # Set error information using direct span attributes
                     error_summary = f"Error generating response: {str(e)}"
@@ -363,7 +363,7 @@ def generate_response(
 
             except Exception as e:
                 # Handle any other errors
-                logger.error(f"Error in LLM processing: {e}", exc_info=True)
+                logger.error(f"Error in LLM processing: {e}")
 
                 # Set error information using direct span attributes
                 error_summary = f"Error in LLM processing: {str(e)}"
@@ -394,7 +394,7 @@ def generate_response(
 
     except Exception as e:
         # Handle any exceptions outside of span context
-        logger.error(f"Error creating LLM span: {e}", exc_info=True)
+        logger.error(f"Error creating LLM span: {e}")
 
         # Yield generic error message
         error_data = create_error_message("span_creation_error", "An error occurred while processing your request")
@@ -585,7 +585,7 @@ def generate_response_with_telemetry(
 
     except Exception as span_error:
         # Handle the case where create_span itself fails
-        logger.error(f"Error creating LLM span: {span_error}", exc_info=True)
+        logger.error(f"Error creating LLM span: {span_error}")
 
         # Generate QA ID if not provided
         if not qa_id:

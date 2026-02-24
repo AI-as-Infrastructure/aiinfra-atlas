@@ -254,7 +254,7 @@ class BaseRetriever(ABC):
                 docs = await self._get_relevant_documents(query, **kwargs)
                 return docs
             except Exception as e:
-                logger.error(f"Error in document retrieval: {e}", exc_info=True)
+                logger.error(f"Error in document retrieval: {e}")
                 raise
 
     @abstractmethod
@@ -304,20 +304,33 @@ def format_document_for_citation(document, idx: Optional[int] = None) -> Optiona
 
     # Extract key metadata fields with fallbacks
     source = metadata.get('source', 'Unknown')
+    # Use chunk_id (vector store document ID) for traceability back to the
+    # specific chunk in ChromaDB. Falls back to a generic index-based ID.
+    chunk_id = metadata.get('chunk_id', '')
+    doc_id = chunk_id or (f"doc_{idx + 1}" if idx is not None else metadata.get('id', 'unknown'))
 
     # Support both new 2-filter system and legacy corpus field
     filter_1 = metadata.get('filter_1')
     filter_2 = metadata.get('filter_2')
     corpus = metadata.get('corpus')  # Legacy field
+    corpus_label = metadata.get('corpus_label')  # Human-readable label
 
-    # Build corpus display string
-    corpus_display = corpus  # Use legacy field if available
+    # Build corpus display string - prefer human-readable label
+    corpus_display = corpus_label or corpus  # Prefer label over ID
     if filter_1 and filter_2:
         corpus_display = f"{filter_1}/{filter_2}"
-    elif filter_1:
+    elif filter_1 and not corpus_label:
         corpus_display = filter_1
-    elif not corpus:
+    elif not corpus_display:
         corpus_display = 'Unknown'
+
+    # Build title from metadata or source filename
+    title = metadata.get('title', '')
+    if not title and source:
+        title = source.rsplit('/', 1)[-1].rsplit('\\', 1)[-1]
+
+    # 300-char preview for display
+    preview = content[:300] if len(content) > 300 else content
 
     # Extract optional enrichment metadata
     enrichment_fields = {}
@@ -325,12 +338,30 @@ def format_document_for_citation(document, idx: Optional[int] = None) -> Optiona
         if field in metadata:
             enrichment_fields[field] = metadata[field]
 
-    # Build citation dictionary
+    # Build citation dictionary with all fields frontend expects
     citation = {
-        "content": content[:500] if len(content) > 500 else content,
-        "metadata": metadata,
+        # Core identification
+        "id": doc_id,
+        "retrieval_id": doc_id,
         "source": source,
-        "corpus": corpus_display
+        "corpus": corpus_display,
+        # Display fields (CitationList.vue uses text/quote/full_content)
+        "title": title,
+        "text": preview,
+        "quote": preview,
+        "content": content[:500] if len(content) > 500 else content,
+        "full_content": content,
+        # Metadata fields
+        "url": metadata.get('url', '') or metadata.get('source_url', ''),
+        "source_url": metadata.get('source_url', '') or metadata.get('url', ''),
+        "date": metadata.get('date', ''),
+        "page": metadata.get('page', ''),
+        "loc": metadata.get('loc', ''),
+        # Scoring
+        "weight": 1.0,
+        "has_more": len(content) > 300,
+        # Raw metadata for additional access
+        "metadata": metadata,
     }
 
     # Add enrichment fields if present

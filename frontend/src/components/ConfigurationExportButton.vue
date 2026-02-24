@@ -1,21 +1,12 @@
 <template>
   <button
-    class="button is-link is-light config-export-btn"
+    class="button is-link is-light"
     @click="exportConfiguration"
     :disabled="loading"
     title="Export corpus and test target configuration"
     aria-label="Export ATLAS configuration as JSON"
   >
-    <span class="icon">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-        <!-- Gear icon -->
-        <path d="M8 4.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zM5.5 8a2.5 2.5 0 1 1 5 0 2.5 2.5 0 0 1-5 0z"/>
-        <path d="M6.5 0L5.7 1.4c-.3.1-.6.2-.9.3L3.1.5 1 2.6l1.2 1.7c-.1.3-.2.6-.3.9L0 6v4l1.4.8c.1.3.2.6.3.9L.5 12.9 2.6 15l1.7-1.2c.3.1.6.2.9.3L6 16h4l.8-1.4c.3-.1.6-.2.9-.3l1.7 1.2 2.1-2.1-1.2-1.7c.1-.3.2-.6.3-.9L16 10V6l-1.4-.8c-.1-.3-.2-.6-.3-.9l1.2-1.7L13.4 1l-1.7 1.2c-.3-.1-.6-.2-.9-.3L10 0H6.5z"/>
-        <!-- Download arrow overlay -->
-        <path d="M8 6v3m0 0l-1.5-1.5M8 9l1.5-1.5" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-    </span>
-    <span>Export Config</span>
+    Export Config
   </button>
 </template>
 
@@ -79,15 +70,7 @@ async function exportConfiguration() {
 </script>
 
 <style scoped>
-.config-export-btn {
-  min-width: 140px;
-}
-
-.config-export-btn .icon {
-  margin-right: 0.5rem;
-}
-
-.config-export-btn:disabled {
+button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }

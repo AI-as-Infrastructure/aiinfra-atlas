@@ -11,11 +11,11 @@
 
 ## API Key Permissions (CRITICAL)
 
-- [ ] **Verify API key has write access to `aiinfra` space in Phoenix Cloud**
-  - [ ] Log into Phoenix Cloud Settings for `aiinfra` space
-  - [ ] Check API Keys section - ensure current key has access OR create new space-specific key
-  - [ ] Test: Submit query with telemetry and verify traces appear in `https://app.phoenix.arize.com/s/aiinfra/projects`
-  - [ ] If using new key, update all environment files with new key value
+- [x] **Verify API key has write access to `aiinfra` space in Phoenix Cloud**
+  - [x] Log into Phoenix Cloud Settings for `aiinfra` space
+  - [x] Check API Keys section - ensure current key has access OR create new space-specific key
+  - [x] Test: Submit query with telemetry and verify traces appear in `https://app.phoenix.arize.com/s/aiinfra/projects`
+  - [x] If using new key, update all environment files with new key value
 
 ## Core Telemetry Updates (PRIMARY)
 
@@ -23,7 +23,7 @@
   - Currently: `f"{phoenix_endpoint}/v1/traces"`
   - Should work with: `https://app.phoenix.arize.com/s/{space-id}/v1/traces`
 - [x] Add validation to check `PHOENIX_SPACE_ID` is configured when using default endpoint
-- [ ] Test OTEL trace export with space-based endpoint in development
+- [x] Test OTEL trace export with space-based endpoint in development
 
 ## Phoenix Client Updates
 
@@ -75,10 +75,10 @@
 
 ## Testing
 
-- [ ] Test core telemetry with space-based endpoint:
-  - [ ] Verify traces appear in correct Phoenix space
-  - [ ] Test trace export and span creation
-  - [ ] Verify parent-child span relationships maintained
+- [x] Test core telemetry with space-based endpoint:
+  - [x] Verify traces appear in correct Phoenix space
+  - [x] Test trace export and span creation
+  - [x] Verify parent-child span relationships maintained
 - [x] Test Phoenix Client operations:
   - [x] Query spans with feedback
   - [x] Fetch annotations
@@ -87,10 +87,10 @@
   - [x] Submit user feedback
   - [x] Verify feedback annotations in Phoenix space
   - [x] Test inter-rater feedback submission
-- [ ] Test backup script:
-  - [ ] Run backup with space configuration
-  - [ ] Verify exported data matches Phoenix UI
-  - [ ] Check annotations are properly merged
+- [x] Test backup script:
+  - [x] Run backup with space configuration
+  - [x] Verify exported data matches Phoenix UI
+  - [x] Check annotations are properly merged
 - [x] Test with missing `PHOENIX_SPACE_ID`:
   - [x] Verify clear error handling
   - [x] Verify strict no-fallback behavior
@@ -103,31 +103,31 @@
 - [x] Update development environment:
   - [x] Set `PHOENIX_SPACE_ID=aiinfra` in `.env.development`
   - [x] Set `PHOENIX_COLLECTOR_ENDPOINT="https://app.phoenix.arize.com/s/aiinfra"`
-  - [ ] Test all Phoenix functionality
-  - [ ] Verify telemetry appears in aiinfra space in Phoenix UI
+  - [x] Test all Phoenix functionality
+  - [x] Verify telemetry appears in aiinfra space in Phoenix UI
 - [x] Update staging environment:
   - [x] Set `PHOENIX_SPACE_ID=aiinfra` in `.env.staging`
   - [x] Set `PHOENIX_COLLECTOR_ENDPOINT="https://app.phoenix.arize.com/s/aiinfra"`
-  - [ ] Deploy and test
-  - [ ] Verify traces appear in aiinfra space
-  - [ ] Monitor for errors
-- [ ] Prepare production deployment:
-  - [ ] Confirm aiinfra space access for production
-  - [ ] Create deployment runbook
-  - [ ] Plan rollback procedure
+  - [x] Deploy and test
+  - [x] Verify traces appear in aiinfra space
+  - [x] Monitor for errors
+- [x] Prepare production deployment:
+  - [x] Confirm aiinfra space access for production
+  - [x] Create deployment runbook
+  - [x] Plan rollback procedure
 - [x] Update production environment configuration:
   - [x] Set `PHOENIX_SPACE_ID=aiinfra` in `.env.production`
   - [x] Set `PHOENIX_COLLECTOR_ENDPOINT="https://app.phoenix.arize.com/s/aiinfra"`
-  - [ ] Restart services
-  - [ ] Monitor telemetry flow to aiinfra space
-  - [ ] Verify backup script connects to aiinfra space
+  - [x] Restart services
+  - [x] Monitor telemetry flow to aiinfra space
+  - [x] Verify backup script connects to aiinfra space
 
 ## Post-Migration
 
-- [ ] Monitor Phoenix connectivity across all environments (24 hours)
-- [ ] Verify all traces appear in `aiinfra` space (not legacy)
-- [ ] Confirm all ATLAS projects visible: Hansard-Dev, Hansard-Staging, Hansard-Prod
-- [ ] Confirm backups retrieve data from `aiinfra` space successfully
-- [ ] Document aiinfra space for ATLAS Darwin team to use same configuration
-- [ ] Update GitHub issue #58 with completion status
+- [x] Monitor Phoenix connectivity across all environments (24 hours)
+- [x] Verify all traces appear in `aiinfra` space (not legacy)
+- [x] Confirm all ATLAS projects visible: Hansard-Dev, Hansard-Staging, Hansard-Prod
+- [x] Confirm backups retrieve data from `aiinfra` space successfully
+- [x] Document aiinfra space for ATLAS Darwin team to use same configuration
+- [x] Update GitHub issue #58 with completion status
 - [ ] Archive this OpenSpec change after successful deployment

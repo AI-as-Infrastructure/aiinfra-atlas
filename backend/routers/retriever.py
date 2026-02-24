@@ -23,12 +23,23 @@ def get_retriever_filters():
     try:
         retriever = get_retriever_instance()
 
-        # If no retriever is configured yet (e.g., before corpus is built)
+        # If no retriever is configured yet (e.g., before corpus is built),
+        # return the same format the frontend expects (matching base_retriever schema)
         if retriever is None:
             logger.info("No retriever configured yet - returning empty filter capabilities")
             return JSONResponse(content={
-                "filters": [],
-                "message": "No corpus configured. Please build a corpus using the wizard."
+                "corpus_filtering": {
+                    "supported": False,
+                    "options": []
+                },
+                "time_period_filtering": {
+                    "supported": False,
+                    "options": []
+                },
+                "direction_filtering": {
+                    "supported": False,
+                    "options": []
+                }
             })
 
         filter_capabilities = retriever.get_filter_capabilities()
@@ -44,10 +55,13 @@ async def get_vector_store_info(raw: bool = False):
     """Return vector store manifest information."""
     try:
         current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        manifest_path = os.path.join(current_dir, "targets", "manifest.json")
+        # Check canonical corpus manifest first, then fall back to targets copy
+        manifest_path = os.path.join(current_dir, "corpus", "manifest.json")
+        if not os.path.exists(manifest_path):
+            manifest_path = os.path.join(current_dir, "targets", "manifest.json")
 
         if not os.path.exists(manifest_path):
-            raise HTTPException(status_code=404, detail="Vector store manifest.json not found in backend/targets")
+            raise HTTPException(status_code=404, detail="No manifest.json found. Please build a corpus using the wizard.")
 
         # Load manifest JSON
         try:
@@ -72,17 +86,46 @@ async def get_vector_store_info(raw: bool = False):
                 except Exception:
                     return str(n)
 
-        index_name = data.get("index_name", "(unknown)")
-        embedding_model = data.get("embedding_model", "(unknown)")
+        # Support both legacy flat manifest (v1.1) and nested wizard manifest (v1.2+)
+        em = data.get("embedding_model", "(unknown)")
+        if isinstance(em, dict):
+            # v1.2+ nested format
+            index_name = data.get("corpus_name") or data.get("metadata", {}).get("display_name", "(unknown)")
+            embedding_model = em.get("id", "(unknown)")
+            chunk_size = data.get("embeddings", {}).get("chunk_size")
+            chunk_overlap = data.get("embeddings", {}).get("chunk_overlap")
+            stats = data.get("statistics", {}) or {}
+        else:
+            # v1.1 legacy flat format
+            index_name = data.get("index_name", "(unknown)")
+            embedding_model = em
+            chunk_size = data.get("chunk_size")
+            chunk_overlap = data.get("chunk_overlap")
+            stats = data.get("stats", {}) or {}
+
         created = data.get("created")
-        chunk_size = data.get("chunk_size")
-        chunk_overlap = data.get("chunk_overlap")
         fields = data.get("fields", {}) or {}
-        stats = data.get("stats", {}) or {}
         corpora = (stats.get("corpora") or {}) if isinstance(stats, dict) else {}
         total_chunks = stats.get("total_chunks")
         total_files = stats.get("total_files")
         db_size_mb = stats.get("db_size_mb")
+
+        # v1.2+ stores per-filter stats; derive total_documents from statistics
+        total_documents = stats.get("total_documents")
+
+        # v1.2+ filters can serve as corpus breakdown
+        if not corpora:
+            filters_data = data.get("filters", {})
+            filter_stats = stats.get("filters", {})
+            if filters_data and isinstance(filters_data, dict):
+                for fkey, finfo in filters_data.items():
+                    if isinstance(finfo, dict):
+                        fid = finfo.get("id", fkey)
+                        fstat = filter_stats.get(fid, {}) if filter_stats else {}
+                        corpora[finfo.get("label", fid)] = {
+                            "files": fstat.get("processed"),
+                            "chunks": None
+                        }
 
         # Aggregate totals for words and chars if available per-corpus
         total_words = None
@@ -105,6 +148,8 @@ async def get_vector_store_info(raw: bool = False):
             lines.append(f"DB size: {_fmt_num(db_size_mb)} MB")
 
         totals_line = []
+        if total_documents is not None:
+            totals_line.append(f"documents {_fmt_num(total_documents)}")
         if total_files is not None:
             totals_line.append(f"files {_fmt_num(total_files)}")
         if total_chunks is not None:
@@ -140,6 +185,56 @@ async def get_vector_store_info(raw: bool = False):
             enum_fields = [k for k, v in fields.items() if isinstance(v, dict) and v.get("type") == "enum"]
             lines.append("")
             lines.append(f"Metadata fields: {len(fields)}" + (f" (enums: {', '.join(enum_fields)})" if enum_fields else ""))
+
+        # Build environment section (v1.4+)
+        build = data.get("build")
+        if build and isinstance(build, dict):
+            lines.append("")
+            lines.append("Build Environment:")
+            mode = build.get("mode")
+            if mode:
+                lines.append(f"  Mode: {mode.upper()}")
+            duration = build.get("duration_seconds")
+            if duration is not None:
+                mins = int(duration // 60)
+                secs = int(duration % 60)
+                lines.append(f"  Duration: {mins}m {secs}s" if mins else f"  Duration: {secs}s")
+            gpu_used = build.get("gpu_used")
+            gpu_name = build.get("gpu_name")
+            gpu_mem = build.get("gpu_memory_gb")
+            if gpu_used and gpu_name:
+                gpu_str = f"  GPU: {gpu_name}"
+                if gpu_mem:
+                    gpu_str += f" ({gpu_mem} GB)"
+                lines.append(gpu_str)
+            elif gpu_used is False:
+                lines.append("  GPU: Not used")
+            cpu_cores = build.get("cpu_cores")
+            ram = build.get("system_ram_gb")
+            if cpu_cores or ram:
+                hw_parts = []
+                if cpu_cores:
+                    hw_parts.append(f"{cpu_cores} cores")
+                if ram:
+                    hw_parts.append(f"{ram} GB RAM")
+                lines.append(f"  Hardware: {', '.join(hw_parts)}")
+            platform_str = build.get("platform")
+            machine = build.get("machine")
+            if platform_str or machine:
+                parts = [p for p in [platform_str, machine] if p]
+                lines.append(f"  Platform: {', '.join(parts)}")
+            py_ver = build.get("python_version")
+            pt_ver = build.get("pytorch_version")
+            cuda_ver = build.get("cuda_version")
+            if py_ver or pt_ver:
+                sw_parts = []
+                if py_ver:
+                    sw_parts.append(f"Python {py_ver}")
+                if pt_ver:
+                    sw_parts.append(f"PyTorch {pt_ver}")
+                if cuda_ver:
+                    sw_parts.append(f"CUDA {cuda_ver}")
+                lines.append(f"  Software: {', '.join(sw_parts)}")
 
         return {"content": "\n".join(lines)}
     except HTTPException:

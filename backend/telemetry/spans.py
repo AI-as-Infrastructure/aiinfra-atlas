@@ -646,5 +646,5 @@ def update_span_attributes(span_id: str, attributes: Dict[str, Any]) -> bool:
             return True
             
     except Exception as e:
-        logger.error(f"Failed to update span {span_id}: {e}", exc_info=True)
+        logger.error(f"Failed to update span {span_id}: {e}")
         return False

@@ -55,11 +55,11 @@ def safe_http_error(
 
     # Log at appropriate level
     if log_level == "warning":
-        logger.warning(log_msg, exc_info=True)
+        logger.warning(log_msg)
     elif log_level == "info":
         logger.info(log_msg)
     else:
-        logger.error(log_msg, exc_info=True)
+        logger.error(log_msg)
 
     return HTTPException(status_code=status_code, detail=user_message)
 
@@ -161,8 +161,7 @@ class ErrorContext:
 
             # Log and convert to HTTPException
             logger.error(
-                f"Error during {self.operation}: {exc_val}",
-                exc_info=True
+                f"Error during {self.operation}: {exc_val}"
             )
             raise HTTPException(
                 status_code=self.default_status,

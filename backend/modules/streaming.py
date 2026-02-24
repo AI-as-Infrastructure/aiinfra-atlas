@@ -154,15 +154,15 @@ async def stream_response_chunks(
                 
         except Exception as e:
             # Log the error
-            logger.error(f"Error streaming response: {e}", exc_info=True)
-            
+            logger.error(f"Error streaming response: {e}")
+
             # Yield error message
             error_message = create_error_message("streaming_error", "An error occurred while streaming the response")
             yield format_sse_message(error_message, event="error")
-            
+
             # Re-raise to allow higher-level error handling
             raise
-        
+
         return
         
     # Otherwise, create a streaming span as normal
@@ -245,12 +245,12 @@ async def stream_response_chunks(
             streaming_span.set_status(Status(StatusCode.ERROR, str(e)))
             
             # Log the error
-            logger.error(f"Error streaming response: {e}", exc_info=True)
-            
+            logger.error(f"Error streaming response: {e}")
+
             # Yield error message
             error_message = create_error_message("streaming_error", "An error occurred while streaming the response")
             yield format_sse_message(error_message, event="error")
-            
+
             # Re-raise to allow higher-level error handling
             raise
 
@@ -301,8 +301,9 @@ def stream_documents_as_references(
             # Format documents as citations
             citations = []
             for idx, doc in enumerate(documents[:citation_limit]):
-                # Format the document as a citation
                 citation = format_document_for_citation(doc, idx)
+                if citation is None:
+                    continue
                 citation["idx"] = idx
                 citations.append(citation)
             
@@ -364,7 +365,7 @@ def stream_documents_as_references(
             ref_span.set_status(Status(StatusCode.ERROR, str(e)))
             
             # Log the error
-            logger.error(f"Error formatting references: {e}", exc_info=True)
+            logger.error(f"Error formatting references: {e}")
             
             # Return error message
             error_message = create_error_message("reference_error", "An error occurred while processing references")

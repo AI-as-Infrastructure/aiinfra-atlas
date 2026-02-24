@@ -75,12 +75,33 @@ const isLoginPage = computed(() => {
 // Retrieve auth store for use in auth-related functionality
 const authStore = useAuthStore()
 
+// Fetch corpus display name from API for dynamic site title
+async function fetchSiteTitle() {
+  try {
+    const apiUrl = import.meta.env.VITE_API_URL || ''
+    const configUrl = apiUrl
+      ? (apiUrl.endsWith('/') ? `${apiUrl}api/config` : `${apiUrl}/api/config`)
+      : '/api/config'
+    const response = await fetch(configUrl)
+    if (response.ok) {
+      const data = await response.json()
+      if (data.corpus_display_name) {
+        siteTitle.value = data.corpus_display_name
+      }
+    }
+  } catch {
+    // Keep the static fallback title on error
+  }
+}
+
 // Initialize auth state when app is mounted
 onMounted(() => {
   // Only run this if we're not on the callback page to avoid doubled initialization
   if (route.path !== '/callback') {
     authStore.initialize()
   }
+  // Fetch dynamic site title from backend
+  fetchSiteTitle()
 })
 </script>
 

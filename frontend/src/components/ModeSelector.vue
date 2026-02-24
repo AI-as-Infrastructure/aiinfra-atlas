@@ -5,14 +5,12 @@
 
       <!-- Loading State -->
       <div v-if="loading" class="loading-state">
-        <div class="spinner"></div>
         <p>Loading system status...</p>
       </div>
 
       <!-- Already in Deploy Mode -->
       <div v-else-if="currentMode === 'deploy'" class="deploy-mode-active">
         <div class="alert alert-info">
-          <div class="alert-icon">🚀</div>
           <div class="alert-content">
             <h3>System is in Deploy Mode</h3>
             <p>Configuration is locked to ensure consistent testing.</p>
@@ -34,7 +32,6 @@
         <div class="mode-cards">
           <!-- Use Existing Configuration -->
           <div v-if="hasCompleteConfig" class="mode-card">
-            <div class="card-icon">🚀</div>
             <h3>Deploy Mode</h3>
             <div class="card-content">
               <p class="card-description">
@@ -62,7 +59,6 @@
 
           <!-- Configuration Mode -->
           <div class="mode-card">
-            <div class="card-icon">⚙️</div>
             <h3>Configuration Mode</h3>
             <div class="card-content">
               <p class="card-description">
@@ -74,7 +70,7 @@
                 <li>Add or modify test targets</li>
                 <li>Adjust retrieval settings</li>
               </ul>
-              <button @click="enterConfigMode" class="btn btn-secondary">
+              <button @click="enterConfigMode" class="btn btn-primary">
                 Enter Configuration Mode
               </button>
             </div>
@@ -87,8 +83,8 @@
   <!-- Deploy Mode Confirmation Modal -->
   <Teleport to="body">
     <div v-if="showDeployConfirm" class="modal-overlay" @click.self="showDeployConfirm = false">
-      <div class="modal-content">
-        <h2 class="modal-title">⚠️ Enter Deploy Mode?</h2>
+      <div class="modal-dialog">
+        <h2 class="modal-title">Enter Deploy Mode?</h2>
 
         <div class="modal-body">
           <p>Once in Deploy mode:</p>
@@ -160,7 +156,7 @@ export default {
 
     // Mode actions
     const continueToApp = () => {
-      router.push('/chat')
+      window.location.href = '/chat'
     }
 
     const confirmDeployMode = () => {
@@ -184,7 +180,10 @@ export default {
         const data = await response.json()
         console.log('Entered Deploy Mode:', data)
         showDeployConfirm.value = false
-        router.push('/chat')
+        // Full page reload to ensure all components re-fetch from backend
+        setTimeout(() => {
+          window.location.href = '/chat'
+        }, 2000)
       } catch (error) {
         console.error('Failed to enter deploy mode:', error)
         alert(error.message)
@@ -241,70 +240,51 @@ export default {
 </script>
 
 <style scoped>
-/* Mode selector container */
 .mode-selector {
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #fff;
   padding: 2rem;
+  font-family: "Times New Roman", Times, serif;
+  color: #000;
 }
 
 .mode-container {
   width: 100%;
   max-width: 900px;
-  background: white;
-  border-radius: 12px;
+  background: #fff;
   padding: 3rem;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
 }
 
-/* Loading state */
 .loading-state {
   text-align: center;
   padding: 3rem;
 }
 
-.spinner {
-  border: 3px solid #f3f3f3;
-  border-top: 3px solid #667eea;
-  border-radius: 50%;
-  width: 40px;
-  height: 40px;
-  animation: spin 1s linear infinite;
-  margin: 0 auto 1rem;
-}
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-/* Typography */
 .mode-title {
-  font-size: 2.5rem;
-  font-weight: 800;
+  font-size: 2rem;
+  font-weight: bold;
   text-align: center;
   margin-bottom: 2rem;
-  color: #1a202c;
+  color: #000;
 }
 
 .selection-title {
-  font-size: 1.75rem;
-  font-weight: 700;
+  font-size: 1.5rem;
+  font-weight: bold;
   text-align: center;
   margin-bottom: 0.5rem;
-  color: #2d3748;
+  color: #000;
 }
 
 .selection-subtitle {
   text-align: center;
-  color: #718096;
+  color: #555;
   margin-bottom: 2rem;
 }
 
-/* Mode cards */
 .mode-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
@@ -313,50 +293,40 @@ export default {
 }
 
 .mode-card {
-  border: 2px solid #e2e8f0;
-  border-radius: 8px;
+  border: 1px solid #eee;
   padding: 2rem;
-  transition: all 0.3s ease;
 }
 
 .mode-card:hover {
-  border-color: #cbd5e0;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+  border-color: #ccc;
 }
 
-.card-icon {
-  font-size: 3rem;
-  text-align: center;
+.mode-card h3 {
+  font-size: 1.25rem;
+  font-weight: bold;
   margin-bottom: 1rem;
-}
-
-.card-content h3 {
-  font-size: 1.5rem;
-  font-weight: 700;
-  margin-bottom: 1rem;
-  color: #2d3748;
+  color: #000;
   text-align: center;
 }
 
 .card-description {
-  color: #4a5568;
+  color: #333;
   margin-bottom: 1.5rem;
   line-height: 1.6;
 }
 
-/* Config summary */
 .config-summary {
-  background: #f7fafc;
-  border-radius: 6px;
+  background: #fafafa;
   padding: 1rem;
   margin: 1rem 0;
+  border: 1px solid #eee;
 }
 
 .config-item {
   display: flex;
   justify-content: space-between;
   padding: 0.5rem 0;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid #eee;
 }
 
 .config-item:last-child {
@@ -364,70 +334,53 @@ export default {
 }
 
 .config-label {
-  font-weight: 600;
-  color: #4a5568;
+  font-weight: bold;
+  color: #000;
 }
 
 .config-value {
-  color: #2d3748;
+  color: #333;
 }
 
-/* Config options list */
 .config-options {
-  list-style: none;
-  padding: 0;
+  list-style: disc;
+  padding-left: 1.5rem;
   margin: 1rem 0 1.5rem;
 }
 
 .config-options li {
-  padding: 0.5rem 0;
-  padding-left: 1.5rem;
-  position: relative;
-  color: #4a5568;
+  padding: 0.25rem 0;
+  color: #333;
 }
 
-.config-options li::before {
-  content: '✓';
-  position: absolute;
-  left: 0;
-  color: #48bb78;
-  font-weight: bold;
-}
-
-/* Deploy mode active */
 .deploy-mode-active {
   text-align: center;
 }
 
-/* Alerts */
 .alert {
-  border-radius: 8px;
   padding: 1.5rem;
   margin: 2rem 0;
+  border: 1px solid #eee;
 }
 
 .alert-info {
-  background: #ebf8ff;
-  border: 1px solid #90cdf4;
+  background: #fff;
+  border-color: #ccc;
 }
 
 .alert-warning {
-  background: #fffaf0;
-  border: 1px solid #feb2b2;
-}
-
-.alert-icon {
-  font-size: 3rem;
-  margin-bottom: 1rem;
+  background: #fff;
+  border-color: #ccc;
+  font-size: 0.95rem;
 }
 
 .alert-content h3 {
-  color: #2b6cb6;
+  color: #000;
   margin-bottom: 0.5rem;
 }
 
 .alert-content p {
-  color: #2c5282;
+  color: #333;
   margin: 0.5rem 0;
 }
 
@@ -443,16 +396,16 @@ export default {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(255, 255, 255, 0.95);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
 }
 
-.modal-content {
-  background: white;
-  border-radius: 12px;
+.modal-dialog {
+  background: #fff;
+  border: 1px solid #eee;
   padding: 2rem;
   max-width: 500px;
   width: 90%;
@@ -461,10 +414,10 @@ export default {
 }
 
 .modal-title {
-  font-size: 1.5rem;
-  font-weight: 700;
+  font-size: 1.25rem;
+  font-weight: bold;
   margin-bottom: 1rem;
-  color: #2d3748;
+  color: #000;
 }
 
 .modal-body {
@@ -475,7 +428,7 @@ export default {
   list-style: disc;
   padding-left: 1.5rem;
   margin: 1rem 0;
-  color: #4a5568;
+  color: #333;
 }
 
 .warning-list li {
@@ -489,49 +442,40 @@ export default {
   margin-top: 2rem;
 }
 
-/* Buttons */
+/* Buttons - match main app theme */
 .btn {
-  padding: 0.75rem 1.5rem;
-  border-radius: 6px;
-  font-weight: 600;
+  padding: 0.5rem 1.25rem;
+  font-weight: 500;
   font-size: 1rem;
   cursor: pointer;
-  transition: all 0.2s ease;
   border: none;
   display: inline-block;
   text-align: center;
+  font-family: "Times New Roman", Times, serif;
 }
 
 .btn-primary {
-  background: #667eea;
-  color: white;
+  background: #000;
+  color: #fff;
 }
 
 .btn-primary:hover {
-  background: #5a67d8;
-}
-
-.btn-secondary {
-  background: #48bb78;
-  color: white;
-}
-
-.btn-secondary:hover {
-  background: #38a169;
+  background: #888;
+  color: #fff;
 }
 
 .btn-outline {
-  background: white;
-  color: #4a5568;
-  border: 2px solid #e2e8f0;
+  background: #fff;
+  color: #000;
+  border: 1px solid #ccc;
 }
 
 .btn-outline:hover {
-  background: #f7fafc;
+  background: #f5f5f5;
 }
 
 .btn-lg {
-  padding: 1rem 2rem;
-  font-size: 1.125rem;
+  padding: 0.75rem 1.75rem;
+  font-size: 1.1rem;
 }
 </style>

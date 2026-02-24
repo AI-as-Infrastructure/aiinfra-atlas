@@ -32,7 +32,7 @@ const configDescriptions = {
 const unwantedFields = [
   'CORPUS_OPTIONS', 'FULL_SYSTEM_PROMPT', 'SYSTEM_PROMPT',
   'target_id', 'target_version', 'citation_limit', 'index_name', 'redis_database',
-  'CHROMA_COLLECTION_NAME', 'large_retrieval_size'
+  'CHROMA_COLLECTION_NAME', 'large_retrieval_size', 'MULTI_CORPUS_VECTORSTORE'
 ];
 
 function formatFieldName(key) {

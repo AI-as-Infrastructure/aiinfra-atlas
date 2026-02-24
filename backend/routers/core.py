@@ -4,6 +4,7 @@ Core API endpoints for ATLAS.
 Includes health checks, configuration, diagnostics, and telemetry status.
 """
 
+import json
 import os
 import logging
 from datetime import datetime
@@ -75,6 +76,27 @@ def get_config_endpoint():
     # Add extra config fields from environment variables
     config_data["MULTI_CORPUS_VECTORSTORE"] = os.getenv("MULTI_CORPUS_VECTORSTORE")
     config_data["CHROMA_COLLECTION_NAME"] = os.getenv("CHROMA_COLLECTION_NAME")
+
+    # Add corpus display name from manifest for dynamic site title.
+    # Only return a name if an active corpus exists (backend/corpus/manifest.json).
+    # The targets manifest can be stale after reset, so check the canonical source.
+    corpus_display_name = ""
+    corpus_manifest_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "corpus", "manifest.json"
+    )
+    if os.path.isfile(corpus_manifest_path):
+        try:
+            with open(corpus_manifest_path, "r", encoding="utf-8") as f:
+                corpus_manifest = json.load(f)
+            corpus_display_name = (
+                corpus_manifest.get("metadata", {}).get("display_name")
+                or corpus_manifest.get("corpus_name")
+                or ""
+            )
+        except Exception:
+            pass
+    config_data["corpus_display_name"] = corpus_display_name
 
     return JSONResponse(content=config_data)
 

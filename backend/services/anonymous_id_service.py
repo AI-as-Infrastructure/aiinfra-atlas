@@ -68,7 +68,7 @@ class AnonymousIDService:
             return anonymous_id
             
         except Exception as e:
-            logger.error(f"Exception during anonymous ID generation: {e}", exc_info=True)
+            logger.error(f"Exception during anonymous ID generation: {e}")
             raise ValueError(f"Failed to generate anonymous ID: {str(e)}")
     
     def get_anonymous_id_from_user_data(self, user_data: Dict[str, Any]) -> str:

@@ -26,8 +26,17 @@ COUNTRY_CODES = {
 
 
 def _get_manifest_path() -> str:
-    """Get the path to manifest.json."""
+    """Get the path to manifest.json.
+
+    Checks backend/corpus/ first (where the wizard stores it),
+    then falls back to backend/targets/ for backward compatibility.
+    """
     backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # Wizard-built corpora store manifest in corpus/
+    corpus_path = os.path.join(backend_dir, "corpus", "manifest.json")
+    if os.path.exists(corpus_path):
+        return corpus_path
+    # Legacy fallback
     return os.path.join(backend_dir, "targets", "manifest.json")
 
 
@@ -105,8 +114,10 @@ def get_corpus_options() -> List[Dict[str, str]]:
     # Always start with "all" option
     options = [{"value": "all", "label": "All Collections"}]
 
-    # Add options for each corpus in manifest
+    # Add options for each corpus in manifest (skip "all" since it's already added)
     for corpus_id in corpus_values:
+        if corpus_id == "all":
+            continue
         options.append({
             "value": corpus_id,
             "label": generate_corpus_label(corpus_id)

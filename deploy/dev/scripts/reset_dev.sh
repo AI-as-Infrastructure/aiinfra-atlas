@@ -87,6 +87,12 @@ else
     echo "  ℹ️  No system settings found"
 fi
 
+# Reset VITE_SITE_TITLE to generic default
+if [ -f "config/.env.development" ]; then
+    sed -i 's/^VITE_SITE_TITLE=.*/VITE_SITE_TITLE="ATLAS"/' config/.env.development
+    echo "  ✅ VITE_SITE_TITLE reset to default"
+fi
+
 # Remove custom retrievers and adapters (keep only base_retriever.py and utils)
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -145,6 +151,12 @@ if [ -d "backend/targets" ]; then
         echo "  ✅ Removed $removed_count test target(s)"
     else
         echo "  ℹ️  No custom test targets found"
+    fi
+
+    # Remove stale manifest
+    if [ -f "backend/targets/manifest.json" ]; then
+        rm -f backend/targets/manifest.json
+        echo "  ✅ Removed stale manifest.json"
     fi
 else
     echo "  ℹ️  Targets directory not found"

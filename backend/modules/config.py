@@ -1,14 +1,8 @@
 """
-Enhanced configuration management for ATLAS.
+Configuration management for ATLAS.
 
-This module provides centralized configuration loading and access with strong typing,
-validation, and convenient helper methods. It loads configuration from multiple sources
-in a hierarchical manner:
-
-1. Default configuration values
-2. Environment variables
-3. Target-specific configuration files
-
+Loads configuration from corpus_active.json (created by the corpus wizard
+or deploy mode), with target-specific overrides from backend/targets/.
 Configuration is validated before use to ensure all required values are present.
 """
 
@@ -105,10 +99,6 @@ def _get_default_config() -> Dict[str, Any]:
             "connection_timeout": 10
         }
     }
-
-# REMOVED: _load_environment_variables function
-# Configuration now comes ONLY from corpus_active.json
-# No environment variable fallbacks for corpus configuration
 
 def _load_target_config(config: Dict[str, Any], target_id: str) -> None:
     """Load target-specific configuration."""

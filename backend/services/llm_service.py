@@ -45,7 +45,7 @@ def process_query_sync(query_data: Dict[str, Any]) -> Dict[str, Any]:
         # Extract query parameters
         question = query_data.get("query", "")
         corpus_filter = query_data.get("corpus_selection", "all")
-        model_selection = query_data.get("model_selection", "claude-3-5-sonnet-20241022")
+        model_selection = query_data.get("model_selection", "claude-sonnet-4-20250514")
         chat_history = query_data.get("chat_history", [])
         session_id = str(uuid.uuid4())  # Generate session ID for async processing
         qa_id = str(uuid.uuid4())       # Generate QA ID for async processing
@@ -192,7 +192,7 @@ async def process_query_async(query_data: Dict[str, Any]) -> Dict[str, Any]:
             "query_data": query_data
         }
 
-async def process_simple_query_async(query: str, corpus: str = "all", model: str = "claude-3-5-sonnet-20241022") -> Dict[str, Any]:
+async def process_simple_query_async(query: str, corpus: str = "all", model: str = "claude-sonnet-4-20250514") -> Dict[str, Any]:
     """
     Simplified async query processor for basic queries
     """
@@ -212,7 +212,7 @@ async def health_check() -> Dict[str, Any]:
         test_result = await process_simple_query_async(
             "Hello, this is a test query.", 
             corpus="all", 
-            model="claude-3-5-sonnet-20241022"
+            model="claude-sonnet-4-20250514"
         )
         
         return {

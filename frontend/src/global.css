@@ -83,7 +83,7 @@ a:hover, .open-prompt-link:hover {
 button.is-link, .button.is-link,
 button.is-primary, .button.is-primary,
 button.button, .button.button,
-button, .button {
+button:not(.btn), .button:not(.btn) {
   background-color: #000 !important;
   color: #fff !important;
   border-color: #000 !important;
@@ -98,9 +98,9 @@ button.is-primary:active, .button.is-primary:active,
 button.button:hover, .button.button:hover,
 button.button:focus, .button.button:focus,
 button.button:active, .button.button:active,
-button:hover, .button:hover,
-button:focus, .button:focus,
-button:active, .button:active,
+button:not(.btn):hover, .button:not(.btn):hover,
+button:not(.btn):focus, .button:not(.btn):focus,
+button:not(.btn):active, .button:not(.btn):active,
 .nav-btn:hover, .nav-btn:focus, .navbar-item.button:hover, .navbar-item.button:focus {
   background-color: #888 !important;
   color: #fff !important;

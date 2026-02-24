@@ -137,7 +137,7 @@ def create_llm(
         logger.debug("Using Anthropic with API key")
         return ChatAnthropic(
             api_key=anthropic_api_key,
-            model_name=model or "claude-3-5-sonnet-20240620",
+            model_name=model or "claude-sonnet-4-20250514",
             temperature=temperature,
             streaming=streaming
         )

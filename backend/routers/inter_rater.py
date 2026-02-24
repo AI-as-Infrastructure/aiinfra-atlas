@@ -86,7 +86,7 @@ async def get_inter_rater_stats(request: Request):
         return stats
 
     except Exception as e:
-        logger.error(f"Error getting inter-rater stats: {e}", exc_info=True)
+        logger.error(f"Error getting inter-rater stats: {e}")
         return {"enabled": False, "error": "Failed to retrieve inter-rater stats"}
 
 

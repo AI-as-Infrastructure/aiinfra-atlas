@@ -10,6 +10,7 @@ import yaml
 import hashlib
 import asyncio
 import logging
+import time
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Callable
 from datetime import datetime
@@ -137,6 +138,9 @@ class UniversalCorpusBuilder:
         logger.info(f"Starting corpus build: {self.config.metadata.name}")
         logger.info(f"Processing mode: {self.mode}")
 
+        # Track build timing
+        build_start_time = time.monotonic()
+
         # Clean up existing corpus files for a fresh build
         self._clean_existing_corpus()
 
@@ -159,8 +163,9 @@ class UniversalCorpusBuilder:
             # Step 4: Create vector store
             await self._create_vector_store()
 
-            # Step 5: Generate manifest
-            manifest_path = self._generate_manifest()
+            # Step 5: Generate manifest (with build timing)
+            build_duration = round(time.monotonic() - build_start_time, 1)
+            manifest_path = self._generate_manifest(build_duration_seconds=build_duration)
 
             # Step 6: Generate BM25 corpus
             bm25_path = await self._generate_bm25_corpus()
@@ -774,8 +779,36 @@ class UniversalCorpusBuilder:
                 length_function=len
             )
 
-    def _generate_manifest(self) -> Path:
-        """Generate manifest.json with corpus metadata."""
+    def _collect_build_info(self, build_duration_seconds: Optional[float] = None) -> Dict[str, Any]:
+        """Collect build environment info for manifest reproducibility."""
+        try:
+            sys_info = SystemRequirementsChecker.get_system_info()
+        except Exception as e:
+            logger.warning(f"Failed to collect system info for build metadata: {e}")
+            sys_info = {}
+
+        gpu_info = sys_info.get("gpu", {})
+        gpu_available = gpu_info.get("available", False)
+        actual_mode = getattr(self, 'actual_mode', self.mode)
+
+        return {
+            "mode": actual_mode,
+            "duration_seconds": build_duration_seconds,
+            "python_version": sys_info.get("platform", {}).get("python_version"),
+            "pytorch_version": sys_info.get("pytorch", {}).get("version"),
+            "cuda_version": sys_info.get("pytorch", {}).get("cuda_version"),
+            "platform": f"{sys_info.get('platform', {}).get('system', '')} {sys_info.get('platform', {}).get('release', '')}".strip() or None,
+            "machine": sys_info.get("platform", {}).get("machine"),
+            "gpu_name": gpu_info.get("name") if gpu_available else None,
+            "gpu_memory_gb": round(gpu_info.get("memory_gb", 0), 1) if gpu_available and gpu_info.get("memory_gb") else None,
+            "gpu_used": actual_mode == "gpu" and gpu_available,
+            "cpu_cores": sys_info.get("cpu", {}).get("cores"),
+            "system_ram_gb": round(sys_info.get("memory", {}).get("total_gb", 0), 1) if sys_info.get("memory", {}).get("total_gb") else None,
+            "builder_version": "1.4"
+        }
+
+    def _generate_manifest(self, build_duration_seconds: Optional[float] = None) -> Path:
+        """Generate manifest.json with corpus metadata and build environment."""
         logger.info("Generating manifest...")
 
         # Calculate statistics
@@ -821,9 +854,12 @@ class UniversalCorpusBuilder:
         filter_1_info = filters_info.get("filter_1")
         filter_2_info = filters_info.get("filter_2")
 
+        # Capture build environment for reproducibility
+        build_info = self._collect_build_info(build_duration_seconds)
+
         # Create manifest with enhanced embedding documentation
         manifest = {
-            "version": "1.3",
+            "version": "1.4",
             "created": datetime.now().isoformat(),
             "corpus_name": self.config.metadata.name,
             "metadata": self.config.metadata.dict(),
@@ -858,7 +894,8 @@ class UniversalCorpusBuilder:
                     "type": "enum",
                     "values": [filter_def.id for filter_def in (self.config.filters.filters if self.config.filters else [])]
                 }
-            }
+            },
+            "build": build_info
         }
 
         manifest_path = self.output_dir / "manifest.json"

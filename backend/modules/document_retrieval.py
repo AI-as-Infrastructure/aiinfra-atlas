@@ -144,11 +144,11 @@ def retrieve_documents(
             
         except Exception as e:
             # Log the error
-            logger.error(f"Error retrieving documents: {e}", exc_info=True)
-            
+            logger.error(f"Error retrieving documents: {e}")
+
             # Re-raise to allow higher-level error handling
             raise
-    
+
     with create_span(
         SpanNames.CONTEXT_RETRIEVAL,
         attributes={
@@ -316,8 +316,8 @@ def retrieve_documents(
             retrieval_span.set_status(Status(StatusCode.ERROR, str(e)))
             
             # Log the error
-            logger.error(f"Error retrieving documents: {e}", exc_info=True)
-            
+            logger.error(f"Error retrieving documents: {e}")
+
             # Re-raise to allow higher-level error handling
             raise
 

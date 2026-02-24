@@ -125,7 +125,7 @@ async def submit_feedback(feedback: Union[InterRaterFeedback, UserFeedback] if I
                 
         except Exception as e:
             auth_extraction_details["exception"] = str(e)
-            logger.error(f"Exception during user ID extraction for feedback: {e}", exc_info=True)
+            logger.error(f"Exception during user ID extraction for feedback: {e}")
             anon_user_id = None
         
         # Log final result for debugging inter-rater issues
@@ -252,7 +252,7 @@ async def submit_feedback(feedback: Union[InterRaterFeedback, UserFeedback] if I
                     status="error"
                 )
     except Exception as e:
-        logger.error(f"Error processing feedback: {e}", exc_info=True)
+        logger.error(f"Error processing feedback: {e}")
         return FeedbackResponse(
             message=f"Error processing feedback: {str(e)}",
             status="error"

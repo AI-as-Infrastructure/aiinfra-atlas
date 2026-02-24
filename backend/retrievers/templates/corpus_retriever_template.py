@@ -78,7 +78,7 @@ class {CorpusClass}Retriever(BaseRetriever):
 
         # Initialize LLM
         provider = config.get("llm_provider", "anthropic")
-        model = config.get("llm_model", "claude-3-5-haiku-20241022")
+        model = config.get("llm_model", "claude-sonnet-4-20250514")
         try:
             self.llm = create_llm(provider=provider, model_name=model)
             logger.info(f"Initialized LLM: {{provider}}/{{model}}")

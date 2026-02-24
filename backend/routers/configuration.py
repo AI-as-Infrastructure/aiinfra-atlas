@@ -95,7 +95,7 @@ async def export_configuration(
         )
 
     except Exception as e:
-        logger.error(f"Failed to export configuration: {e}", exc_info=True)
+        logger.error(f"Failed to export configuration: {e}")
         raise HTTPException(
             status_code=500,
             detail="Configuration export failed"
@@ -176,7 +176,7 @@ async def import_configuration(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to import configuration: {e}", exc_info=True)
+        logger.error(f"Failed to import configuration: {e}")
         raise HTTPException(
             status_code=500,
             detail="Configuration import failed"
@@ -257,7 +257,7 @@ async def validate_configuration(file: UploadFile = File(...)):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to validate configuration: {e}", exc_info=True)
+        logger.error(f"Failed to validate configuration: {e}")
         raise HTTPException(
             status_code=500,
             detail="Configuration validation failed"
@@ -284,7 +284,7 @@ async def get_current_configuration():
         return JSONResponse(config)
 
     except Exception as e:
-        logger.error(f"Failed to get current configuration: {e}", exc_info=True)
+        logger.error(f"Failed to get current configuration: {e}")
         raise HTTPException(
             status_code=500,
             detail="Failed to retrieve configuration"

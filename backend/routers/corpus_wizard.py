@@ -1311,20 +1311,32 @@ async def get_unified_config(build_id: str):
         with open(manifest_path, 'r') as f:
             manifest = json.load(f)
 
-        # Combine configurations
+        # Combine configurations (support both v1.1 flat and v1.2+ nested manifest)
+        em = manifest.get("embedding_model", "Unknown")
+        if isinstance(em, dict):
+            embedding_model = em.get("id", "Unknown")
+            collection_name = manifest.get("vector_store", {}).get("collection_name", "Unknown")
+            chunk_size = manifest.get("embeddings", {}).get("chunk_size", 1000)
+            chunk_overlap = manifest.get("embeddings", {}).get("chunk_overlap", 200)
+        else:
+            embedding_model = em
+            collection_name = manifest.get("collection_name", "Unknown")
+            chunk_size = manifest.get("chunk_size", 1000)
+            chunk_overlap = manifest.get("chunk_overlap", 200)
+
         unified_config = {
             "corpus_settings": {
                 "name": manifest.get("corpus_name", "Unknown"),
-                "collection_name": manifest.get("collection_name", "Unknown"),
-                "embedding_model": manifest.get("embedding_model", "Unknown"),
-                "chunk_size": manifest.get("chunk_size", 1000),
-                "chunk_overlap": manifest.get("chunk_overlap", 200),
+                "collection_name": collection_name,
+                "embedding_model": embedding_model,
+                "chunk_size": chunk_size,
+                "chunk_overlap": chunk_overlap,
                 "total_documents": manifest.get("statistics", {}).get("total_documents", 0),
                 "filters": manifest.get("fields", {}).get("corpus", {}).get("values", [])
             },
             "target_settings": {
                 "provider": "anthropic",  # Will be populated from request
-                "model": "claude-3-5-haiku-20241022",
+                "model": "claude-sonnet-4-20250514",
                 "search_k": 20,
                 "search_type": "similarity",
                 "score_threshold": 0.7
@@ -1473,11 +1485,17 @@ async def _build_corpus_task(build_id: str, config: CorpusConfig):
                         logger.info(f"Corpus adapter: {results['corpus_adapter']} (fallback from old retriever naming)")
 
             # Copy manifest to targets directory
-            manifest_source = Path(results.get('manifest_path', ''))
+            manifest_source = Path("backend/corpus/manifest.json")
             if manifest_source.exists():
                 manifest_dest = Path("backend/targets/manifest.json")
                 shutil.copy2(manifest_source, manifest_dest)
                 logger.info(f"Copied manifest to: {manifest_dest}")
+                # Invalidate cached manifest so new data is served immediately
+                from backend.modules.manifest_loader import invalidate_cache
+                invalidate_cache()
+                logger.info("Manifest cache invalidated")
+            else:
+                logger.warning("No manifest found at backend/corpus/manifest.json")
         except Exception as e:
             logger.error(f"Failed to copy retriever/manifest files: {e}")
             # Don't fail the build, just log the error
@@ -1498,7 +1516,7 @@ async def _build_corpus_task(build_id: str, config: CorpusConfig):
         if not target_config:
             target_config = {
                 'llm_provider': 'anthropic',
-                'llm_model': 'claude-3-5-haiku-20241022',
+                'llm_model': 'claude-sonnet-4-20250514',
                 'search_k': 20,
                 'citation_limit': 5,
                 'temperature': 0.7,

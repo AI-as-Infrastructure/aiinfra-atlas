@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 # Default values for target configuration
 TARGET_DEFAULTS = {
     'llm_provider': 'anthropic',
-    'llm_model': 'claude-3-5-haiku-20241022',
+    'llm_model': 'claude-sonnet-4-20250514',
     'search_type': 'similarity',
     'search_k': 20,
     'search_score_threshold': 0.7,

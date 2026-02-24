@@ -38,7 +38,6 @@ def load_retriever(retriever_name: str = None, config: Dict[str, Any] = None) ->
     
     logger.info(f"Loading retriever: {retriever_name}")
     
-    # Removed vestigial SelfQueryRetriever config injection block. Only dynamic import and instantiation logic remains.
     try:
         # Try to import the retriever module from corpus directory first (for wizard-built retrievers)
         # then fall back to retrievers directory (for legacy or manually created retrievers)
@@ -83,9 +82,9 @@ def load_retriever(retriever_name: str = None, config: Dict[str, Any] = None) ->
                 continue
         
         if retriever_class is None:
-            logger.error(f"No BaseRetriever implementation found in {module_path}")
+            logger.error(f"No BaseRetriever implementation found in module for '{retriever_name}'")
             logger.error(f"Available attributes: {[a for a in dir(retriever_module) if not a.startswith('__')]}")
-            raise ValueError(f"No BaseRetriever implementation found in {module_path}")
+            raise ValueError(f"No BaseRetriever implementation found in module for '{retriever_name}'")
         
         # Create an instance with the provided config
         if config is None:

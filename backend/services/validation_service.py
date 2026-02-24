@@ -65,7 +65,7 @@ class ValidationService:
         return ValidationConfig(
             mode=os.getenv("VALIDATION_LLM_MODE", "alternate"),
             default_model=os.getenv("VALIDATION_LLM_DEFAULT", "gpt-4o"),
-            alternate_model=os.getenv("VALIDATION_LLM_ALTERNATE", "claude-3-5-sonnet-20241022"),
+            alternate_model=os.getenv("VALIDATION_LLM_ALTERNATE", "claude-sonnet-4-20250514"),
             default_provider=os.getenv("VALIDATION_PROVIDER_DEFAULT", "OPENAI"),
             alternate_provider=os.getenv("VALIDATION_PROVIDER_ALTERNATE", "ANTHROPIC"),
             enabled=os.getenv("VALIDATION_ENABLED", "true").lower() == "true"

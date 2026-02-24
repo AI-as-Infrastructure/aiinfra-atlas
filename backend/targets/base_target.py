@@ -25,9 +25,6 @@ from langchain_huggingface import HuggingFaceEmbeddings
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# DEBUG: Log the Chroma configuration at startup
-logger.info(f"[DEBUG] CHROMA_PERSIST_DIRECTORY seen by backend: {os.getenv('CHROMA_PERSIST_DIRECTORY')}")
-logger.info(f"[DEBUG] CHROMA_COLLECTION_NAME seen by backend: {os.getenv('CHROMA_COLLECTION_NAME')}")
 
 # ---- UNIFIED TARGET CONFIGURATION ----
 class TargetConfig:

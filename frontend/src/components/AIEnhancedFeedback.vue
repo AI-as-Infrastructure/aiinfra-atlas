@@ -582,7 +582,7 @@ function getValidationModelInfo() {
   
   // Format model name for display
   const modelName = currentModel.model === 'gpt-4o' ? 'GPT-4o' :
-                   currentModel.model === 'claude-3-5-sonnet-20241022' ? 'Claude 3.5 Sonnet' :
+                   currentModel.model === 'claude-sonnet-4-20250514' ? 'Claude Sonnet 4' :
                    currentModel.model
   
   return `${providerName} ${modelName}`

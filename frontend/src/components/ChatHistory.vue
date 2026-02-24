@@ -37,7 +37,7 @@
 										<div class="citation-tooltip-content">
 											<p class="citation-quote">{{ getCitationText(citation) }}</p>
 											<div class="citation-meta">
-												<p v-if="citation.retrieval_id || citation.source || citation.title || citation.metadata?.source"><strong>Retrieval ID:</strong> {{ citation.retrieval_id || citation.source || citation.title || citation.metadata?.source }}</p>
+												<p v-if="citation.retrieval_id || citation.id"><strong>Retrieval ID:</strong> {{ citation.retrieval_id || citation.id }}</p>
 												<p v-if="citation.date || citation.metadata?.date"><strong>Date:</strong> {{ citation.date || citation.metadata?.date }}</p>
 												<p v-if="citation.page || citation.metadata?.page"><strong>Page:</strong> {{ citation.page || citation.metadata?.page }}</p>
 												<p v-if="citation.url || citation.metadata?.url" class="citation-url">
@@ -111,9 +111,9 @@
 										<th>Title</th>
 										<td>{{ selectedCitation.title }}</td>
 									</tr>
-									<tr v-if="selectedCitation.source">
+									<tr v-if="selectedCitation.retrieval_id || selectedCitation.id">
 										<th>Retrieval ID</th>
-										<td>{{ selectedCitation.source }}</td>
+										<td>{{ selectedCitation.retrieval_id || selectedCitation.id }}</td>
 									</tr>
 									<tr v-if="selectedCitation.date">
 										<th>Date</th>
@@ -135,11 +135,7 @@
 											</a>
 										</td>
 									</tr>
-									<tr v-if="selectedCitation.id">
-										<th>ID</th>
-										<td>{{ selectedCitation.id }}</td>
-									</tr>
-								</tbody>
+									</tbody>
 							</table>
 						</div>
 					</div>
@@ -189,8 +185,8 @@
 								</div>
 								
 								<!-- Other metadata fields -->
-								<div v-if="citation.source || (citation.metadata && citation.metadata.source)" class="metadata-item">
-									<strong>Retrieval ID:</strong> {{ citation.retrieval_id || citation.source || citation.metadata?.source }}
+								<div v-if="citation.retrieval_id || citation.id" class="metadata-item">
+									<strong>Retrieval ID:</strong> {{ citation.retrieval_id || citation.id }}
 								</div>
 								
 								<div v-if="citation.corpus || (citation.metadata && citation.metadata.corpus)" class="metadata-item">
@@ -204,7 +200,7 @@
 								<!-- Additional metadata fields -->
 								<template v-if="citation.metadata">
 									<div v-for="(value, key) in citation.metadata" :key="key" class="metadata-item">
-										<template v-if="!['date', 'page', 'corpus', 'source', 'url', 'content', 'text', 'full_content', 'page_content', 'chunk_content'].includes(key) && value">
+										<template v-if="!['date', 'page', 'corpus', 'source', 'url', 'source_url', 'content', 'text', 'full_content', 'page_content', 'chunk_content', 'chunk_id', 'chunk_index', 'parent_doc_id', 'total_chunks', 'source_filename', 'filter_1', 'filter_2', 'corpus_label', 'id', 'retrieval_id', 'loc'].includes(key) && value">
 											<strong>{{ key.charAt(0).toUpperCase() + key.slice(1) }}:</strong> {{ value }}
 										</template>
 									</div>

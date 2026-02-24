@@ -146,7 +146,7 @@ def trace_document_reranking(
             span.set_attribute("openinference.span.kind", OpenInferenceSpanKind.RERANKER)
             span.set_attribute("error", str(e))
             span.set_status(Status(StatusCode.ERROR, str(e)))
-            logger.error(f"Error during document reranking: {e}", exc_info=True)
+            logger.error(f"Error during document reranking: {e}")
             raise
 
 def calculate_relevance_score(document: Document, query: str) -> float:
@@ -393,8 +393,8 @@ def enhance_document_relevance(
             return reranked_docs
             
         except Exception as e:
-            logger.error(f"Error during document reranking: {e}", exc_info=True)
-            
+            logger.error(f"Error during document reranking: {e}")
+
             # Set error using direct span attributes
             error_message = f"Reranking error: {str(e)}"
             span.set_attribute("summary", error_message)
@@ -507,7 +507,7 @@ def rerank_documents_with_telemetry(
             return reranked_docs
             
         except Exception as e:
-            logger.error(f"Error in document reranking: {e}", exc_info=True)
+            logger.error(f"Error in document reranking: {e}")
             
             # Set error information on span using direct attributes (consistent with other functions)
             error_summary = f"Error in document reranking: {str(e)}"

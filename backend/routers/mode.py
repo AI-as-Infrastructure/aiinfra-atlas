@@ -48,10 +48,15 @@ def get_corpus_info() -> Optional[Dict[str, Any]]:
         try:
             with open(manifest_path) as f:
                 manifest = json.load(f)
+                # Handle nested v1.2+ manifest format
+                em = manifest.get("embedding_model")
+                embedding_model = em.get("id") if isinstance(em, dict) else em
+                vs = manifest.get("vector_store", {})
+                collection_name = vs.get("collection_name") if isinstance(vs, dict) else manifest.get("collection_name")
                 return {
                     "name": manifest.get("corpus_name", "Unknown"),
-                    "collection_name": manifest.get("collection_name"),
-                    "embedding_model": manifest.get("embedding_model"),
+                    "collection_name": collection_name,
+                    "embedding_model": embedding_model,
                     "document_count": manifest.get("statistics", {}).get("total_documents", 0)
                 }
         except Exception as e:
@@ -224,12 +229,25 @@ async def enter_deploy_mode(
                     json.dump(corpus_active_config, f, indent=2)
                 logger.info(f"Created corpus_active.json for deployment with corpus '{corpus_name}' and target '{target_name}'")
 
-                # Touch a Python file to trigger uvicorn reload in development
-                import os
-                if os.getenv("ATLAS_ENV") == "development":
-                    config_file = Path("backend/modules/config.py")
-                    config_file.touch()
-                    logger.info("Triggered backend reload for development environment")
+                # Force config cache to reinitialize immediately
+                # so the new corpus_active.json and retriever are ready
+                import backend.modules.config as config_module
+                config_module._config = None
+                config_module._retriever = None
+                config_module._retriever_instance = None
+                logger.info("Cleared config cache for retriever reinit")
+
+                # Invalidate manifest cache
+                from backend.modules.manifest_loader import invalidate_cache
+                invalidate_cache()
+
+                # Proactively reinitialize config and retriever now
+                # so they're ready when the frontend makes its next request
+                try:
+                    config_module.initialize_config()
+                    logger.info("Config and retriever reinitialized successfully")
+                except Exception as reinit_err:
+                    logger.warning(f"Config reinit warning (will retry on next request): {reinit_err}")
 
             except Exception as e:
                 logger.error(f"Failed to create corpus_active.json: {e}")

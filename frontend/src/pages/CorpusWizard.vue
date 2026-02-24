@@ -35,10 +35,7 @@
             <p class="help-text">Choose how you want to process your corpus documents.</p>
           </div>
           <button class="button is-info is-light" @click="showImportDialog = true">
-            <span class="icon">
-              <i>📥</i>
-            </span>
-            <span>Import Configuration</span>
+            Import Configuration
           </button>
         </div>
 
@@ -47,7 +44,6 @@
             :class="['workflow-option', { active: workflowType === 'text' }]"
             @click="workflowType = 'text'"
           >
-            <i class="icon">📄</i>
             <h3>Text Workflow</h3>
             <p>For plain text documents (.txt)</p>
             <ul>
@@ -60,7 +56,6 @@
             :class="['workflow-option', { active: workflowType === 'xml', disabled: true }]"
             @click="() => {}"
           >
-            <i class="icon">🏷️</i>
             <h3>XML Workflow</h3>
             <p>For structured XML documents</p>
             <ul>
@@ -142,7 +137,6 @@
             :class="['source-option', { active: source.type === 'local' }]"
             @click="source.type = 'local'"
           >
-            <i class="icon">📁</i>
             <h3>Local Directory</h3>
             <p>Corpus files on this machine</p>
           </div>
@@ -150,20 +144,24 @@
             :class="['source-option', { active: source.type === 'github' }]"
             @click="source.type = 'github'"
           >
-            <i class="icon">🌐</i>
             <h3>GitHub Repository</h3>
             <p>Corpus hosted on GitHub</p>
           </div>
         </div>
 
         <div v-if="source.type === 'local'" class="form-group">
-          <label>Directory Path *</label>
+          <label>Directory Path</label>
           <input
             v-model="source.location"
             type="text"
-            placeholder="/path/to/corpus/files"
+            placeholder="Enter path to your corpus files"
             class="form-control"
           />
+          <small class="help-text">
+            Absolute or relative path to the directory containing your source files.<br/>
+            Absolute: <code>/home/user/data/Hansard</code><br/>
+            Relative: <code>backend/corpus/sources/Hansard</code>
+          </small>
         </div>
 
         <div v-if="source.type === 'github'" class="github-inputs">
@@ -258,13 +256,13 @@
 
             <div v-if="regexValidation.tested" class="validation-feedback">
               <div v-if="regexValidation.valid" class="success-message">
-                ✅ Valid pattern
+                Valid pattern
                 <span v-if="regexValidation.matches && regexValidation.matches.length > 0">
                   - Found: {{ regexValidation.matches.join(', ') }}
                 </span>
               </div>
               <div v-else class="error-message">
-                ❌ Invalid pattern: {{ regexValidation.error }}
+                Invalid pattern: {{ regexValidation.error }}
               </div>
             </div>
 
@@ -276,7 +274,7 @@
             </small>
 
             <div v-if="source.custom_date_pattern && !regexValidation.tested" class="warning-message">
-              ⚠️ Please validate your pattern before proceeding
+              Please validate your pattern before proceeding
             </div>
           </div>
         </div>
@@ -385,7 +383,7 @@
           </div>
 
           <div v-if="previewData.warnings && previewData.warnings.length > 0" class="preview-warnings">
-            <h3>⚠️ Warnings</h3>
+            <h3>Warnings</h3>
             <ul>
               <li v-for="warning in previewData.warnings" :key="warning">{{ warning }}</li>
             </ul>
@@ -520,7 +518,7 @@
           <div class="build-stats">
             <div class="stat-row">
               <span>Build Mode:</span>
-              <span>{{ corpusBuildMode.toUpperCase() }} {{ corpusBuildMode === 'gpu' ? '🚀' : '💻' }}</span>
+              <span>{{ corpusBuildMode.toUpperCase() }}</span>
             </div>
             <div class="stat-row">
               <span>Documents Processed:</span>
@@ -541,7 +539,7 @@
           </div>
 
           <div v-if="buildProgress.errors && buildProgress.errors.length > 0" class="build-errors">
-            <h3>⚠️ Errors</h3>
+            <h3>Errors</h3>
             <ul>
               <li v-for="error in buildProgress.errors" :key="error.document">
                 {{ error.document }}: {{ error.message }}
@@ -561,16 +559,16 @@
 
           <div v-if="buildProgress.status === 'completed'" class="build-complete">
             <div class="success-message">
-              ✅ Build completed successfully!
+              Build completed successfully!
             </div>
             <button @click="goToMainApp" class="btn btn-success">
-              🚀 Go to Main Application
+              Go to Main Application
             </button>
           </div>
 
           <div v-if="buildProgress.status === 'failed'" class="build-failed">
             <div class="error-message">
-              ❌ Build failed: {{ buildProgress.error }}
+              Build failed: {{ buildProgress.error }}
             </div>
             <button @click="retryBuild" class="btn btn-secondary">
               Retry Build
@@ -856,7 +854,7 @@ export default {
 
     const source = ref({
       type: 'local',
-      location: 'backend/corpus/sources',  // Default to the corpus sources directory
+      location: '',
       branch: 'main',
       path: '',
       file_extensions: '.txt',
@@ -899,7 +897,7 @@ export default {
     // Target configuration state with k20_claude4 defaults
     const targetConfig = ref({
       llm_provider: 'anthropic',
-      llm_model: 'claude-3-5-haiku-20241022',
+      llm_model: 'claude-sonnet-4-20250514',
       search_type: 'similarity',
       search_k: 20,
       score_threshold: 0.7,
@@ -1013,10 +1011,10 @@ export default {
       }
     }
 
-    // Navigation to main app
-    const goToMainApp = async () => {
-      // Deploy the corpus first, then navigate to the main application
-      await enterDeployMode()
+    // Navigation to main app - takes user to System Mode page
+    // where they can choose to deploy (not auto-deploy from wizard)
+    const goToMainApp = () => {
+      window.location.href = '/'
     }
 
 
@@ -1433,31 +1431,6 @@ Do you want to continue?`
       router.push('/config-manager')
     }
 
-    const enterDeployMode = async () => {
-      if (confirm('Enter Deploy Mode? Configuration will be locked until server restart.')) {
-        try {
-          const response = await fetch('/api/mode/deploy', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-          })
-
-          if (response.ok) {
-            // Successfully entered deploy mode
-            // Add a small delay to allow backend to reload with new configuration
-            setTimeout(() => {
-              router.push('/chat')
-            }, 2000) // 2 second delay for backend reload
-          } else {
-            const error = await response.json()
-            alert(`Failed to enter deploy mode: ${error.detail}`)
-          }
-        } catch (error) {
-          console.error('Failed to enter deploy mode:', error)
-          alert('Failed to enter deploy mode')
-        }
-      }
-    }
-
     const handleConfigurationImported = (config) => {
       // Apply imported configuration to wizard state
       if (config) {
@@ -1640,7 +1613,6 @@ Do you want to continue?`
       backupId,
       activateCorpus,
       continueConfiguring,
-      enterDeployMode,
 
       // Navigation & Validation
       isValidCorpusName,
