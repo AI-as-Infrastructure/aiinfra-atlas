@@ -40,8 +40,9 @@ make b
 # Terminal 2: Start frontend
 make f
 
-# Navigate to corpus wizard
-# Open http://localhost:5173/corpus-wizard
+# Open browser - lands on System Mode page
+# Navigate to Corpus Wizard from Configure Mode
+# http://localhost:5173/corpus-wizard
 ```
 
 The backend startup script will automatically:
@@ -340,7 +341,7 @@ embeddings:
 vector_store:
   type: "chromadb"
   collection_name: "hansard_1901"
-  persist_directory: "backend/targets/chroma_db"
+  persist_directory: "backend/corpus/chroma_db"
 
 search:
   type: "hybrid"

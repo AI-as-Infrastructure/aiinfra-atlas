@@ -38,7 +38,7 @@ Dense vector and sparse lexical components work together, enriched by robust met
   - Canonical HTTP(S) URLs only (no file://)
   - Deterministic IDs support alignment between dense and lexical search and power clear citations in the UI
 
-Vector‑store creation is handled by scripts under `create/`. Each run emits a minimal manifest with stats and configuration.
+Vector‑store creation is handled by the corpus wizard (primary) or scripts under `create/` (advanced). Each run emits a manifest with stats and configuration to `backend/corpus/manifest.json`.
 
 ---
 
@@ -114,14 +114,14 @@ Use Phoenix to validate retrieval health and ensure configuration matches expect
 
 | Setting | Location | Example |
 |---------|----------|---------|
-| Vector store path | `.env` → `CHROMA_PERSIST_DIRECTORY` | `backend/targets/chroma_db` |
-| Collection name | `.env` → `CHROMA_COLLECTION_NAME` | `blert_1000` |
-| Embedding model | `.env` → `EMBEDDING_MODEL` | `Livingwithmachines/bert_1890_1900` |
-| Pooling strategy | `.env` → `POOLING` | `mean` |
-| Search type | `.env` → `HANSARD_SEARCH_TYPE` | `hybrid` |
-| BM25 corpus path | `.env` → `HANSARD_BM25_CORPUS` or `BM25_CORPUS` | `backend/targets/bm25_corpus.jsonl` |
-| Single‑corpus candidates | `.env` → `LARGE_RETRIEVAL_SIZE_SINGLE_CORPUS` | `120` |
-| All‑corpus candidates | `.env` → `LARGE_RETRIEVAL_SIZE_ALL_CORPUS` | `80` |
+| Vector store path | `corpus_active.json` → `chroma_persist_directory` | `backend/corpus/chroma_db` |
+| Collection name | `corpus_active.json` → `chroma_collection_name` | `my_corpus` |
+| Embedding model | `manifest.json` → `embedding_model.id` | `Livingwithmachines/bert_1890_1900` |
+| Pooling strategy | `manifest.json` → `embedding_model.pooling` | `mean` |
+| Search type | `corpus_active.json` → `search_type` | `hybrid` |
+| BM25 corpus path | `corpus_active.json` → `bm25_corpus` | `backend/corpus/bm25_corpus.jsonl` |
+| Single‑corpus candidates | `corpus_active.json` | `120` |
+| All‑corpus candidates | `corpus_active.json` | `80` |
 | Final top‑K | `backend/targets/<target>.txt` → `SEARCH_K` | `15` |
 
 ---

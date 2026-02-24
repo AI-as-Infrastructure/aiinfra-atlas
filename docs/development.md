@@ -20,8 +20,7 @@ This guide covers setting up and working with the ATLAS development environment.
 - **Python 3.10** (recommended via pyenv or system package)
 - **Node.js 22.14.0** (install via nvm for version management)
 - **uv** (optional but recommended for 10-100x faster dependency installation)
-- **Git with LFS** (for large model files)
-- **Redis** (for caching and async operations)
+- **Redis** (for caching and feedback)
 
 ### Installation
 
@@ -74,18 +73,6 @@ sudo systemctl start redis-server  # Linux
 brew services start redis           # macOS
 ```
 
-**Git LFS:**
-```bash
-# Ubuntu/Debian
-sudo apt install git-lfs
-
-# macOS
-brew install git-lfs
-
-# Initialize in repository
-git lfs install
-```
-
 ## Initial Setup
 
 ### 1. Clone Repository
@@ -93,7 +80,6 @@ git lfs install
 ```bash
 git clone https://github.com/AI-as-Infrastructure/aiinfra-atlas.git
 cd aiinfra-atlas
-git lfs pull
 ```
 
 ### 2. Environment Configuration
@@ -130,49 +116,31 @@ REDIS_PASSWORD=dev-password
 REDIS_URL=redis://:dev-password@localhost:6379/0
 ```
 
-### 3. Backend Setup
+### 3. Start Development Servers
 
 ```bash
-# Check Python environment
-make c
+# Terminal 1: Backend (auto-detects GPU, installs dependencies)
+make b
 
-# Set up virtual environment and install dependencies
-cd backend
-python3.10 -m venv .venv
-source .venv/bin/activate
-uv pip install -e "..[cpu]"  # or appropriate variant for your GPU
-
-# Return to project root
-cd ..
+# Terminal 2: Frontend (installs npm dependencies automatically)
+make f
 ```
 
-### 4. Frontend Setup
+### 4. Build Your First Corpus
 
-```bash
-cd frontend
-npm install
-cd ..
-```
+1. Open http://localhost:5173 in your browser
+2. You will land on the **System Mode** page in Configure Mode
+3. Navigate to the **Corpus Wizard**
+4. Follow the wizard steps:
+   - Select a source directory containing your text files (or a GitHub repository)
+   - Configure filters based on directory structure
+   - Select embedding model and chunking parameters
+   - Configure LLM test target (provider, model, search parameters)
+   - Build the corpus (GPU-accelerated when available)
+5. After build completes, enter **Deploy Mode** to lock configuration
+6. Begin querying through the chat interface
 
-### 5. Vector Store Setup
-
-Generate the vector store and retriever (required for first run):
-
-```bash
-# Pull default vector store from Git LFS (fastest)
-git lfs pull
-
-# Or build from scratch (uses GPU if available)
-make vs
-
-# Generate retriever
-make r
-```
-
-Notes:
-- `make vs` automatically uses GPU if available (no special configuration needed)
-- GPU detection and PyTorch installation happens automatically during `make b`
-- See [GPU Compatibility Guide](gpu_compatibility.md) for GPU support details
+The wizard generates all build artifacts in `backend/corpus/`, including the vector store, BM25 index, manifest, retriever adapter, and runtime configuration (`corpus_active.json`).
 
 ## Development Workflow
 
@@ -185,7 +153,7 @@ ATLAS uses a two-server development setup:
 # Terminal 1: Backend API server
 make b
 
-# Terminal 2: Frontend development server  
+# Terminal 2: Frontend development server
 make f
 ```
 
@@ -203,6 +171,15 @@ make f
 - **Frontend**: http://localhost:5173 (Vite dev server)
 - **Backend API**: http://localhost:8000 (FastAPI)
 - **API Documentation**: http://localhost:8000/docs (Swagger UI)
+
+### Application Modes
+
+ATLAS operates in two runtime modes:
+
+- **Configure Mode** (default on startup): Wizard and settings are available. Build corpora, configure targets, adjust settings.
+- **Deploy Mode** (one-way lock): Configuration is locked. Chat interface is active. Requires server restart to reconfigure.
+
+The System Mode page (`ModeSelector.vue`) is the application entry point and controls mode transitions.
 
 ### Development Features
 
@@ -233,20 +210,17 @@ TELEMETRY_ENABLED=false     # Disable telemetry in development
 VITE_USE_COGNITO_AUTH=false # Disable authentication
 ```
 
-### Test Targets
+### Configuration Sources
 
-ATLAS uses "test targets" to configure LLM and retrieval settings:
+ATLAS configuration comes from multiple sources with the following precedence:
 
-```bash
-# Current test target (defines LLM model and parameters)
-TEST_TARGET=k40_claude4
+1. **`corpus_active.json`** (created by deploy mode from wizard manifest data) - corpus settings: retriever module, collection name, embedding model, filters
+2. **Test target files** (`backend/targets/{target}.txt`) - LLM provider, model, search parameters
+3. **`.env.{environment}` files** - API keys, Redis, telemetry, authentication, infrastructure settings
 
-# Vector store configuration
-RETRIEVER_MODULE=hansard_retriever
-CHROMA_COLLECTION_NAME=blert_1000
-```
+Corpus settings (embedding model, chunk size, collection name, filters) are managed by the wizard and stored in `backend/corpus/manifest.json` and `corpus_active.json`. Do not set these in `.env` files.
 
-See [Test Targets Documentation](test_targets.md) for more details.
+See [Configuration Guide](configuration.md) for full details.
 
 ## Development Tools
 
@@ -330,10 +304,11 @@ import pdb; pdb.set_trace()  # Add breakpoint
 2. Verify test target configuration
 3. Check backend logs for API errors
 
-**Vector Store Issues:**
-1. Ensure vector store was built (`make vs`)
-2. Check retriever was generated (`make r`)
-3. Verify Chroma database exists
+**Corpus/Filter Issues:**
+1. Ensure corpus was built via the wizard
+2. Check `backend/corpus/manifest.json` exists and has filter values
+3. Verify `corpus_active.json` was created by deploy mode
+4. Check retriever adapter exists in `backend/corpus/`
 
 ## Testing
 
@@ -402,21 +377,23 @@ sudo systemctl start redis-server  # Linux
 brew services start redis           # macOS
 ```
 
-**5. Vector Store Missing:**
+**5. No Corpus Built:**
 ```bash
-# Rebuild vector store and retriever
-make vs
-make r
+# Start servers and use the wizard
+make b  # Terminal 1
+make f  # Terminal 2
+# Open http://localhost:5173 and follow the Corpus Wizard
 ```
 
-**6. LLM API Issues:**
+**6. Filters Not Appearing:**
+- Verify `backend/corpus/manifest.json` exists and contains filter values under `fields.corpus.values`
+- Ensure you entered Deploy Mode after building the corpus
+- Check that `corpus_active.json` was created
+
+**7. LLM API Issues:**
 ```bash
 # Verify API keys in environment file
 grep -E "(ANTHROPIC|OPENAI|GOOGLE)_API_KEY" config/.env.development
-
-# Test API key directly
-curl -H "Authorization: Bearer your-api-key" \
-  https://api.anthropic.com/v1/messages
 ```
 
 ### Log Locations
@@ -427,7 +404,7 @@ curl -H "Authorization: Bearer your-api-key" \
 
 ### Performance Considerations
 
-- **Vector Store Size**: Large vector stores slow startup times
+- **Corpus Building**: GPU provides 5-10x speedup for large corpora
 - **LLM Response Times**: Development API keys may have rate limits
 - **Memory Usage**: Monitor memory usage with large document retrievals
 
@@ -450,7 +427,7 @@ curl -H "Authorization: Bearer your-api-key" \
 
 1. **Follow existing patterns**: Match the established code style
 2. **Add logging**: Use appropriate log levels for debugging
-3. **Handle errors gracefully**: Implement proper error handling
+3. **Handle errors explicitly**: Fail fast with clear error messages
 4. **Test edge cases**: Consider error conditions and edge cases
 
 ## Next Steps

@@ -1,120 +1,144 @@
-# Runtime Mode System - Environment File Handling
+# Runtime Mode System
 
 ## Overview
 
-The runtime mode management system properly handles different environment files (development, staging, production) while respecting the mode state (configure vs deploy).
+ATLAS operates in two runtime modes that control what the user can do:
 
-## Key Improvements
+- **Configure Mode** (default on startup): Wizard and settings are accessible. Configuration can be changed.
+- **Deploy Mode** (one-way lock): Configuration is locked. Chat interface is active. Server restart required to reconfigure.
 
-### 1. Environment-Specific Updates
+The System Mode page (`ModeSelector.vue`) is the application entry point and landing page.
 
-The system now only updates the **current** environment's .env file, determined by the `ENVIRONMENT` variable:
-- If `ENVIRONMENT=development`, only `config/.env.development` is modified
-- If `ENVIRONMENT=staging`, only `config/.env.staging` is modified
-- If `ENVIRONMENT=production`, only `config/.env.production` is modified
-
-### 2. Mode-Aware File Modifications
-
-**Configure Mode:**
-- Allows updating .env files for persistent configuration
-- Updates both the file AND runtime environment variables
-- Changes persist across server restarts
-
-**Deploy Mode:**
-- **NO** .env file modifications allowed
-- Only updates runtime environment variables (in-memory)
-- Changes are temporary and lost on server restart
-- Ensures configuration consistency during testing
-
-### 3. Updated Functions
-
-The following functions have been updated to respect mode and environment:
-
-#### `set_default_target()` (corpus_wizard.py:1780-1839)
-- In configure mode: Updates current environment's .env file
-- In deploy mode: Only updates runtime `os.environ["TEST_TARGET"]`
-
-#### Target Configuration Generation (corpus_wizard.py:1260-1295)
-- In configure mode: Updates TEST_TARGET in current .env file
-- In deploy mode: Only updates runtime environment
-- Always generates the target .txt file (needed for target management)
-
-#### VITE_SITE_TITLE Update (corpus_wizard.py:1297-1339)
-- In configure mode: Updates current .env file
-- In deploy mode: Skip file updates (frontend title won't change)
-
-#### RETRIEVER_MODULE Update (corpus_wizard.py:1397-1439)
-- In configure mode: Updates current .env file
-- In deploy mode: Only updates runtime environment
-
-## Usage Examples
-
-### Development Environment
-```bash
-# Start with development environment
-export ENVIRONMENT=development
-make b  # Starts backend
-
-# In configure mode:
-# - Changes update config/.env.development
-# - Other .env files remain unchanged
-
-# In deploy mode:
-# - No files are modified
-# - Runtime changes only
-```
-
-### Staging Environment
-```bash
-# Start with staging environment
-export ENVIRONMENT=staging
-make s  # Starts staging
-
-# In configure mode:
-# - Changes update config/.env.staging
-# - Development and production files unchanged
-
-# In deploy mode:
-# - No files are modified
-```
-
-### Production Environment
-```bash
-# Start with production environment
-export ENVIRONMENT=production
-make p  # Starts production
-
-# Usually starts directly in deploy mode
-# Configuration changes require server restart
-```
-
-## Benefits
-
-1. **Environment Isolation**: Each environment maintains its own configuration
-2. **Deploy Mode Safety**: No accidental configuration changes during testing
-3. **Runtime Flexibility**: Can temporarily switch targets in deploy mode without affecting persistent config
-4. **Clear Separation**: Configure mode for setup, deploy mode for testing
-
-## Mode Transitions
+## Mode Lifecycle
 
 ```
 Server Start
-    ↓
-Configure Mode (default)
-    ├── Build corpus
-    ├── Add/modify targets
-    ├── Updates current .env file
-    └── Enter Deploy Mode → [One-way lock]
-                              ↓
-                          Deploy Mode
-                              ├── Configuration locked
-                              ├── No file modifications
-                              └── Requires server restart to change
+  -> Configure Mode (default)
+    -> Corpus Wizard available
+    -> Settings editable
+    -> .env files can be updated
+    -> corpus_active.json NOT yet created
+  -> User clicks "Deploy"
+    -> corpus_active.json created from manifest data
+    -> Configuration locked
+    -> Chat interface activated
+  -> Deploy Mode
+    -> No wizard access
+    -> No settings changes
+    -> Queries processed using corpus_active.json + target file
+  -> Server Restart required to return to Configure Mode
 ```
 
-## Important Notes
+## Environment File Handling
 
-1. The mode is **runtime state** - not stored in .env files
-2. Deploy mode is **one-way** - requires server restart to unlock
-3. Each environment can have different default targets and configurations
-4. The system uses `ENVIRONMENT` variable to determine which .env file to use
+The mode system handles different environment files based on the `ENVIRONMENT` variable:
+
+| Environment | File | Behaviour in Configure Mode |
+|---|---|---|
+| development | `config/.env.development` | Wizard updates `TEST_TARGET` and `VITE_SITE_TITLE` |
+| staging | `config/.env.staging` | Same as development |
+| production | `config/.env.production` | `.env` file updates are logged but may be skipped in production |
+
+### What Gets Updated
+
+When the wizard activates a corpus or the user enters deploy mode:
+
+1. **`backend/corpus/corpus_active.json`** is created from manifest data with:
+   - `retriever_module` - Name of the generated adapter
+   - `chroma_collection_name` - ChromaDB collection name
+   - `chroma_persist_directory` - Path to vector store
+   - `embedding_model` - Embedding model identifier
+   - `bm25_corpus` - Path to BM25 index (if hybrid)
+   - `search_type` - `hybrid` or `dense`
+
+2. **`.env.{environment}`** may be updated with:
+   - `TEST_TARGET` - Active target configuration name
+   - `VITE_SITE_TITLE` - Display name from corpus metadata
+
+3. **`config/system_settings.json`** stores runtime toggles:
+   - `telemetryEnabled` - Phoenix telemetry export toggle
+   - `interRaterEnabled` - Inter-rater feedback workflow toggle
+
+## Configuration Precedence
+
+In deploy mode, the backend loads configuration in this order:
+
+1. **`corpus_active.json`** - Corpus settings (retriever, collection, embedding model)
+2. **Target file** (`backend/targets/{TEST_TARGET}.txt`) - LLM provider, model, search parameters
+3. **`.env.{environment}`** - API keys, Redis, telemetry, authentication
+4. **`config/system_settings.json`** - Runtime toggles
+5. **Built-in defaults**
+
+Corpus settings in `corpus_active.json` take precedence over any equivalent environment variables. This ensures the wizard's configuration cannot be accidentally overridden by stale `.env` values.
+
+## API Endpoints
+
+### Mode Status
+
+`GET /api/mode`
+
+Returns current mode and corpus information:
+```json
+{
+  "mode": "deploy",
+  "corpus_info": {
+    "name": "my_corpus",
+    "embedding_model": "Livingwithmachines/bert_1890_1900",
+    "collection_name": "my_corpus",
+    "total_documents": 206
+  }
+}
+```
+
+### Enter Deploy Mode
+
+`POST /api/mode/deploy`
+
+One-way transition. Creates `corpus_active.json` and locks configuration.
+
+### System Configuration
+
+`GET /api/system/configuration` - Read current toggles
+`POST /api/system/configuration` - Update toggles (rate-limited)
+
+Toggles are persisted to `config/system_settings.json` and take effect on next request (no restart needed).
+
+## Implementation Details
+
+### mode_manager.py
+
+Manages mode state. Key functions:
+- `get_current_mode()` - Returns `configure` or `deploy`
+- `enter_deploy_mode()` - Creates `corpus_active.json`, locks mode
+- `is_deploy_mode()` - Check if deployed
+
+### config.py
+
+On startup, loads `corpus_active.json` if it exists. Falls back to environment variables only for non-corpus settings (API keys, Redis, etc.).
+
+### manifest_loader.py
+
+Loads `manifest.json` from `backend/corpus/` (primary) or `backend/targets/` (fallback). Used by the mode endpoint to display corpus info.
+
+## Frontend Integration
+
+### ModeSelector.vue
+
+The landing page component. Shows:
+- Current mode (configure/deploy)
+- Corpus information (from manifest)
+- Mode transition controls
+- Links to wizard (in configure mode) or chat (in deploy mode)
+
+### Route Guards
+
+Frontend routes enforce mode restrictions:
+- Wizard routes: Only accessible in configure mode
+- Chat routes: Only accessible in deploy mode (or if corpus exists)
+- System Mode page: Always accessible
+
+## Related Documentation
+
+- [Configuration Guide](configuration.md) - Full configuration architecture
+- [Key Modules](key_modules.md) - mode_manager.py and config.py details
+- [Development Guide](development.md) - Development workflow with modes

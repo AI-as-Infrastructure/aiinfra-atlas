@@ -1,85 +1,191 @@
 # Vector Store Manifest
 
-This document describes the single-source `manifest.json` used by ATLAS to capture metadata and statistics about any vector store, how it’s used across the system, and how to regenerate it. While examples reference “Hansard,” the format is corpus-agnostic and applies to any text collection you index.
+The manifest (`manifest.json`) is a machine-readable record of how a vector store was built. It is generated automatically during corpus creation (by the wizard or manual scripts) and stored at `backend/corpus/manifest.json`.
 
-## What is the manifest?
+## Schema Version
 
-The manifest is a JSON file located at:
+Current schema version: **1.4**
 
-- Build output: `create/output/manifest.json`
-- Runtime copy: `backend/targets/manifest.json`
+The manifest is corpus-agnostic and does not assume any specific corpus content.
 
-It captures key information about the vector store and its corpora so the backend and UI can auto-configure and display concise stats, and the LLM can answer meta questions with ground-truth numbers.
+## Location
 
-## Schema (v1.1)
+- **Primary**: `backend/corpus/manifest.json` (wizard-generated)
+- **Fallback**: `backend/targets/manifest.json` (legacy/backward compatibility)
 
-Top-level fields:
+The `manifest_loader.py` module checks the primary location first.
 
-- `schema_version`: Manifest schema version (e.g., `"1.1"`).
-- `index_name`: Name of the vector DB collection (e.g., a Chroma collection).
-- `embedding_model`: Local path or model ID used for embeddings.
-- `created`: ISO timestamp when the store was built (UTC).
-- `chunk_size`, `chunk_overlap`: Chunking parameters used.
-- `fields`: Inferred metadata schema map. Each field has a `type` (enum, year, date, string). If `enum`, a `values` array is provided. This is generic and driven by your parsers’ output metadata.
-- `stats`: Aggregated statistics (standardized, corpus‑agnostic):
-  - `total_files`, `total_chunks`, `db_size_mb`
-  - `corpora`: Map per corpus id (e.g., `collection_a`, `collection_b`) to:
-    - `files`, `chunks`, `chars`, `words`
+## Schema
 
-Notes:
-- The standardized set avoids corpus‑specific counters (e.g., speeches, sessions, debates, speakers, date ranges) to keep numbers consistent across heterogeneous sources.
-- Builders may compute corpus‑specific analytics separately, but these should live under a corpus‑specific or experimental key that the default UI/LLM do not consume.
+### Top-Level Structure
 
-Notes:
-- Names like “speeches,” “sessions,” and “debates” are domain examples (Hansard). For a different corpus, these may be absent or replaced by analogous domain terms (e.g., “articles,” “issues,” “sections”).
-- Optional counters appear only when your parser emits the required metadata; consumers should tolerate their absence.
+```json
+{
+  "schema_version": "1.4",
+  "created_at": "2025-07-01T10:00:00Z",
+  "corpus_name": "my_corpus",
+  "display_name": "My Research Corpus",
+  "description": "Description of the corpus",
 
-## How is it generated?
+  "embedding_model": {
+    "id": "Livingwithmachines/bert_1890_1900",
+    "type": "sentence-transformers",
+    "pooling": "mean",
+    "vector_size": 768
+  },
 
-The manifest is written by your corpus builder script (for Hansard, `create/xml/create_hansard_xml_store.py`). In general, a builder will:
+  "vector_store": {
+    "type": "chromadb",
+    "collection_name": "my_corpus",
+    "persist_directory": "backend/corpus/chroma_db"
+  },
 
-1. Parse input documents using a parser registry for each corpus.
-2. Chunk content and write to the vector DB (e.g., Chroma) and a lexical index source (e.g., a BM25‑aligned `bm25_corpus.jsonl`).
-3. Track stats incrementally and infer a metadata schema from emitted fields.
-4. Write `create/output/manifest.json` with the schema and stats.
+  "chunk_size": 1000,
+  "chunk_overlap": 100,
 
-After a successful build, copy the artifacts into the runtime target directory:
+  "fields": {
+    "corpus": {
+      "values": ["all", "1901_au", "1901_nz", "1901_uk"],
+      "labels": {
+        "all": "All Documents",
+        "1901_au": "Australia",
+        "1901_nz": "New Zealand",
+        "1901_uk": "United Kingdom"
+      }
+    }
+  },
 
-- `cp -r create/output/chroma_db backend/targets/chroma_db`
-- `cp create/output/manifest.json backend/targets/manifest.json`
-- `cp create/output/bm25_corpus.jsonl backend/targets/bm25_corpus.jsonl`
+  "statistics": {
+    "total_documents": 206,
+    "total_chunks": 4521,
+    "by_corpus": {
+      "1901_au": { "documents": 70, "chunks": 1520 },
+      "1901_nz": { "documents": 68, "chunks": 1480 },
+      "1901_uk": { "documents": 68, "chunks": 1521 }
+    }
+  },
 
-## How is it used?
+  "build": {
+    "environment": "gpu",
+    "duration_seconds": 45.2,
+    "build_tool": "corpus_wizard",
+    "python_version": "3.10.12"
+  },
 
-- Backend API: `/api/vector-store-info` reads `backend/targets/manifest.json` and returns a concise text summary for the UI (or pretty JSON with `?raw=true`).
-- Targets/config: `backend/targets/base_target.py` loads chunking/model/index info from the manifest.
-- LLM context: For meta/store‑stats questions (files, chunks, model, DB size, chunking), the server injects a one‑page summary so the model answers with exact manifest numbers. The LLM must only cite stats present in the manifest; it does not derive or infer counts (like speeches/sessions/debates/speakers/date ranges). For content questions, the model relies on retrieved documents, not the manifest.
+  "search": {
+    "type": "hybrid",
+    "bm25_corpus": "backend/corpus/bm25_corpus.jsonl"
+  },
 
-### Source URLs and citation metadata
+  "metadata": {
+    "time_period_from": 1901,
+    "time_period_to": 1901,
+    "material_type": "parliamentary",
+    "copyright_status": "public_domain"
+  },
 
-- Canonical URLs should be HTTP(S) links to the public page for the source document. Do not synthesize `file://` links in metadata for citations.
-- Parsers/builders may include `source_relpath` (relative to their local base directory) for debugging and offline traceability, but UI citations should rely on the canonical HTTP(S) `url` when available.
-- Frontend citations expect metadata fields: `id`, `url`, `date` (optional), `page` (optional), `corpus`, and `loc` (a small JSON string like `{ "chunk": 3 }`).
-- If a corpus can deterministically map `source_relpath` to an HTTP(S) permalink (e.g., via a known domain + path pattern), the builder should set `metadata.url` accordingly during build. Otherwise, leave `url` empty.
+  "citation": {
+    "text": "Corpus built with ATLAS Corpus Wizard",
+    "doi": "",
+    "url": ""
+  },
 
-### Using the manifest with different corpora
+  "inter_rater": {
+    "enabled": false,
+    "config": {}
+  }
+}
+```
 
-- Keep the standardized fields stable so the backend/UI/LLM behave consistently regardless of source.
-- If a corpus can authoritatively provide extra analytics, add them under a corpus‑specific section (e.g., `corpus_extras` or namespaced keys). Avoid changing the standardized fields.
-- Downstream consumers should ignore unknown keys. Future versions may include opt‑in sections for richer analytics when all corpora can support them symmetrically.
+### Key Sections
 
-## Regenerating and validating
+#### embedding_model (nested in v1.2+)
 
-- Build (CPU or GPU): see `utils/scripts/create_store_cpu.sh` or `utils/scripts/create_store_gpu.sh`.
-- Always copy the three outputs into `backend/targets/` after the build.
-- In the UI, open the Config/Test Target and click "Vector Store Overview" to confirm the summary renders.
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Hugging Face model identifier |
+| `type` | string | Model framework (e.g., `sentence-transformers`) |
+| `pooling` | string | Pooling strategy: `mean`, `cls`, or `mean+max` |
+| `vector_size` | integer | Embedding dimension |
 
-## Backward/forward compatibility
+#### vector_store (nested in v1.2+)
 
-- Consumers should ignore unknown fields.
-- New stats may appear in future versions; `schema_version` will be bumped accordingly.
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | string | Vector store type (currently `chromadb`) |
+| `collection_name` | string | ChromaDB collection name |
+| `persist_directory` | string | Path to persisted store |
 
-## Troubleshooting
+#### fields.corpus
 
-- If the UI shows raw JSON or errors, verify `backend/targets/manifest.json` exists and is valid JSON.
-- Domain‑specific optional stats (e.g., sessions/debates/speakers) may be absent when parsers don’t emit those fields; this is expected.
+| Field | Type | Description |
+|-------|------|-------------|
+| `values` | array | List of corpus filter IDs (includes `all`) |
+| `labels` | object | Mapping of filter ID to display label |
+
+These values populate the corpus filter dropdown in the frontend. The frontend shows filters only when `values` has more than one entry.
+
+#### statistics
+
+Build statistics including total documents, total chunks, and per-corpus breakdowns.
+
+#### build (v1.4)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `environment` | string | `gpu` or `cpu` |
+| `duration_seconds` | float | Build time |
+| `build_tool` | string | `corpus_wizard` or `manual` |
+| `python_version` | string | Python version used |
+
+#### search
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | string | `hybrid` or `dense` |
+| `bm25_corpus` | string | Path to BM25 JSONL file (if hybrid) |
+
+## Generation
+
+The manifest is generated automatically by:
+- **Wizard**: During the corpus build process, written to `backend/corpus/manifest.json`
+- **Manual scripts**: During `make vs`, written to `create/output/manifest.json`
+
+## Runtime Usage
+
+### manifest_loader.py
+
+The backend loads the manifest on startup via `manifest_loader.py`:
+
+```python
+from backend.modules.manifest_loader import load_manifest, get_corpus_options
+
+manifest = load_manifest()  # Returns dict or {}
+options = get_corpus_options()  # Returns list of {value, label} dicts
+```
+
+### Frontend Filters
+
+`get_corpus_options()` extracts `fields.corpus.values` and generates labels. The result populates the corpus filter dropdown. Filters are hidden when only one option exists.
+
+### Mode Display
+
+`mode.py` reads the manifest to display corpus information on the System Mode page (embedding model, collection name, document count).
+
+## Schema Evolution
+
+| Version | Changes |
+|---------|---------|
+| 1.0 | Initial flat schema |
+| 1.2 | Nested `embedding_model` and `vector_store` objects |
+| 1.3 | Added `fields.corpus.labels`, `statistics.by_corpus` |
+| 1.4 | Added `build` section, `search` section, `inter_rater` config |
+
+The backend handles both flat (v1.0) and nested (v1.2+) formats for backward compatibility.
+
+## Related Documentation
+
+- [Configuration Guide](configuration.md) - How manifest feeds into runtime configuration
+- [Corpus Wizard](corpus_wizard.md) - How the wizard generates the manifest
+- [Vector Store Creation](create_store.md) - Build pipeline details
+- [Key Modules](key_modules.md) - manifest_loader.py module details

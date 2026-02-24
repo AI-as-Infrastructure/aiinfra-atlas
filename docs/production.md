@@ -5,9 +5,11 @@ This guide covers deploying ATLAS to production and staging environments.
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
+- [Corpus Setup](#corpus-setup)
 - [Production Deployment](#production-deployment)
 - [Staging Deployment](#staging-deployment)
-- [Environment Configuration](#environment-configuration)
+- [SSL Configuration](#ssl-configuration)
+- [Systemd Services](#systemd-services)
 - [Maintenance](#maintenance)
 - [Troubleshooting](#troubleshooting)
 
@@ -15,277 +17,249 @@ This guide covers deploying ATLAS to production and staging environments.
 
 ### System Requirements
 
-- Ubuntu 20.04+ or compatible Linux distribution
-- Minimum 8GB RAM, 4 CPU cores recommended
-- 20GB+ available disk space
-- Domain name with DNS configured
-- SSL certificate support (Let's Encrypt)
-
-### Required Software
-
-The deployment script automatically installs:
+- Linux server (Ubuntu 22.04+ recommended)
 - Python 3.10
 - Node.js 22.14.0
-- Nginx
-- Redis
-- Git LFS
-- Build tools
+- Redis server
+- nginx (for reverse proxy and SSL)
+- Domain name with DNS configured
 
-### Access Requirements
+### Environment Setup
 
-- SSH access to the target server
-- Sudo privileges on the target server
-- Domain DNS pointing to the server IP
+```bash
+# Clone repository
+git clone https://github.com/AI-as-Infrastructure/aiinfra-atlas.git /opt/atlas
+cd /opt/atlas
+
+# Copy and configure production environment
+cp config/.env.template config/.env.production
+# Edit config/.env.production with production values
+```
+
+## Corpus Setup
+
+Before deploying, you must build a corpus via the wizard:
+
+### Development Machine (Recommended)
+
+1. Build the corpus locally using the wizard:
+   ```bash
+   make b  # Start backend
+   make f  # Start frontend
+   # Open http://localhost:5173, run Corpus Wizard, enter Deploy Mode
+   ```
+2. Copy the built corpus to the production server:
+   ```bash
+   scp -r backend/corpus/ user@production:/opt/atlas/backend/corpus/
+   scp backend/targets/*.txt user@production:/opt/atlas/backend/targets/
+   ```
+
+### Production Server (Alternative)
+
+Run the wizard directly on the production server in configure mode, then enter deploy mode before switching to production deployment.
+
+### Deployment Checklist
+
+Before proceeding with deployment:
+- [ ] Corpus built via wizard (or copied from development)
+- [ ] `backend/corpus/manifest.json` exists
+- [ ] `backend/corpus/corpus_active.json` exists (or will be created by deploy mode)
+- [ ] `backend/corpus/chroma_db/` populated
+- [ ] Test target file exists in `backend/targets/`
+- [ ] `config/.env.production` configured with API keys, Redis, telemetry
+- [ ] `TEST_TARGET` set in `.env.production`
 
 ## Production Deployment
 
-This tool has been hardened for protoytpe use with authenticated users and small user groups for limited periods.
-
-**Prerequisites:**
-- Configured environment file based on `.env.template`
-- Server with SSH access and sudo privileges
-- Domain with DNS configured
-
-**Deployment:**
-Run the production deployment script on your target server:
+### Quick Deploy
 
 ```bash
-make p
+make p  # Full production deployment
 ```
 
-For enterprise deployments, we recommend additional security hardening, load testing, and security review.
+This command:
+1. Sets up the Python virtual environment
+2. Installs dependencies from `pyproject.toml`
+3. Builds the frontend for production
+4. Configures gunicorn with production settings
+5. Sets up systemd services
+6. Configures nginx
 
-### Verify Deployment
-
-After deployment completes, verify the services:
+### Manual Deployment Steps
 
 ```bash
-# Check service status
-sudo systemctl status gunicorn llm-worker nginx redis-server
+# 1. Create virtual environment
+python3.10 -m venv .venv
+source .venv/bin/activate
+uv pip install -e ".[cpu]"  # or [gpu] for GPU support
 
-# Check application logs
-sudo tail -f /var/log/atlas/gunicorn-access.log
-sudo tail -f /var/log/atlas/gunicorn-error.log
+# 2. Build frontend
+cd frontend
+npm install
+npm run build
+cd ..
 
-# Test the application
-curl -I https://your-domain.com
+# 3. Configure nginx
+sudo cp deploy/production/nginx.conf /etc/nginx/sites-available/atlas
+sudo ln -sf /etc/nginx/sites-available/atlas /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+
+# 4. Configure systemd services
+sudo cp deploy/production/*.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable atlas-backend atlas-worker
+sudo systemctl start atlas-backend atlas-worker
 ```
-
-Your application should now be available at `https://your-domain.com`.
 
 ## Staging Deployment
 
-For staging deployments, see the [Staging Environment Guide](staging.md).
-
-## Environment Configuration
-
-### Required Variables
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `ENVIRONMENT` | Deployment environment | `production` |
-| `VITE_API_URL` | Frontend API URL | `https://your-domain.com` |
-| `REDIS_PASSWORD` | Redis authentication password | `secure-random-password` |
-| `PHOENIX_SPACE_ID` | Phoenix space identifier | `aiinfra` |
-| `PHOENIX_COLLECTOR_ENDPOINT` | Phoenix space endpoint | `https://app.phoenix.arize.com/s/aiinfra` |
-
-### LLM Configuration
-
-Set at least one LLM provider:
+### Local Staging
 
 ```bash
-# Anthropic Claude (recommended)
-ANTHROPIC_API_KEY=sk-ant-api03-...
-
-# OpenAI GPT
-OPENAI_API_KEY=sk-proj-...
-
-# Google Gemini
-GOOGLE_API_KEY=AIzaSy...
+make sl  # Deploy to local staging
 ```
 
-### Optional Features
+### Remote Staging
 
-**AWS Bedrock Integration:**
 ```bash
-AWS_DEFAULT_REGION=us-east-1
-AWS_ACCESS_KEY_ID=AKIA...
-AWS_SECRET_ACCESS_KEY=...
+make sr  # Deploy to remote staging server
 ```
 
-**Observability (Arize Phoenix):**
+Staging uses `config/.env.staging` with separate telemetry project names and relaxed authentication.
+
+## SSL Configuration
+
+### Let's Encrypt (Recommended)
+
 ```bash
-# Phoenix Spaces Configuration
-# Configure for your own Phoenix space
-PHOENIX_SPACE_ID=aiinfra
-PHOENIX_API_KEY=your_phoenix_api_key
-PHOENIX_CLIENT_HEADERS="Authorization=Bearer your_phoenix_api_key"
-PHOENIX_PROJECT_NAME=ATLAS-Prod
-PHOENIX_COLLECTOR_ENDPOINT="https://app.phoenix.arize.com/s/aiinfra"
+# Install certbot
+sudo apt install certbot python3-certbot-nginx
+
+# Obtain certificate
+sudo certbot --nginx -d atlas.example.com
+
+# Auto-renewal is configured automatically
 ```
-**Note**: Create your own Phoenix space at https://app.phoenix.arize.com and configure these variables with your space ID and API keys. Different environments (Dev/Staging/Prod) should use different `PHOENIX_PROJECT_NAME` values within the same space.
 
-**Production Phoenix Setup Checklist:**
-1. Verify `PHOENIX_SPACE_ID=aiinfra` is set in `.env.production`
-2. Verify `PHOENIX_COLLECTOR_ENDPOINT` uses the space-based URL: `https://app.phoenix.arize.com/s/aiinfra`
-3. Confirm your API key has write access to the `aiinfra` space
-4. After deployment, verify traces appear at `https://app.phoenix.arize.com/s/aiinfra/projects`
-5. Test backup script connectivity: `make backup-prod`
+### Manual SSL
 
-**Authentication (AWS Cognito):**
+Place certificates in `deploy/certs/` and update nginx configuration.
+
+## Systemd Services
+
+### Backend Service
+
+The backend runs via gunicorn with settings from `.env.production`:
+
+```ini
+[Unit]
+Description=ATLAS Backend
+After=network.target redis.service
+
+[Service]
+Type=notify
+User=atlas
+Group=atlas
+WorkingDirectory=/opt/atlas
+ExecStart=/opt/atlas/.venv/bin/gunicorn backend.main:app
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### Service Management
+
 ```bash
-VITE_USE_COGNITO_AUTH=true
-VITE_COGNITO_REGION=us-west-1
-VITE_COGNITO_USERPOOL_ID=us-west-1_...
-VITE_COGNITO_CLIENT_ID=...
+# Status
+sudo systemctl status atlas-backend
+
+# Restart
+sudo systemctl restart atlas-backend
+
+# Logs
+sudo journalctl -u atlas-backend -f
 ```
-
-### Runtime System Configuration Options
-
-ATLAS supports runtime system toggles persisted in `config/system_settings.json`:
-
-- `telemetryEnabled`
-- `interRaterEnabled`
-
-Configuration precedence is:
-
-1. Environment variables
-2. `config/system_settings.json`
-3. Built-in defaults
-
-For production, keep environment overrides explicit for critical controls.
-
-### System Configuration API Endpoint
-
-Authenticated endpoint:
-
-- `POST /api/system/configuration`
-
-Request body:
-
-```json
-{
-	"telemetryEnabled": true,
-	"interRaterEnabled": false
-}
-```
-
-Related endpoints:
-
-- `GET /api/system/configuration`
-- `POST /api/system/configuration/reload`
 
 ## Maintenance
 
-### Updating the Application
-
-To update to the latest version:
+### Health Checks
 
 ```bash
-cd /opt/atlas
-git pull origin main
-git lfs pull
-make p
+make health          # Basic health check
+make health-verbose  # Detailed output
+make health-json     # Machine-readable output
 ```
 
-### Managing Services
+See [Health Monitoring](health_monitoring.md) for full details.
+
+### Telemetry Backups
 
 ```bash
-# Start/stop services
-sudo systemctl start gunicorn llm-worker
-sudo systemctl stop gunicorn llm-worker
-
-# View logs
-sudo journalctl -u gunicorn -f
-sudo journalctl -u llm-worker -f
-
-# Restart services
-sudo systemctl restart gunicorn llm-worker nginx
+make backup-prod  # Backup Phoenix telemetry data
 ```
 
-### SSL Certificate Renewal
+See [Backups](backups.md) for scheduling and configuration.
 
-Let's Encrypt certificates are automatically renewed. To manually renew:
+### Corpus Updates
+
+To update the corpus in production:
+1. Build a new corpus on a development machine via the wizard
+2. Stop the production backend: `sudo systemctl stop atlas-backend`
+3. Copy the new corpus: `scp -r backend/corpus/ user@production:/opt/atlas/backend/corpus/`
+4. Restart: `sudo systemctl start atlas-backend`
+
+Alternatively, use the configuration export/import API (see [Configuration Guide](configuration.md)).
+
+### Log Rotation
+
+Application logs should be rotated to prevent disk space issues:
 
 ```bash
-sudo certbot renew
-sudo systemctl reload nginx
+# /etc/logrotate.d/atlas
+/var/log/atlas/*.log {
+    daily
+    missingok
+    rotate 14
+    compress
+    delaycompress
+    notifempty
+}
 ```
-
-### Cleaning Up
-
-To completely remove the production deployment:
-
-```bash
-cd /opt/atlas
-make dp
-```
-
-This will stop all services, remove files, and clean up configurations.
 
 ## Troubleshooting
 
 ### Common Issues
 
-**1. Node.js Version Mismatch**
-```bash
-# The deployment script handles this automatically
-# If you see version errors, ensure nvm is properly configured
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-nvm use 22.14.0
-```
+**Backend won't start:**
+- Check `.env.production` is configured
+- Verify `backend/corpus/corpus_active.json` exists
+- Check Redis is running: `systemctl status redis-server`
+- Review logs: `journalctl -u atlas-backend -n 50`
 
-**2. Permission Errors**
-```bash
-# Ensure proper ownership
-sudo chown -R $(whoami):$(whoami) /opt/atlas
-```
+**Corpus not loading:**
+- Verify `backend/corpus/manifest.json` exists
+- Check `corpus_active.json` has valid paths
+- Ensure retriever adapter exists in `backend/corpus/`
 
-**3. SSL Certificate Issues**
-```bash
-# Manually run certbot if automatic setup fails
-sudo certbot --nginx -d your-domain.com
-```
+**502 Bad Gateway:**
+- Backend not running or crashing on startup
+- Check gunicorn logs: `journalctl -u atlas-backend`
+- Verify nginx proxy settings
 
-**4. Service Startup Issues**
-```bash
-# Check service logs
-sudo journalctl -u gunicorn --no-pager
-sudo journalctl -u llm-worker --no-pager
+**Authentication issues:**
+- Verify Cognito configuration in `.env.production`
+- Check `VITE_USE_COGNITO_AUTH=true`
+- Test with authentication disabled first
 
-# Verify environment file
-cat /opt/atlas/config/.env.production
-```
+**Memory issues:**
+- Adjust `GUNICORN_WORKERS` and `GUNICORN_MAX_WORKER_MEMORY_MB`
+- Monitor with `make health-verbose`
 
-### Log Locations
+## Related Documentation
 
-- **Application logs:** `/var/log/atlas/`
-- **Nginx logs:** `/var/log/nginx/`
-- **System logs:** `sudo journalctl -u servicename`
-
-### Performance Monitoring
-
-The application includes built-in telemetry when configured with Arize Phoenix. Monitor:
-- Response times
-- Error rates
-- LLM token usage
-- User interaction patterns
-
-### Security Considerations
-
-- Keep API keys secure and rotate regularly
-- Monitor access logs for unusual activity
-- Keep the system updated with security patches
-- Use strong passwords for Redis and other services
-- Consider implementing rate limiting for public deployments
-
-## Support
-
-For deployment issues:
-1. Check the logs first
-2. Verify environment configuration
-3. Ensure all required services are running
-4. Check DNS and SSL certificate status
-
-For application-specific issues, refer to the main README and application documentation.
+- [Configuration Guide](configuration.md) - Environment files and configuration
+- [Health Monitoring](health_monitoring.md) - System health checks
+- [Staging Environment](staging.md) - Staging deployment
+- [Development Guide](development.md) - Development setup
+- [Backups](backups.md) - Telemetry data backups

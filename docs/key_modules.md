@@ -1,256 +1,191 @@
-# ATLAS Key Modules
+# Key Backend Modules
 
-The ATLAS backend is organized into modular components that handle different aspects of the RAG (Retrieval Augmented Generation) pipeline. This document explains the significance and functionality of the key modules that form the core architecture.
+Overview of the core backend modules and their responsibilities.
 
-## Core Configuration Modules
+## Architecture
 
-### `backend/modules/config.py`
-
-**Purpose**: Centralized configuration management system that provides strongly-typed, validated configuration loading from multiple sources.
-
-**Key Responsibilities**:
-- **Hierarchical Configuration Loading**: Loads configuration in order of precedence:
-  1. Default configuration values
-  2. Environment variables from `.env.{environment}` files
-  3. Target-specific configuration files (`backend/targets/{target}.txt`)
-- **Configuration Validation**: Type checking and schema validation for all configuration parameters
-- **Retriever Initialization**: Manages the initialization and lifecycle of retriever instances
-- **Typed Access Methods**: Provides strongly-typed getter methods for different configuration sections
-
-**Key Functions**:
-```python
-initialize_config()           # Initialize configuration system
-get_config()                 # Get complete configuration dictionary
-get_retriever_config()       # Get retriever-specific configuration
-get_llm_config()            # Get LLM provider and model configuration
-get_system_prompt()         # Get the system prompt text
-get_corpus_options()        # Get available corpus filtering options
-get_citation_limit()        # Get citation display limit
+```
+backend/
+├── corpus/                  # Active corpus (wizard-generated, gitignored)
+│   ├── manifest.json        # Corpus metadata and stats (v1.4)
+│   ├── corpus_active.json   # Runtime configuration
+│   ├── corpus_config.yaml   # Build configuration
+│   ├── chroma_db/           # Vector store
+│   ├── bm25_corpus.jsonl    # BM25 lexical index
+│   └── {name}_adapter.py    # Retriever adapter
+├── modules/                 # Core application modules
+│   ├── config.py            # Configuration management
+│   ├── manifest_loader.py   # Manifest loading and corpus options
+│   ├── mode_manager.py      # Configure/deploy mode state
+│   ├── corpus_config.py     # Corpus configuration models
+│   ├── corpus_analyzer.py   # Corpus structure analysis
+│   ├── corpus_builder.py    # Corpus build orchestration (internal)
+│   ├── github_corpus.py     # GitHub repository integration
+│   ├── corpus_requirements.py  # System requirements checking
+│   ├── llm.py               # Multi-provider LLM integration
+│   ├── system_prompts.py    # Prompt construction
+│   ├── document_retrieval.py # Vector store retrieval
+│   ├── embeddings.py        # Embedding model management
+│   ├── feedback.py          # User feedback handling
+│   └── telemetry.py         # OpenTelemetry instrumentation
+├── retrievers/              # Retriever framework
+│   ├── base_retriever.py    # Base class for all retrievers
+│   └── __init__.py          # Dynamic retriever loading
+├── routers/                 # FastAPI route handlers
+│   ├── corpus_wizard.py     # Wizard API endpoints
+│   ├── mode.py              # Mode management endpoints
+│   ├── system_configuration.py  # System settings API
+│   └── ...                  # Other route handlers
+└── targets/                 # Test target .txt files
 ```
 
-**Integration Points**:
-- Called by `app.py` during application startup
-- Used by all modules that need configuration parameters
-- Integrates with `base_target.py` for test target configuration
-- Provides configuration to retriever and LLM modules
+## Configuration Layer
 
-### `backend/modules/system_prompts.py`
+### config.py
 
-**Purpose**: Manages system prompts and prompt templates for LLM interactions, providing modular prompt construction and conversation handling.
+Central configuration module. Loads settings from:
+1. `corpus_active.json` (corpus settings - retriever module, collection, embedding model)
+2. Test target files (LLM provider, model, search parameters)
+3. `.env.{environment}` files (API keys, Redis, telemetry)
 
-**Key Responsibilities**:
-- **Modular Prompt Construction**: Builds system prompts from reusable components
-- **Role and Task Definition**: Defines the AI assistant's expertise in 1901 parliamentary records
-- **Citation Guidelines**: Provides instructions for evidence-based responses without manual citation markers
-- **Template Generation**: Creates LangChain-compatible prompt templates for different conversation contexts
-- **Multi-turn Conversation Support**: Handles context preservation across conversation turns
+Does not use environment variables for corpus settings.
 
-**Key Components**:
-```python
-# Prompt Components
-ROLE_DEFINITION          # Defines AI expertise in parliamentary records
-CORPUS_SELECTION        # Instructions for country-specific targeting
-TASK_DEFINITION         # Response format and evidence requirements
-CITATION_GUIDELINES     # Automatic citation handling instructions
-EVIDENCE_HANDLING       # Rules for insufficient evidence scenarios
-UNCERTAINTY_HANDLING    # Guidelines for expressing limitations
+### manifest_loader.py
 
-# Template Functions
-get_qa_prompt_template()      # Standard prompt template for Q&A
-get_qa_chat_prompt_template() # Chat-based template with message history
-build_system_prompt()         # Customizable prompt builder
-```
+Loads and parses `manifest.json`. Checks `backend/corpus/manifest.json` first (wizard output), falls back to `backend/targets/manifest.json` for backward compatibility.
 
-**Prompt Strategy**:
-- **Evidence-Based Responses**: Requires grounding in provided source documents
-- **Automatic Citation**: System handles citation generation without manual markers
-- **Scope Limitation**: Restricts responses to 1901 parliamentary proceedings
-- **Historical-Contemporary Comparisons**: Guidelines for making relevant modern connections
-- **Direct Presentation**: Authoritative tone without unnecessary document access references
+Key functions:
+- `load_manifest()` - Load the full manifest dictionary
+- `get_corpus_options()` - Extract filter values for the frontend dropdown
+- `generate_corpus_label()` - Create display labels from corpus IDs
 
-## LLM Integration Module
+### mode_manager.py
 
-### `backend/modules/llm.py`
+Manages the configure/deploy mode lifecycle:
+- **Configure Mode**: Wizard and settings accessible, configuration can change
+- **Deploy Mode**: One-way lock, chat interface active, `corpus_active.json` created from manifest
+- Server restart required to return to configure mode
 
-**Purpose**: Provides unified LLM integration with comprehensive telemetry instrumentation, supporting multiple providers and streaming responses.
+## Corpus Wizard Layer
 
-**Key Responsibilities**:
-- **Multi-Provider Support**: Unified interface for OpenAI, Anthropic, Google, AWS Bedrock, and Ollama
-- **Streaming Response Generation**: Real-time response generation with chunk-by-chunk processing
-- **Telemetry Integration**: Comprehensive tracking of LLM interactions, performance metrics, and caching
-- **Prompt Optimization**: Integration with prompt caching for improved performance
-- **Error Handling**: Robust error management with graceful degradation
-- **Chat History Management**: Conversion between application and LangChain message formats
+### corpus_wizard.py (router)
 
-**Key Functions**:
-```python
-create_llm()                    # Create LLM instance for any provider
-generate_response()             # Core response generation with streaming
-generate_response_with_telemetry() # Full telemetry-instrumented response generation
-format_documents()              # Convert document objects to context strings
-format_chat_history()          # Convert chat history to LangChain messages
-```
+FastAPI router for the wizard UI. Endpoints include:
+- `POST /api/corpus/analyze` - Analyze a source directory
+- `POST /api/corpus/build` - Start a corpus build (SSE progress stream)
+- `POST /api/corpus/activate` - Activate a built corpus
+- `GET /api/corpus/status` - Get current corpus status
 
-**Provider Support**:
-- **OpenAI**: GPT-4, GPT-4o, GPT-4o-mini models
-- **Anthropic**: Claude 3.7, Claude 4 models with prompt caching
-- **Google**: Gemini 1.5, Gemini 2.0 models
-- **AWS Bedrock**: Claude models via AWS infrastructure
-- **Ollama**: Local LLM hosting support
+### corpus_analyzer.py
 
-**Telemetry Features**:
-- **Performance Tracking**: Response time, chunk count, token usage
-- **Cache Monitoring**: Prompt cache hit rates and efficiency metrics
-- **Error Tracking**: Detailed error capture and recovery patterns
-- **Session Linking**: Integration with Phoenix monitoring for end-to-end tracing
+Analyzes source directories to discover file structure and suggest filters. Uses a hybrid approach:
+1. Directory structure (highest priority) - folder names become filters
+2. User metadata hints (medium) - time periods, people, topics
+3. Content analysis (lowest) - XML/text metadata sampling
+
+### corpus_builder.py
+
+Orchestrates the full build pipeline internally (called by the wizard router):
+- Document chunking and processing
+- Embedding generation (GPU or CPU)
+- ChromaDB vector store creation
+- BM25 index generation
+- Manifest writing
+- Retriever adapter generation
+
+### corpus_config.py
+
+Pydantic models for corpus configuration validation: metadata, source, filters, embeddings, vector store, and search parameters.
+
+## Retrieval Layer
+
+### document_retrieval.py
+
+Handles document retrieval from the vector store with corpus filtering. Supports:
+- Dense retrieval (ChromaDB similarity search)
+- Hybrid retrieval (dense + BM25 via Reciprocal Rank Fusion)
+- Corpus filter application
+
+### retrievers/__init__.py
+
+Dynamic retriever loading. `load_retriever()` searches:
+1. `backend/corpus/{name}` (wizard-generated adapters)
+2. `backend/retrievers/{name}` (legacy/manual retrievers)
+
+Finds and instantiates the `BaseRetriever` subclass from the module.
+
+### retrievers/base_retriever.py
+
+Abstract base class for all retrievers. Defines:
+- `retrieve(query, k, filter)` - Main retrieval method
+- `get_filter_capabilities()` - Available corpus filters
+- `get_corpus_options()` - Frontend dropdown options
+
+### embeddings.py
+
+Manages embedding model loading with GPU auto-detection and CPU fallback. Handles Sentence Transformers with configurable pooling.
+
+## LLM Layer
+
+### llm.py
+
+Multi-provider LLM integration with OpenTelemetry instrumentation. Supports:
+- OpenAI, Anthropic, Google, AWS Bedrock, Ollama
+- Streaming responses via Server-Sent Events
+- Prompt caching (Anthropic)
+- Concurrent request management
+
+### system_prompts.py
+
+Constructs system prompts from modular components. Prompt content adapts based on the active corpus and configuration.
 
 ## Supporting Modules
 
-### `backend/modules/document_retrieval.py`
+### feedback.py
 
-**Purpose**: Handles document retrieval from vector stores with corpus filtering and telemetry.
+User feedback collection and storage. Routes feedback to Redis (production) or SQLite (development) and associates it with telemetry spans.
 
-**Key Features**:
-- Vector similarity search with configurable parameters
-- Corpus-specific filtering (Australia, New Zealand, UK, or all)
-- Large retrieval operations for comprehensive document gathering
-- Integration with telemetry for search performance tracking
+### telemetry.py
 
-### `backend/modules/corpus_filtering.py`
+OpenTelemetry instrumentation for request tracing. Exports to Phoenix for observability. Spans capture: query, retrieval, LLM call, response, and feedback.
 
-**Purpose**: Manages filtering of retrieved documents based on corpus metadata.
+### mode.py (router)
 
-**Key Features**:
-- Post-retrieval filtering based on corpus tags
-- Support for single corpus or multi-corpus queries
-- Metadata preservation during filtering operations
-- Integration with citation generation systems
+Mode management API:
+- `GET /api/mode` - Current mode and corpus info
+- `POST /api/mode/deploy` - Enter deploy mode (creates `corpus_active.json`)
+- Extracts corpus info from manifest for display
 
-### `backend/modules/streaming.py`
+### system_configuration.py (router)
 
-**Purpose**: Provides utilities for Server-Sent Events (SSE) streaming responses.
+Runtime settings API:
+- `GET /api/system/configuration` - Current system settings
+- `POST /api/system/configuration` - Update toggles (telemetry, inter-rater)
+- Persists to `config/system_settings.json`
 
-**Key Features**:
-- SSE message formatting for real-time communication
-- Error message generation and transmission
-- Response chunk processing and delivery
-- WebSocket and HTTP streaming support
+## Data Flow
 
-### `backend/modules/prompt_cache.py`
-
-**Purpose**: Implements intelligent prompt caching to reduce API costs and improve response times.
-
-**Key Features**:
-- Provider-specific cache optimization (especially for Anthropic Claude)
-- Token usage estimation and savings tracking
-- Cache hit rate monitoring and statistics
-- Universal caching strategy across all LLM providers
-
-### `backend/modules/embeddings.py`
-
-**Purpose**: Manages embedding model loading and document embedding operations.
-
-**Key Features**:
-- Sentence Transformer model management
-- Embedding pooling strategies (mean, cls, mean+max)
-- Model fine-tuning integration
-- Vector dimension handling for different models
-
-## Module Interactions and Architecture
-
-### Configuration Flow
 ```
-app.py → config.py → base_target.py → {target}.txt files
-                  ↓
-               retriever initialization
-                  ↓
-            system_prompts.py → llm.py
+User Query
+  -> Frontend (UserInput.vue)
+    -> Backend API (FastAPI router)
+      -> config.py (load corpus_active.json + target)
+      -> document_retrieval.py (retrieve relevant chunks)
+        -> Retriever adapter (backend/corpus/{name}_adapter.py)
+          -> ChromaDB (dense search)
+          -> BM25 index (lexical search, if hybrid)
+          -> RRF fusion
+      -> llm.py (generate response with retrieved context)
+        -> LLM Provider API
+      -> telemetry.py (trace the request)
+    -> SSE stream response
+  -> Frontend (ChatHistory.vue)
 ```
 
-### Request Processing Flow
-```
-User Question → document_retrieval.py → corpus_filtering.py
-                                     ↓
-            system_prompts.py → llm.py → streaming.py → User Response
-                              ↑
-                         prompt_cache.py
-```
+## Related Documentation
 
-### Telemetry Integration
-All modules integrate with the telemetry system to provide:
-- **Performance Metrics**: Response times, token usage, cache efficiency
-- **Error Tracking**: Detailed error capture and recovery patterns
-- **Usage Analytics**: Question patterns, corpus preferences, model performance
-- **System Health**: Memory usage, concurrent user handling, rate limiting
-
-## Development Guidelines
-
-### Adding New Modules
-1. **Follow the Pattern**: Use similar structure to existing modules with clear separation of concerns
-2. **Configuration Integration**: Use `config.py` for any configurable parameters
-3. **Telemetry Support**: Add appropriate telemetry instrumentation for monitoring
-4. **Error Handling**: Implement comprehensive error handling with graceful degradation
-5. **Type Hints**: Use comprehensive type hints for better IDE support and documentation
-
-### Module Dependencies
-- **Minimize Coupling**: Modules should depend on configuration and interfaces, not implementations
-- **Avoid Circular Imports**: Use lazy imports or dependency injection when needed
-- **Testing Support**: Design modules to be easily testable in isolation
-- **Documentation**: Maintain clear docstrings and type annotations
-
-### Performance Considerations
-- **Caching**: Use appropriate caching strategies for expensive operations
-- **Lazy Loading**: Initialize expensive resources only when needed
-- **Memory Management**: Clean up resources properly, especially LLM instances
-- **Async Support**: Consider async patterns for I/O bound operations
-
-## Configuration Examples
-
-### Environment-Specific Module Configuration
-```bash
-# Development - focus on debugging
-BACKEND_LOG_LEVEL=debug
-TELEMETRY_ENABLED=true
-LLM_REQUEST_DELAY_MS=500
-
-# Production - focus on performance
-BACKEND_LOG_LEVEL=warn
-PROMPT_CACHING_ENABLED=true
-LLM_MAX_CONCURRENT=20
-```
-
-### Module-Specific Settings
-```bash
-# LLM module configuration
-LLM_PROVIDER=ANTHROPIC
-LLM_MODEL=claude-3-7-sonnet-20250219
-LLM_REQUEST_DELAY_MS=1000
-
-# System prompts configuration
-SYSTEM_PROMPT_COMPONENTS=role,task,citations,evidence
-
-# Caching configuration
-PROMPT_CACHING_ENABLED=true
-PROMPT_CACHE_TTL=5m
-```
-
-## Troubleshooting Common Issues
-
-### Configuration Loading Problems
-- **Missing Config Files**: Ensure target configuration files exist in `backend/targets/`
-- **Environment Variables**: Verify environment variables are loaded correctly
-- **Type Conversion**: Check for type conversion errors in configuration values
-
-### LLM Integration Issues
-- **API Keys**: Verify API keys are set and valid for the configured provider
-- **Model Names**: Ensure model names match provider specifications
-- **Rate Limiting**: Check for rate limit errors and adjust delay settings
-
-### Module Import Errors
-- **Circular Imports**: Use lazy imports or refactor dependencies
-- **Missing Dependencies**: Ensure all required packages are installed
-- **Path Issues**: Verify module paths are correct in import statements
-
----
-
-The modular architecture of ATLAS provides flexibility for customization while maintaining clear separation of concerns. Each module has a specific role in the RAG pipeline, and their interactions are designed to be observable, configurable, and maintainable.
+- [Configuration Guide](configuration.md) - Configuration architecture and precedence
+- [RAG Search](RAG_search.md) - Retrieval pipeline details
+- [Corpus Wizard](corpus_wizard.md) - Wizard interface and filter discovery
+- [Manifest Schema](manifest.md) - Manifest v1.4 format
+- [Test Targets](test_targets.md) - LLM configuration

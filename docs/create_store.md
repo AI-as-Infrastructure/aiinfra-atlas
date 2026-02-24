@@ -1,71 +1,117 @@
-# Building a Chroma Vector Store (Create-Store Workflow)
+# Vector Store Creation
 
-This guide walks through the end-to-end pipeline that converts a folder of plain-text documents into a Chroma/HNSW vector store usable by ATLAS.  The process is corpus-agnostic—the same steps work whether you have three Hansard corpora or a single collection of legal opinions.
+This guide covers how to create vector stores for ATLAS. The **corpus wizard** is the standard method; manual creation is available as an advanced alternative.
 
-> **Terminology**  
-> *Corpus* = a logical source (e.g. `us_case_law`, `uk_hansard`). Each chunk is tagged with its corpus so we can filter at query time.
+## Wizard Method (Recommended)
 
-## 1. Pipeline at a Glance
+The corpus wizard provides a guided, end-to-end workflow for building vector stores:
 
-| Stage | Script / Class | Role |
-|-------|----------------|------|
-| 1️⃣ **Model prep** | `create/prepare_embedding_model.py` (`ensure_st_model`) | Downloads/creates a *Sentence-Transformer* wrapper around 19-century BERT, sets pooling mode, and saves to `models/…` |
-| 2️⃣ **Auto fine-tune** | integrated in `create_hansard_store.py` | Samples ≈ 20 k in-domain sentence pairs and runs a 2-epoch contrastive fine-tune, saved to `models/<base>_st_ft` |
-| 3️⃣ **Index build** | `create/txt/create_hansard_store.py` (or an equivalent script under `create/<type>/`) | • Splits source files into 1 000-character chunks<br>• Embeds with **the fine-tuned model**<br>• Stores chunks + metadata in **Chroma** |
-| 4️⃣ **Retrieval** | LangChain `Chroma` retriever | Given a user query, embeds it with *the same* model, then runs similarity search (`k` nearest) with an optional metadata filter (`filter={"corpus": …}`) |
-| 5️⃣ **RAG** | LLM orchestrator (e.g. QA chain) | Feeds retrieved chunks to the LLM for answer synthesis |
+1. Start the backend and frontend (`make b`, `make f`)
+2. Open http://localhost:5173 and navigate to the Corpus Wizard
+3. Select a source directory or GitHub repository
+4. Configure filters, embedding model, and chunking parameters
+5. Configure the LLM test target
+6. Build the corpus (GPU-accelerated when available)
+7. Enter Deploy Mode to activate
 
----
+The wizard handles the entire pipeline: model preparation, fine-tuning, chunking, embedding, vector store creation, BM25 index generation, manifest writing, and retriever adapter generation. All artifacts are written to `backend/corpus/`.
 
-## 2. Embedding model
+See [Corpus Wizard Documentation](corpus_wizard.md) for full details.
 
-* **Backbone:** Any Hugging-Face BERT/DistilBERT/… checkpoint.  The default shipped with the project is `Livingwithmachines/bert_1890_1900`.
+## Pipeline Overview
 
-The fine-tune now happens automatically the first time you build the
-store; subsequent runs detect `models/<base>_st_ft` and skip the step.
+Whether using the wizard or manual scripts, the vector store creation pipeline follows the same stages:
 
-### Pooling strategy (`POOLING`)
+| Stage | Role |
+|-------|------|
+| **Model prep** | Downloads/creates a Sentence-Transformer wrapper, sets pooling mode |
+| **Auto fine-tune** | Samples in-domain sentence pairs and runs contrastive fine-tuning |
+| **Index build** | Splits source files into chunks, embeds with the fine-tuned model, stores in Chroma |
+| **BM25 index** | Writes `bm25_corpus.jsonl` for hybrid (dense + BM25) search via RRF |
+| **Manifest** | Writes `manifest.json` with schema version, stats, and metadata |
+| **Retriever adapter** | Generates a Python adapter class extending `BaseRetriever` |
 
-```ini
-# .env.*
-POOLING=mean        # mean | cls | mean+max
-```
+## Embedding Model
+
+* **Backbone:** Any Hugging-Face BERT/DistilBERT checkpoint. The default is `Livingwithmachines/bert_1890_1900`.
+* Fine-tuning happens automatically the first time you build a store; subsequent runs detect the fine-tuned model and skip the step.
+
+### Pooling Strategy
 
 | Value | Description | Vector size |
 |-------|-------------|-------------|
 | `mean` (default) | Average of token vectors (robust recall) | 768 |
-| `cls`            | Only the `[CLS]` token (sometimes sharper) | 768 |
-| `mean+max`       | Concatenate mean & max (context + keyword) | 1 536 |
+| `cls` | Only the `[CLS]` token (sometimes sharper) | 768 |
+| `mean+max` | Concatenate mean & max (context + keyword) | 1,536 |
 
-The env-var is **read twice**:
+Pooling is configured during the wizard build step or via the `POOLING` setting in manual scripts.
 
-1. In *model prep* – so the saved Sentence-Transformer has the
-   corresponding pooling head;
-2. In *index build* – so per-chunk embeddings match the head.
+## Vector Store (Chroma)
 
----
-
-## 3. Vector-store (Chroma)
-
-* **Collection:** `CHROMA_COLLECTION_NAME` *(default `blert_1000`)*  
-* **Schema (metadata):**
+### Schema (metadata per chunk)
 
 | Field | Example | Purpose |
 |-------|---------|---------|
-| `id`    | `"k15_openai40:1901_nz:42"` | unique chunk ID |
-| `text`  | chunk contents | retrieval payload |
-| `date`  | `"Thursday, 11th July, 1901"` | filtering / display |
-| `url`   | source URL | citations |
-| `page`  | `"302"` | citation context |
-| `loc`   | `{"lines":{"from":2701,"to":4000}}` | snippet position |
-| `corpus`| `"us_case_law"` | enables `filter={"corpus": "us_case_law"}` |
+| `id` | `"k15_openai40:1901_nz:42"` | Unique chunk ID |
+| `text` | chunk contents | Retrieval payload |
+| `date` | `"Thursday, 11th July, 1901"` | Filtering / display |
+| `url` | source URL | Citations |
+| `page` | `"302"` | Citation context |
+| `loc` | `{"lines":{"from":2701,"to":4000}}` | Snippet position |
+| `corpus` | `"us_case_law"` | Enables corpus filtering |
 
-*Chroma* persists automatically to the directory set in
-`CHROMA_PERSIST_DIRECTORY`.
+Chroma persists to `backend/corpus/chroma_db/` (wizard) or the directory set by the build script (manual).
 
----
+## Hybrid Search (Dense + BM25)
 
-## 4. Retriever
+Store creation writes both a vector database (Chroma) and a BM25-aligned corpus file (`bm25_corpus.jsonl`). Each JSONL record contains `id`, `text`, and `metadata`. The `id` matches the vector-store chunk id to enable fusion and citation.
+
+At query time, if the BM25 corpus file is available and `rank_bm25` is installed, the retriever performs hybrid fusion (dense + BM25 via RRF). Otherwise it falls back to dense-only.
+
+See [RAG Search Documentation](RAG_search.md) for RRF details and configuration.
+
+## Build Artifacts
+
+### Wizard Output (`backend/corpus/`)
+
+| File | Purpose |
+|------|---------|
+| `manifest.json` | Corpus metadata, stats, schema (v1.4) |
+| `corpus_active.json` | Runtime configuration for the backend |
+| `corpus_config.yaml` | Build configuration (reproducibility) |
+| `chroma_db/` | ChromaDB vector store |
+| `bm25_corpus.jsonl` | BM25 lexical index |
+| `{name}_adapter.py` | Retriever adapter extending `BaseRetriever` |
+
+### Manual Output (`create/output/`)
+
+Manual scripts write to `create/output/`. After a successful build, artifacts must be copied into place:
+
+```bash
+cp -r create/output/chroma_db backend/corpus/chroma_db
+cp create/output/manifest.json backend/corpus/manifest.json
+cp create/output/bm25_corpus.jsonl backend/corpus/bm25_corpus.jsonl
+```
+
+## Advanced: Manual Vector Store Creation
+
+For scripted builds or custom pipelines, use the scripts in the `create/` directory:
+
+```bash
+make vs      # Build vector store (auto-detects GPU)
+make r       # Generate retriever adapter
+```
+
+Both targets will:
+- Ensure the Python virtual environment is set up and dependencies are installed
+- Use the unified `pyproject.toml` for consistency
+- Output results to `create/output/`
+
+### Custom Corpora
+
+You can add new corpora by copying and adapting the template scripts in `create/`. The process is corpus-agnostic: provide your source documents, configure the embedding model and chunking parameters, and run the build.
+
+### Retriever
 
 ```python
 vector_store = Chroma(
@@ -83,18 +129,6 @@ docs = vector_store.similarity_search(
 
 Hybrid mode (dense + BM25) is recommended for production and is supported at runtime via Reciprocal Rank Fusion (RRF).
 
-> BM25 / Hybrid search
-> 
-> • Store creation writes a vector database (Chroma) and can produce a BM25‑aligned corpus file: `bm25_corpus.jsonl`.
-> 
-> • Each JSONL record contains `id`, `text`, and `metadata`. The `id` matches the vector‑store chunk id to enable fusion and citation.
-> 
-> • At query time, if `HANSARD_BM25_CORPUS` (or `BM25_CORPUS`) points to the JSONL and `rank_bm25` is installed, the retriever performs hybrid fusion (dense + BM25). Otherwise it falls back to dense‑only.
-> 
-> See `docs/RAG_search.md` for RRF details and configuration knobs.
-
 ---
 
-## 5. Workflow summary
-
-```
+Key takeaway: Use the wizard for standard corpus builds. Manual creation is available for advanced users or automated pipelines, but requires manual artifact placement and configuration.
