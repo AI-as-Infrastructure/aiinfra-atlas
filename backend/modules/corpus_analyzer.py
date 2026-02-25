@@ -272,6 +272,51 @@ class CorpusAnalyzer:
         except Exception as e:
             logger.warning(f"Error analyzing XML file {file_path}: {e}")
 
+    def analyze_tei_corpus(
+        self,
+        base_path: str,
+        sample_size: int = 20,
+    ) -> Dict[str, Any]:
+        """Analyze a directory for TEI-XML content and discover available metadata.
+
+        Uses the TEI parser's schema discovery to identify available teiHeader
+        elements, their frequency, and sample values.
+
+        Args:
+            base_path: Directory containing TEI-XML files
+            sample_size: Number of files to sample for schema discovery
+
+        Returns:
+            Dictionary with TEI-specific analysis including:
+                - is_tei_corpus: whether TEI files were found
+                - tei_file_count: number of TEI-XML files
+                - non_tei_xml_count: number of non-TEI XML files
+                - schema_discovery: output from discover_tei_schema
+        """
+        from backend.modules.tei_xml_parser import is_tei_xml, discover_tei_schema
+
+        base = Path(base_path)
+        if not base.exists():
+            raise ValueError(f"Path does not exist: {base_path}")
+
+        xml_files = sorted(base.rglob("*.xml"))
+        tei_count = sum(1 for f in xml_files if is_tei_xml(f))
+        non_tei_count = len(xml_files) - tei_count
+
+        result = {
+            "is_tei_corpus": tei_count > 0,
+            "tei_file_count": tei_count,
+            "non_tei_xml_count": non_tei_count,
+            "total_xml_files": len(xml_files),
+        }
+
+        if tei_count > 0:
+            result["schema_discovery"] = discover_tei_schema(base, sample_size)
+        else:
+            result["schema_discovery"] = None
+
+        return result
+
     def _analyze_text_file(self, file_path: Path, analysis: Dict[str, Any]) -> None:
         """Analyze a text file for patterns and metadata."""
         try:

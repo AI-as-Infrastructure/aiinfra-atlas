@@ -36,7 +36,7 @@ from backend.modules.path_validator import (
 from backend.modules.corpus_config import (
     CorpusConfig, CorpusMetadata, SourceConfig, FilterDefinition,
     FilterConfig, CitationConfig, EmbeddingConfig, ProcessingConfig,
-    CorpusConfigManager
+    CorpusConfigManager, TeiWorkflowConfig, TeiMetadataMapping, TeiFacetConfig
 )
 from backend.modules.build_progress import build_progress_manager
 from backend.modules.target_utils import build_target_config_content
@@ -185,6 +185,56 @@ async def analyze_corpus(request: AnalyzeRequest):
     except Exception as e:
         logger.error(f"Corpus analysis failed: {e}")
         raise HTTPException(status_code=500, detail="Analysis failed")
+
+
+@router.post("/tei/discover")
+async def discover_tei_schema(request: Dict[str, Any] = Body(...)):
+    """
+    Discover TEI-XML schema from corpus files.
+
+    Scans TEI-XML files in the source directory, reports available
+    teiHeader elements with frequency/coverage percentages.
+    """
+    source_path = request.get("source_path", "")
+    sample_size = request.get("sample_size", 50)
+
+    if not source_path:
+        raise HTTPException(status_code=400, detail="source_path is required")
+
+    # Validate path
+    try:
+        validated_path = validate_safe_path(
+            source_path,
+            allowed_base=Path.cwd(),
+            must_exist=True
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    try:
+        analyzer = CorpusAnalyzer()
+        result = analyzer.analyze_tei_corpus(str(validated_path), sample_size=sample_size)
+
+        if not result["is_tei_corpus"]:
+            return JSONResponse({
+                "is_tei_corpus": False,
+                "message": "No TEI-XML files found in the specified directory.",
+                "tei_file_count": result["tei_file_count"],
+                "total_xml_files": result["total_xml_files"],
+            })
+
+        return JSONResponse({
+            "is_tei_corpus": True,
+            "tei_file_count": result["tei_file_count"],
+            "non_tei_xml_count": result["non_tei_xml_count"],
+            "total_xml_files": result["total_xml_files"],
+            "schema_discovery": result["schema_discovery"],
+        })
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"TEI schema discovery failed: {e}")
+        raise HTTPException(status_code=500, detail="TEI schema discovery failed")
 
 
 @router.post("/suggest-filters")
@@ -787,6 +837,27 @@ async def build_corpus(
                 "max_ratings": ir_config.get("maxRatings", 3),
                 "sessions_per_user": ir_config.get("sessionsPerUser", 5)
             }
+
+        # Add TEI workflow configuration if provided by frontend
+        if "tei_workflow" in frontend_config:
+            tei_cfg = frontend_config["tei_workflow"]
+            backend_config["tei_workflow"] = {
+                "enabled": tei_cfg.get("enabled", True),
+                "chunking_strategy": tei_cfg.get("chunking_strategy", "whole_document"),
+                "selected_fields": tei_cfg.get("selected_fields", []),
+                "metadata_mappings": [
+                    {"tei_field": m.get("tei_field", m.get("field", "")), "role": m.get("role", "")}
+                    for m in tei_cfg.get("metadata_mappings", [])
+                ] if tei_cfg.get("metadata_mappings") else [],
+                "facets": [
+                    {"field": f["field"], "label": f["label"], "type": f["type"]}
+                    for f in tei_cfg.get("facets", [])
+                ] if tei_cfg.get("facets") else [],
+            }
+            # Override filter method to 'tei' for TEI workflows
+            backend_config["filters"]["method"] = "tei"
+            # Set file extensions to .xml
+            backend_config["source"]["file_extensions"] = ".xml"
 
         # Parse configuration
         config = CorpusConfig(**backend_config)

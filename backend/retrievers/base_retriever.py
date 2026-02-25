@@ -338,6 +338,13 @@ def format_document_for_citation(document, idx: Optional[int] = None) -> Optiona
         if field in metadata:
             enrichment_fields[field] = metadata[field]
 
+    # Extract TEI metadata fields if present (from TEI-XML corpus ingestion)
+    tei_fields = {}
+    for field in ['tei_sender', 'tei_recipient', 'tei_date', 'tei_place',
+                   'tei_keywords', 'tei_abstract', 'tei_title']:
+        if field in metadata and metadata[field]:
+            tei_fields[field] = metadata[field]
+
     # Build citation dictionary with all fields frontend expects
     citation = {
         # Core identification
@@ -367,6 +374,19 @@ def format_document_for_citation(document, idx: Optional[int] = None) -> Optiona
     # Add enrichment fields if present
     if enrichment_fields:
         citation["enrichment"] = enrichment_fields
+
+    # Add TEI metadata fields if present
+    if tei_fields:
+        citation["tei"] = tei_fields
+        # Also populate top-level fields for display convenience
+        if 'tei_sender' in tei_fields:
+            citation["sender"] = tei_fields['tei_sender']
+        if 'tei_recipient' in tei_fields:
+            citation["recipient"] = tei_fields['tei_recipient']
+        if 'tei_date' in tei_fields and not citation.get("date"):
+            citation["date"] = tei_fields['tei_date']
+        if 'tei_place' in tei_fields:
+            citation["place"] = tei_fields['tei_place']
 
     # Add index if provided
     if idx is not None:

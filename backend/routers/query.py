@@ -79,6 +79,9 @@ async def ask_stream(data: dict = Body(...)):
     filters = data.get("filters", {})
     previous_filters = data.get("previous_filters", {})
 
+    # Get faceted filters (from FacetedSearch component, v1.5+ corpora)
+    facet_filters = data.get("facet_filters", {})
+
     # Extract corpus filter for backward compatibility with existing retrieval logic
     corpus_filter = filters.get("corpus_filtering", "all")
 
@@ -117,6 +120,7 @@ async def ask_stream(data: dict = Body(...)):
             "is_streaming": True,
             "corpus_filter": corpus_filter,
             "filters": filters,
+            "has_facet_filters": bool(facet_filters),
             "llm_provider": provider,
             "openinference.span.kind": OpenInferenceSpanKind.AGENT,
         }
@@ -166,7 +170,8 @@ async def ask_stream(data: dict = Body(...)):
                     session_id=session_id,
                     qa_id=qa_id,
                     corpus_filter=corpus_filter,
-                    k=final_k
+                    k=final_k,
+                    facet_filters=facet_filters if facet_filters else None
                 )
 
                 # Optionally augment with manifest summary

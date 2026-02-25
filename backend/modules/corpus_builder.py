@@ -274,6 +274,12 @@ class UniversalCorpusBuilder:
                     loader_cls=TextLoader,
                     loader_kwargs={"encoding": "utf-8", "autodetect_encoding": True}
                 )
+            elif file_type == "xml" and self._is_tei_workflow():
+                # TEI-XML workflow: use TEI parser and chunking
+                docs = self._load_tei_documents(source_path)
+                all_docs.extend(docs)
+                logger.info(f"Loaded {len(docs)} TEI-XML documents via TEI pipeline")
+                continue
             elif file_type == "xml":
                 loader = DirectoryLoader(
                     str(source_path),
@@ -352,6 +358,144 @@ class UniversalCorpusBuilder:
 
         logger.info(f"Filtered {len(documents)} documents to {len(filtered_docs)}")
         return filtered_docs
+
+    def _is_tei_workflow(self) -> bool:
+        """Check if TEI-XML workflow is enabled in config."""
+        return (
+            hasattr(self.config, 'tei_workflow')
+            and self.config.tei_workflow is not None
+            and self.config.tei_workflow.enabled
+        )
+
+    def _load_tei_documents(self, source_path: Path) -> List[Document]:
+        """Load and chunk TEI-XML documents using the TEI pipeline.
+
+        Uses tei_xml_parser and tei_chunking instead of UnstructuredXMLLoader.
+        Returns pre-chunked Documents with TEI metadata already applied.
+        """
+        from backend.modules.tei_chunking import chunk_tei_corpus
+
+        tei_config = self.config.tei_workflow
+
+        # Build metadata mappings dict from config
+        metadata_mappings = None
+        if tei_config.metadata_mappings:
+            metadata_mappings = {
+                m.tei_field: m.role for m in tei_config.metadata_mappings
+            }
+
+        # Determine filter info for backward compatibility
+        corpus_name = self.config.metadata.name
+        filter_id = corpus_name
+        filter_label = self.config.metadata.display_name
+
+        # If we have filters configured, use the first non-"all" filter
+        if self.config.filters.filters:
+            for f in self.config.filters.filters:
+                if f.id != "all":
+                    filter_id = f.id
+                    filter_label = f.label
+                    break
+
+        docs = chunk_tei_corpus(
+            directory=source_path,
+            strategy=tei_config.chunking_strategy,
+            chunk_size=self.config.embedding.chunk_size,
+            chunk_overlap=self.config.embedding.chunk_overlap,
+            corpus_name=corpus_name,
+            filter_id=filter_id,
+            filter_label=filter_label,
+            metadata_mappings=metadata_mappings,
+            selected_fields=tei_config.selected_fields or None,
+        )
+
+        logger.info(f"TEI pipeline produced {len(docs)} chunks from source directory")
+        return docs
+
+    def _build_facets_from_tei(self) -> List[Dict[str, Any]]:
+        """Build facets array from TEI workflow configuration and document metadata.
+
+        Analyzes built documents to discover unique values, min/max dates,
+        and populates the facets array for the manifest.
+        """
+        if not self._is_tei_workflow():
+            return []
+
+        tei_config = self.config.tei_workflow
+        facets = []
+
+        # If explicit facets are configured, use them
+        if tei_config.facets:
+            for facet_cfg in tei_config.facets:
+                facet = {
+                    "field": facet_cfg.field,
+                    "label": facet_cfg.label,
+                    "type": facet_cfg.type,
+                }
+                # Collect values/ranges from documents
+                self._populate_facet_values(facet)
+                facets.append(facet)
+        else:
+            # Auto-generate facets from common TEI fields present in documents
+            facets = self._auto_discover_facets()
+
+        return facets
+
+    def _populate_facet_values(self, facet: Dict[str, Any]) -> None:
+        """Populate a facet with values/ranges from built documents."""
+        field = facet["field"]
+        facet_type = facet["type"]
+
+        values = set()
+        for doc in self.documents:
+            val = doc.metadata.get(field)
+            if val:
+                values.add(str(val))
+
+        if facet_type == "date_range" and values:
+            # Extract min/max dates
+            sorted_dates = sorted(values)
+            facet["min"] = sorted_dates[0]
+            facet["max"] = sorted_dates[-1]
+            facet["count"] = len(values)
+        elif facet_type == "keyword" and values:
+            # For keywords, split semicolon-separated values
+            all_keywords = set()
+            for v in values:
+                for kw in v.split(";"):
+                    kw = kw.strip()
+                    if kw:
+                        all_keywords.add(kw)
+            facet["values"] = sorted(all_keywords)
+        elif facet_type == "text" and values:
+            facet["values"] = sorted(values)
+
+    def _auto_discover_facets(self) -> List[Dict[str, Any]]:
+        """Auto-discover facets from TEI metadata present in documents."""
+        if not self.documents:
+            return []
+
+        # Check which TEI fields have values across documents
+        field_configs = {
+            "tei_sender": ("Sender", "text"),
+            "tei_recipient": ("Recipient", "text"),
+            "tei_date": ("Date", "date_range"),
+            "tei_place": ("Place", "text"),
+            "tei_keywords": ("Keywords", "keyword"),
+        }
+
+        facets = []
+        for field, (label, facet_type) in field_configs.items():
+            # Count docs with this field
+            count = sum(1 for d in self.documents if d.metadata.get(field))
+            if count == 0:
+                continue
+
+            facet = {"field": field, "label": label, "type": facet_type}
+            self._populate_facet_values(facet)
+            facets.append(facet)
+
+        return facets
 
     def _match_document_to_filter(self, doc: Document) -> Optional[FilterDefinition]:
         """Match document to appropriate filter based on patterns."""
@@ -857,9 +1001,12 @@ class UniversalCorpusBuilder:
         # Capture build environment for reproducibility
         build_info = self._collect_build_info(build_duration_seconds)
 
+        # Build facets array for TEI corpora (v1.5)
+        facets = self._build_facets_from_tei() if self._is_tei_workflow() else []
+
         # Create manifest with enhanced embedding documentation
         manifest = {
-            "version": "1.4",
+            "version": "1.5" if facets else "1.4",
             "created": datetime.now().isoformat(),
             "corpus_name": self.config.metadata.name,
             "metadata": self.config.metadata.dict(),
@@ -888,6 +1035,7 @@ class UniversalCorpusBuilder:
                 "persist_directory": str(self.output_dir / "chroma_db")
             },
             "filters": filters_info,
+            "facets": facets,
             "statistics": stats,
             "fields": {
                 "corpus": {

@@ -78,9 +78,44 @@ class CitationConfig(BaseModel):
     source_url: Optional[str] = None
 
 
+class TeiMetadataMapping(BaseModel):
+    """Mapping from a TEI field to a metadata role."""
+    tei_field: str = Field(..., description="TEI field name (e.g., tei_sender)")
+    role: str = Field(..., description="Target metadata role (e.g., author)")
+
+
+class TeiFacetConfig(BaseModel):
+    """Configuration for a single faceted search facet."""
+    field: str = Field(..., description="ChromaDB metadata field name")
+    label: str = Field(..., description="Display label for the facet")
+    type: str = Field(default="text", pattern="^(text|date_range|keyword)$", description="Facet type")
+
+
+class TeiWorkflowConfig(BaseModel):
+    """Configuration for TEI-XML workflow processing."""
+    enabled: bool = Field(default=False, description="Whether TEI-XML workflow is active")
+    chunking_strategy: str = Field(
+        default="whole_document",
+        pattern="^(whole_document|structural)$",
+        description="Chunking strategy for TEI documents"
+    )
+    selected_fields: Optional[List[str]] = Field(
+        default_factory=list,
+        description="TEI fields selected for extraction (e.g., tei_sender, tei_date)"
+    )
+    metadata_mappings: Optional[List[TeiMetadataMapping]] = Field(
+        default_factory=list,
+        description="Custom mappings from TEI fields to metadata roles"
+    )
+    facets: Optional[List[TeiFacetConfig]] = Field(
+        default_factory=list,
+        description="Faceted search configuration for extracted fields"
+    )
+
+
 class FilterConfig(BaseModel):
     """Configuration for filter discovery."""
-    method: str = Field(default="directory", pattern="^(directory|xml)$")
+    method: str = Field(default="directory", pattern="^(directory|xml|tei)$")
     directory_depth: int = Field(default=1, ge=1, le=2)
     xml_entities: Optional[List[str]] = Field(default_factory=list)
     filters: List[FilterDefinition] = Field(default_factory=list)
@@ -121,6 +156,7 @@ class CorpusConfig(BaseModel):
     embedding: EmbeddingConfig
     processing: ProcessingConfig
     inter_rater: Optional[InterRaterConfig] = Field(default=None, description="Inter-rater reliability configuration")
+    tei_workflow: Optional[TeiWorkflowConfig] = Field(default=None, description="TEI-XML workflow configuration")
     created_at: datetime = Field(default_factory=datetime.now)
     last_modified: datetime = Field(default_factory=datetime.now)
 

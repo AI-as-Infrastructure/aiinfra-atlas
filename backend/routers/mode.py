@@ -223,6 +223,11 @@ async def enter_deploy_mode(
                     "created_by": "deployment_mode"
                 }
 
+                # Include facets from manifest v1.5+ if present
+                facets = manifest.get("facets", [])
+                if facets:
+                    corpus_active_config["facets"] = facets
+
                 # Write corpus_active.json
                 corpus_active_path = Path("backend/corpus/corpus_active.json")
                 with open(corpus_active_path, 'w') as f:

@@ -4,20 +4,34 @@
 			<div class="columns">
 				<!-- Main Chat Area -->
 				<div class="column is-three-quarters main-panel">
+					<!-- Faceted search panel (shown when facets available) -->
+					<div v-if="facetConfig.length > 0" class="mb-4">
+						<FacetedSearch
+							:facets="facetConfig"
+							@filter-change="handleFacetFilterChange"
+						/>
+					</div>
+
 					<!-- If no chat history, show input at the top -->
 					<div v-if="chatHistory.length === 0" class="mb-4">
-						<UserInput @input-active-change="handleInputActiveChange" />
+						<UserInput
+							:facet-filters="activeFacetFilters"
+							@input-active-change="handleInputActiveChange"
+						/>
 					</div>
-					
+
 					<!-- Chat history box only shown when there are messages -->
 					<div v-if="chatHistory.length > 0" class="mb-4">
 						<ChatHistory @feedback-workflow-complete="onFeedbackWorkflowComplete" />
 					</div>
-					
-					
+
+
 					<!-- Show input at the bottom when response is complete AND feedback workflow is complete -->
 					<div v-if="chatHistory.length > 0 && shouldShowNewQuestionInput" class="mb-4">
-						<UserInput @input-active-change="handleInputActiveChange" />
+						<UserInput
+							:facet-filters="activeFacetFilters"
+							@input-active-change="handleInputActiveChange"
+						/>
 					</div>
 				</div>
 				<div class="column is-one-quarter sidebar-panel">
@@ -40,20 +54,52 @@
 <script setup>
 import ChatHistory from './ChatHistory.vue'
 import UserInput from './UserInput.vue'
+import FacetedSearch from './FacetedSearch.vue'
 import TelemetryToggle from './TelemetryToggle.vue'
 import TestTargetBox from './TestTargetBox.vue'
 import ExportButton from './ExportButton.vue'
 import ConfigurationExportButton from './ConfigurationExportButton.vue'
 import { storeToRefs } from 'pinia'
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted } from 'vue'
 import { useSessionStore } from '@/stores/session'
 
 const sessionStore = useSessionStore()
-const { 
-	chatHistory, 
+const {
+	chatHistory,
 	isResponseComplete,
-	qaId 
+	qaId
 } = storeToRefs(sessionStore)
+
+// Faceted search state
+const facetConfig = ref([])
+const activeFacetFilters = ref({})
+
+// Fetch facet configuration from API
+async function fetchFacetConfig() {
+	try {
+		const apiUrl = import.meta.env.VITE_API_URL || ''
+		const baseUrl = apiUrl.endsWith('/') ? apiUrl.slice(0, -1) : apiUrl
+		const url = baseUrl ? `${baseUrl}/api/retriever/filters` : '/api/retriever/filters'
+		const response = await fetch(url)
+		if (response.ok) {
+			const data = await response.json()
+			// Extract facets array if present in the response
+			if (data.facets && Array.isArray(data.facets)) {
+				facetConfig.value = data.facets
+			}
+		}
+	} catch (error) {
+		console.error('Error fetching facet config:', error)
+	}
+}
+
+function handleFacetFilterChange(filters) {
+	activeFacetFilters.value = filters
+}
+
+onMounted(() => {
+	fetchFacetConfig()
+})
 
 // Track feedback workflow completion for current QA ID
 const feedbackWorkflowComplete = ref(false)

@@ -50,9 +50,17 @@
   import { useSessionStore } from '@/stores/session'
   import { deduplicateText } from '@/utils/textUtils'
 
+  // Props - accept faceted filters from parent
+  const props = defineProps({
+    facetFilters: {
+      type: Object,
+      default: () => ({})
+    }
+  })
+
   // Define emits with compiler macro
   const emit = defineEmits(['input-active-change'])
-  
+
   const input = ref('')
   const isGenerating = ref(false)
   const session = useSessionStore()
@@ -561,6 +569,11 @@
         })),
         filters: allFilters,
         previous_filters: previousFilters
+      }
+
+      // Include faceted filters if active (from FacetedSearch component)
+      if (props.facetFilters && Object.keys(props.facetFilters).length > 0) {
+        payload.facet_filters = props.facetFilters
       }
       
       // Add provider if specified

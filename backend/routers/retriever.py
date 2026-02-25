@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 
 from backend.modules.config import get_retriever_instance
+from backend.modules.manifest_loader import get_facets, has_facets
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ router = APIRouter()
 
 @router.get("/api/retriever/filters")
 def get_retriever_filters():
-    """Return available filter capabilities for the current retriever."""
+    """Return available filter capabilities and facet configuration."""
     try:
         retriever = get_retriever_instance()
 
@@ -39,10 +40,18 @@ def get_retriever_filters():
                 "direction_filtering": {
                     "supported": False,
                     "options": []
-                }
+                },
+                "facets": []
             })
 
         filter_capabilities = retriever.get_filter_capabilities()
+
+        # Include facet configuration from manifest v1.5+ if available
+        if has_facets():
+            filter_capabilities["facets"] = get_facets()
+        else:
+            filter_capabilities["facets"] = []
+
         return JSONResponse(content=filter_capabilities)
 
     except Exception as e:

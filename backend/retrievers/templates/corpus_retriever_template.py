@@ -151,6 +151,63 @@ class {CorpusClass}Retriever(BaseRetriever):
 
         return options
 
+    @staticmethod
+    def _build_faceted_where_clause(facet_filters: Dict[str, Any], base_filter: Optional[Dict] = None) -> Optional[Dict]:
+        """Build ChromaDB where clause from faceted filter parameters.
+
+        Constructs $and/$or/$gte/$lte operators for ChromaDB queries.
+        Falls back to simple equality for non-faceted corpora.
+
+        Args:
+            facet_filters: Faceted filter dict from frontend, e.g.:
+                {{"tei_sender": {{"type": "text", "value": "Darwin"}},
+                 "tei_date": {{"type": "date_range", "from": "1850-01-01", "to": "1860-12-31"}},
+                 "tei_keywords": {{"type": "keyword", "values": ["geology", "botany"]}}}}
+            base_filter: Optional base filter dict (e.g. {{"filter_1": "some_corpus"}})
+
+        Returns:
+            ChromaDB-compatible where clause dict, or None if no filters
+        """
+        conditions = []
+
+        # Include base filter conditions
+        if base_filter:
+            for key, value in base_filter.items():
+                conditions.append({{key: value}})
+
+        # Process each faceted filter
+        for field, spec in facet_filters.items():
+            ftype = spec.get("type", "")
+
+            if ftype == "text":
+                # Exact match on text field
+                value = spec.get("value")
+                if value:
+                    conditions.append({{field: value}})
+
+            elif ftype == "date_range":
+                # Range query using $gte/$lte on ISO date strings
+                date_from = spec.get("from")
+                date_to = spec.get("to")
+                if date_from:
+                    conditions.append({{field: {{"$gte": date_from}}}})
+                if date_to:
+                    conditions.append({{field: {{"$lte": date_to}}}})
+
+            elif ftype == "keyword":
+                # Multi-value match using $in
+                values = spec.get("values", [])
+                if values:
+                    conditions.append({{field: {{"$in": values}}}})
+
+        if not conditions:
+            return base_filter  # Return original base or None
+
+        if len(conditions) == 1:
+            return conditions[0]
+
+        return {{"$and": conditions}}
+
     def _candidate_pool_size(self, corpus_filter: Optional[str]) -> int:
         """Decide how many candidates to fetch for retrieval.
 
@@ -239,7 +296,10 @@ class {CorpusClass}Retriever(BaseRetriever):
         **kwargs: Any,
     ) -> List[Document]:
         """
-        Retrieve relevant documents with optional 2-filter filtering.
+        Retrieve relevant documents with optional filtering.
+
+        Supports both simple 2-filter system and advanced faceted filters
+        (text, date_range, keyword) from manifest v1.5+.
 
         Args:
             query: The search query
@@ -251,13 +311,14 @@ class {CorpusClass}Retriever(BaseRetriever):
         # Extract configuration
         config = kwargs.get("config", {{}})
         corpus_filter = config.get("corpus_filter")
+        facet_filters = config.get("facet_filters", {{}}) if config else {{}}
         k = kwargs.get("k", self.search_kwargs.get("k", 20))
 
         # Check if we need balanced retrieval
         is_balanced_query = (not corpus_filter) or (corpus_filter == "all")
 
-        if is_balanced_query and self._corpus_ids:
-            # Balanced retrieval across all corpora
+        if is_balanced_query and self._corpus_ids and not facet_filters:
+            # Balanced retrieval across all corpora (no facet filters)
             logger.info(f"Performing balanced retrieval across {{len(self._corpus_ids)}} corpora")
 
             # Calculate per-corpus candidate size
@@ -283,7 +344,7 @@ class {CorpusClass}Retriever(BaseRetriever):
             logger.info(f"Balanced retrieval complete: {{len(docs)}} final documents")
 
         else:
-            # Single corpus or fallback to standard search
+            # Single corpus, faceted search, or fallback to standard search
             filter_dict = {{}}
 
             # Handle explicit corpus filter
@@ -291,26 +352,35 @@ class {CorpusClass}Retriever(BaseRetriever):
                 filter_dict["filter_1"] = corpus_filter
 
             # Also check for explicit filter_1 and filter_2 (for direct calls)
-            filter_1 = config.get("filter_1")
+            filter_1 = config.get("filter_1") if config else None
             if filter_1 and filter_1 != "all":
                 filter_dict["filter_1"] = filter_1
 
-            filter_2 = config.get("filter_2")
+            filter_2 = config.get("filter_2") if config else None
             if filter_2 and filter_2 != "all":
                 filter_dict["filter_2"] = filter_2
+
+            # Build ChromaDB where clause - use faceted filters if present
+            if facet_filters:
+                where_clause = self._build_faceted_where_clause(
+                    facet_filters, filter_dict if filter_dict else None
+                )
+                logger.info(f"Using faceted where clause: {{where_clause}}")
+            else:
+                where_clause = filter_dict if filter_dict else None
 
             # Use larger candidate pool for single corpus
             candidate_k = self._candidate_pool_size(corpus_filter)
 
-            if filter_dict:
+            if where_clause:
                 # Search with filters
                 all_docs = self.vector_store.similarity_search(
                     query=query,
                     k=candidate_k,
-                    filter=filter_dict
+                    filter=where_clause
                 )
             else:
-                # Search without filters (shouldn't happen, but handle as fallback)
+                # Search without filters
                 all_docs = self.vector_store.similarity_search(
                     query=query,
                     k=candidate_k
@@ -320,8 +390,8 @@ class {CorpusClass}Retriever(BaseRetriever):
             docs = all_docs[:k] if len(all_docs) > k else all_docs
 
             logger.info(f"Retrieved {{len(docs)}} documents for query: {{query[:50]}}...")
-            if filter_dict:
-                logger.info(f"Applied filters: {{filter_dict}}")
+            if where_clause:
+                logger.info(f"Applied filters: {{where_clause}}")
 
         # Log corpus distribution in final results
         if is_balanced_query and docs:
@@ -354,14 +424,15 @@ class {CorpusClass}Retriever(BaseRetriever):
         """Internal sync implementation - same as async but without await."""
         # Extract configuration
         config = kwargs.get("config", {{}})
-        corpus_filter = config.get("corpus_filter")
+        corpus_filter = config.get("corpus_filter") if config else None
+        facet_filters = config.get("facet_filters", {{}}) if config else {{}}
         k = kwargs.get("k", self.search_kwargs.get("k", 20))
 
         # Check if we need balanced retrieval
         is_balanced_query = (not corpus_filter) or (corpus_filter == "all")
 
-        if is_balanced_query and self._corpus_ids:
-            # Balanced retrieval across all corpora
+        if is_balanced_query and self._corpus_ids and not facet_filters:
+            # Balanced retrieval across all corpora (no facet filters)
             logger.info(f"Performing balanced retrieval across {{len(self._corpus_ids)}} corpora")
 
             # Calculate per-corpus candidate size
@@ -387,7 +458,7 @@ class {CorpusClass}Retriever(BaseRetriever):
             logger.info(f"Balanced retrieval complete: {{len(docs)}} final documents")
 
         else:
-            # Single corpus or fallback to standard search
+            # Single corpus, faceted search, or fallback to standard search
             filter_dict = {{}}
 
             # Handle explicit corpus filter
@@ -395,26 +466,35 @@ class {CorpusClass}Retriever(BaseRetriever):
                 filter_dict["filter_1"] = corpus_filter
 
             # Also check for explicit filter_1 and filter_2 (for direct calls)
-            filter_1 = config.get("filter_1")
+            filter_1 = config.get("filter_1") if config else None
             if filter_1 and filter_1 != "all":
                 filter_dict["filter_1"] = filter_1
 
-            filter_2 = config.get("filter_2")
+            filter_2 = config.get("filter_2") if config else None
             if filter_2 and filter_2 != "all":
                 filter_dict["filter_2"] = filter_2
+
+            # Build ChromaDB where clause - use faceted filters if present
+            if facet_filters:
+                where_clause = self._build_faceted_where_clause(
+                    facet_filters, filter_dict if filter_dict else None
+                )
+                logger.info(f"Using faceted where clause: {{where_clause}}")
+            else:
+                where_clause = filter_dict if filter_dict else None
 
             # Use larger candidate pool for single corpus
             candidate_k = self._candidate_pool_size(corpus_filter)
 
-            if filter_dict:
+            if where_clause:
                 # Search with filters
                 all_docs = self.vector_store.similarity_search(
                     query=query,
                     k=candidate_k,
-                    filter=filter_dict
+                    filter=where_clause
                 )
             else:
-                # Search without filters (shouldn't happen, but handle as fallback)
+                # Search without filters
                 all_docs = self.vector_store.similarity_search(
                     query=query,
                     k=candidate_k
@@ -424,8 +504,8 @@ class {CorpusClass}Retriever(BaseRetriever):
             docs = all_docs[:k] if len(all_docs) > k else all_docs
 
             logger.info(f"Retrieved {{len(docs)}} documents for query: {{query[:50]}}...")
-            if filter_dict:
-                logger.info(f"Applied filters: {{filter_dict}}")
+            if where_clause:
+                logger.info(f"Applied filters: {{where_clause}}")
 
         # Log corpus distribution in final results
         if is_balanced_query and docs:

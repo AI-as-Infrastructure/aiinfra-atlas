@@ -77,7 +77,8 @@ def retrieve_documents(
     search_type: str = "similarity",
     session_id: Optional[str] = None,
     qa_id: Optional[str] = None,
-    create_parent_span: bool = True
+    create_parent_span: bool = True,
+    facet_filters: Optional[Dict[str, Any]] = None
 ) -> List[Document]:
     """
     Retrieve documents using the provided retriever.
@@ -92,7 +93,9 @@ def retrieve_documents(
         qa_id: Question/answer ID for telemetry linkage
         create_parent_span: Whether to create the parent context retrieval span
                            (set to False to prevent redundant spans)
-        
+        facet_filters: Optional faceted filter parameters for advanced filtering
+                      (text, date_range, keyword facets from manifest v1.5+)
+
     Returns:
         List of retrieved documents
     """
@@ -106,25 +109,29 @@ def retrieve_documents(
         # Default K value if not provided
         if k is None:
             k = get_search_k()
-        
+
         try:
             # Import timeout configurations
             from backend.modules.config import get_request_timeout
             import signal
-            
+
             # Set up timeout handling
             timeout_seconds = get_request_timeout()
-            
+
             def timeout_handler(signum, frame):
                 raise TimeoutError(f"Document retrieval timed out after {timeout_seconds} seconds")
-            
+
             # Set the timeout
             signal.signal(signal.SIGALRM, timeout_handler)
             signal.alarm(timeout_seconds)
-            
+
             try:
                 # Corpus-agnostic document retrieval - let the retriever handle all corpus logic
                 config = {"corpus_filter": corpus_filter, "session_id": session_id, "qa_id": qa_id} if corpus_filter or session_id or qa_id else None
+                if config and facet_filters:
+                    config["facet_filters"] = facet_filters
+                elif facet_filters:
+                    config = {"facet_filters": facet_filters}
                 documents = retriever.invoke(query, config=config, k=k)
                 
                 # Log retrieval metrics if available (for cases without span creation)
@@ -209,6 +216,13 @@ def retrieve_documents(
                 
                 # Simple call to retriever - it handles all corpus-specific logic internally
                 config = {"corpus_filter": corpus_filter, "session_id": session_id, "qa_id": qa_id} if corpus_filter or session_id or qa_id else None
+                if config and facet_filters:
+                    config["facet_filters"] = facet_filters
+                elif facet_filters:
+                    config = {"facet_filters": facet_filters}
+                if facet_filters:
+                    retrieval_span.set_attribute("has_facet_filters", True)
+                    retrieval_span.set_attribute("facet_filter_count", len(facet_filters))
                 documents = retriever.invoke(query, config=config, k=k)
 
                 # Collect meaningful retrieval metrics if available
@@ -327,14 +341,15 @@ def retrieve_documents_with_telemetry(
     session_id: Optional[str] = None,
     qa_id: Optional[str] = None,
     corpus_filter: Optional[str] = None,
-    k: Optional[int] = None
+    k: Optional[int] = None,
+    facet_filters: Optional[Dict[str, Any]] = None
 ) -> Tuple[List[Document], str]:
     """
     Retrieve documents with telemetry instrumentation.
-    
+
     This is a simple wrapper around retrieve_documents that ensures QA ID generation
     and returns the expected tuple format.
-    
+
     Args:
         query: Query string
         retriever: Document retriever
@@ -342,14 +357,15 @@ def retrieve_documents_with_telemetry(
         qa_id: QA ID for telemetry
         corpus_filter: Optional corpus filter
         k: Number of documents to retrieve
-        
+        facet_filters: Optional faceted filter parameters for advanced filtering
+
     Returns:
         Tuple of (list of documents, QA ID)
     """
     # Generate QA ID if not provided
     if not qa_id:
         qa_id = str(uuid.uuid4())
-    
+
     # Call the main retrieve_documents function (which creates telemetry spans)
     documents = retrieve_documents(
         query=query,
@@ -359,7 +375,8 @@ def retrieve_documents_with_telemetry(
         search_type="similarity",
         session_id=session_id,
         qa_id=qa_id,
-        create_parent_span=True  # Create proper telemetry spans
+        create_parent_span=True,  # Create proper telemetry spans
+        facet_filters=facet_filters
     )
-    
-    return documents, qa_id 
+
+    return documents, qa_id

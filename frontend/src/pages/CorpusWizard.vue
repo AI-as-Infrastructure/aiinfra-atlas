@@ -27,8 +27,8 @@
 
     <!-- Wizard Content -->
     <div class="wizard-content">
-      <!-- Step 1: Workflow Type Selection -->
-      <div v-if="currentStep === 1" class="wizard-step">
+      <!-- Step: Workflow Type Selection -->
+      <div v-if="currentStepName === 'Workflow'" class="wizard-step">
         <div class="is-flex is-justify-content-space-between is-align-items-center mb-4">
           <div>
             <h2>Select Workflow Type</h2>
@@ -53,23 +53,22 @@
             </ul>
           </div>
           <div
-            :class="['workflow-option', { active: workflowType === 'xml', disabled: true }]"
-            @click="() => {}"
+            :class="['workflow-option', { active: workflowType === 'xml' }]"
+            @click="workflowType = 'xml'"
           >
-            <h3>XML Workflow</h3>
-            <p>For structured XML documents</p>
+            <h3>TEI-XML Workflow</h3>
+            <p>For TEI P5 encoded documents (.xml)</p>
             <ul>
-              <li>Structured data extraction</li>
-              <li>Metadata from tags</li>
-              <li>Schema validation</li>
+              <li>TEI metadata extraction (sender, recipient, date, place)</li>
+              <li>Structural or whole-document chunking</li>
+              <li>Faceted search with metadata fields</li>
             </ul>
-            <span class="coming-soon">Coming Soon</span>
           </div>
         </div>
       </div>
 
-      <!-- Step 2: Metadata -->
-      <div v-if="currentStep === 2" class="wizard-step">
+      <!-- Step: Metadata -->
+      <div v-if="currentStepName === 'Metadata'" class="wizard-step">
         <h2>Basic Corpus Information</h2>
         <p class="help-text">Provide essential information about your corpus.</p>
 
@@ -122,13 +121,13 @@
       </div>
 
       <!-- Step 3: System Configuration -->
-      <div v-if="currentStep === 3" class="wizard-step">
+      <div v-if="currentStepName === 'Configuration'" class="wizard-step">
         <h3>Step 3: System Configuration</h3>
         <SystemConfiguration v-model="systemConfig" />
       </div>
 
       <!-- Step 4: Source Configuration -->
-      <div v-if="currentStep === 4" class="wizard-step">
+      <div v-if="currentStepName === 'Sources'" class="wizard-step">
         <h2>Configure Document Sources</h2>
         <p class="help-text">Specify where your documents are located and how to process them.</p>
 
@@ -281,7 +280,7 @@
       </div>
 
       <!-- Step 5: Document Preview -->
-      <div v-if="currentStep === 5" class="wizard-step">
+      <div v-if="currentStepName === 'Preview'" class="wizard-step">
         <h2>Preview Documents</h2>
 
         <div v-if="!previewData" class="preview-loading">
@@ -395,8 +394,123 @@
         </div>
       </div>
 
-      <!-- Step 6: Model Selection -->
-      <div v-if="currentStep === 6" class="wizard-step">
+      <!-- TEI Step: Field Selection -->
+      <div v-if="currentStepName === 'TEI Fields'" class="wizard-step">
+        <h2>TEI Metadata Fields</h2>
+        <p class="help-text">Select which TEI metadata fields to extract from your documents.</p>
+
+        <div v-if="teiDiscovering" class="tei-discovering">
+          <p>Discovering TEI schema from your corpus...</p>
+        </div>
+
+        <div v-else-if="teiDiscovery" class="tei-fields-selection">
+          <div class="tei-summary">
+            <p><strong>{{ teiDiscovery.tei_files }}</strong> TEI files scanned.</p>
+          </div>
+
+          <div class="tei-field-list">
+            <div
+              v-for="(info, elementName) in teiDiscovery.elements"
+              :key="elementName"
+              class="tei-field-item"
+            >
+              <label class="checkbox">
+                <input
+                  type="checkbox"
+                  :value="teiFieldToMetadataKey(elementName)"
+                  v-model="teiSelectedFields"
+                />
+                <span class="tei-field-name">{{ elementName }}</span>
+                <span class="tei-field-coverage">{{ info.percentage.toFixed(1) }}% coverage</span>
+                <span class="tei-field-count">({{ info.count }} files)</span>
+              </label>
+              <div v-if="info.sample_values && info.sample_values.length > 0" class="tei-sample-values">
+                <small>Sample: {{ info.sample_values.slice(0, 3).join(', ') }}</small>
+              </div>
+            </div>
+          </div>
+
+          <button @click="discoverTeiSchema" class="btn btn-secondary mt-3">Re-discover</button>
+        </div>
+
+        <div v-else class="tei-no-discovery">
+          <p>No TEI schema discovered. Please check your source directory contains valid TEI-XML files.</p>
+          <button @click="discoverTeiSchema" class="btn btn-primary">Run Discovery</button>
+        </div>
+      </div>
+
+      <!-- TEI Step: Chunking Strategy -->
+      <div v-if="currentStepName === 'TEI Chunking'" class="wizard-step">
+        <h2>Chunking Strategy</h2>
+        <p class="help-text">Choose how TEI documents should be split into chunks for the vector store.</p>
+
+        <div class="chunking-options">
+          <div
+            :class="['workflow-option', { active: teiChunkingStrategy === 'whole_document' }]"
+            @click="teiChunkingStrategy = 'whole_document'"
+          >
+            <h3>Whole Document</h3>
+            <p>Each TEI document becomes a single chunk with its full metadata prefix.</p>
+            <ul>
+              <li>Best for short documents (letters, poems, short articles)</li>
+              <li>Preserves document-level context</li>
+              <li>One chunk per file</li>
+            </ul>
+          </div>
+          <div
+            :class="['workflow-option', { active: teiChunkingStrategy === 'structural' }]"
+            @click="teiChunkingStrategy = 'structural'"
+          >
+            <h3>Structural</h3>
+            <p>Split documents on paragraph/section boundaries with metadata prefix on each chunk.</p>
+            <ul>
+              <li>Best for longer documents (books, reports)</li>
+              <li>Splits on &lt;div&gt; and &lt;p&gt; boundaries</li>
+              <li>Merges small sections, respects chunk size</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- TEI Step: Facet Configuration -->
+      <div v-if="currentStepName === 'TEI Facets'" class="wizard-step">
+        <h2>Search Facets</h2>
+        <p class="help-text">Select which metadata fields should be available as search facets. These will appear as filters in the chat interface.</p>
+
+        <div v-if="teiSelectedFields.length > 0" class="facet-selection">
+          <div
+            v-for="field in teiSelectedFields"
+            :key="field"
+            class="facet-item"
+          >
+            <label class="checkbox">
+              <input
+                type="checkbox"
+                :value="field"
+                v-model="teiFacetSelections"
+              />
+              <span>{{ teiFieldLabel(field) }}</span>
+            </label>
+            <select
+              v-if="teiFacetSelections.includes(field)"
+              :value="teiFieldFacetType(field)"
+              @change="setTeiFieldFacetType(field, $event.target.value)"
+              class="form-control facet-type-select"
+            >
+              <option value="text">Text (searchable dropdown)</option>
+              <option value="date_range">Date Range (from/to)</option>
+              <option value="keyword">Keywords (multi-select)</option>
+            </select>
+          </div>
+        </div>
+
+        <div v-else class="facet-empty">
+          <p>No TEI fields selected. Go back to the TEI Fields step to select fields.</p>
+        </div>
+      </div>
+
+      <!-- Step: Model Selection -->
+      <div v-if="currentStepName === 'Model'" class="wizard-step">
         <h2>Select Embedding Model</h2>
         <p class="help-text">Choose an embedding model for creating vector representations of your documents.</p>
 
@@ -498,7 +612,7 @@
 
 
       <!-- Step 7: Build Progress (shown as step 8) -->
-      <div v-if="currentStep === 8" class="wizard-step">
+      <div v-if="currentStepName === 'Build'" class="wizard-step">
         <h2>Building Vector Store</h2>
 
         <div v-if="!building && !buildProgress.status" class="build-start">
@@ -578,7 +692,7 @@
       </div>
 
       <!-- Step 8: Target Configuration (shown as step 7) -->
-      <div v-if="currentStep === 7" class="wizard-step">
+      <div v-if="currentStepName === 'Target Config'" class="wizard-step">
         {{ console.log('[Render] Step 8 is rendering - currentStep:', currentStep) }}
         <h2>Configure Test Target</h2>
         <p class="help-text">Configure the LLM and search parameters for your corpus.</p>
@@ -783,6 +897,7 @@
       </button>
       <button
         v-if="currentStep < steps.length"
+        v-show="currentStepName !== 'Build'"
         @click="nextStep"
         :disabled="!canProceed"
         class="btn btn-primary"
@@ -820,16 +935,20 @@ export default {
 
     // Wizard state
     const currentStep = ref(1)
-    const steps = [
-      'Workflow',
-      'Metadata',
-      'Configuration',
-      'Sources',
-      'Preview',
-      'Model',
-      'Target Config',
-      'Build'
-    ]
+    const steps = computed(() => {
+      const base = [
+        'Workflow',
+        'Metadata',
+        'Configuration',
+        'Sources',
+        'Preview',
+      ]
+      if (workflowType.value === 'xml') {
+        base.push('TEI Fields', 'TEI Chunking', 'TEI Facets')
+      }
+      base.push('Model', 'Target Config', 'Build')
+      return base
+    })
 
     // Import dialog state
     const showImportDialog = ref(false)
@@ -838,6 +957,14 @@ export default {
 
     // Workflow type
     const workflowType = ref('text')
+
+    // TEI-XML workflow state
+    const teiDiscovery = ref(null)        // Schema discovery results
+    const teiDiscovering = ref(false)     // Discovery loading state
+    const teiSelectedFields = ref([])     // User-selected TEI fields
+    const teiChunkingStrategy = ref('whole_document') // whole_document or structural
+    const teiMetadataMappings = ref([])   // Custom field mappings
+    const teiFacetSelections = ref([])    // Fields selected as facets
 
     // Form data
     const metadata = ref({
@@ -928,6 +1055,15 @@ export default {
     // SSE connection for build progress
     let eventSource = null
 
+    // Auto-set file extensions when workflow type changes
+    watch(workflowType, (newType) => {
+      if (newType === 'xml') {
+        source.value.file_extensions = '.xml'
+      } else {
+        source.value.file_extensions = '.txt'
+      }
+    })
+
     // Sync chunk settings between model selection and target config
     watch(chunkSize, (newValue) => {
       targetConfig.value.chunk_size = newValue
@@ -946,28 +1082,43 @@ export default {
              /^[a-zA-Z0-9][a-zA-Z0-9._-]*[a-zA-Z0-9]$/.test(processedName)
     })
 
+    // Current step name for step-dependent logic
+    const currentStepName = computed(() => {
+      return steps.value[currentStep.value - 1] || ''
+    })
+
     // Check if can proceed to next step
     const canProceed = computed(() => {
-      switch (currentStep.value) {
-        case 1: // Workflow
-          return workflowType.value === 'text' // Only text workflow is available
-        case 2: // Metadata
+      switch (currentStepName.value) {
+        case 'Workflow':
+          return workflowType.value === 'text' || workflowType.value === 'xml'
+        case 'Metadata':
           return isValidCorpusName.value && metadata.value.copyright_status
-        case 3: // System Configuration
+        case 'Configuration':
           return true // System config has defaults, always allow proceeding
-        case 4: // Sources
+        case 'Sources':
           return source.value.location &&
                  source.value.location.length > 0 &&
                  source.value.file_extensions
-        case 5: // Preview
+        case 'Preview':
+          if (workflowType.value === 'xml') {
+            // For XML workflow, preview must also have TEI discovery
+            return previewData.value && previewData.value.total_documents > 0
+          }
           return previewData.value && previewData.value.total_documents > 0
-        case 6: // Model
+        case 'TEI Fields':
+          return teiDiscovery.value && teiSelectedFields.value.length > 0
+        case 'TEI Chunking':
+          return teiChunkingStrategy.value === 'whole_document' || teiChunkingStrategy.value === 'structural'
+        case 'TEI Facets':
+          return true // Facet selection is optional
+        case 'Model':
           return selectedModel.value && selectedModel.value.length > 0
-        case 7: // Target Config
+        case 'Target Config':
           return targetConfig.value.llm_provider &&
                  targetConfig.value.llm_model &&
                  targetConfig.value.search_k > 0
-        case 8: // Build
+        case 'Build':
           return buildProgress.value.status === 'completed'
         default:
           return true
@@ -977,31 +1128,23 @@ export default {
     // Navigation
     const nextStep = async () => {
       console.log('[Navigation] nextStep called - currentStep:', currentStep.value, 'canProceed:', canProceed.value)
-      console.log('[Navigation] Current step name:', steps[currentStep.value - 1])
+      console.log('[Navigation] Current step name:', currentStepName.value)
 
-      // Debug targetConfig when on step 6
-      if (currentStep.value === 6) {
-        console.log('[Navigation] Build completed, moving to Target Config step')
-        console.log('[Navigation] targetConfig values:', targetConfig.value)
-      }
-
-      if (canProceed.value && currentStep.value < steps.length) {
+      if (canProceed.value && currentStep.value < steps.value.length) {
         currentStep.value++
-        console.log('[Navigation] After increment - new currentStep:', currentStep.value, 'new step name:', steps[currentStep.value - 1])
+        const newStepName = steps.value[currentStep.value - 1]
+        console.log('[Navigation] After increment - new currentStep:', currentStep.value, 'new step name:', newStepName)
 
         // Perform step-specific actions AFTER incrementing step
-        if (currentStep.value === 4) {
-          // Entering Preview step - can load preview if not already loaded
-          if (!previewData.value) {
-            // User can manually click to load preview
-          }
-        } else if (currentStep.value === 8) {
-          // Entering Activation step (step 8) - get current corpus info
-          console.log('[Navigation] Loading current corpus info for step 8')
+        if (newStepName === 'TEI Fields' && !teiDiscovery.value) {
+          // Auto-run TEI schema discovery when entering TEI Fields step
+          await discoverTeiSchema()
+        } else if (newStepName === 'Build') {
+          console.log('[Navigation] Loading current corpus info for Build step')
           await loadCurrentCorpusInfo()
         }
       } else {
-        console.log('[Navigation] Cannot proceed - canProceed:', canProceed.value, 'currentStep:', currentStep.value, 'steps.length:', steps.length)
+        console.log('[Navigation] Cannot proceed - canProceed:', canProceed.value, 'currentStep:', currentStep.value, 'steps.length:', steps.value.length)
       }
     }
 
@@ -1315,6 +1458,21 @@ Do you want to continue?`
           }
         }
 
+        // Add TEI workflow configuration if XML workflow selected
+        if (workflowType.value === 'xml') {
+          config.tei_workflow = {
+            enabled: true,
+            chunking_strategy: teiChunkingStrategy.value,
+            selected_fields: teiSelectedFields.value,
+            metadata_mappings: teiMetadataMappings.value,
+            facets: teiFacetSelections.value.map(field => ({
+              field: field,
+              label: teiFieldLabel(field),
+              type: teiFieldFacetType(field)
+            }))
+          }
+        }
+
         // Get configured corpus mode (GPU or CPU)
         let corpusMode = 'cpu'
         try {
@@ -1549,6 +1707,90 @@ Do you want to continue?`
     })
 
     // Cleanup on unmount
+    // ---------------------------------------------------------------------------
+    // TEI-XML helper functions
+    // ---------------------------------------------------------------------------
+
+    // Map schema discovery element names to tei_ metadata keys
+    const teiFieldToMetadataKey = (elementName) => {
+      const mapping = {
+        'correspDesc/sender': 'tei_sender',
+        'correspDesc/recipient': 'tei_recipient',
+        'correspDesc/date': 'tei_date',
+        'correspDesc/place': 'tei_place',
+        'abstract': 'tei_abstract',
+        'keywords': 'tei_keywords',
+        'title': 'tei_title',
+        'sourceDesc/repository': 'tei_repository',
+        'sourceDesc/idno': 'tei_source_id',
+      }
+      return mapping[elementName] || `tei_${elementName.replace(/\//g, '_')}`
+    }
+
+    // Human-readable label for a tei_ field key
+    const teiFieldLabel = (fieldKey) => {
+      const labels = {
+        'tei_sender': 'Sender',
+        'tei_recipient': 'Recipient',
+        'tei_date': 'Date',
+        'tei_place': 'Place',
+        'tei_abstract': 'Abstract',
+        'tei_keywords': 'Keywords',
+        'tei_title': 'Title',
+        'tei_repository': 'Repository',
+        'tei_source_id': 'Source ID',
+      }
+      return labels[fieldKey] || fieldKey.replace('tei_', '').replace(/_/g, ' ')
+    }
+
+    // Default facet type suggestions
+    const teiFacetTypeMap = ref({})
+    const teiFieldFacetType = (fieldKey) => {
+      if (teiFacetTypeMap.value[fieldKey]) return teiFacetTypeMap.value[fieldKey]
+      // Suggest defaults based on field type
+      if (fieldKey === 'tei_date') return 'date_range'
+      if (fieldKey === 'tei_keywords') return 'keyword'
+      return 'text'
+    }
+    const setTeiFieldFacetType = (fieldKey, type) => {
+      teiFacetTypeMap.value[fieldKey] = type
+    }
+
+    // TEI schema discovery API call
+    const discoverTeiSchema = async () => {
+      teiDiscovering.value = true
+      try {
+        const response = await fetch('/api/corpus-wizard/tei/discover', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            source_path: source.value.location,
+            sample_size: 50
+          })
+        })
+        if (!response.ok) {
+          throw new Error(`TEI discovery failed: ${response.status}`)
+        }
+        const data = await response.json()
+        teiDiscovery.value = data.schema_discovery
+
+        // Auto-select fields with > 50% coverage
+        if (teiDiscovery.value && teiDiscovery.value.elements) {
+          teiSelectedFields.value = []
+          for (const [elementName, info] of Object.entries(teiDiscovery.value.elements)) {
+            if (info.percentage >= 50) {
+              teiSelectedFields.value.push(teiFieldToMetadataKey(elementName))
+            }
+          }
+        }
+      } catch (error) {
+        console.error('TEI discovery failed:', error)
+        alert('TEI schema discovery failed: ' + error.message)
+      } finally {
+        teiDiscovering.value = false
+      }
+    }
+
     onUnmounted(() => {
       if (eventSource) {
         eventSource.close()
@@ -1558,6 +1800,7 @@ Do you want to continue?`
     return {
       // Wizard state
       currentStep,
+      currentStepName,
       steps,
       workflowType,
       showImportDialog,
@@ -1620,6 +1863,19 @@ Do you want to continue?`
       nextStep,
       previousStep,
       goToMainApp,
+
+      // TEI-XML workflow
+      teiDiscovery,
+      teiDiscovering,
+      teiSelectedFields,
+      teiChunkingStrategy,
+      teiMetadataMappings,
+      teiFacetSelections,
+      teiFieldToMetadataKey,
+      teiFieldLabel,
+      teiFieldFacetType,
+      setTeiFieldFacetType,
+      discoverTeiSchema,
 
       // Utilities
       saveConfiguration,

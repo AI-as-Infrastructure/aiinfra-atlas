@@ -126,6 +126,21 @@ def get_corpus_options() -> List[Dict[str, str]]:
     return options
 
 
+def get_facets() -> List[Dict[str, Any]]:
+    """Get facet configuration from manifest (v1.5+).
+
+    Returns the facets array if present, otherwise empty list.
+    Each facet has: field, label, type, and values/min/max.
+    """
+    manifest = load_manifest()
+    return manifest.get("facets", [])
+
+
+def has_facets() -> bool:
+    """Check if the loaded manifest includes facet configuration."""
+    return len(get_facets()) > 0
+
+
 def invalidate_cache() -> None:
     """Clear the manifest cache. Useful for testing or after manifest updates."""
     global _manifest_cache
