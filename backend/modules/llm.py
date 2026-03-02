@@ -111,9 +111,20 @@ def create_llm(
     # Get LLM configuration
     llm_config = get_llm_config()
 
-    # Use provided values or fall back to config
-    model = model_name or llm_config.get("model") or "gpt-4o-mini"
-    provider = provider or llm_config.get("provider") or "openai"
+    # Use provided values or fall back to config -- no silent defaults
+    model = model_name or llm_config.get("model")
+    provider = provider or llm_config.get("provider")
+
+    if not provider:
+        raise ValueError(
+            "LLM provider not configured. Set TEST_TARGET in .env to a valid target file "
+            "(e.g. TEST_TARGET=k20_claude4), or set LLM_PROVIDER in the target file."
+        )
+    if not model:
+        raise ValueError(
+            "LLM model not configured. Set TEST_TARGET in .env to a valid target file "
+            "(e.g. TEST_TARGET=k20_claude4), or set LLM_MODEL in the target file."
+        )
 
     # Normalize provider name to uppercase
     provider = provider.upper()
@@ -181,16 +192,9 @@ def create_llm(
             # Note: streaming is enabled by default, no need to specify
         )
     else:
-        logger.warning(f"Unknown provider '{provider}', falling back to OpenAI")
-        openai_api_key = os.getenv("OPENAI_API_KEY")
-        if not openai_api_key:
-            raise ValueError("OPENAI_API_KEY not found. Please set the environment variable.")
-
-        return ChatOpenAI(
-            api_key=openai_api_key,
-            model=model or "gpt-4o",
-            temperature=temperature,
-            streaming=streaming
+        raise ValueError(
+            f"Unknown LLM provider '{provider}'. "
+            f"Supported providers: OLLAMA, ANTHROPIC, OPENAI, BEDROCK, GOOGLE."
         )
 
 def create_qa_prompt(

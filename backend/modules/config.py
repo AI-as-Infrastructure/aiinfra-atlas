@@ -160,8 +160,11 @@ def _load_target_config(config: Dict[str, Any], target_id: str) -> None:
                               'targets', f"{target_id}.txt")
     
     if not os.path.isfile(target_file):
-        logger.warning(f"Target configuration file not found: {target_file}")
-        return
+        raise FileNotFoundError(
+            f"Target configuration file not found: {target_file}. "
+            f"Set TEST_TARGET in your .env file to a valid target "
+            f"(available targets: backend/targets/*.txt)."
+        )
     
     # Enhanced mapping from target config keys to config paths
     target_mappings = {
@@ -256,7 +259,13 @@ def validate_config_schema(config: Dict[str, Any]) -> List[str]:
     
     if "search_score_threshold" in retriever_config and not isinstance(retriever_config["search_score_threshold"], (int, float)):
         errors.append("search_score_threshold must be a number")
-    
+
+    # Validate LLM configuration
+    if not config.get("llm_provider"):
+        errors.append("llm_provider is required (set LLM_PROVIDER in your target file)")
+    if not config.get("llm_model"):
+        errors.append("llm_model is required (set LLM_MODEL in your target file)")
+
     # Validate corpus options
     corpus_options = retriever_config.get("corpus_options", [])
     if not isinstance(corpus_options, list):
