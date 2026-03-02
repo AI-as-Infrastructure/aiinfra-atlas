@@ -2,7 +2,7 @@
 fastapi==0.115.12
 uvicorn[standard]==0.34.2
 gunicorn==23.0.0
-python-multipart==0.0.20
+python-multipart==0.0.22
 websockets==15.0.1
 
 # Vector Search Support
@@ -32,7 +32,7 @@ google-auth==2.40.1
 # AI/ML Model Dependencies
 transformers==4.53.0
 torch>=2.8.0
-unstructured==0.17.2
+unstructured==0.18.18
 
 # Utilities
 python-dotenv==1.1.0
@@ -64,7 +64,7 @@ pandas>=1.5.0,<3.0.0
 # ---
 # Additional requirements for create/create_hansard_store.py
 # These are needed for standalone execution of the Hansard vector store creation script.
-nltk==3.9.1
+nltk==3.9.3
 langchain-text-splitters==0.3.9
 tqdm==4.67.1
 rank-bm25==0.2.2
