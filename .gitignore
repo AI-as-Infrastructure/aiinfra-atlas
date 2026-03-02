@@ -1,5 +1,7 @@
 # ATLAS
 config/.env.development
+config/.env.development.feature
+config/.env.development.main
 config/.env.staging
 config/.env.production
 config/dev_certs
