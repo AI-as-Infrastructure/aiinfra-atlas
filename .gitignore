@@ -23,6 +23,7 @@ deploy/staging/logs/**
 *.pem
 deploy/docker/
 create/output/*
+source_examples/
 models/**
 models/bert_1890_1900_st/
 load_tests/reports/*
