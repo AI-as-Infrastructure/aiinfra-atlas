@@ -1,0 +1,55 @@
+# Nginx reverse proxy for Cloudflare Tunnel deployment.
+# Listens on localhost only -- cloudflared connects here.
+# No SSL: TLS is terminated at the Cloudflare edge.
+# Derived from deploy/production/nginx.conf.template.
+
+server {
+    listen 127.0.0.1:80;
+    server_name $SERVER_NAME;
+
+    # Security headers
+    add_header X-Content-Type-Options "nosniff";
+    add_header X-Frame-Options "SAMEORIGIN";
+    add_header X-XSS-Protection "1; mode=block";
+
+    # Frontend - Vue.js static files
+    location / {
+        root $APP_DIR/frontend/dist;
+        try_files $uri $uri/ /index.html;
+
+        # Prevent Cloudflare from caching index.html (the asset manifest).
+        # Hashed assets (JS, CSS) are cached normally via the block below.
+        location = /index.html {
+            add_header Cache-Control "no-cache, no-store, must-revalidate";
+        }
+
+        # Cache hashed static assets at the Cloudflare edge
+        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+            expires 30d;
+            add_header Cache-Control "public, no-transform";
+        }
+    }
+
+    # Backend - FastAPI API endpoints
+    location /api {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # WebSocket support
+    location /ws {
+        proxy_pass http://127.0.0.1:8000/ws;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+}

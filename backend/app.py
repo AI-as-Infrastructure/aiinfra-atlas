@@ -180,33 +180,6 @@ app.add_middleware(
     allowed_hosts=allowed_hosts
 )
 
-# Static file serving for Cloudflare Tunnel deployment (no nginx).
-# Enabled via SERVE_STATIC=true in the systemd service environment.
-# Must be mounted AFTER all API routers so /api routes take priority.
-if os.getenv("SERVE_STATIC", "").lower() in ("true", "1", "yes"):
-    from fastapi.staticfiles import StaticFiles
-    from fastapi.responses import FileResponse
-
-    static_dir = os.path.join(project_root, "frontend", "dist")
-    if os.path.isdir(static_dir):
-        # Serve static assets (JS, CSS, images) from frontend/dist/assets/
-        assets_dir = os.path.join(static_dir, "assets")
-        if os.path.isdir(assets_dir):
-            app.mount("/assets", StaticFiles(directory=assets_dir), name="static-assets")
-
-        # SPA fallback: return index.html for non-API, non-static routes
-        @app.get("/{full_path:path}")
-        async def spa_fallback(full_path: str):
-            """Serve index.html for SPA routing (Vue Router history mode)."""
-            file_path = os.path.join(static_dir, full_path)
-            if os.path.isfile(file_path):
-                return FileResponse(file_path)
-            return FileResponse(os.path.join(static_dir, "index.html"))
-
-        logger.info(f"Static file serving enabled from {static_dir}")
-    else:
-        logger.warning(f"SERVE_STATIC=true but {static_dir} not found. Run frontend build first.")
-
 # Entrypoint for running with Uvicorn
 if __name__ == "__main__":
     import uvicorn

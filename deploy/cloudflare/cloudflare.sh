@@ -5,8 +5,8 @@
 #
 # PURPOSE:
 #   Deploys ATLAS behind a Cloudflare Zero Trust Tunnel with no exposed ports.
-#   Replaces nginx and SSL certificate management with cloudflared tunnels.
-#   Gunicorn serves both the API and static frontend assets.
+#   Replaces SSL certificate management with cloudflared tunnels.
+#   Nginx (localhost-only) serves static files and proxies API/WS to Gunicorn.
 #
 # USAGE:
 #   Run from the atlas project root on the target server:
@@ -24,8 +24,8 @@
 #
 # ARCHITECTURE:
 #   Internet -> Cloudflare Edge (TLS, WAF, DDoS) -> Zero Trust Access (SSO/MFA)
-#   -> cloudflared tunnel (outbound-only) -> 127.0.0.1:8000
-#   -> Gunicorn+Uvicorn (API + static files)
+#   -> cloudflared tunnel (outbound-only) -> Nginx (127.0.0.1:80)
+#   -> static files (frontend/dist) | proxy /api /ws -> Gunicorn (127.0.0.1:8000)
 #
 #=============================================================================
 
@@ -112,12 +112,12 @@ echo "====================================="
 echo ""
 
 # ---- INSTALL SYSTEM DEPENDENCIES ----
-echo "Installing system dependencies (no nginx)..."
+echo "Installing system dependencies..."
 sudo apt update
 sudo apt install -y software-properties-common
 sudo add-apt-repository ppa:deadsnakes/ppa -y
 sudo apt update
-sudo apt install -y python3.10 python3.10-venv python3.10-dev git-lfs redis-server curl build-essential make
+sudo apt install -y python3.10 python3.10-venv python3.10-dev git-lfs redis-server nginx curl build-essential make
 
 # ---- INSTALL CLOUDFLARED ----
 echo "Installing cloudflared..."
@@ -280,23 +280,42 @@ sudo mkdir -p /etc/cloudflared
 cat > /tmp/cloudflared-config.yml << EOL
 # Cloudflare Tunnel configuration for ATLAS
 # Tunnel name: $CLOUDFLARE_TUNNEL_NAME
-# All traffic routes through a single HTTP ingress to Gunicorn.
-# cloudflared handles WebSocket upgrades automatically.
+# All traffic routes through a single HTTP ingress to Nginx.
+# Nginx serves static files and proxies API/WS to Gunicorn.
 
 tunnel: $CLOUDFLARE_TUNNEL_NAME
 ingress:
-  - service: http://localhost:8000
+  - service: http://localhost:80
 EOL
 
 sudo mv /tmp/cloudflared-config.yml /etc/cloudflared/config.yml
 sudo chmod 644 /etc/cloudflared/config.yml
 echo "cloudflared config written to /etc/cloudflared/config.yml"
 
+# ---- NGINX CONFIGURATION ----
+echo "Configuring Nginx (localhost-only reverse proxy)..."
+SERVER_NAME="$DOMAIN"
+
+# Generate config from template
+sed -e "s|\$SERVER_NAME|$SERVER_NAME|g" \
+    -e "s|\$APP_DIR|$APP_DIR|g" \
+    deploy/cloudflare/nginx-cloudflare.conf.template > /tmp/atlas-cloudflare.conf
+
+sudo mv /tmp/atlas-cloudflare.conf /etc/nginx/sites-available/$APP_NAME
+sudo ln -sf /etc/nginx/sites-available/$APP_NAME /etc/nginx/sites-enabled/$APP_NAME
+
+# Remove default site to avoid port conflicts
+sudo rm -f /etc/nginx/sites-enabled/default
+
+# Validate config
+sudo nginx -t
+echo "Nginx configured: 127.0.0.1:80 -> static files + proxy to 127.0.0.1:8000"
+
 # ---- SYSTEMD SERVICES ----
 echo "Creating systemd services..."
 sudo mkdir -p /var/log/$APP_NAME
 
-# Gunicorn service (serves API + static files via FastAPI StaticFiles mount)
+# Gunicorn service (API only -- Nginx serves static files)
 cat > /tmp/gunicorn.service << EOL
 [Unit]
 Description=Gunicorn instance for $APP_NAME (Cloudflare Tunnel)
@@ -309,7 +328,6 @@ Group=$DEPLOY_USER
 WorkingDirectory=$APP_DIR
 Environment="PATH=$APP_DIR/.venv/bin"
 Environment="PYTHONPATH=$APP_DIR"
-Environment="SERVE_STATIC=true"
 EnvironmentFile=$APP_DIR/$APP_ENV_FILE
 ExecStart=/bin/bash -c 'source $APP_DIR/$APP_ENV_FILE && $APP_DIR/.venv/bin/python -m gunicorn backend.app:app -k uvicorn.workers.UvicornWorker -w \${GUNICORN_WORKERS:-16} -b 127.0.0.1:8000 --max-requests \${GUNICORN_MAX_REQUESTS:-3000} --max-requests-jitter \${GUNICORN_MAX_REQUESTS_JITTER:-300} --timeout \${GUNICORN_TIMEOUT:-300} --keep-alive \${GUNICORN_KEEPALIVE:-30} --worker-tmp-dir /dev/shm --access-logfile /var/log/$APP_NAME/gunicorn-access.log --error-logfile /var/log/$APP_NAME/gunicorn-error.log'
 Restart=on-failure
@@ -405,10 +423,11 @@ fi
 echo "Setting permissions and starting services..."
 sudo chown -R $DEPLOY_USER:$DEPLOY_USER $APP_DIR /var/log/$APP_NAME
 sudo systemctl daemon-reload
-sudo systemctl enable redis-server gunicorn llm-worker cloudflared
+sudo systemctl enable redis-server nginx gunicorn llm-worker cloudflared
 sudo systemctl restart redis-server
 sudo systemctl restart gunicorn
 sudo systemctl restart llm-worker
+sudo systemctl restart nginx
 sudo systemctl restart cloudflared
 
 # ---- HEALTH CHECK ----
@@ -417,7 +436,7 @@ echo "Checking service status..."
 sleep 5
 
 FAILED=""
-for svc in redis-server gunicorn llm-worker cloudflared; do
+for svc in redis-server nginx gunicorn llm-worker cloudflared; do
     if sudo systemctl is-active --quiet $svc; then
         echo "  $svc: running"
     else
@@ -439,12 +458,12 @@ echo "  Deployment complete!"
 echo "====================================="
 echo "  Tunnel:    $CLOUDFLARE_TUNNEL_NAME"
 echo "  Domain:    $DOMAIN"
-echo "  Backend:   127.0.0.1:8000 (no exposed ports)"
-echo "  Static:    Served via FastAPI (SERVE_STATIC=true)"
+echo "  Nginx:     127.0.0.1:80 (static files + proxy)"
+echo "  Backend:   127.0.0.1:8000 (API only, no exposed ports)"
 echo "  Firewall:  UFW deny incoming, allow outgoing"
 echo ""
 echo "  Manage Zero Trust policies in the Cloudflare dashboard."
-echo "  LAN fallback: http://localhost:8000 (if tunnel is down)"
+echo "  LAN fallback: http://localhost:80 (if tunnel is down)"
 echo ""
 echo "  Stop:   make scf"
 echo "  Clean:  make dcf"

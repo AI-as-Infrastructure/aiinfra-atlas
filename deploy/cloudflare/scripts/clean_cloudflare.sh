@@ -5,8 +5,9 @@
 #
 # PURPOSE:
 #   Completely removes the Cloudflare tunnel deployment:
-#   services, systemd units, application directory, logs, cloudflared config.
-#   UFW state is NOT modified (operator manages firewall independently).
+#   services, systemd units, Nginx config, application directory, logs,
+#   cloudflared config. UFW state is NOT modified (operator manages firewall
+#   independently).
 #
 # USAGE:
 #   make dcf
@@ -28,6 +29,7 @@ echo "WARNING: This action cannot be undone!"
 echo ""
 echo "The following will be removed:"
 echo "  - systemd services: gunicorn, llm-worker, cloudflared"
+echo "  - Nginx site config: /etc/nginx/sites-available/$APP_NAME"
 echo "  - Application directory: $APP_DIR"
 echo "  - Logs: /var/log/$APP_NAME"
 echo "  - cloudflared config: /etc/cloudflared/config.yml"
@@ -55,6 +57,12 @@ sudo rm -f /etc/systemd/system/gunicorn.service
 sudo rm -f /etc/systemd/system/llm-worker.service
 sudo rm -f /etc/systemd/system/cloudflared.service
 
+# Remove Nginx site config
+echo "Removing Nginx site config..."
+sudo rm -f /etc/nginx/sites-enabled/$APP_NAME
+sudo rm -f /etc/nginx/sites-available/$APP_NAME
+sudo systemctl reload nginx 2>/dev/null || true
+
 # Remove cloudflared config
 sudo rm -f /etc/cloudflared/config.yml
 sudo rmdir /etc/cloudflared 2>/dev/null || true
@@ -68,7 +76,7 @@ echo "Removing logs..."
 sudo rm -rf /var/log/$APP_NAME
 
 # Clean up temp files
-sudo rm -f /tmp/gunicorn.service /tmp/llm-worker.service /tmp/cloudflared.service /tmp/cloudflared-config.yml
+sudo rm -f /tmp/gunicorn.service /tmp/llm-worker.service /tmp/cloudflared.service /tmp/cloudflared-config.yml /tmp/atlas-cloudflare.conf
 
 # Reload systemd
 sudo systemctl daemon-reload

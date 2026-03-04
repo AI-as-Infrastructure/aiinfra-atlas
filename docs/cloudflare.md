@@ -1,6 +1,6 @@
 # Cloudflare Zero Trust Tunnel Deployment
 
-Deploy ATLAS behind a Cloudflare Zero Trust Tunnel with no exposed ports, no nginx, and no SSL certificate management.
+Deploy ATLAS behind a Cloudflare Zero Trust Tunnel with no exposed ports and no SSL certificate management.
 
 ## Architecture
 
@@ -8,18 +8,19 @@ Deploy ATLAS behind a Cloudflare Zero Trust Tunnel with no exposed ports, no ngi
 Internet -> Cloudflare Edge (TLS, WAF, DDoS)
          -> Zero Trust Access (SSO/MFA policies)
          -> cloudflared tunnel (outbound-only from server)
-         -> 127.0.0.1:8000 (Gunicorn serves API + static files)
+         -> Nginx (127.0.0.1:80, localhost-only reverse proxy)
+         -> static files (frontend/dist) | proxy /api /ws -> Gunicorn (127.0.0.1:8000)
 ```
 
 Key differences from the [production deployment](production.md):
 
 | | Production | Cloudflare Tunnel |
 |---|---|---|
-| Reverse proxy | Nginx | None (cloudflared) |
+| Reverse proxy | Nginx (public, SSL) | Nginx (localhost-only, no SSL) |
 | SSL | Let's Encrypt | Cloudflare Edge |
 | Firewall | Ports 80/443 open | All incoming denied |
-| Static files | Nginx | FastAPI (SERVE_STATIC=true) |
-| Services | 4 (nginx, gunicorn, llm-worker, redis) | 4 (cloudflared, gunicorn, llm-worker, redis) |
+| Static files | Nginx | Nginx |
+| Services | 4 (nginx, gunicorn, llm-worker, redis) | 5 (cloudflared, nginx, gunicorn, llm-worker, redis) |
 
 ## Prerequisites
 
@@ -33,7 +34,7 @@ Key differences from the [production deployment](production.md):
 1. Go to [Cloudflare Zero Trust dashboard](https://one.dash.cloudflare.com/) > Networks > Tunnels
 2. Create a new tunnel (type: Cloudflared)
 3. Copy the tunnel token
-4. Add a public hostname pointing your domain to `http://localhost:8000`
+4. Add a public hostname pointing your domain to `http://localhost:80`
 
 ## Configuration
 
@@ -80,14 +81,15 @@ make cf
 ```
 
 The script will:
-1. Install system dependencies (Python 3.10, Redis, cloudflared -- no nginx)
+1. Install system dependencies (Python 3.10, Redis, Nginx, cloudflared)
 2. Set up Python venv and install from `requirements.lock`
 3. Install Node.js via nvm and build the Vue.js frontend
 4. Configure Redis with authentication
-5. Generate `/etc/cloudflared/config.yml`
-6. Create systemd services (gunicorn, llm-worker, cloudflared)
-7. Configure UFW firewall (deny all incoming, allow outgoing)
-8. Start services and run health checks
+5. Configure Nginx as a localhost-only reverse proxy (static files + API/WS proxy)
+6. Generate `/etc/cloudflared/config.yml`
+7. Create systemd services (nginx, gunicorn, llm-worker, cloudflared)
+8. Configure UFW firewall (deny all incoming, allow outgoing)
+9. Start services and run health checks
 
 ### SSH access
 
@@ -119,48 +121,57 @@ make help-dcf
 
 `make scf` stops services in dependency order:
 1. cloudflared (site goes offline immediately)
-2. llm-worker (10-second wait for in-flight LLM requests)
-3. gunicorn (stop API)
-4. redis-server (stop last, preserves data)
+2. nginx (stop reverse proxy)
+3. llm-worker (10-second wait for in-flight LLM requests)
+4. gunicorn (stop API)
+5. redis-server (stop last, preserves data)
 
 ### Cleanup
 
 `make dcf` removes:
 - systemd services (gunicorn, llm-worker, cloudflared)
+- Nginx site configuration
 - Application directory (`/opt/atlas`)
 - Logs (`/var/log/atlas`)
 - cloudflared config (`/etc/cloudflared/config.yml`)
 
 Does **not** remove:
+- Nginx package (uninstall manually if needed)
 - UFW firewall rules (manage with `sudo ufw status`)
 - Cloudflare tunnel in the dashboard (delete manually)
 - Redis data
 
 ## Static File Serving
 
-In the Cloudflare deployment there is no nginx to serve static files. Instead, Gunicorn runs with `SERVE_STATIC=true`, which activates a FastAPI static file mount in `backend/app.py`:
+Static files are served by Nginx from `frontend/dist/`, the same pattern as the production deployment. Nginx runs as a localhost-only reverse proxy (`127.0.0.1:80`) between cloudflared and Gunicorn:
 
-- `/assets/*` served from `frontend/dist/assets/`
-- All other non-API routes return `index.html` (SPA fallback for Vue Router)
-- This mount is added **after** API routers, so `/api/*` routes take priority
+- `/*` -- static files from `frontend/dist/` with SPA fallback (`try_files` to `index.html`)
+- `/api/*` -- proxied to Gunicorn on `127.0.0.1:8000`
+- `/ws/*` -- proxied with WebSocket upgrade to Gunicorn on `127.0.0.1:8000`
 
-This is only active when `SERVE_STATIC=true` is set in the systemd service environment. Development and production (nginx) deployments are unaffected.
+### Cache headers
+
+- `index.html` is served with `Cache-Control: no-cache, no-store, must-revalidate` to prevent Cloudflare from caching a stale entry point. This is critical because `index.html` references hashed asset bundles that change on each build.
+- Hashed assets (JS, CSS, images, fonts) are served with `expires 30d` and `Cache-Control: public, no-transform`, allowing Cloudflare edge caching.
 
 ## Verify Deployment
 
 ```bash
 # Check service status
-sudo systemctl status cloudflared gunicorn llm-worker redis-server
+sudo systemctl status cloudflared nginx gunicorn llm-worker redis-server
 
 # Check application logs
 sudo tail -f /var/log/atlas/gunicorn-access.log
 sudo tail -f /var/log/atlas/gunicorn-error.log
 
+# Check Nginx logs
+sudo tail -f /var/log/nginx/error.log
+
 # Check tunnel status
 sudo journalctl -u cloudflared -f
 
-# Test locally (bypasses tunnel)
-curl -s http://localhost:8000/api/health | python3 -m json.tool
+# Test locally (bypasses tunnel, goes through Nginx)
+curl -s http://localhost:80/api/health | python3 -m json.tool
 
 # Check firewall
 sudo ufw status
@@ -189,17 +200,21 @@ Common causes:
 # Verify frontend was built
 ls -la /opt/atlas/frontend/dist/
 
-# Check SERVE_STATIC is set
-sudo systemctl cat gunicorn | grep SERVE_STATIC
+# Check Nginx config is valid
+sudo nginx -t
 
-# Check gunicorn logs for static file mount
-sudo grep -i "static" /var/log/atlas/gunicorn-error.log
+# Check Nginx is serving the site
+sudo ls -la /etc/nginx/sites-enabled/
+
+# Check Nginx logs
+sudo tail -20 /var/log/nginx/error.log
 ```
 
 ### Service startup failures
 
 ```bash
 # Check individual service logs
+sudo journalctl -u nginx --no-pager -n 50
 sudo journalctl -u gunicorn --no-pager -n 50
 sudo journalctl -u llm-worker --no-pager -n 50
 sudo journalctl -u cloudflared --no-pager -n 50
@@ -213,14 +228,16 @@ cat /opt/atlas/config/.env.production
 If the tunnel goes down, the application is still accessible on the local network:
 
 ```
-http://localhost:8000
+http://localhost:80
 ```
 
-This bypasses Cloudflare entirely and connects directly to Gunicorn.
+This bypasses Cloudflare entirely and connects directly to Nginx, which proxies to Gunicorn.
 
 ## Security Notes
 
 - No ports are exposed to the internet; all traffic flows through Cloudflare's edge
+- Nginx binds to `127.0.0.1:80` only -- not accessible from public network interfaces
+- Static files are served by Nginx (a battle-tested web server), not the application process
 - Zero Trust Access policies (SSO, MFA, device posture) are configured in the Cloudflare dashboard, not on the server
 - UFW denies all incoming connections by default
 - Redis is authenticated via password extracted from `REDIS_URL`
