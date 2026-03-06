@@ -258,9 +258,12 @@ echo "Setting up logging..."
 mkdir -p "$PROJECT_ROOT/deploy/staging/logs"
 sudo mkdir -p /var/log/$APP_NAME
 
-# Create absolute path for log files
-LOGS_ABS_PATH="$PROJECT_ROOT/deploy/staging/logs"
-mkdir -p "$LOGS_ABS_PATH"
+# Gunicorn logs go to /var/log/<app> to avoid spaces in paths breaking systemd
+GUNICORN_LOG_DIR="/var/log/$APP_NAME"
+
+# Symlink from project logs dir for convenience
+ln -sf "$GUNICORN_LOG_DIR/gunicorn-access.log" "$PROJECT_ROOT/deploy/staging/logs/gunicorn-access.log" 2>/dev/null || true
+ln -sf "$GUNICORN_LOG_DIR/gunicorn-error.log" "$PROJECT_ROOT/deploy/staging/logs/gunicorn-error.log" 2>/dev/null || true
 
 # Make sure the Gunicorn service uses the correct Python version
 cat > /tmp/gunicorn.service << EOL
@@ -281,7 +284,8 @@ Environment="CUDA_VISIBLE_DEVICES="
 EnvironmentFile=$APP_DIR/config/.env.staging
 
 # Start Gunicorn directly with memory management
-ExecStart=/bin/bash -c 'source $APP_DIR/config/.env.staging && $APP_DIR/.venv/bin/python -m gunicorn backend.app:app -k uvicorn.workers.UvicornWorker -w ${GUNICORN_WORKERS:-4} -b 127.0.0.1:8000 --max-requests 1000 --max-requests-jitter 100 --timeout 120 --worker-tmp-dir /dev/shm --access-logfile ${LOGS_ABS_PATH}/gunicorn-access.log --error-logfile ${LOGS_ABS_PATH}/gunicorn-error.log'
+# Note: set -a exports all sourced variables so gunicorn workers inherit them
+ExecStart=/bin/bash -c 'set -a && source $APP_DIR/config/.env.staging && set +a && $APP_DIR/.venv/bin/python -m gunicorn backend.app:app -k uvicorn.workers.UvicornWorker -w \${GUNICORN_WORKERS:-4} -b 127.0.0.1:8000 --max-requests 1000 --max-requests-jitter 100 --timeout 120 --worker-tmp-dir /dev/shm --access-logfile $GUNICORN_LOG_DIR/gunicorn-access.log --error-logfile $GUNICORN_LOG_DIR/gunicorn-error.log'
 Restart=on-failure
 
 [Install]
