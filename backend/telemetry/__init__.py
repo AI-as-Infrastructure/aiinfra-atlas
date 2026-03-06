@@ -21,8 +21,6 @@ from .core import (
     create_span,
     log_user_feedback,
     create_rag_pipeline_span,
-    create_retrieval_span,
-    create_llm_span as create_llm_span_core,
     create_feedback_span,
     set_span_outputs
 )
@@ -79,49 +77,46 @@ __all__ = [
     "create_span",
     "log_user_feedback",
     "create_rag_pipeline_span",
-    "create_retrieval_span", 
-    "create_llm_span",
     "create_feedback_span",
     "set_span_outputs",
-    
+
     # Constants
     "SpanAttributes",
-    "SpanNames", 
+    "SpanNames",
     "OpenInferenceSpanKind",
     "SpanKind",
     "get_test_target_attributes",
-    
+
     # Feedback models
     "UserFeedback",
     "FeedbackResponse",
     "associate_feedback_with_spans",
-    
+
     # API router
     "telemetry_router",
-    
+
     # Specialized span operations
     "trace_operation",
     "create_llm_span",
     "create_retriever_span",
     "create_human_query_span",
     "create_guardrail_span",
-    
+
     # Span registry functions
     "register_span",
     "find_qa_span_id",
-    "find_session_root_span_id", 
+    "find_session_root_span_id",
     "find_span_by_trace_id",
     "register_session_root_span",
-    
+
     # Status types
     "Status",
     "StatusCode",
-    
-    # Trace functions from module
+
+    # Trace wrapper functions (used by retriever_call_model.py)
     "trace_document_retrieval",
     "trace_llm_generation",
     "trace_document_filtering",
-    "trace_citation_formatting",
 ]
 
 # Initialize telemetry system gracefully
@@ -135,7 +130,7 @@ except Exception as e:
 
 # Create trace wrapper functions for backward compatibility
 from contextlib import contextmanager
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 @contextmanager
 def trace_document_retrieval(session_id: str = None, qa_id: str = None, **kwargs):
@@ -196,24 +191,3 @@ def trace_document_filtering(session_id: str = None, qa_id: str = None, **kwargs
     ) as span:
         yield span
 
-@contextmanager
-def trace_citation_formatting(session_id: str = None, qa_id: str = None, **kwargs):
-    """Create a citation formatting span with proper span kind"""
-    attributes = {
-        SpanAttributes.SESSION_ID: session_id,
-        SpanAttributes.QA_ID: qa_id,
-        "span.kind": "REFERENCES",  # Explicit span kind for Phoenix
-        "openinference.span.kind": OpenInferenceSpanKind.REFERENCES,
-        **kwargs
-    }
-    with create_span(
-        SpanNames.DOCUMENT_REFERENCES,
-        attributes=attributes,
-        session_id=session_id,
-        kind=OpenInferenceSpanKind.REFERENCES,
-        otel_kind=SpanKind.INTERNAL
-    ) as span:
-        yield span
-
-# Alias for backward compatibility
-OpenInferenceOpenInferenceSpanKind = OpenInferenceSpanKind

@@ -14,21 +14,17 @@ import logging
 import json
 import re
 import time
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 
 COGNITO_SESSION_TIMEOUT = 3600  # 1 hour for research sessions
 from jose import jwk, jwt
 from jose.utils import base64url_decode
 import requests
-from fastapi import Depends, HTTPException, Request, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import HTTPException, Request, status
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# JWT validation setup
-security = HTTPBearer(auto_error=False)
 
 # Cache for Cognito JWKS
 _jwks_cache = None
@@ -316,62 +312,3 @@ def optional_authenticated_user(request: Request) -> Dict[str, Any]:
         logger.error(f"Authentication error in optional_authenticated_user: {type(e).__name__}")
         return {"sub": "anonymous", "username": "anonymous", "authenticated": False, "auth_method": auth_method}
 
-
-# --- Legacy FastAPI dependency functions (kept for backward compatibility) ---
-
-async def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
-    """FastAPI dependency for getting the current user from a JWT token."""
-    if not is_cognito_enabled():
-        # If Cognito is disabled, return a default user
-        return {"sub": "anonymous", "username": "anonymous", "authenticated": False}
-
-    if not credentials:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    token = credentials.credentials
-    payload = verify_cognito_token(token)
-
-    if not payload:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    return {
-        "sub": payload.get("sub"),
-        "username": payload.get("username", payload.get("email", "unknown")),
-        "email": payload.get("email"),
-        "groups": payload.get("cognito:groups", []),
-        "authenticated": True
-    }
-
-async def optional_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
-    """FastAPI dependency for optional authentication, won't throw an exception."""
-    if not is_cognito_enabled():
-        return {"sub": "anonymous", "username": "anonymous", "authenticated": False}
-
-    if not credentials:
-        return {"sub": "anonymous", "username": "anonymous", "authenticated": False}
-
-    try:
-        token = credentials.credentials
-        payload = verify_cognito_token(token)
-
-        if not payload:
-            return {"sub": "anonymous", "username": "anonymous", "authenticated": False}
-
-        return {
-            "sub": payload.get("sub"),
-            "username": payload.get("username", payload.get("email", "unknown")),
-            "email": payload.get("email"),
-            "groups": payload.get("cognito:groups", []),
-            "authenticated": True
-        }
-    except Exception as e:
-        logger.error(f"Authentication error in optional_user: {e}")
-        return {"sub": "anonymous", "username": "anonymous", "authenticated": False}

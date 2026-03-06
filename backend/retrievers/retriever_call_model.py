@@ -29,7 +29,7 @@ from backend.modules.system_prompts import system_prompt, contextualize_q_system
 from backend.telemetry import (
     create_span, SpanAttributes, OpenInferenceSpanKind,
     trace_document_retrieval, trace_llm_generation, trace_document_filtering,
-    trace_citation_formatting, OpenInferenceOpenInferenceSpanKind, SpanNames
+    SpanNames
 )
 
 # Get retriever instance and config
