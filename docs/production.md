@@ -125,7 +125,8 @@ PHOENIX_COLLECTOR_ENDPOINT="https://app.phoenix.arize.com/s/atlas"
 
 **Authentication (AWS Cognito):**
 ```bash
-VITE_USE_COGNITO_AUTH=true
+AUTH_METHOD=cognito
+# VITE_AUTH_METHOD is derived automatically from AUTH_METHOD at build time
 VITE_COGNITO_REGION=us-west-1
 VITE_COGNITO_USERPOOL_ID=us-west-1_...
 VITE_COGNITO_CLIENT_ID=...

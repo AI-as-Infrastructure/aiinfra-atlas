@@ -6,7 +6,7 @@
 The system MUST provide a deployment script that installs and configures ATLAS behind a Cloudflare Zero Trust Tunnel with no publicly exposed ports.
 
 #### Scenario: Successful deployment
-- **WHEN** `make cf` is run with a valid `config/.env.cloudflare` containing CLOUDFLARE_TUNNEL_TOKEN and CLOUDFLARE_TUNNEL_NAME
+- **WHEN** `make cf` is run with a valid environment file (e.g. `config/.env.production`) containing CLOUDFLARE_TUNNEL_TOKEN and CLOUDFLARE_TUNNEL_NAME
 - **THEN** the script installs system dependencies (Python, Redis, cloudflared)
 - **AND** creates a Python virtual environment with locked dependencies
 - **AND** builds the Vue.js frontend
@@ -16,11 +16,11 @@ The system MUST provide a deployment script that installs and configures ATLAS b
 - **AND** the application is accessible via the Cloudflare Tunnel hostname
 
 #### Scenario: Missing environment file
-- **WHEN** `make cf` is run without `config/.env.cloudflare`
+- **WHEN** `make cf` is run without a valid environment file (e.g. `config/.env.production`)
 - **THEN** the script exits with an error message indicating the missing file
 
 #### Scenario: Missing required environment variables
-- **WHEN** `config/.env.cloudflare` exists but lacks CLOUDFLARE_TUNNEL_TOKEN or CLOUDFLARE_TUNNEL_NAME
+- **WHEN** the environment file exists but lacks CLOUDFLARE_TUNNEL_TOKEN or CLOUDFLARE_TUNNEL_NAME
 - **THEN** the script exits with an error identifying the missing variable
 
 ### Requirement: No Exposed Ports
@@ -106,21 +106,13 @@ The deployment script MUST configure UFW to deny all incoming connections, enfor
 - **THEN** a warning is logged that firewall hardening was skipped
 - **AND** the deployment continues without UFW configuration
 
-### Requirement: Multi-Environment Tunnel Support
-The deployment MUST support multiple Cloudflare Tunnel environments (e.g., staging, production) via separate environment files, following the existing `.env.{environment}` pattern.
+### Requirement: Production Environment Configuration
+The deployment MUST load all settings (application config and Cloudflare tunnel vars) from `config/.env.production`. Staging is a localhost deployment and does not use Cloudflare tunnels.
 
-#### Scenario: Default environment
-- **WHEN** `make cf` is run without CLOUDFLARE_ENV
-- **THEN** the script loads `config/.env.cloudflare`
-
-#### Scenario: Named environment
-- **WHEN** `make cf CLOUDFLARE_ENV=production` is run
-- **THEN** the script loads `config/.env.cloudflare-production`
-- **AND** each environment file contains its own CLOUDFLARE_TUNNEL_TOKEN and CLOUDFLARE_TUNNEL_NAME
-
-#### Scenario: Missing named environment file
-- **WHEN** `make cf CLOUDFLARE_ENV=staging` is run but `config/.env.cloudflare-staging` does not exist
-- **THEN** the script exits with an error identifying the missing file
+#### Scenario: Default deployment
+- **WHEN** `make cf` is run
+- **THEN** the script loads `config/.env.production`
+- **AND** the environment file contains CLOUDFLARE_TUNNEL_TOKEN and CLOUDFLARE_TUNNEL_NAME alongside all other application settings
 
 ### Requirement: Cloud-Agnostic Deployment
 The Cloudflare deployment MUST NOT assume any specific cloud provider. The script MUST work on any Linux system with apt, systemd, and outbound HTTPS connectivity.

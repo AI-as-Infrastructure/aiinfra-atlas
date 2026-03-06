@@ -18,6 +18,7 @@
   "dependencies": {
     "aws-amplify": "^5.0.0",
     "bulma": "^0.9.4",
+    "dompurify": "^3.3.2",
     "marked": "^15.0.12",
     "pinia": "^2.1.7",
     "pinia-plugin-persistedstate": "^3.2.0",
@@ -33,6 +34,8 @@
   "overrides": {
     "uuid": "^9.0.1",
     "rimraf": "^5.0.0",
-    "glob": "^10.0.0"
+    "glob": "^10.0.0",
+    "fast-xml-parser": ">=4.5.4",
+    "axios": ">=1.8.0"
   }
 }

@@ -77,9 +77,15 @@ export const configureAmplify = () => {
 };
 
 /**
- * Check if Cognito auth is enabled
+ * Check if Cognito auth is enabled.
+ * Uses VITE_AUTH_METHOD (canonical) with fallback to deprecated VITE_USE_COGNITO_AUTH.
  */
 export const isCognitoEnabled = () => {
+  const authMethod = import.meta.env.VITE_AUTH_METHOD;
+  if (authMethod) {
+    return authMethod === 'cognito';
+  }
+  // Backward compatibility
   return import.meta.env.VITE_USE_COGNITO_AUTH === 'true';
 };
 

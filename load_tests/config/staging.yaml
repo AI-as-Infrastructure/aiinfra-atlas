@@ -7,7 +7,7 @@ environment:
   api_version: "v1"
 
 # Authentication Configuration
-# Load tests assume VITE_USE_COGNITO_AUTH=false in .env files
+# Load tests require AUTH_METHOD=none in .env files
 
 # Redis Configuration
 redis:
@@ -173,7 +173,7 @@ safety:
 # Environment Variables (reference - loaded from .env.staging)
 env_vars:
   VITE_API_URL: "${VITE_API_URL}"
-  VITE_USE_COGNITO_AUTH: "${VITE_USE_COGNITO_AUTH}"
+  AUTH_METHOD: "${AUTH_METHOD}"
   REDIS_URL: "${REDIS_URL}"
   REDIS_PASSWORD: "${REDIS_PASSWORD}"
   BACKEND_LOG_LEVEL: "${BACKEND_LOG_LEVEL}"

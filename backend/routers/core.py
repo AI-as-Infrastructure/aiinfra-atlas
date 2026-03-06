@@ -11,8 +11,8 @@ from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse
 
 from backend.modules.config import get_config, get_system_prompt, get_corpus_options
-from backend.modules.auth import optional_user, verify_cognito_token, is_cognito_enabled
-from backend.telemetry import telemetry_initialized
+from backend.modules.auth import get_auth_method, get_authenticated_user, optional_authenticated_user, is_cognito_enabled
+from backend.telemetry import is_telemetry_initialized
 
 logger = logging.getLogger(__name__)
 
@@ -81,31 +81,15 @@ def get_config_endpoint():
 @router.get("/api/telemetry")
 def telemetry_status():
     """Return the status of telemetry (initialized or not) for health checks."""
-    return {"telemetry_initialized": telemetry_initialized}
+    return {"telemetry_initialized": is_telemetry_initialized()}
 
 
 @router.get("/api/diagnostics")
 async def diagnostics(request: Request):
     """Return diagnostic information to help debug issues."""
-    # Check if authentication is required based on environment
-    auth_required = os.getenv("VITE_USE_COGNITO_AUTH", "false").lower() == "true"
-
-    if auth_required:
-        # Get the authorization header
-        auth_header = request.headers.get("Authorization")
-        if not auth_header:
-            raise HTTPException(
-                status_code=401,
-                detail="Authentication required for diagnostics"
-            )
-
-        # Verify user is authenticated
-        user = await optional_user(request)
-        if not user.get("authenticated", False):
-            raise HTTPException(
-                status_code=403,
-                detail="Unauthorized access to diagnostics"
-            )
+    auth_method = get_auth_method()
+    if auth_method in ("cognito", "cloudflare"):
+        get_authenticated_user(request)  # Enforce auth; result not needed
 
     # Get basic config info - only non-sensitive information
     config_info = {}
@@ -137,7 +121,7 @@ async def diagnostics(request: Request):
     return {
         "environment": env_vars,
         "config": config_info,
-        "telemetry_initialized": telemetry_initialized
+        "telemetry_initialized": is_telemetry_initialized()
     }
 
 
@@ -149,43 +133,31 @@ def debug_user_id_extraction(request: Request):
     result = {
         "timestamp": datetime.now().isoformat(),
         "environment": os.getenv("ENVIRONMENT", "unknown"),
-        "cognito_settings": {
-            "VITE_USE_COGNITO_AUTH": os.getenv("VITE_USE_COGNITO_AUTH", "false"),
+        "auth_settings": {
+            "AUTH_METHOD": get_auth_method(),
             "cognito_enabled": is_cognito_enabled(),
             "inter_rater_enabled": os.getenv("INTER_RATER_ENABLED", "false"),
         },
         "anonymous_id_service": anonymous_id_service.validate_environment_isolation()
     }
 
-    # Try to extract user ID from current request
+    # Try to extract user ID from current request using unified auth dispatcher
     try:
-        auth_header = request.headers.get("Authorization")
-        if auth_header:
-            token = auth_header.split(" ", 1)[1] if " " in auth_header else auth_header
-            payload = verify_cognito_token(token)
-
-            if payload and payload.get("sub"):
-                cognito_sub = payload.get("sub")
-                user = {"sub": cognito_sub, "authenticated": True}
-                anon_user_id = anonymous_id_service.get_anonymous_id_from_user_data(user)
-
-                result["extraction_result"] = {
-                    "success": True,
-                    "cognito_sub_prefix": cognito_sub[:8] + "..." if len(cognito_sub) > 8 else cognito_sub,
-                    "anonymous_id_format": anon_user_id[:12] + "..." if anon_user_id else None,
-                    "anonymous_id_length": len(anon_user_id) if anon_user_id else 0
-                }
-            else:
-                result["extraction_result"] = {
-                    "success": False,
-                    "error": "Token verified but no 'sub' in payload",
-                    "payload_keys": list(payload.keys()) if payload else []
-                }
+        user = optional_authenticated_user(request)
+        if user.get("authenticated"):
+            anon_user_id = anonymous_id_service.get_anonymous_id_from_user_data(user)
+            result["extraction_result"] = {
+                "success": True,
+                "auth_method": user.get("auth_method", "unknown"),
+                "identity_length": len(user.get("sub", "")),
+                "anonymous_id_format": anon_user_id[:12] + "..." if anon_user_id else None,
+                "anonymous_id_length": len(anon_user_id) if anon_user_id else 0
+            }
         else:
             result["extraction_result"] = {
                 "success": False,
-                "error": "No Authorization header present",
-                "headers_present": list(request.headers.keys())
+                "auth_method": user.get("auth_method", "none"),
+                "error": "No authenticated identity found"
             }
 
     except Exception as e:

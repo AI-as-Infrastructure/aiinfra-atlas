@@ -22,10 +22,10 @@ Cloudflare Tunnel (`cloudflared`) addresses both by:
 
 ### In Scope
 - New `deploy/cloudflare/` directory with deploy, stop, and clean scripts
-- Makefile targets: `cf` (deploy), `scf` (stop), `dcf` (clean) with `CLOUDFLARE_ENV` passthrough
+- Makefile targets: `cf` (deploy), `scf` (stop), `dcf` (clean)
 - Help targets: `help-cf`, `help-dcf`, `help-scf`
 - Cloudflare-specific environment variables in `config/.env.template`
-- Multi-environment support via `config/.env.cloudflare`, `.env.cloudflare-staging`, `.env.cloudflare-production`
+- Cloudflare tunnel vars set in `config/.env.production` (single env file, no separate overlay)
 - `cloudflared` systemd service configuration with ingress rules
 - Gunicorn serving both API and static frontend assets (no nginx)
 - FastAPI static file mount for Vue.js `dist/` directory
@@ -78,7 +78,7 @@ Key differences from existing production deploy:
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
 | Cloudflare service outage | Low | High | Document fallback to direct Gunicorn access on LAN |
-| Tunnel token compromise | Low | High | Token stored only in `.env.cloudflare` (gitignored), rotatable via dashboard |
+| Tunnel token compromise | Low | High | Token stored in core env file (gitignored), rotatable via dashboard |
 | Static file serving perf | Medium | Low | Cloudflare edge caching handles most static requests |
 | WebSocket connection drops | Low | Medium | `cloudflared` natively supports WS; retry logic already in frontend |
 | Gunicorn static file overhead | Low | Low | Production traffic is API-heavy; static assets cached at edge |
@@ -99,5 +99,5 @@ Key differences from existing production deploy:
 - [ ] Script validates all required environment variables before proceeding
 - [ ] `cloudflared` runs as a systemd service with automatic restart
 - [ ] UFW configured to deny all incoming traffic
-- [ ] Multiple environments supported via CLOUDFLARE_ENV variable
+- [ ] All config loaded from single `config/.env.production` file
 - [ ] Script is cloud-agnostic (no AWS/GCP/Azure assumptions)

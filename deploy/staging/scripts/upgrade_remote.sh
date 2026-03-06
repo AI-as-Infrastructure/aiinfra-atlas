@@ -90,10 +90,10 @@ chmod +x config/generate_vue_files.sh
 ./config/generate_vue_files.sh
 
 # Update URLs
-sed -i "s#VITE_API_URL=.*#VITE_API_URL=https://$DOMAIN#" config/.env.staging
-sed -i "s#CORS_ORIGINS=.*#CORS_ORIGINS=https://$DOMAIN#" config/.env.staging
-sed -i "s#API_BASE_URL=.*#API_BASE_URL=https://$DOMAIN/api#" config/.env.staging
-sed -i "s#WS_BASE_URL=.*#WS_BASE_URL=wss://$DOMAIN/ws#" config/.env.staging
+sed -i "s#VITE_API_URL=.*#VITE_API_URL=https://${DOMAIN}#" "config/.env.staging"
+sed -i "s#CORS_ORIGINS=.*#CORS_ORIGINS=https://${DOMAIN}#" "config/.env.staging"
+sed -i "s#API_BASE_URL=.*#API_BASE_URL=https://${DOMAIN}/api#" "config/.env.staging"
+sed -i "s#WS_BASE_URL=.*#WS_BASE_URL=wss://${DOMAIN}/ws#" "config/.env.staging"
 
 echo "Environment file updated"
 

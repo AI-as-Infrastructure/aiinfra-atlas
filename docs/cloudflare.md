@@ -65,38 +65,17 @@ Configure UFW (or equivalent) according to your security requirements. The deplo
 
 ## Configuration
 
-Two environment files are required:
+All settings (application config and Cloudflare tunnel vars) live in a single environment file. Copy `config/.env.template` and set the values for your environment.
 
-### 1. Cloudflare tunnel config
-
-Create `config/.env.cloudflare` (or `config/.env.cloudflare-{env}` for multi-environment):
-
-```bash
-# Cloudflare tunnel credentials
-CLOUDFLARE_TUNNEL_TOKEN="eyJhIjoi..."
-CLOUDFLARE_TUNNEL_NAME="atlas-prod"
-```
-
-### 2. Application config
-
-Use the standard application environment file (`config/.env.production` or `config/.env.{env}`). See [Configuration Guide](configuration.md) for details.
-
-Required variables across both files:
-- `CLOUDFLARE_TUNNEL_TOKEN` - from the Cloudflare dashboard
+Required variables:
+- `AUTH_METHOD=cloudflare` - enables Cloudflare Access header-based identity
+- `CLOUDFLARE_TUNNEL_TOKEN` - from the Cloudflare Zero Trust dashboard
 - `CLOUDFLARE_TUNNEL_NAME` - tunnel name for identification
 - `VITE_API_URL` - your public domain (e.g. `https://atlas.example.com`)
 - `REDIS_URL` - Redis connection string (e.g. `redis://:password@localhost:6379/1`)
 - `ENVIRONMENT` - deployment environment name
 
-### Multi-environment support
-
-Use `CLOUDFLARE_ENV` to select environment-specific configs:
-
-```bash
-make cf                           # config/.env.cloudflare + config/.env.production
-make cf CLOUDFLARE_ENV=staging    # config/.env.cloudflare-staging + config/.env.staging
-make cf CLOUDFLARE_ENV=production # config/.env.cloudflare-production + config/.env.production
-```
+See [Configuration Guide](configuration.md) for full details on all application settings.
 
 ## Deployment
 
@@ -236,7 +215,7 @@ sudo journalctl -u gunicorn --no-pager -n 50
 sudo journalctl -u llm-worker --no-pager -n 50
 sudo journalctl -u cloudflared --no-pager -n 50
 
-# Verify environment file is readable
+# Verify environment file is readable (includes Cloudflare tunnel vars)
 cat /opt/atlas/config/.env.production
 ```
 

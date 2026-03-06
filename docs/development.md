@@ -108,7 +108,7 @@ GOOGLE_API_KEY=your-development-key
 
 # Development Features
 TELEMETRY_ENABLED=false
-VITE_USE_COGNITO_AUTH=false
+AUTH_METHOD=none
 
 # Redis (development)
 REDIS_PASSWORD=dev-password
@@ -220,7 +220,7 @@ CORS_ORIGINS=http://localhost:5173,http://localhost:3000
 
 # Features
 TELEMETRY_ENABLED=false     # Disable telemetry in development
-VITE_USE_COGNITO_AUTH=false # Disable authentication
+AUTH_METHOD=none              # Disable authentication
 ```
 
 ### Test Targets

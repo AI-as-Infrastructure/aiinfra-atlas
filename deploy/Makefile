@@ -41,15 +41,13 @@ sp: ## Stop production environment gracefully
 
 # Cloudflare Tunnel Deployment Targets
 .PHONY: cf scf dcf
-cf: ## Deploy behind Cloudflare Zero Trust Tunnel (CLOUDFLARE_ENV= for multi-env)
-	@CF_FILE="config/.env.cloudflare"; \
-	if [ -n "$(CLOUDFLARE_ENV)" ]; then CF_FILE="config/.env.cloudflare-$(CLOUDFLARE_ENV)"; fi; \
-	if [ ! -f "$$CF_FILE" ]; then \
-		echo "ERROR: $$CF_FILE not found!"; \
-		echo "Create it with CLOUDFLARE_TUNNEL_TOKEN and CLOUDFLARE_TUNNEL_NAME."; \
+cf: ## Deploy behind Cloudflare Zero Trust Tunnel
+	@if [ ! -f "config/.env.production" ]; then \
+		echo "ERROR: config/.env.production not found!"; \
+		echo "Set CLOUDFLARE_TUNNEL_TOKEN, CLOUDFLARE_TUNNEL_NAME, and AUTH_METHOD=cloudflare in it."; \
 		exit 1; \
 	fi
-	@CLOUDFLARE_ENV=$(CLOUDFLARE_ENV) bash deploy/cloudflare/cloudflare.sh
+	@bash deploy/cloudflare/cloudflare.sh
 
 scf: ## Stop Cloudflare tunnel deployment gracefully
 	@echo "WARNING: This will stop the Cloudflare tunnel deployment!"
@@ -97,7 +95,7 @@ lts: ## Run unified load test against staging (30 users, 20 min) with warmup/war
 
 ltp: ## Run unified load test against production (30 users, 20 min) with warmup/warmdown - REQUIRES AUTH OFF
 	@echo "🚨 Running unified load test against PRODUCTION environment..."
-	@echo "⚠️  Ensure VITE_USE_COGNITO_AUTH=false on production server!"
+	@echo "⚠️  Ensure AUTH_METHOD=none on production server!"
 	@echo "📊 30 users with realistic ramp up (2.5 spawn rate)"
 	@if [ ! -f "config/.env.production" ]; then \
 		echo "❌ ERROR: config/.env.production file not found!"; \

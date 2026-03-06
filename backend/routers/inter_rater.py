@@ -4,25 +4,25 @@ Inter-rater reliability API endpoints for ATLAS.
 Handles inter-rater session retrieval and statistics.
 """
 
-import os
 import logging
 from fastapi import APIRouter, Request, HTTPException
 
-from backend.modules.auth import verify_cognito_token, is_cognito_enabled
+from backend.modules.auth import get_auth_method, optional_authenticated_user
+from backend.services.anonymous_id_service import anonymous_id_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
-def _get_user_id_from_request(request: Request, auth_header: str) -> str:
-    """Extract anonymous user ID from authenticated request."""
-    token = auth_header.split(" ", 1)[1] if " " in auth_header else auth_header
-    payload = verify_cognito_token(token)
-    if payload and payload.get("sub"):
-        from backend.services.anonymous_id_service import anonymous_id_service
-        user = {"sub": payload.get("sub"), "authenticated": True}
-        return anonymous_id_service.get_anonymous_id_from_user_data(user)
+def _get_user_id_from_request(request: Request) -> str:
+    """Extract anonymous user ID from authenticated request using auth dispatcher."""
+    try:
+        user = optional_authenticated_user(request)
+        if user.get("authenticated"):
+            return anonymous_id_service.get_anonymous_id_from_user_data(user)
+    except Exception as e:
+        logger.error(f"Error extracting user ID: {e}")
     return None
 
 
@@ -37,13 +37,11 @@ async def get_inter_rater_sessions(request: Request):
         if not inter_rater_service.is_enabled():
             raise HTTPException(status_code=404, detail="Inter-rater functionality is disabled")
 
-        auth_required = os.getenv("VITE_USE_COGNITO_AUTH", "false").lower() == "true"
+        auth_method = get_auth_method()
         user_id = None
 
-        if auth_required and is_cognito_enabled():
-            auth_header = request.headers.get("Authorization")
-            if auth_header:
-                user_id = _get_user_id_from_request(request, auth_header)
+        if auth_method in ("cognito", "cloudflare"):
+            user_id = _get_user_id_from_request(request)
 
         # If no authenticated user, return empty
         if not user_id:
@@ -70,13 +68,11 @@ async def get_inter_rater_stats(request: Request):
         if not inter_rater_service.is_enabled():
             return {"enabled": False}
 
-        auth_required = os.getenv("VITE_USE_COGNITO_AUTH", "false").lower() == "true"
+        auth_method = get_auth_method()
         user_id = None
 
-        if auth_required and is_cognito_enabled():
-            auth_header = request.headers.get("Authorization")
-            if auth_header:
-                user_id = _get_user_id_from_request(request, auth_header)
+        if auth_method in ("cognito", "cloudflare"):
+            user_id = _get_user_id_from_request(request)
 
         # If no authenticated user, return default stats
         if not user_id:
@@ -86,7 +82,7 @@ async def get_inter_rater_stats(request: Request):
         return stats
 
     except Exception as e:
-        logger.error(f"Error getting inter-rater stats: {e}", exc_info=True)
+        logger.error(f"Error getting inter-rater stats: {type(e).__name__}")
         return {"enabled": False, "error": "Failed to retrieve inter-rater stats"}
 
 
@@ -101,13 +97,11 @@ async def refresh_inter_rater_cache(request: Request):
         if not inter_rater_service.is_enabled():
             raise HTTPException(status_code=404, detail="Inter-rater functionality is disabled")
 
-        auth_required = os.getenv("VITE_USE_COGNITO_AUTH", "false").lower() == "true"
+        auth_method = get_auth_method()
         user_id = None
 
-        if auth_required and is_cognito_enabled():
-            auth_header = request.headers.get("Authorization")
-            if auth_header:
-                user_id = _get_user_id_from_request(request, auth_header)
+        if auth_method in ("cognito", "cloudflare"):
+            user_id = _get_user_id_from_request(request)
 
         # If no authenticated user, return default response
         if not user_id:

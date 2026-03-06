@@ -1,5 +1,5 @@
 # Web Framework
-fastapi==0.115.12
+fastapi==0.135.1
 uvicorn[standard]==0.34.2
 gunicorn==23.0.0
 python-multipart==0.0.22
@@ -15,7 +15,7 @@ rank-bm25==0.2.2
 # LLM & LangChain Dependencies
 langchain==0.3.27
 langchain-community==0.3.27
-langchain-core>=0.3.72,<1.0.0
+langchain-core>=0.3.81,<1.0.0
 langchain-huggingface==0.2.0
 langchain-openai==0.3.16
 langchain-ollama==0.3.2

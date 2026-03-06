@@ -44,10 +44,10 @@ git lfs pull
 cp "$OLDPWD/config/.env.staging" "config/.env.staging"
 
 # Update URLs in environment file
-sed -i "s#VITE_API_URL=.*#VITE_API_URL=https://$DOMAIN#" config/.env.staging
-sed -i "s#CORS_ORIGINS=.*#CORS_ORIGINS=https://$DOMAIN#" config/.env.staging
-sed -i "s#API_BASE_URL=.*#API_BASE_URL=https://$DOMAIN/api#" config/.env.staging
-sed -i "s#WS_BASE_URL=.*#WS_BASE_URL=wss://$DOMAIN/ws#" config/.env.staging
+sed -i "s#VITE_API_URL=.*#VITE_API_URL=https://${DOMAIN}#" "config/.env.staging"
+sed -i "s#CORS_ORIGINS=.*#CORS_ORIGINS=https://${DOMAIN}#" "config/.env.staging"
+sed -i "s#API_BASE_URL=.*#API_BASE_URL=https://${DOMAIN}/api#" "config/.env.staging"
+sed -i "s#WS_BASE_URL=.*#WS_BASE_URL=wss://${DOMAIN}/ws#" "config/.env.staging"
 
 echo "✅ Environment updated"
 

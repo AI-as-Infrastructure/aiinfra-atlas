@@ -1,6 +1,8 @@
 /**
- * API client with Cognito authentication integration.
- * Automatically adds the ID token to API requests when Cognito auth is enabled.
+ * API client with authentication integration.
+ * Automatically adds the Cognito ID token to API requests when AUTH_METHOD=cognito.
+ * For AUTH_METHOD=cloudflare, no token injection is needed (Cloudflare Access handles auth).
+ * For AUTH_METHOD=none, no authentication headers are added.
  */
 
 import { isCognitoEnabled, getIdToken } from '../auth/amplify-auth';

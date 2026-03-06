@@ -443,8 +443,7 @@ export default {
         // Submit to API with proper authentication using api utility
         await post('/feedback', feedbackData, {
           headers: {
-            'X-Trace-Id': this.telemetryStore.traceId,
-            'X-Session-Id': this.sessionId
+            ...this.telemetryStore.telemetryHeaders
           }
         })
         

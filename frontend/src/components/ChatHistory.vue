@@ -248,6 +248,7 @@ import { storeToRefs } from 'pinia'
 import { useSessionStore } from '@/stores/session'
 import { ref, onMounted, computed } from 'vue'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import InlineFeedback from './InlineFeedback.vue'
 
 const emit = defineEmits(['feedback-workflow-complete'])
@@ -282,10 +283,10 @@ marked.setOptions({
 	sanitize: false // Don't sanitize HTML
 })
 
-// Function to render markdown content
+// Function to render markdown content (sanitized to prevent XSS)
 function renderMarkdown(content) {
 	if (!content) return ''
-	return marked(content)
+	return DOMPurify.sanitize(marked(content))
 }
 
 // Corpus configuration

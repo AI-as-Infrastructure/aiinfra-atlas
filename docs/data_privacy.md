@@ -13,9 +13,9 @@ This document describes ATLAS's approach to data privacy: how identities are pro
 
 ## Authentication and Anonymity
 
-- Authentication is handled by AWS Cognito (when enabled via `VITE_USE_COGNITO_AUTH=true`).
-- On the backend, the Cognito JWT is validated server-side; claims are not logged.
-- A centralized service (`backend/services/anonymous_id_service.py`) derives a consistent, irreversible anonymous ID from the Cognito `sub` claim using an environment-specific salt.
+- Authentication is handled by `AUTH_METHOD`: `cognito` (AWS Cognito JWT), `cloudflare` (Cloudflare Access header), or `none` (anonymous).
+- For Cognito, the JWT is validated server-side; claims are not logged. For Cloudflare, the `Cf-Access-Authenticated-User-Email` header is trusted because traffic only reaches the origin through the tunnel.
+- A centralized service (`backend/services/anonymous_id_service.py`) derives a consistent, irreversible anonymous ID from the user's stable identity (Cognito UUID or Cloudflare email) using an environment-specific salt.
   - **Format**: `anon_<16-hex>` (SHA-256 hash truncated to 16 characters)
   - **Salt**: Controlled via `ANONYMOUS_ID_SALT`; different salts per environment prevent cross-environment correlation
   - **Irreversible**: Cannot trace back to original Cognito sub
@@ -38,7 +38,7 @@ This document describes ATLAS's approach to data privacy: how identities are pro
 
 - **Backend logs** avoid raw payloads and sensitive fields. Only high-level statuses and anonymized IDs are logged
 - **Authorization headers, tokens, and emails** are never logged in full
-- **Cognito subs** are truncated to first 8 characters with "..." suffix for debugging (e.g., `f93ef458...`)
+- **Raw identity strings** (Cognito subs, emails) are never logged; only their anonymous hashes are used
 - **Anonymous IDs** are truncated to first 12 characters for debugging (e.g., `anon_ce74b9a...`)
 - **Span IDs** are truncated to first 8 characters for debugging (e.g., `0acc527d...`)
 - **Frontend** suppresses verbose logs in production; no auth tokens or emails printed to console
@@ -57,11 +57,11 @@ This document describes ATLAS's approach to data privacy: how identities are pro
 
 ## Configuration Summary
 
-- **`VITE_USE_COGNITO_AUTH`** (frontend/backend): Enable Cognito authentication
+- **`AUTH_METHOD`**: Authentication mode -- `cognito`, `cloudflare`, or `none`. Set once; `VITE_AUTH_METHOD` is derived automatically at build time for the frontend.
 - **`ANONYMOUS_ID_SALT`**: Environment-specific salt for anonymous ID generation
 - **`PHOENIX_API_KEY` / `PHOENIX_CLIENT_HEADERS`**: Phoenix credentials (used only in headers; never logged)
 - **`TELEMETRY_ENABLED`**: Telemetry pipeline control; if disabled, feedback accepted but not exported
-- **`INTER_RATER_ENABLED`**: Enable inter-rater functionality (requires Cognito auth)
+- **`INTER_RATER_ENABLED`**: Enable inter-rater functionality (requires `AUTH_METHOD=cognito` or `AUTH_METHOD=cloudflare`)
 - **`ENVIRONMENT`**: Determines which .env file to load and isolates anonymous IDs
 
 ## Debug Endpoints (Development Only)

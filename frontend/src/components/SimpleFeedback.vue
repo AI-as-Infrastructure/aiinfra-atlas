@@ -206,8 +206,7 @@ export default {
       try {
         await post('/feedback', feedbackData, {
           headers: {
-            'X-Trace-Id': this.telemetryStore.traceId,
-            'X-Session-Id': this.sessionId
+            ...this.telemetryStore.telemetryHeaders
           }
         })
         

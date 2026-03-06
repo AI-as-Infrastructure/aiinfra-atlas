@@ -12,9 +12,11 @@ from datetime import datetime
 from fastapi import APIRouter, Request, HTTPException
 
 from .core import get_tracer, _phoenix_session, PHOENIX_AVAILABLE, is_telemetry_enabled
-from backend.modules.auth import verify_cognito_token, is_cognito_enabled
+from backend.modules.auth import get_auth_method, optional_authenticated_user
 from backend.services.anonymous_id_service import anonymous_id_service
 from .feedback import UserFeedback, FeedbackResponse, associate_feedback_with_spans
+
+logger = logging.getLogger(__name__)
 
 # Conditionally import inter-rater functionality
 _inter_rater_enabled = os.getenv("INTER_RATER_ENABLED", "false").lower() == "true"
@@ -28,8 +30,6 @@ if _inter_rater_enabled:
         INTER_RATER_AVAILABLE = False
 else:
     INTER_RATER_AVAILABLE = False
-
-logger = logging.getLogger(__name__)
 
 # Create router for telemetry endpoints
 router = APIRouter()
@@ -76,71 +76,29 @@ async def submit_feedback(feedback: Union[InterRaterFeedback, UserFeedback] if I
         feedback_type = "inter-rater" if is_inter_rater else "regular"
         logger.info(f"Received {feedback_type} feedback for session {session_id}, qa {qa_id}")
         
-        # Resolve anonymous user ID from auth header for feedback
+        # Resolve anonymous user ID from auth dispatcher
         anon_user_id = None
-        auth_extraction_details = {}
-        
+        auth_method = get_auth_method()
+
         try:
-            cognito_enabled = is_cognito_enabled()
-            cognito_env_setting = os.getenv("VITE_USE_COGNITO_AUTH", "false").lower()
-            auth_extraction_details.update({
-                "cognito_env_setting": cognito_env_setting,
-                "cognito_enabled": cognito_enabled,
-                "auth_required": cognito_env_setting == "true" and cognito_enabled
-            })
-            
-            if cognito_env_setting == "true" and cognito_enabled:
-                auth_header = request.headers.get("Authorization")
-                auth_extraction_details["auth_header_present"] = bool(auth_header)
-                
-                if auth_header:
-                    # Extract token from Authorization header
-                    token = auth_header.split(" ", 1)[1] if " " in auth_header else auth_header
-                    auth_extraction_details["token_extracted"] = len(token) > 10  # Basic validation
-                    
-                    # Verify Cognito token
-                    payload = verify_cognito_token(token)
-                    auth_extraction_details["token_verified"] = bool(payload)
-                    
-                    if payload and payload.get("sub"):
-                        cognito_sub = payload.get("sub")
-                        auth_extraction_details.update({
-                            "cognito_sub_present": True,
-                            "cognito_sub_length": len(cognito_sub),
-                            "cognito_sub_prefix": cognito_sub[:8] + "..." if len(cognito_sub) > 8 else cognito_sub
-                        })
-                        
-                        # Generate anonymous ID
-                        user = {"sub": cognito_sub, "authenticated": True}
-                        anon_user_id = anonymous_id_service.get_anonymous_id_from_user_data(user)
-                        auth_extraction_details.update({
-                            "anonymous_id_generated": bool(anon_user_id),
-                            "anonymous_id_format": anon_user_id[:12] + "..." if anon_user_id else None
-                        })
-                        
-                        logger.info(f"Successfully generated anonymous user ID for feedback: {anon_user_id[:12]}... from Cognito sub")
-                    else:
-                        auth_extraction_details["error"] = "Token payload missing or no 'sub' field"
-                        logger.warning("Token verification succeeded but payload missing 'sub' field")
-                else:
-                    auth_extraction_details["error"] = "No Authorization header present"
-                    logger.warning("Feedback submitted without Authorization header - user_id will be None")
+            user = optional_authenticated_user(request)
+            if user.get("authenticated"):
+                anon_user_id = anonymous_id_service.get_anonymous_id_from_user_data(user)
+                logger.info(f"Generated anonymous user ID for feedback: {anon_user_id[:12]}... (auth_method={auth_method})")
             else:
-                logger.info(f"Cognito auth not enabled (env: {cognito_env_setting}, enabled: {cognito_enabled}) - feedback will have no user_id")
-                
+                logger.info(f"Auth method '{auth_method}' - no authenticated identity for feedback")
         except Exception as e:
-            auth_extraction_details["exception"] = str(e)
-            logger.error(f"Exception during user ID extraction for feedback: {e}", exc_info=True)
+            logger.error(f"Exception during user ID extraction for feedback: {type(e).__name__}")
             anon_user_id = None
-        
+
         # Log final result for debugging inter-rater issues
-        logger.info(f"Feedback user ID extraction result: user_id={'present' if anon_user_id else 'NONE'}, details: {auth_extraction_details}")
+        logger.info(f"Feedback user ID extraction result: user_id={'present' if anon_user_id else 'NONE'}, auth_method={auth_method}")
 
         # Validate user_id for inter-rater functionality
         inter_rater_enabled = os.getenv("INTER_RATER_ENABLED", "false").lower() == "true"
         if inter_rater_enabled and not anon_user_id:
             logger.error("CRITICAL: Inter-rater is enabled but no user_id captured for feedback - this will break inter-rater allocation!")
-            logger.error(f"Auth details: {auth_extraction_details}")
+            logger.error(f"Auth details: auth_method={auth_method}")
             
             # For regular feedback, we can still proceed but warn
             if not is_inter_rater:
@@ -249,9 +207,9 @@ async def submit_feedback(feedback: Union[InterRaterFeedback, UserFeedback] if I
                     status="error"
                 )
     except Exception as e:
-        logger.error(f"Error processing feedback: {e}", exc_info=True)
+        logger.error(f"Error processing feedback: {type(e).__name__}")
         return FeedbackResponse(
-            message=f"Error processing feedback: {str(e)}",
+            message="Error processing feedback",
             status="error"
         )
 

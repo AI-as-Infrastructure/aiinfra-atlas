@@ -10,9 +10,7 @@
 #
 # USAGE:
 #   Run from the atlas project root on the target server:
-#   make cf                          # uses config/.env.cloudflare
-#   make cf CLOUDFLARE_ENV=staging   # uses config/.env.cloudflare-staging
-#   make cf CLOUDFLARE_ENV=production # uses config/.env.cloudflare-production
+#   make cf    # uses config/.env.production
 #
 # SERVER PREREQUISITES (installed/configured by the operator):
 #   - Ubuntu/Debian with apt, systemd
@@ -40,49 +38,25 @@ APP_NAME="atlas"
 APP_DIR="/opt/$APP_NAME"
 DEPLOY_USER=$(whoami)
 
-# Determine which Cloudflare env file to use
-CLOUDFLARE_ENV="${CLOUDFLARE_ENV:-}"
-if [ -n "$CLOUDFLARE_ENV" ]; then
-    CF_ENV_FILE="config/.env.cloudflare-${CLOUDFLARE_ENV}"
-else
-    CF_ENV_FILE="config/.env.cloudflare"
-fi
+# All settings (app config + Cloudflare tunnel vars) live in config/.env.production.
+APP_ENV_FILE="config/.env.production"
 
-# Also load the main application env file
-# CLOUDFLARE_ENV maps to application ENVIRONMENT for .env loading
-if [ -n "$CLOUDFLARE_ENV" ]; then
-    APP_ENV_FILE="config/.env.${CLOUDFLARE_ENV}"
-else
-    APP_ENV_FILE="config/.env.production"
-fi
-
-# ---- LOAD CLOUDFLARE ENVIRONMENT ----
-if [ ! -f "$CF_ENV_FILE" ]; then
-    echo "ERROR: $CF_ENV_FILE not found!"
-    echo "Create it with at minimum:"
-    echo "  CLOUDFLARE_TUNNEL_TOKEN=\"your-tunnel-token\""
-    echo "  CLOUDFLARE_TUNNEL_NAME=\"your-tunnel-name\""
-    echo ""
-    echo "See config/.env.template for reference."
-    exit 1
-fi
-
-echo "Loading Cloudflare config from $CF_ENV_FILE"
-set -a
-source "$CF_ENV_FILE"
-set +a
-
-# ---- LOAD APPLICATION ENVIRONMENT ----
+# ---- LOAD ENVIRONMENT ----
 if [ ! -f "$APP_ENV_FILE" ]; then
     echo "ERROR: $APP_ENV_FILE not found!"
-    echo "This file contains application settings (LLM keys, Redis, telemetry, etc.)"
+    echo "This file must contain application settings AND Cloudflare tunnel vars."
+    echo "Copy config/.env.template as a starting point and set:"
+    echo "  AUTH_METHOD=cloudflare"
+    echo "  CLOUDFLARE_TUNNEL_TOKEN=\"your-tunnel-token\""
+    echo "  CLOUDFLARE_TUNNEL_NAME=\"your-tunnel-name\""
     exit 1
 fi
 
-echo "Loading application config from $APP_ENV_FILE"
+echo "Loading config from $APP_ENV_FILE"
 set -a
 source "$APP_ENV_FILE"
 set +a
+echo "AUTH_METHOD: $AUTH_METHOD"
 
 # ---- VALIDATE REQUIRED VARIABLES ----
 echo "Validating required environment variables..."
@@ -97,7 +71,7 @@ MISSING=""
 if [ -n "$MISSING" ]; then
     echo "ERROR: Missing required environment variables:$MISSING"
     echo ""
-    echo "Set these in $CF_ENV_FILE (Cloudflare vars) and $APP_ENV_FILE (app vars)"
+    echo "Set these in $APP_ENV_FILE (see config/.env.template for reference)"
     exit 1
 fi
 
@@ -188,7 +162,11 @@ fi
 export NVM_DIR="$HOME/.nvm"
 if [ ! -s "$NVM_DIR/nvm.sh" ]; then
     echo "Installing nvm..."
-    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+    # Download nvm installer to a temp file, then execute (avoids curl|bash pipe)
+    NVM_INSTALLER=$(mktemp)
+    curl -o "$NVM_INSTALLER" https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh
+    bash "$NVM_INSTALLER"
+    rm -f "$NVM_INSTALLER"
 fi
 
 # Load nvm

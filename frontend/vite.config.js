@@ -22,6 +22,13 @@ export default ({ mode }) => {
       reportCompressedSize: false,
       chunkSizeWarningLimit: 1000
     },
+    // Strip console.log/warn in production and staging builds (keep console.error)
+    ...(mode !== 'development' && {
+      esbuild: {
+        drop: ['debugger'],
+        pure: ['console.log', 'console.warn', 'console.info', 'console.debug'],
+      }
+    }),
     resolve: {
       alias: {
         '@': path.resolve(__dirname, 'src'),

@@ -109,7 +109,7 @@ The system MUST provide a script to completely remove the Cloudflare deployment.
 The system MUST provide a deployment script that installs and configures ATLAS behind a Cloudflare Zero Trust Tunnel with no publicly exposed ports.
 
 #### Scenario: Successful deployment
-- **WHEN** `make cf` is run with a valid `config/.env.cloudflare` containing CLOUDFLARE_TUNNEL_TOKEN and CLOUDFLARE_TUNNEL_NAME
+- **WHEN** `make cf` is run with a valid environment file (e.g. `config/.env.production`) containing CLOUDFLARE_TUNNEL_TOKEN and CLOUDFLARE_TUNNEL_NAME
 - **THEN** the script installs system dependencies (Python, Redis, Nginx, cloudflared)
 - **AND** creates a Python virtual environment with locked dependencies
 - **AND** builds the Vue.js frontend
@@ -120,9 +120,9 @@ The system MUST provide a deployment script that installs and configures ATLAS b
 - **AND** the application is accessible via the Cloudflare Tunnel hostname
 
 #### Scenario: Missing environment file
-- **WHEN** `make cf` is run without `config/.env.cloudflare`
+- **WHEN** `make cf` is run without a valid environment file (e.g. `config/.env.production`)
 - **THEN** the script exits with an error message indicating the missing file
 
 #### Scenario: Missing required environment variables
-- **WHEN** `config/.env.cloudflare` exists but lacks CLOUDFLARE_TUNNEL_TOKEN or CLOUDFLARE_TUNNEL_NAME
+- **WHEN** the environment file exists but lacks CLOUDFLARE_TUNNEL_TOKEN or CLOUDFLARE_TUNNEL_NAME
 - **THEN** the script exits with an error identifying the missing variable

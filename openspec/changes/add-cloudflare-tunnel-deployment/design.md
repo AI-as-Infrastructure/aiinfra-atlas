@@ -34,7 +34,7 @@ Cloudflare supports two tunnel authentication modes:
 
 **Chosen: Token-based.** Rationale:
 - Tunnel configuration managed in Cloudflare dashboard (single pane of glass with Zero Trust policies)
-- Token is a single string stored in `.env.cloudflare` -- simpler than managing credential JSON files
+- Token is a single string stored in the core env file (e.g. `.env.production`) -- simpler than managing credential JSON files
 - Tunnel can be monitored and reconfigured from dashboard without SSH access to origin
 - Aligns with zero-trust philosophy (management plane separate from data plane)
 
@@ -86,15 +86,14 @@ ufw --force enable
 
 Note: The script will NOT add an SSH allow rule automatically. Operators who need SSH access must add `ufw allow ssh` before or after deployment. This is deliberate -- for home servers behind NAT, SSH is typically accessed via LAN and doesn't need a firewall rule. For institutional VMs, SSH access policies are site-specific.
 
-### Decision: Multiple tunnel support via environment files
-Different environments (staging, production) use separate tunnel tokens and names, following the existing `.env.{environment}` pattern.
+### Decision: Single production env file for tunnel config
+Cloudflare tunnels are a production deployment pattern. Staging is localhost-only and does not use tunnels.
 
-**Chosen: `config/.env.cloudflare` as the default, with `CLOUDFLARE_ENV` override.** Rationale:
-- Mirrors the existing pattern (`config/.env.production`, `config/.env.staging`)
-- Operators can create `config/.env.cloudflare-staging` and `config/.env.cloudflare-production`
-- The `CLOUDFLARE_ENV` variable (or a Makefile argument) selects which file to use
-- Each environment has its own `CLOUDFLARE_TUNNEL_TOKEN` and `CLOUDFLARE_TUNNEL_NAME`
-- Tunnel-specific Zero Trust policies are managed in the Cloudflare dashboard per tunnel
+**Chosen: Cloudflare tunnel vars set in `config/.env.production`.** Rationale:
+- Cloudflare tunnel deployment is production-only (staging runs locally via `make s`)
+- Operators set `CLOUDFLARE_TUNNEL_TOKEN`, `CLOUDFLARE_TUNNEL_NAME`, and `AUTH_METHOD=cloudflare` in the same env file as all other settings
+- No separate overlay files or multi-env parameters needed
+- Tunnel-specific Zero Trust policies are managed in the Cloudflare dashboard
 
 ### Decision: Static files served from origin VM (not Cloudflare Pages/R2)
 Static Vue.js assets could be deployed to Cloudflare Pages or R2 for edge-native serving, or served from the origin VM via Gunicorn.
@@ -122,7 +121,7 @@ The existing `deploy/production/production.sh` is already mostly cloud-agnostic 
 | Risk | Mitigation |
 |------|------------|
 | Cloudflare outage = site down | Document LAN-only access as fallback (Gunicorn on localhost:8000) |
-| Token in .env file | File is gitignored; document rotation procedure |
+| Token in env file | Core env file is gitignored; document rotation procedure |
 | No nginx = no request buffering | Cloudflare edge buffers requests; Gunicorn timeout handles slow clients |
 | Static file perf without nginx | Edge caching; research tool traffic is API-dominant |
 | UFW blocks SSH if not pre-allowed | Script warns operator; SSH rule must be added explicitly |

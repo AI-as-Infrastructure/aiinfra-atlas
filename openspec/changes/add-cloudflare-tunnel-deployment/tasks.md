@@ -8,12 +8,12 @@
 ## Implementation Tasks
 
 ### Phase 1: Environment Configuration
-- [x] **Task 1.1**: Add Cloudflare-specific variables to `config/.env.template` (CLOUDFLARE_TUNNEL_TOKEN, CLOUDFLARE_TUNNEL_NAME, CLOUDFLARE_ENV)
-- [x] **Task 1.2**: Document `.env.cloudflare` setup in template comments (including multi-environment pattern: `.env.cloudflare-staging`, `.env.cloudflare-production`)
+- [x] **Task 1.1**: Add Cloudflare-specific variables to `config/.env.template` (CLOUDFLARE_TUNNEL_TOKEN, CLOUDFLARE_TUNNEL_NAME)
+- [x] **Task 1.2**: Document Cloudflare tunnel vars in template comments (set in core env files alongside app settings)
 
 ### Phase 2: Main Deploy Script
 - [x] **Task 2.1**: Create `deploy/cloudflare/cloudflare.sh` -- main deployment script
-- [x] **Task 2.2**: Implement environment file loading with multi-env support (CLOUDFLARE_ENV selects config/.env.cloudflare or config/.env.cloudflare-{env})
+- [x] **Task 2.2**: Implement environment file loading from `config/.env.production`
 - [x] **Task 2.3**: Implement required variable validation (CLOUDFLARE_TUNNEL_TOKEN, CLOUDFLARE_TUNNEL_NAME, VITE_API_URL, REDIS_URL)
 - [x] **Task 2.4**: Implement system dependency installation (python, redis, cloudflared -- no nginx)
 - [x] **Task 2.5**: Implement Python venv setup and dependency installation from requirements.lock
@@ -31,7 +31,7 @@
 - [x] **Task 3.2**: Create `deploy/cloudflare/scripts/clean_cloudflare.sh` -- full cleanup (services, config, app dir, logs, cloudflared config; preserve UFW state)
 
 ### Phase 4: Makefile Integration
-- [x] **Task 4.1**: Add `cf`, `scf`, `dcf` targets to `deploy/Makefile` (with CLOUDFLARE_ENV passthrough)
+- [x] **Task 4.1**: Add `cf`, `scf`, `dcf` targets to `deploy/Makefile`
 - [x] **Task 4.2**: Add `help-cf`, `help-dcf`, `help-scf` targets to `deploy/help.mk`
 
 ### Phase 5: FastAPI Static File Serving

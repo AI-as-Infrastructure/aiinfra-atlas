@@ -1,7 +1,8 @@
 import { ref } from 'vue'
 import { Auth } from 'aws-amplify'
 
-const useCognito = import.meta.env.VITE_USE_COGNITO_AUTH === 'true'
+const authMethod = import.meta.env.VITE_AUTH_METHOD || (import.meta.env.VITE_USE_COGNITO_AUTH === 'true' ? 'cognito' : 'none')
+const useCognito = authMethod === 'cognito'
 const user = ref(null)
 
 export function useAuth() {

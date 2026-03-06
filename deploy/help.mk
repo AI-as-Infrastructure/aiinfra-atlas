@@ -52,8 +52,6 @@ help-ds:
 help-cf:
 	@echo "Deploy behind Cloudflare Zero Trust Tunnel"
 	@echo "Usage: make cf"
-	@echo "       make cf CLOUDFLARE_ENV=staging"
-	@echo "       make cf CLOUDFLARE_ENV=production"
 	@echo ""
 	@echo "This target deploys ATLAS behind a Cloudflare Tunnel:"
 	@echo "1. Checks server prerequisites (Python 3.10, Redis, Nginx, cloudflared)"
@@ -69,10 +67,10 @@ help-cf:
 	@echo "- Redis authenticated, firewall configured"
 	@echo "- See docs/cloudflare.md for full setup guide"
 	@echo ""
-	@echo "Required env files:"
-	@echo "- config/.env.cloudflare (or config/.env.cloudflare-{env})"
-	@echo "  with CLOUDFLARE_TUNNEL_TOKEN and CLOUDFLARE_TUNNEL_NAME"
-	@echo "- config/.env.production (or config/.env.{env}) with app settings"
+	@echo "Required:"
+	@echo "- config/.env.production with app settings including"
+	@echo "  CLOUDFLARE_TUNNEL_TOKEN, CLOUDFLARE_TUNNEL_NAME,"
+	@echo "  and AUTH_METHOD=cloudflare"
 	@echo "- Tunnel created in Cloudflare Zero Trust dashboard"
 	@echo "- Script must be run from /opt/atlas on the target server"
 	@echo ""
@@ -156,7 +154,7 @@ help-ltq:
 	@echo ""
 	@echo "Required:"
 	@echo "- config/.env.staging file with VITE_API_URL configured"
-	@echo "- VITE_USE_COGNITO_AUTH=false in config/.env.staging"
+	@echo "- AUTH_METHOD=none in config/.env.staging"
 
 help-ltweb:
 	@echo "Interactive load test with web UI (staging only)"
@@ -173,7 +171,7 @@ help-ltweb:
 	@echo ""
 	@echo "Required:"
 	@echo "- config/.env.staging file with VITE_API_URL configured"
-	@echo "- VITE_USE_COGNITO_AUTH=false in config/.env.staging"
+	@echo "- AUTH_METHOD=none in config/.env.staging"
 	@echo ""
 	@echo "Usage: Open http://localhost:8089 in your browser to control the test"
 
@@ -193,5 +191,5 @@ help-ltasync:
 	@echo ""
 	@echo "Required:"
 	@echo "- config/.env.staging file with REDIS_URL configured"
-	@echo "- VITE_USE_COGNITO_AUTH=false in config/.env.staging"
+	@echo "- AUTH_METHOD=none in config/.env.staging"
 	@echo "- Redis server running and accessible" 

@@ -25,9 +25,10 @@ INTER_RATER_MAX_RATINGS=3          # Max inter-rater ratings per session (defaul
 INTER_RATER_SESSIONS_PER_USER=5    # Sessions offered per user (default: 5)
 ```
 
-Also ensure Cognito auth is enabled where required:
+Also ensure authentication is enabled (inter-rater requires user identity):
 ```bash
-VITE_USE_COGNITO_AUTH=true
+AUTH_METHOD=cognito          # or AUTH_METHOD=cloudflare for tunnel deployments
+# VITE_AUTH_METHOD is derived automatically from AUTH_METHOD at build time
 ```
 
 ## Configuration Guidelines

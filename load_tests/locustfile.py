@@ -84,17 +84,22 @@ def on_test_start(environment, **kwargs):
     print(f"Users: {environment.runner.target_user_count if hasattr(environment.runner, 'target_user_count') else 'N/A'}")
     
     # Check authentication setting
-    auth_enabled = os.getenv('VITE_USE_COGNITO_AUTH', 'true').lower()
-    if auth_enabled == 'true':
-        print("\n❌ ERROR: Authentication is enabled!")
-        print("Load tests require VITE_USE_COGNITO_AUTH=false in your .env file.")
+    auth_method = os.getenv('AUTH_METHOD', os.getenv('VITE_USE_COGNITO_AUTH', 'none')).lower()
+    # Map legacy values
+    if auth_method == 'true':
+        auth_method = 'cognito'
+    elif auth_method == 'false':
+        auth_method = 'none'
+    if auth_method != 'none':
+        print(f"\n❌ ERROR: Authentication is enabled (AUTH_METHOD={auth_method})!")
+        print("Load tests require AUTH_METHOD=none in your .env file.")
         print("\nTo fix this:")
         config_name = os.getenv('LOAD_TEST_CONFIG', 'staging')
         print(f"1. Edit config/.env.{config_name}")
-        print("2. Set VITE_USE_COGNITO_AUTH=false")
+        print("2. Set AUTH_METHOD=none")
         print("3. Restart your application")
         print("4. Re-run the load test")
-        print("\n⚠️  Remember to change it back to true after testing in production!")
+        print("\n⚠️  Remember to change it back after testing!")
         raise SystemExit(1)
     else:
         print("✅ Authentication disabled - ready for load testing")

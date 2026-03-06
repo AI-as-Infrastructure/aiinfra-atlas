@@ -106,17 +106,17 @@ echo "✅ Running from correct directory: $APP_DIR"
 
 # Update URLs in the environment file to use the actual domain
 echo "Updating environment URLs for production deployment..."
-sed -i "s#VITE_API_URL=.*#VITE_API_URL=https://$DOMAIN#" $APP_DIR/config/.env.production
-sed -i "s#CORS_ORIGINS=.*#CORS_ORIGINS=https://$DOMAIN#" $APP_DIR/config/.env.production
-sed -i "s#API_BASE_URL=.*#API_BASE_URL=https://$DOMAIN/api#" $APP_DIR/config/.env.production
-sed -i "s#WS_BASE_URL=.*#WS_BASE_URL=wss://$DOMAIN/ws#" $APP_DIR/config/.env.production
+sed -i "s#VITE_API_URL=.*#VITE_API_URL=https://${DOMAIN}#" "${APP_DIR}/config/.env.production"
+sed -i "s#CORS_ORIGINS=.*#CORS_ORIGINS=https://${DOMAIN}#" "${APP_DIR}/config/.env.production"
+sed -i "s#API_BASE_URL=.*#API_BASE_URL=https://${DOMAIN}/api#" "${APP_DIR}/config/.env.production"
+sed -i "s#WS_BASE_URL=.*#WS_BASE_URL=wss://${DOMAIN}/ws#" "${APP_DIR}/config/.env.production"
 echo "✅ Environment file updated with domain: $DOMAIN"
 
 # Set up Python environment
 echo "Setting up Python environment..."
-cd $APP_DIR
-python3.10 -m venv $APP_DIR/.venv
-source $APP_DIR/.venv/bin/activate
+cd "${APP_DIR}"
+python3.10 -m venv "${APP_DIR}/.venv"
+source "${APP_DIR}/.venv/bin/activate"
 pip install --upgrade pip
 if [ ! -f "$APP_DIR/config/requirements.lock" ]; then
     echo "❌ Error: $APP_DIR/config/requirements.lock not found. Run 'make l' to generate it before deployment."
@@ -166,7 +166,11 @@ sudo apt remove -y nodejs npm 2>/dev/null || true
 export NVM_DIR="$HOME/.nvm"
 if [ ! -s "$NVM_DIR/nvm.sh" ]; then
     echo "Installing nvm..."
-    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+    # Download nvm installer to a temp file, then execute (avoids curl|bash pipe)
+    NVM_INSTALLER=$(mktemp)
+    curl -o "$NVM_INSTALLER" https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh
+    bash "$NVM_INSTALLER"
+    rm -f "$NVM_INSTALLER"
     # Source nvm immediately
     export NVM_DIR="$HOME/.nvm"
     [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"

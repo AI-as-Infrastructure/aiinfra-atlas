@@ -235,7 +235,7 @@ async def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str =
             headers['Authorization'] = f'Bearer {phoenix_api_key}'
             return headers
 
-        logger.error("PHOENIX_API_KEY not configured - feedback annotation will fail")
+        logger.warning("Phoenix authentication not configured — annotation will fail")
         return headers
 
     # Get authentication headers
@@ -737,7 +737,7 @@ async def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str =
             logger.error(f"Failed to submit annotation: {response.status_code}")
             return False
     except Exception as e:
-        logger.error(f"Exception submitting annotation: {e}", exc_info=True)
+        logger.error(f"Exception submitting annotation: {type(e).__name__}")
         logger.error(f"Attempted endpoint: {annotation_endpoint}")
         return False
 
@@ -785,5 +785,5 @@ async def associate_feedback_with_spans(session_id: str, qa_id: str, feedback_da
                 logger.error(f"Failed to submit feedback annotation for session {session_id}, qa_id {qa_id}")
                 return False
     except Exception as e:
-        logger.error(f"Failed to associate feedback with spans: {e}", exc_info=True)
+        logger.error(f"Failed to associate feedback with spans: {type(e).__name__}")
         return False

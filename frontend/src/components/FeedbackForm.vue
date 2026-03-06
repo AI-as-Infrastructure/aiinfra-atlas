@@ -72,15 +72,11 @@ export default {
           feedback_text: this.feedbackData.message
         };
         
-        // Headers with telemetry information
+        // Headers with telemetry information (respects privacy toggle)
         const headers = {
-          'X-Trace-Id': this.telemetryStore.traceId
+          ...this.telemetryStore.telemetryHeaders
         };
-        
-        if (this.telemetryStore.sessionId) {
-          headers['X-Session-Id'] = this.telemetryStore.sessionId;
-        }
-        
+
         // Submit feedback with proper authentication using api utility
         await post('/feedback', feedbackPayload, { headers });
         this.feedbackMessage = 'Thank you for your feedback!';

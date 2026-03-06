@@ -83,11 +83,16 @@ async def ask_stream(data: dict = Body(...)):
     corpus_filter = filters.get("corpus_filtering", "all")
 
     # Input validation and sanitization
-    if not question or len(question) > 2000:
-        raise HTTPException(status_code=400, detail="Question is required and must be under 2000 characters")
+    if not question or len(question) < 3 or len(question) > 2000:
+        raise HTTPException(status_code=400, detail="Question is required and must be 3-2000 characters")
+
+    # Strip control characters (keep newlines/tabs for multi-line queries)
+    import re as _re
+    if _re.search(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', question):
+        raise HTTPException(status_code=400, detail="Invalid characters in question")
 
     # Basic injection prevention
-    dangerous_patterns = ["ignore previous", "system:", "<script", "javascript:"]
+    dangerous_patterns = ["ignore previous", "system:", "<script", "javascript:", "data:text/html"]
     if any(pattern in question.lower() for pattern in dangerous_patterns):
         raise HTTPException(status_code=400, detail="Invalid question content")
 

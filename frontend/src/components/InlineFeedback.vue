@@ -385,8 +385,7 @@ export default {
         // Submit with proper authentication using api utility
         await post('/feedback', completeFeedbackPayload, {
           headers: {
-            'X-Trace-Id': this.telemetryStore.traceId,
-            'X-Session-Id': this.sessionId
+            ...this.telemetryStore.telemetryHeaders
           }
         })
         
@@ -412,8 +411,7 @@ export default {
           // Submit the simple feedback with proper authentication using api utility
           await post('/feedback', this.completeFeedbackPayload, {
             headers: {
-              'X-Trace-Id': this.telemetryStore.traceId,
-              'X-Session-Id': this.sessionId
+              ...this.telemetryStore.telemetryHeaders
             }
           })
           

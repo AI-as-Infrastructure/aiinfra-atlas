@@ -9,7 +9,7 @@
         const COGNITO_LOGOUT_ENDPOINT = "__VITE_COGNITO_LOGOUT_ENDPOINT__";
         const COGNITO_CLIENT_ID = "__VITE_COGNITO_CLIENT_ID__";
         const COGNITO_LOGOUT_REDIRECT_URI = "__VITE_COGNITO_LOGOUT_REDIRECT_URI__";
-        const USE_COGNITO_AUTH = "__VITE_USE_COGNITO_AUTH__" === "true";
+        const USE_COGNITO_AUTH = "__VITE_AUTH_METHOD__" === "cognito";
         const API_URL = "__VITE_API_URL__" || '/';
         
         // Logout function - handles both Cognito and local storage clearing

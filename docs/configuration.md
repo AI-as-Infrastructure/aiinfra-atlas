@@ -102,10 +102,11 @@ OLLAMA_ENDPOINT="http://localhost:11434"
 ### Authentication Configuration
 
 ```bash
-# Toggle authentication on/off
-VITE_USE_COGNITO_AUTH=false        # Set to true for production
+# Authentication mode: cognito | cloudflare | none
+AUTH_METHOD=none                   # Set to cognito for production, cloudflare for tunnel deployments
+# Note: VITE_AUTH_METHOD is derived automatically from AUTH_METHOD at build time
 
-# AWS Cognito settings (when authentication is enabled)
+# AWS Cognito settings (required when AUTH_METHOD=cognito)
 VITE_COGNITO_REGION="<DEFAULT>"
 VITE_COGNITO_DOMAIN="<DEFAULT>"
 VITE_COGNITO_USERPOOL_ID="<DEFAULT>"
@@ -200,7 +201,7 @@ ENVIRONMENT=development
 VITE_LOG_LEVEL=debug
 BACKEND_LOG_LEVEL=debug
 TELEMETRY_ENABLED=true             # Optional for development
-VITE_USE_COGNITO_AUTH=false        # Disable auth for easier testing
+AUTH_METHOD=none                   # Disable auth for easier testing
 GUNICORN_WORKERS=2                 # Fewer workers for local machine
 VITE_API_URL=http://localhost:8000/api
 ```
@@ -215,7 +216,7 @@ ENVIRONMENT=staging
 VITE_LOG_LEVEL=info
 BACKEND_LOG_LEVEL=info
 TELEMETRY_ENABLED=true
-VITE_USE_COGNITO_AUTH=false        # Often disabled for load testing
+AUTH_METHOD=none                   # Often disabled for load testing
 GUNICORN_WORKERS=6                 # Match production sizing
 VITE_API_URL=https://staging.example.com/api
 ```
@@ -230,7 +231,7 @@ ENVIRONMENT=production
 VITE_LOG_LEVEL=warn
 BACKEND_LOG_LEVEL=warn
 TELEMETRY_ENABLED=true
-VITE_USE_COGNITO_AUTH=true         # Enable authentication
+AUTH_METHOD=cognito                # Enable Cognito authentication
 GUNICORN_WORKERS=8                 # Full worker count
 RATE_LIMIT_PER_MINUTE=120          # Stricter rate limiting
 VITE_API_URL=https://atlas.example.com/api
@@ -258,8 +259,8 @@ Each target file defines:
 - Store production keys securely (AWS Secrets Manager, etc.)
 
 ### Authentication
-- Enable `VITE_USE_COGNITO_AUTH=true` in production
-- Configure all Cognito parameters properly
+- Set `AUTH_METHOD=cognito` (or `cloudflare` for tunnel deployments) in production
+- Configure all Cognito/Cloudflare parameters properly
 - Test authentication flow in staging before production
 
 ### Rate Limiting
@@ -283,7 +284,7 @@ make c  # Check Python environment and configuration
 ### Load Testing Configuration
 For load testing, ensure:
 ```bash
-VITE_USE_COGNITO_AUTH=false        # Disable auth for load tests
+AUTH_METHOD=none                   # Disable auth for load tests
 BACKEND_LOG_LEVEL=warn             # Reduce log noise
 TELEMETRY_ENABLED=true             # Monitor performance
 ```

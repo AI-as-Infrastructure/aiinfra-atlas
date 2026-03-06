@@ -40,7 +40,7 @@ load_dotenv(dotenv_path=env_path, override=True)
 
 # Initialize telemetry after environment variables are loaded
 from backend.telemetry.core import initialize_telemetry
-from backend.telemetry import telemetry_initialized, telemetry_router
+from backend.telemetry import is_telemetry_initialized, telemetry_router
 
 environment = os.getenv("ENVIRONMENT", "development").lower()
 telemetry_enabled = os.getenv("TELEMETRY_ENABLED", "true").lower() in ["true", "1", "yes"]
@@ -60,7 +60,7 @@ else:
         logger.error(f"CRITICAL: Telemetry initialization failed in {environment}: {e}")
         raise RuntimeError(f"Telemetry initialization failed: {e}")
 
-if not telemetry_initialized:
+if not is_telemetry_initialized():
     if not telemetry_enabled:
         logger.info("Telemetry not initialized (explicitly disabled)")
     else:
@@ -70,7 +70,6 @@ if not telemetry_initialized:
 from backend.routers import (
     core_router,
     query_router,
-    feedback_router,
     validation_router,
     cache_router,
     queue_router,
@@ -147,7 +146,6 @@ app.include_router(telemetry_router)
 # Include API routers
 app.include_router(core_router)
 app.include_router(query_router)
-app.include_router(feedback_router)
 app.include_router(validation_router)
 app.include_router(cache_router)
 app.include_router(queue_router)

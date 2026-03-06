@@ -14,7 +14,7 @@ Features:
 # Core telemetry functionality
 from .core import (
     initialize_telemetry,
-    telemetry_initialized,
+    is_telemetry_initialized,
     is_telemetry_enabled,
     set_user_telemetry_preference,
     using_session,
@@ -72,7 +72,7 @@ from .spans import (
 __all__ = [
     # Core functionality
     "initialize_telemetry",
-    "telemetry_initialized",
+    "is_telemetry_initialized",
     "is_telemetry_enabled",
     "set_user_telemetry_preference",
     "using_session",

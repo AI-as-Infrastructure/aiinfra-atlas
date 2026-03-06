@@ -32,7 +32,7 @@ from backend.modules.system_prompts import system_prompt, contextualize_q_system
 # Import telemetry
 from backend.telemetry import (
     create_span, SpanAttributes, OpenInferenceSpanKind, SpanNames,
-    telemetry_initialized, Status, StatusCode
+    is_telemetry_initialized, Status, StatusCode
 )
 
 # Use telemetry functions directly
@@ -176,7 +176,7 @@ class BaseRetriever(ABC):
         logger.debug(f"Retrieving documents with qa_id={qa_id}")
         
         # Create a telemetry span for this query if telemetry is initialized
-        if telemetry_initialized():
+        if is_telemetry_initialized():
             # Create span attributes for document retrieval
             span_attributes = {
                 SpanAttributes.SESSION_ID: session_id,

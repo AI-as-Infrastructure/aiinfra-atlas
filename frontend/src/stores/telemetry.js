@@ -49,13 +49,14 @@ export const useTelemetryStore = defineStore('telemetry', {
      * Generate fetch headers with telemetry IDs
      */
     telemetryHeaders() {
-      // If telemetry is disabled, return empty headers
+      // If telemetry is disabled, return empty headers (no opt-in signal)
       if (!this.isTelemetryEnabled) {
         return {};
       }
 
       const headers = {
-        'X-Trace-Id': this.traceId
+        'X-Telemetry-Opt-In': 'true',  // Explicit opt-in signal
+        'X-Trace-Id': this.traceId     // Correlation ID
       };
 
       if (this.sessionId) {

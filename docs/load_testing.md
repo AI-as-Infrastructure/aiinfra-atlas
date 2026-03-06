@@ -102,7 +102,7 @@ Responses with 0 tokens are classified as complete semantic failures and tracked
 
 ```bash
 # In config/.env.staging, set:
-VITE_USE_COGNITO_AUTH=false
+AUTH_METHOD=none
 ```
 
 ### Environment Variables
@@ -110,7 +110,7 @@ VITE_USE_COGNITO_AUTH=false
 # Standard configuration
 LOAD_TEST_CONFIG=staging
 BACKEND_LOG_LEVEL=warn
-VITE_USE_COGNITO_AUTH=false
+AUTH_METHOD=none
 ```
 
 ## Running Tests
@@ -226,7 +226,7 @@ The framework automatically generates country-specific questions that match corp
 - **Standard**: 30 concurrent users (unified test)
 - **Maximum**: 30 concurrent users
 - **Approval**: Required before testing
-- **Requirements**: Authentication must be disabled (VITE_USE_COGNITO_AUTH=false)
+- **Requirements**: Authentication must be disabled (AUTH_METHOD=none)
 - **Monitoring**: Business impact, user experience
 - **Schedule**: Low-traffic periods only
 

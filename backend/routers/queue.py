@@ -7,7 +7,9 @@ Handles async queue statistics.
 import os
 import logging
 import datetime
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+
+from backend.modules.auth import get_auth_method, get_authenticated_user
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +34,14 @@ else:
 
 
 @router.get("/api/queue/stats")
-async def get_queue_stats():
+async def get_queue_stats(request: Request):
     """
-    Get current queue statistics (admin endpoint).
+    Get current queue statistics (admin endpoint). Requires authentication.
     """
+    auth_method = get_auth_method()
+    if auth_method != "none":
+        get_authenticated_user(request)  # raises 401 if unauthenticated
+
     if not async_queue_available:
         raise HTTPException(
             status_code=503,

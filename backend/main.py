@@ -4,10 +4,12 @@ import os
 
 app = FastAPI()
 
-# Add CORS middleware
+# Add CORS middleware — origins from env to avoid wildcard exposure
+cors_origins_env = os.environ.get("CORS_ORIGINS", "")
+_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

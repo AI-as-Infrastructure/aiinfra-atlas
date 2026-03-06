@@ -131,9 +131,12 @@ if [ -s "$NVM_DIR/nvm.sh" ]; then
         echo "Using Node.js at: $NODE_PATH"
     else
         echo "nvm failed to load, falling back to system installation"
-        # Install system-wide from NodeSource
+        # Install system-wide from NodeSource (download first, then execute)
         echo "Installing Node.js 22.14.0 from NodeSource..."
-        curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+        NODE_SETUP=$(mktemp)
+        curl -fsSL -o "$NODE_SETUP" https://deb.nodesource.com/setup_22.x
+        sudo -E bash "$NODE_SETUP"
+        rm -f "$NODE_SETUP"
         sudo apt-get install -y nodejs
         
         # Check version after installation
@@ -146,9 +149,12 @@ if [ -s "$NVM_DIR/nvm.sh" ]; then
     fi
 else
     echo "nvm not found, installing system-wide Node.js..."
-    # Install system-wide from NodeSource
+    # Install system-wide from NodeSource (download first, then execute)
     echo "Installing Node.js 22.14.0 from NodeSource..."
-    curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+    NODE_SETUP=$(mktemp)
+    curl -fsSL -o "$NODE_SETUP" https://deb.nodesource.com/setup_22.x
+    sudo -E bash "$NODE_SETUP"
+    rm -f "$NODE_SETUP"
     sudo apt-get install -y nodejs
     
     # Check version after installation

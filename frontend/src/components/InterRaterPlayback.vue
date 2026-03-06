@@ -453,6 +453,7 @@
 <script>
 import { ref, computed, watch } from 'vue'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 
 // Configure marked for consistent markdown rendering
 marked.setOptions({
@@ -462,10 +463,10 @@ marked.setOptions({
   sanitize: false
 })
 
-// Function to render markdown content
+// Function to render markdown content (sanitized to prevent XSS)
 function renderMarkdown(content) {
   if (!content) return ''
-  return marked(content)
+  return DOMPurify.sanitize(marked(content))
 }
 
 // Function to truncate text

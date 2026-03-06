@@ -1,21 +1,33 @@
 # Authentication
 
-This application implements AWS Cognito for user authentication with JWT token-based authorization. The authentication system is designed to be flexible and can be easily toggled on or off based on deployment requirements.
+ATLAS supports three authentication modes selected by the `AUTH_METHOD` environment variable:
+
+| Mode | `AUTH_METHOD` | Description |
+|------|--------------|-------------|
+| **Cognito** | `cognito` | AWS Cognito JWT authentication (production, staging) |
+| **Cloudflare** | `cloudflare` | Cloudflare Access header-based identity (Cloudflare Tunnel deployments) |
+| **None** | `none` | No authentication (development, testing) |
 
 **Key Features:**
-- JWT token validation on backend
-- Anonymous user ID generation for privacy
-- Required for inter-rater functionality
-- Automatic Authorization header handling
+- Tri-modal authentication dispatcher (`backend/modules/auth.py`)
+- Anonymous user ID generation from any auth mode
+- Required for inter-rater functionality (cognito or cloudflare)
+- Cognito: JWT token validation with automatic Authorization header handling
+- Cloudflare: Transparent identity via `Cf-Access-Authenticated-User-Email` header
 - Session-agnostic user identification
 
 ## Configuration
 
-Authentication is controlled via environment variables in your `.env` file:
+Authentication mode is controlled via environment variables in your `.env` file:
 
-### Basic Toggle
-- **`VITE_USE_COGNITO_AUTH=false`**: Disable authentication (open access)
-- **`VITE_USE_COGNITO_AUTH=true`**: Enable AWS Cognito authentication (required for inter-rater)
+### Auth Mode Selection
+- **`AUTH_METHOD=none`**: No authentication (open access, development)
+- **`AUTH_METHOD=cognito`**: AWS Cognito JWT authentication (required for inter-rater on non-Cloudflare deployments)
+- **`AUTH_METHOD=cloudflare`**: Cloudflare Access header-based identity (Cloudflare Tunnel deployments)
+- **`VITE_AUTH_METHOD`**: Derived automatically from `AUTH_METHOD` at build time (do not set manually)
+
+### Deprecated (backward compatible)
+- **`VITE_USE_COGNITO_AUTH=true|false`**: Mapped to `AUTH_METHOD=cognito|none` if `AUTH_METHOD` is not set. Logs a deprecation warning.
 
 ### Anonymous ID Configuration
 - **`ANONYMOUS_ID_SALT`**: Environment-specific salt for generating anonymous user IDs
@@ -28,10 +40,10 @@ To enable authentication, you need to:
 1. **Create a Cognito User Pool** in the AWS Cognito console
 2. **Configure the Cognito environment variables** using the template provided in `config/.env.template`
 
-### Required Cognito Variables
+### Required Cognito Variables (AUTH_METHOD=cognito only)
 
 **Frontend Configuration:**
-- **`VITE_USE_COGNITO_AUTH`**: Toggle authentication on/off
+- **`VITE_AUTH_METHOD`**: Derived automatically from `AUTH_METHOD` at build time
 - **`VITE_COGNITO_REGION`**: AWS region for your Cognito User Pool
 - **`VITE_COGNITO_DOMAIN`**: Cognito domain URL
 - **`VITE_COGNITO_USERPOOL_ID`**: User Pool ID
@@ -50,39 +62,57 @@ For detailed environment file setup, refer to the [Configuration Guide](configur
 
 ## Authentication Flow
 
-### Frontend (Vue 3 + Amplify)
+### Cognito Mode (AUTH_METHOD=cognito)
+
+**Frontend (Vue 3 + Amplify):**
 1. **Login**: User authenticates via Cognito hosted UI
 2. **Token Storage**: JWT ID token stored securely by Amplify
 3. **API Requests**: All API calls automatically include `Authorization: Bearer <token>` header
 4. **Token Refresh**: Amplify handles automatic token refresh
 
-### Backend (FastAPI)
+**Backend (FastAPI):**
 1. **Token Extraction**: Extract JWT token from `Authorization` header
 2. **Token Validation**: Verify token signature and expiration with Cognito
 3. **User Identification**: Extract `sub` claim from validated token
 4. **Anonymous ID**: Generate privacy-preserving anonymous ID from Cognito `sub`
+
+### Cloudflare Mode (AUTH_METHOD=cloudflare)
+
+**Frontend:** No special handling. Cloudflare Access authenticates users at the edge transparently (SSO, MFA, email OTP). No Bearer tokens are injected.
+
+**Backend (FastAPI):**
+1. **Header Extraction**: Read `Cf-Access-Authenticated-User-Email` header
+2. **Trust Model**: Header is trusted because origin is unreachable outside the tunnel (no public ports, UFW deny-all-incoming)
+3. **User Identification**: Email address used as identity string
+4. **Anonymous ID**: Generate privacy-preserving anonymous ID from email
+
+### None Mode (AUTH_METHOD=none)
+
+All users are anonymous. No authentication headers are sent or expected. Used for development and testing.
 
 ## Anonymous User IDs
 
 For privacy and analytics, authenticated users are mapped to anonymous IDs:
 
 ```python
-# Generation process
-raw_input = f"{environment_salt}_{cognito_sub}"
+# Generation process (accepts any identity string: Cognito sub, email, etc.)
+raw_input = f"{environment_salt}_{identity_string}"
 anonymous_hash = hashlib.sha256(raw_input.encode()).hexdigest()[:16]
 anonymous_id = f"anon_{anonymous_hash}"
 ```
 
 **Properties:**
-- **Consistent**: Same user always gets same anonymous ID
-- **Irreversible**: Cannot trace back to original Cognito sub  
+- **Auth-mode agnostic**: Works with Cognito sub (UUID) or Cloudflare email
+- **Consistent**: Same identity string always gets same anonymous ID
+- **Irreversible**: Cannot trace back to original identity
 - **Environment-isolated**: Different environments produce different IDs
+- **Mode-isolated**: Different auth modes produce different IDs for the same physical user (by design)
 - **Privacy-preserving**: Safe for logging and telemetry
 
 ## API Authentication
 
 ### Protected Endpoints
-The following endpoints require authentication when `VITE_USE_COGNITO_AUTH=true`:
+The following endpoints require authentication when `AUTH_METHOD=cognito` or `AUTH_METHOD=cloudflare`:
 
 - **`POST /api/feedback`**: Submit user feedback (requires user_id for inter-rater)
 - **`GET /api/inter-rater/stats`**: Get inter-rater session availability

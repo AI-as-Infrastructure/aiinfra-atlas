@@ -4,9 +4,6 @@ config/.env.development.feature
 config/.env.development.main
 config/.env.staging
 config/.env.production
-config/.env.cloudflare
-config/.env.cloudflare-staging
-config/.env.cloudflare-production
 config/dev_certs
 create/txt/output/*
 letsencrypt/

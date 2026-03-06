@@ -115,7 +115,7 @@ OPENAI_API_KEY=your-staging-key
 
 # Optional features
 TELEMETRY_ENABLED=true
-VITE_USE_COGNITO_AUTH=false
+AUTH_METHOD=none
 ```
 
 ## Cleanup Process
@@ -193,7 +193,7 @@ The staging environment is ideal for load testing because:
 
 ### Advantages for Load Testing
 
-- **Authentication can be disabled**: Set `VITE_USE_COGNITO_AUTH=false` to bypass login requirements
+- **Authentication can be disabled**: Set `AUTH_METHOD=none` to bypass login requirements
 - **Flexible deployment**: Deploy on VMs or machines with different specifications to test performance
 - **Production-like setup**: Tests the full application stack (Nginx, Gunicorn, Redis, LLM workers)
 - **Isolated environment**: Load testing won't affect production users or data
@@ -204,7 +204,7 @@ For load testing, configure your staging environment:
 
 ```bash
 # Disable authentication for load testing
-VITE_USE_COGNITO_AUTH=false
+AUTH_METHOD=none
 
 # Optimize for concurrent users
 GUNICORN_WORKERS=8
