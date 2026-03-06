@@ -4,6 +4,9 @@ config/.env.development.feature
 config/.env.development.main
 config/.env.staging
 config/.env.production
+config/.env.cloudflare
+config/.env.cloudflare-staging
+config/.env.cloudflare-production
 config/dev_certs
 create/txt/output/*
 letsencrypt/
@@ -23,6 +26,7 @@ deploy/staging/logs/**
 *.pem
 deploy/docker/
 create/output/*
+source_examples/
 models/**
 models/bert_1890_1900_st/
 load_tests/reports/*

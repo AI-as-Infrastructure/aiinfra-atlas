@@ -1,5 +1,5 @@
 # Deployment help targets
-.PHONY: help-p help-dp help-s help-ds help-lts help-ltp help-ltq help-ltweb help-ltasync
+.PHONY: help-p help-dp help-s help-ds help-cf help-scf help-dcf help-lts help-ltp help-ltq help-ltweb help-ltasync
 
 help-p:
 	@echo "Deploy to production"
@@ -48,6 +48,66 @@ help-ds:
 	@echo "3. Cleans up systemd services"
 	@echo ""
 	@echo "WARNING: This will remove all staging data!"
+
+help-cf:
+	@echo "Deploy behind Cloudflare Zero Trust Tunnel"
+	@echo "Usage: make cf"
+	@echo "       make cf CLOUDFLARE_ENV=staging"
+	@echo "       make cf CLOUDFLARE_ENV=production"
+	@echo ""
+	@echo "This target deploys ATLAS behind a Cloudflare Tunnel:"
+	@echo "1. Checks server prerequisites (Python 3.10, Redis, Nginx, cloudflared)"
+	@echo "2. Sets up Python venv and installs from requirements.lock"
+	@echo "3. Builds Vue.js frontend"
+	@echo "4. Configures Nginx as localhost-only reverse proxy (static files + API/WS proxy)"
+	@echo "5. Configures cloudflared with tunnel token"
+	@echo "6. Creates systemd services (Gunicorn, LLM worker, cloudflared)"
+	@echo "7. Starts services and runs health checks"
+	@echo ""
+	@echo "Server prerequisites (operator responsibility):"
+	@echo "- Python 3.10, Redis, Nginx, cloudflared installed"
+	@echo "- Redis authenticated, firewall configured"
+	@echo "- See docs/cloudflare.md for full setup guide"
+	@echo ""
+	@echo "Required env files:"
+	@echo "- config/.env.cloudflare (or config/.env.cloudflare-{env})"
+	@echo "  with CLOUDFLARE_TUNNEL_TOKEN and CLOUDFLARE_TUNNEL_NAME"
+	@echo "- config/.env.production (or config/.env.{env}) with app settings"
+	@echo "- Tunnel created in Cloudflare Zero Trust dashboard"
+	@echo "- Script must be run from /opt/atlas on the target server"
+	@echo ""
+	@echo "Architecture: Internet -> Cloudflare Edge -> cloudflared -> Nginx (localhost:80) -> Gunicorn (localhost:8000)"
+
+help-scf:
+	@echo "Stop Cloudflare tunnel deployment gracefully"
+	@echo "Usage: make scf"
+	@echo ""
+	@echo "This target gracefully stops the Cloudflare deployment:"
+	@echo "1. Stops cloudflared (site goes offline immediately)"
+	@echo "2. Stops Nginx (reverse proxy)"
+	@echo "3. Waits for in-flight LLM requests"
+	@echo "4. Stops Gunicorn and LLM worker"
+	@echo "5. Stops Redis last (preserves data)"
+	@echo ""
+	@echo "Data and configuration are preserved for restart with 'make cf'"
+
+help-dcf:
+	@echo "Delete Cloudflare tunnel deployment"
+	@echo "Usage: make dcf"
+	@echo ""
+	@echo "This target completely removes the Cloudflare deployment:"
+	@echo "1. Stops and removes all systemd services"
+	@echo "2. Removes Nginx site config"
+	@echo "3. Removes application directory (/opt/atlas)"
+	@echo "4. Removes logs and cloudflared config"
+	@echo ""
+	@echo "Does NOT remove:"
+	@echo "- Nginx package (uninstall manually if needed)"
+	@echo "- UFW firewall rules (manage manually)"
+	@echo "- Cloudflare tunnel in dashboard (delete manually)"
+	@echo "- Redis data"
+	@echo ""
+	@echo "WARNING: This will remove all application data!"
 
 help-lts:
 	@echo "Run load test against staging environment"

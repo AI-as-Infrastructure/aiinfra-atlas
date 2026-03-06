@@ -39,6 +39,27 @@ sp: ## Stop production environment gracefully
 	@bash deploy/production/scripts/stop_production.sh
 
 
+# Cloudflare Tunnel Deployment Targets
+.PHONY: cf scf dcf
+cf: ## Deploy behind Cloudflare Zero Trust Tunnel (CLOUDFLARE_ENV= for multi-env)
+	@CF_FILE="config/.env.cloudflare"; \
+	if [ -n "$(CLOUDFLARE_ENV)" ]; then CF_FILE="config/.env.cloudflare-$(CLOUDFLARE_ENV)"; fi; \
+	if [ ! -f "$$CF_FILE" ]; then \
+		echo "ERROR: $$CF_FILE not found!"; \
+		echo "Create it with CLOUDFLARE_TUNNEL_TOKEN and CLOUDFLARE_TUNNEL_NAME."; \
+		exit 1; \
+	fi
+	@CLOUDFLARE_ENV=$(CLOUDFLARE_ENV) bash deploy/cloudflare/cloudflare.sh
+
+scf: ## Stop Cloudflare tunnel deployment gracefully
+	@echo "WARNING: This will stop the Cloudflare tunnel deployment!"
+	@read -p "Are you sure you want to continue? (y/N): " confirm && [ "$$confirm" = "y" ] || exit 1
+	@echo "Stopping Cloudflare tunnel deployment..."
+	@bash deploy/cloudflare/scripts/stop_cloudflare.sh
+
+dcf: ## Delete Cloudflare tunnel deployment (preserves UFW and tunnel in dashboard)
+	@bash deploy/cloudflare/scripts/clean_cloudflare.sh
+
 # Staging Deployment Targets
 .PHONY: s ds
 s: ## Deploy to local staging environment

@@ -65,10 +65,11 @@ ATLAS uses a simplified command structure for common operations. Here are the ma
 ### Deployment
 - `make p` - Deploy to production
 - `make dp` - Delete production environment
-- `make sl` - Deploy to local staging environment
-- `make sr` - Deploy to remote staging environment
-- `make dsl` - Delete local staging environment
-- `make dsr` - Delete remote staging environment
+- `make s` - Deploy to local staging environment
+- `make ds` - Delete local staging environment
+- `make cf` - Deploy behind Cloudflare Zero Trust Tunnel
+- `make scf` - Stop Cloudflare tunnel deployment gracefully
+- `make dcf` - Delete Cloudflare tunnel deployment
 
 ### Utilities
 - `make l` - Generate requirements.lock
@@ -158,6 +159,7 @@ This workflow ensures that your retrievers are always in sync with your vector s
 - [Testing](docs/testing.md) - Test suite, running tests, and writing new tests
 - [Staging Environment](docs/staging.md) - Local staging deployment for development and testing
 - [Production Deployment](docs/production.md) - Complete production deployment guide with SSL, systemd services, and maintenance
+- [Cloudflare Tunnel Deployment](docs/cloudflare.md) - Deploy behind Cloudflare Zero Trust with no exposed ports
 - [Health Monitoring](docs/health_monitoring.md) - System health checks, monitoring, and troubleshooting
 - [Load Testing Framework](docs/load_testing.md) - Performance testing and optimization guidelines
 - [Vector Store Creation](docs/create_store.md) - Building and managing vector stores and retrievers
