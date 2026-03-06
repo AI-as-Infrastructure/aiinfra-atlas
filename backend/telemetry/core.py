@@ -411,9 +411,9 @@ def create_rag_pipeline_span(session_id: str, qa_id: str, query: str, **kwargs):
         from .spans import register_span, register_session_root_span
         from opentelemetry.trace import format_span_id as otel_format_span_id
         if not PHOENIX_AVAILABLE or not _phoenix_session:
-            # When telemetry is enabled but Phoenix is not available, this is an error
-            # When telemetry is disabled, we already returned above
-            raise RuntimeError("Phoenix telemetry is not available for span registration.")
+            # Phoenix not available — skip span registration, don't crash the query
+            logger.debug("Phoenix not available for span registration, skipping")
+            return span
         
         # Get the span ID as hex string
         span_id = otel_format_span_id(span.get_span_context().span_id)

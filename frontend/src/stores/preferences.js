@@ -9,7 +9,7 @@ import { defineStore } from 'pinia';
 
 export const usePreferencesStore = defineStore('preferences', {
   state: () => ({
-    telemetryEnabled: false,  // Default to disabled (privacy on)
+    telemetryEnabled: true,  // Default to enabled (privacy off)
     // Future preferences can be added here
   }),
 
@@ -44,7 +44,7 @@ export const usePreferencesStore = defineStore('preferences', {
      * Reset all preferences to defaults
      */
     resetPreferences() {
-      this.telemetryEnabled = false;
+      this.telemetryEnabled = true;
     }
   },
 
