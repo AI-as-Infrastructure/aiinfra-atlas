@@ -22,14 +22,41 @@ Key differences from the [production deployment](production.md):
 | Static files | Nginx | Nginx |
 | Services | 4 (nginx, gunicorn, llm-worker, redis) | 5 (cloudflared, nginx, gunicorn, llm-worker, redis) |
 
-## Prerequisites
+## Server Prerequisites
 
-- Ubuntu 20.04+ with apt, systemd, and outbound HTTPS
-- Sudo privileges
-- A Cloudflare account with Zero Trust access
-- A domain managed by Cloudflare DNS
+The deploy script assumes the server is already set up and hardened. Install and configure the following before running `make cf`:
 
-### Create the Tunnel
+### System packages
+
+```bash
+sudo apt install -y python3.10 python3.10-venv python3.10-dev git-lfs redis-server nginx curl build-essential make
+```
+
+### cloudflared
+
+```bash
+sudo mkdir -p --mode=0755 /usr/share/keyrings
+curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflared.list
+sudo apt update && sudo apt install -y cloudflared
+```
+
+### Redis authentication
+
+Configure Redis with a password matching the `REDIS_URL` in your application env file:
+
+```bash
+# Extract password from your REDIS_URL (e.g. redis://:mypassword@localhost:6379/1)
+sudo sed -i "/^#* *requirepass /d" /etc/redis/redis.conf
+sudo bash -c "echo 'requirepass YOUR_REDIS_PASSWORD' >> /etc/redis/redis.conf"
+sudo systemctl restart redis-server
+```
+
+### Firewall
+
+Configure UFW (or equivalent) according to your security requirements. The deploy script does not modify firewall rules. At minimum, ensure outbound HTTPS (443) and DNS (53) are allowed for cloudflared.
+
+### Cloudflare Zero Trust tunnel
 
 1. Go to [Cloudflare Zero Trust dashboard](https://one.dash.cloudflare.com/) > Networks > Tunnels
 2. Create a new tunnel (type: Cloudflared)
@@ -81,25 +108,15 @@ make cf
 ```
 
 The script will:
-1. Install system dependencies (Python 3.10, Redis, Nginx, cloudflared)
+1. Check server prerequisites (Python 3.10, Redis, Nginx, cloudflared)
 2. Set up Python venv and install from `requirements.lock`
 3. Install Node.js via nvm and build the Vue.js frontend
-4. Configure Redis with authentication
-5. Configure Nginx as a localhost-only reverse proxy (static files + API/WS proxy)
-6. Generate `/etc/cloudflared/config.yml`
-7. Create systemd services (nginx, gunicorn, llm-worker, cloudflared)
-8. Configure UFW firewall (deny all incoming, allow outgoing)
-9. Start services and run health checks
+4. Configure Nginx as a localhost-only reverse proxy (static files + API/WS proxy)
+5. Generate `/etc/cloudflared/config.yml`
+6. Create systemd services (gunicorn, llm-worker, cloudflared)
+7. Start services and run health checks
 
-### SSH access
-
-The firewall configuration denies all incoming connections. If you need SSH access, add the rule **before** running `make cf`:
-
-```bash
-sudo ufw allow ssh
-```
-
-The deploy script will detect an existing SSH rule and preserve it.
+The script does **not** install system packages, configure the firewall, or set up Redis authentication -- these are server prerequisites handled by the operator.
 
 ## Lifecycle Commands
 

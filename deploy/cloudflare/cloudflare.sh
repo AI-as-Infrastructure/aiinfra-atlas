@@ -4,9 +4,9 @@
 #=============================================================================
 #
 # PURPOSE:
-#   Deploys ATLAS behind a Cloudflare Zero Trust Tunnel with no exposed ports.
-#   Replaces SSL certificate management with cloudflared tunnels.
-#   Nginx (localhost-only) serves static files and proxies API/WS to Gunicorn.
+#   Deploys the ATLAS application behind a Cloudflare Zero Trust Tunnel.
+#   Assumes the server is already set up with required system packages,
+#   firewall, and security hardening.
 #
 # USAGE:
 #   Run from the atlas project root on the target server:
@@ -14,13 +14,17 @@
 #   make cf CLOUDFLARE_ENV=staging   # uses config/.env.cloudflare-staging
 #   make cf CLOUDFLARE_ENV=production # uses config/.env.cloudflare-production
 #
-# PREREQUISITES:
-#   - Tunnel created in Cloudflare Zero Trust dashboard
-#   - Tunnel token copied to config/.env.cloudflare (CLOUDFLARE_TUNNEL_TOKEN)
-#   - DNS record (CNAME) pointing your domain to the tunnel ID
-#   - Ubuntu/Debian with apt, systemd, and outbound HTTPS connectivity
-#   - User must have sudo privileges
-#   - If you need SSH access, run 'sudo ufw allow ssh' BEFORE this script
+# SERVER PREREQUISITES (installed/configured by the operator):
+#   - Ubuntu/Debian with apt, systemd
+#   - Python 3.10, python3.10-venv, python3.10-dev
+#   - Redis server (running, with authentication configured)
+#   - Nginx
+#   - cloudflared
+#   - nvm and Node.js (or script will install nvm)
+#   - git-lfs, curl, build-essential, make
+#   - UFW or equivalent firewall (configured by operator)
+#   - Cloudflare Zero Trust tunnel created in dashboard
+#   - DNS record (CNAME) pointing your domain to the tunnel
 #
 # ARCHITECTURE:
 #   Internet -> Cloudflare Edge (TLS, WAF, DDoS) -> Zero Trust Access (SSO/MFA)
@@ -99,6 +103,33 @@ fi
 
 echo "All required variables validated"
 
+# ---- CHECK SERVER PREREQUISITES ----
+echo "Checking server prerequisites..."
+PREREQ_MISSING=""
+
+command -v python3.10 &>/dev/null || PREREQ_MISSING="$PREREQ_MISSING python3.10"
+command -v redis-server &>/dev/null || PREREQ_MISSING="$PREREQ_MISSING redis-server"
+command -v nginx &>/dev/null || PREREQ_MISSING="$PREREQ_MISSING nginx"
+command -v cloudflared &>/dev/null || PREREQ_MISSING="$PREREQ_MISSING cloudflared"
+command -v git-lfs &>/dev/null || PREREQ_MISSING="$PREREQ_MISSING git-lfs"
+command -v curl &>/dev/null || PREREQ_MISSING="$PREREQ_MISSING curl"
+command -v make &>/dev/null || PREREQ_MISSING="$PREREQ_MISSING make"
+
+if [ -n "$PREREQ_MISSING" ]; then
+    echo "ERROR: Missing required system packages:$PREREQ_MISSING"
+    echo ""
+    echo "Install them before running this script. See docs/cloudflare.md for details."
+    exit 1
+fi
+
+# Check Redis is running
+if ! systemctl is-active --quiet redis-server 2>/dev/null; then
+    echo "ERROR: Redis is not running. Start it first: sudo systemctl start redis-server"
+    exit 1
+fi
+
+echo "All prerequisites satisfied"
+
 # Extract domain from VITE_API_URL
 DOMAIN=$(echo "$VITE_API_URL" | sed -E 's|^https?://||')
 echo ""
@@ -110,28 +141,6 @@ echo "  User:         $DEPLOY_USER"
 echo "  Environment:  $ENVIRONMENT"
 echo "====================================="
 echo ""
-
-# ---- INSTALL SYSTEM DEPENDENCIES ----
-echo "Installing system dependencies..."
-sudo apt update
-sudo apt install -y software-properties-common
-sudo add-apt-repository ppa:deadsnakes/ppa -y
-sudo apt update
-sudo apt install -y python3.10 python3.10-venv python3.10-dev git-lfs redis-server nginx curl build-essential make
-
-# ---- INSTALL CLOUDFLARED ----
-echo "Installing cloudflared..."
-if ! command -v cloudflared &> /dev/null; then
-    # Add Cloudflare GPG key and repository
-    sudo mkdir -p --mode=0755 /usr/share/keyrings
-    curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
-    echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflared.list
-    sudo apt update
-    sudo apt install -y cloudflared
-    echo "cloudflared installed successfully"
-else
-    echo "cloudflared already installed: $(cloudflared --version)"
-fi
 
 # ---- VERIFY DIRECTORY ----
 if [ ! -f "config/.env.template" ]; then
@@ -168,29 +177,12 @@ touch $APP_DIR/backend/__init__.py
 echo "$APP_DIR" > $APP_DIR/.venv/lib/python3.10/site-packages/atlas.pth
 chmod 644 $APP_DIR/.venv/lib/python3.10/site-packages/atlas.pth
 
-# ---- REDIS CONFIGURATION ----
-echo "Configuring Redis with authentication..."
-REDIS_PASSWORD=$(echo "$REDIS_URL" | sed -n 's/.*redis:\/\/:\([^@]*\)@.*/\1/p')
-if [ -z "$REDIS_PASSWORD" ]; then
-    echo "ERROR: Could not extract Redis password from REDIS_URL"
-    echo "Expected format: REDIS_URL=redis://:password@localhost:6379/1"
-    exit 1
-fi
-
-sudo sed -i "/^#* *requirepass /d" /etc/redis/redis.conf
-sudo bash -c "echo 'requirepass $REDIS_PASSWORD' >> /etc/redis/redis.conf"
-sudo systemctl enable redis-server
-sudo systemctl restart redis-server
-
 # ---- NODE.JS AND FRONTEND BUILD ----
 echo "Setting up Node.js environment..."
 TARGET_NODE="22.14.0"
 if [ -f "$APP_DIR/frontend/.nvmrc" ]; then
     TARGET_NODE=$(cat "$APP_DIR/frontend/.nvmrc" | tr -d 'v\r\n')
 fi
-
-# Remove system nodejs to avoid conflicts
-sudo apt remove -y nodejs npm 2>/dev/null || true
 
 # Install nvm if not present
 export NVM_DIR="$HOME/.nvm"
@@ -384,47 +376,11 @@ sudo mv /tmp/gunicorn.service /etc/systemd/system/
 sudo mv /tmp/llm-worker.service /etc/systemd/system/
 sudo mv /tmp/cloudflared.service /etc/systemd/system/
 
-# ---- UFW FIREWALL ----
-echo ""
-echo "========================================"
-echo "  FIREWALL CONFIGURATION"
-echo "========================================"
-echo ""
-echo "This script will configure UFW to deny ALL incoming connections."
-echo "Only outbound traffic (HTTPS for cloudflared, DNS) will be allowed."
-echo ""
-echo "WARNING: If you need SSH access, ensure you have added an SSH rule"
-echo "BEFORE running this script:  sudo ufw allow ssh"
-echo ""
-
-if command -v ufw &> /dev/null; then
-    # Check if SSH is already allowed
-    if sudo ufw status | grep -q "22/tcp.*ALLOW"; then
-        echo "SSH rule detected -- SSH access will be preserved."
-    else
-        echo "NOTE: No SSH rule detected. SSH will be blocked after UFW is enabled."
-        echo "      If you need SSH, press Ctrl+C now and run: sudo ufw allow ssh"
-        echo "      Continuing in 10 seconds..."
-        sleep 10
-    fi
-
-    sudo ufw default deny incoming
-    sudo ufw default allow outgoing
-    sudo ufw allow out 443/tcp comment "cloudflared outbound to Cloudflare edge"
-    sudo ufw allow out 53 comment "DNS resolution"
-    sudo ufw --force enable
-    echo "UFW configured: deny incoming, allow outgoing"
-else
-    echo "WARNING: UFW not found. Skipping firewall configuration."
-    echo "Install UFW manually: sudo apt install ufw"
-fi
-
 # ---- SET PERMISSIONS AND START SERVICES ----
 echo "Setting permissions and starting services..."
 sudo chown -R $DEPLOY_USER:$DEPLOY_USER $APP_DIR /var/log/$APP_NAME
 sudo systemctl daemon-reload
-sudo systemctl enable redis-server nginx gunicorn llm-worker cloudflared
-sudo systemctl restart redis-server
+sudo systemctl enable nginx gunicorn llm-worker cloudflared
 sudo systemctl restart gunicorn
 sudo systemctl restart llm-worker
 sudo systemctl restart nginx
@@ -460,7 +416,6 @@ echo "  Tunnel:    $CLOUDFLARE_TUNNEL_NAME"
 echo "  Domain:    $DOMAIN"
 echo "  Nginx:     127.0.0.1:80 (static files + proxy)"
 echo "  Backend:   127.0.0.1:8000 (API only, no exposed ports)"
-echo "  Firewall:  UFW deny incoming, allow outgoing"
 echo ""
 echo "  Manage Zero Trust policies in the Cloudflare dashboard."
 echo "  LAN fallback: http://localhost:80 (if tunnel is down)"
