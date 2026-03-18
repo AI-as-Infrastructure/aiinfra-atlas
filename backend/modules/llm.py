@@ -116,15 +116,11 @@ def create_llm(
     provider = provider or llm_config.get("provider")
 
     if not provider:
-        raise ValueError(
-            "LLM provider not configured. Set TEST_TARGET in .env to a valid target file "
-            "(e.g. TEST_TARGET=k20_claude4), or set LLM_PROVIDER in the target file."
-        )
+        logger.error("LLM provider not configured. Set TEST_TARGET in .env to a valid target file, or set LLM_PROVIDER in the target file.")
+        raise ValueError("LLM provider not configured. Contact administrator.")
     if not model:
-        raise ValueError(
-            "LLM model not configured. Set TEST_TARGET in .env to a valid target file "
-            "(e.g. TEST_TARGET=k20_claude4), or set LLM_MODEL in the target file."
-        )
+        logger.error("LLM model not configured. Set TEST_TARGET in .env to a valid target file, or set LLM_MODEL in the target file.")
+        raise ValueError("LLM model not configured. Contact administrator.")
 
     # Normalize provider name to uppercase
     provider = provider.upper()
@@ -143,7 +139,7 @@ def create_llm(
         anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
         if not anthropic_api_key:
             logger.error("ANTHROPIC_API_KEY not found in environment - check environment variable loading")
-            raise ValueError("ANTHROPIC_API_KEY not found. Please set the environment variable.")
+            raise ValueError("LLM provider configuration error. Contact administrator.")
 
         logger.debug("Using Anthropic with API key")
         return ChatAnthropic(
@@ -156,7 +152,7 @@ def create_llm(
         openai_api_key = os.getenv("OPENAI_API_KEY")
         if not openai_api_key:
             logger.error("OPENAI_API_KEY not found in environment - check environment variable loading")
-            raise ValueError("OPENAI_API_KEY not found. Please set the environment variable.")
+            raise ValueError("LLM provider configuration error. Contact administrator.")
 
         logger.debug("Using OpenAI with API key")
         return ChatOpenAI(
@@ -182,7 +178,7 @@ def create_llm(
         google_api_key = os.getenv("GOOGLE_API_KEY")
         if not google_api_key:
             logger.error("GOOGLE_API_KEY not found in environment - check environment variable loading")
-            raise ValueError("GOOGLE_API_KEY not found. Please set the environment variable.")
+            raise ValueError("LLM provider configuration error. Contact administrator.")
 
         logger.debug("Using Google Generative AI with API key")
         return ChatGoogleGenerativeAI(
@@ -192,10 +188,8 @@ def create_llm(
             # Note: streaming is enabled by default, no need to specify
         )
     else:
-        raise ValueError(
-            f"Unknown LLM provider '{provider}'. "
-            f"Supported providers: OLLAMA, ANTHROPIC, OPENAI, BEDROCK, GOOGLE."
-        )
+        logger.error(f"Unknown LLM provider '{provider}'. Supported: OLLAMA, ANTHROPIC, OPENAI, BEDROCK, GOOGLE.")
+        raise ValueError("LLM provider configuration error. Contact administrator.")
 
 def create_qa_prompt(
     system_prompt: Optional[str] = None,

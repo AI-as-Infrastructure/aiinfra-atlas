@@ -31,6 +31,11 @@ _jwks_cache = None
 _jwks_cache_timestamp = 0
 _JWKS_CACHE_TTL = 3600  # Cache JWKs for 1 hour
 
+# Cache for Cloudflare Access JWKS
+_cf_jwks_cache = None
+_cf_jwks_cache_timestamp = 0
+_CF_JWKS_CACHE_TTL = 3600  # Cache Cloudflare keys for 1 hour
+
 # Track whether deprecation warning has been logged
 _deprecation_warned = False
 
@@ -185,17 +190,136 @@ def verify_cognito_token(token: str) -> Optional[Dict[str, Any]]:
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
+
+def _get_cloudflare_jwks(team_domain: str, force_refresh: bool = False) -> Optional[Dict]:
+    """
+    Fetch Cloudflare Access public keys (JWKS) with caching.
+
+    Keys are cached for 1 hour. On force_refresh, fetches fresh keys
+    to handle key rotation gracefully.
+    """
+    global _cf_jwks_cache, _cf_jwks_cache_timestamp
+
+    current_time = time.time()
+    if (
+        not force_refresh
+        and _cf_jwks_cache
+        and (current_time - _cf_jwks_cache_timestamp) < _CF_JWKS_CACHE_TTL
+    ):
+        return _cf_jwks_cache
+
+    try:
+        certs_url = f"https://{team_domain}/cdn-cgi/access/certs"
+        response = requests.get(certs_url, timeout=10)
+        response.raise_for_status()
+        _cf_jwks_cache = response.json()
+        _cf_jwks_cache_timestamp = current_time
+        logger.info("Cloudflare Access JWKS fetched successfully")
+        return _cf_jwks_cache
+    except Exception as e:
+        logger.error(f"Error fetching Cloudflare Access JWKS: {e}")
+        return None
+
+
+def verify_cloudflare_jwt(request: Request) -> Optional[Dict[str, Any]]:
+    """
+    Verify the Cloudflare Access JWT (Cf-Access-Jwt-Assertion header).
+
+    Validates signature (RS256), audience, and expiry using Cloudflare's
+    public key endpoint. Returns decoded claims on success, None on failure.
+
+    On validation failure with cached keys, re-fetches keys once to handle
+    key rotation, then retries validation.
+    """
+    team_domain = os.getenv("CLOUDFLARE_TEAM_DOMAIN", "").strip()
+    audience = os.getenv("CLOUDFLARE_ACCESS_AUD", "").strip()
+
+    # If JWT validation is not configured, skip it (header-trust fallback)
+    if not team_domain or not audience:
+        return None
+
+    token = request.headers.get("Cf-Access-Jwt-Assertion")
+    if not token:
+        logger.warning("Cloudflare JWT validation enabled but Cf-Access-Jwt-Assertion header missing")
+        return None
+
+    # Try validation, with one retry on key mismatch (handles rotation)
+    for attempt in range(2):
+        force_refresh = attempt > 0
+        jwks_data = _get_cloudflare_jwks(team_domain, force_refresh=force_refresh)
+        if not jwks_data:
+            return None
+
+        try:
+            header = jwt.get_unverified_header(token)
+            kid = header.get("kid")
+
+            # Find matching key
+            rsa_key = None
+            for key in jwks_data.get("keys", []):
+                if key.get("kid") == kid:
+                    rsa_key = key
+                    break
+
+            if not rsa_key:
+                if attempt == 0:
+                    logger.info(f"No matching key for kid={kid}, refreshing JWKS")
+                    continue  # Retry with fresh keys
+                logger.warning(f"No matching Cloudflare key for kid={kid} after refresh")
+                return None
+
+            # Validate the token
+            payload = jwt.decode(
+                token,
+                rsa_key,
+                algorithms=["RS256"],
+                audience=audience,
+                issuer=f"https://{team_domain}",
+            )
+
+            return payload
+
+        except jwt.ExpiredSignatureError:
+            logger.warning("Cloudflare Access JWT expired")
+            return None
+        except jwt.JWTClaimsError as e:
+            logger.warning(f"Cloudflare Access JWT claims error: {e}")
+            return None
+        except Exception as e:
+            if attempt == 0:
+                logger.info(f"JWT validation failed, retrying with fresh keys: {type(e).__name__}")
+                continue
+            logger.warning(f"Cloudflare Access JWT validation failed: {type(e).__name__}")
+            return None
+
+    return None
+
+
 def extract_cloudflare_user(request: Request) -> Optional[Dict[str, Any]]:
     """
     Extract user identity from Cloudflare Access headers.
 
-    Cloudflare Access sets Cf-Access-Authenticated-User-Email on every request
-    that passes through an Access policy. This header is trusted because traffic
-    only reaches the origin through the tunnel.
+    When CLOUDFLARE_TEAM_DOMAIN and CLOUDFLARE_ACCESS_AUD are configured,
+    validates the Cf-Access-Jwt-Assertion JWT before trusting the email header.
+    When not configured, falls back to header-trust mode (for development/migration).
 
     Validates email format and length to reject malformed or oversized values.
     """
-    email = request.headers.get("Cf-Access-Authenticated-User-Email")
+    # If JWT validation is configured, require it
+    team_domain = os.getenv("CLOUDFLARE_TEAM_DOMAIN", "").strip()
+    audience = os.getenv("CLOUDFLARE_ACCESS_AUD", "").strip()
+
+    if team_domain and audience:
+        jwt_claims = verify_cloudflare_jwt(request)
+        if not jwt_claims:
+            logger.warning("Cloudflare Access JWT validation failed - rejecting request")
+            return None
+        # Use email from validated JWT claims (authoritative)
+        email = jwt_claims.get("email", "")
+    else:
+        # Fallback: trust header without JWT validation (development/migration)
+        email = request.headers.get("Cf-Access-Authenticated-User-Email", "")
+
     if not email:
         return None
 
@@ -203,12 +327,12 @@ def extract_cloudflare_user(request: Request) -> Optional[Dict[str, Any]]:
 
     # Validate length (RFC 5321: max 254 chars; reject suspiciously short values)
     if len(email) < 5 or len(email) > 254:
-        logger.warning(f"Cloudflare email header rejected: invalid length ({len(email)} chars)")
+        logger.warning(f"Cloudflare email rejected: invalid length ({len(email)} chars)")
         return None
 
     # Validate email format
     if not _EMAIL_RE.match(email):
-        logger.warning("Cloudflare email header rejected: invalid email format")
+        logger.warning("Cloudflare email rejected: invalid email format")
         return None
 
     return {

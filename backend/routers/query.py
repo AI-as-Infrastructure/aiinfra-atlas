@@ -11,6 +11,7 @@ import logging
 import uuid
 from fastapi import APIRouter, HTTPException, Request, Body
 from fastapi.responses import StreamingResponse
+from backend.rate_limit import limiter, RATE_LIMIT_STRING
 
 from backend.modules.config import (
     get_retriever,
@@ -68,7 +69,8 @@ def _get_valid_corpus_values():
 
 
 @router.post("/api/ask/stream")
-async def ask_stream(data: dict = Body(...)):
+@limiter.limit(RATE_LIMIT_STRING)
+async def ask_stream(request: Request, data: dict = Body(...)):
     """
     Stream an answer to a question using retrieved documents and a language model.
     """
@@ -306,7 +308,8 @@ async def ask_stream(data: dict = Body(...)):
 
 
 @router.post("/api/ask/async")
-async def ask_async(data: dict = Body(...), request: Request = None):
+@limiter.limit(RATE_LIMIT_STRING)
+async def ask_async(request: Request, data: dict = Body(...)):
     """
     Submit an LLM query for async processing.
     Returns immediately with a request ID for status checking.
@@ -314,7 +317,7 @@ async def ask_async(data: dict = Body(...), request: Request = None):
     if not async_queue_available:
         raise HTTPException(
             status_code=503,
-            detail="Async processing not available. Redis queue not configured."
+            detail="Async processing not available."
         )
 
     try:
@@ -353,7 +356,7 @@ async def get_async_status(request_id: str):
     if not async_queue_available:
         raise HTTPException(
             status_code=503,
-            detail="Async processing not available. Redis queue not configured."
+            detail="Async processing not available."
         )
 
     try:

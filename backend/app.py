@@ -10,6 +10,8 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from dotenv import load_dotenv
 import logging
 
@@ -80,8 +82,13 @@ from backend.routers import (
 # Import configuration initialization
 from backend.modules.config import initialize_config
 
+# Initialize rate limiter (shared instance from backend.rate_limit)
+from backend.rate_limit import limiter
+
 # Initialize FastAPI app
 app = FastAPI(title="ATLAS")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Configure CORS
 cors_origins_env = os.environ.get("CORS_ORIGINS", "")
@@ -91,8 +98,14 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "X-Telemetry-Opt-In",
+        "X-Trace-Id",
+        "X-Request-Id",
+    ],
 )
 
 

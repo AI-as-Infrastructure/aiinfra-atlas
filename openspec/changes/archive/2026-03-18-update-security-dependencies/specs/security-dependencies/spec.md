@@ -20,10 +20,8 @@ The system MUST NOT use Python packages with known critical or high-severity vul
 - **THEN** `python-multipart` is version 0.0.22 or higher
 - **AND** the arbitrary file write vulnerability (CVE-2026-24486) is resolved
 
-## REMOVED Requirements
-
-### Requirement: Unused @aws-amplify/ui-vue Dependency
-The `@aws-amplify/ui-vue` package MUST be removed from `frontend/package.json` as it is unused and introduces transitive vulnerabilities.
+### Requirement: No Unused @aws-amplify/ui-vue Dependency
+The `@aws-amplify/ui-vue` package MUST NOT be present in `frontend/package.json` as it is unused and introduces transitive vulnerabilities.
 
 #### Scenario: Package removed from dependencies
 - **WHEN** the frontend dependencies are reviewed

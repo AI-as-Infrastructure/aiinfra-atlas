@@ -7,6 +7,13 @@ server {
     listen 127.0.0.1:80;
     server_name $SERVER_NAME;
 
+    # Origin verification: reject requests not proxied through Cloudflare.
+    # Cf-Ray is present on every request that passes through the Cloudflare edge.
+    # If cloudflared stops but nginx keeps running, this blocks direct access.
+    if ($http_cf_ray = "") {
+        return 403;
+    }
+
     # Security headers (HSTS set at Cloudflare edge, not here)
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "SAMEORIGIN" always;

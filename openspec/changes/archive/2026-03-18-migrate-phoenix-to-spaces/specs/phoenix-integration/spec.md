@@ -41,13 +41,8 @@ The system SHALL use consistent space configuration across telemetry and backup 
 - **THEN** system validates `PHOENIX_COLLECTOR_ENDPOINT` includes space path
 - **AND** system logs warning if using non-space endpoint format
 
-## MODIFIED Requirements
-
 ### Requirement: Phoenix OTEL Trace Export Endpoint
-The Phoenix telemetry collector endpoint SHALL use space-based URL structure.
-
-**Previous behavior**: Default `PHOENIX_COLLECTOR_ENDPOINT="https://app.phoenix.arize.com"` (legacy space)
-**New behavior**: Explicit `PHOENIX_COLLECTOR_ENDPOINT="https://app.phoenix.arize.com/s/aiinfra"` (AIINFRA project space)
+The Phoenix telemetry collector endpoint SHALL use space-based URL structure with explicit `PHOENIX_COLLECTOR_ENDPOINT="https://app.phoenix.arize.com/s/aiinfra"` (AIINFRA project space).
 
 #### Scenario: OTEL Trace Export to Space
 - **GIVEN** `PHOENIX_COLLECTOR_ENDPOINT="https://app.phoenix.arize.com/s/aiinfra"` is configured
@@ -66,10 +61,7 @@ The Phoenix telemetry collector endpoint SHALL use space-based URL structure.
 - **AND** variants can be compared side-by-side in Phoenix UI
 
 ### Requirement: Phoenix Client Initialization
-Phoenix client in backup script SHALL initialize with space-based URL.
-
-**Previous behavior**: Default `PHOENIX_BASE_URL="https://app.phoenix.arize.com/legacy"`
-**New behavior**: Default `PHOENIX_BASE_URL="https://app.phoenix.arize.com/s/aiinfra"`
+Phoenix client in backup script SHALL initialize with space-based URL defaulting to `https://app.phoenix.arize.com/s/aiinfra`.
 
 #### Scenario: Backup Client Initialization with Space
 - **GIVEN** `PHOENIX_SPACE_ID=aiinfra` is configured
@@ -88,10 +80,6 @@ Phoenix client in backup script SHALL initialize with space-based URL.
 ### Requirement: Phoenix API Calls
 All Phoenix REST API calls SHALL use space-based URL structure.
 
-**Affected files**:
-- `backend/services/phoenix_client.py` (lines 362, 412, 589, 656)
-- `backend/telemetry/feedback.py` (line 224)
-
 #### Scenario: Annotation API with Space
 - **GIVEN** `PHOENIX_COLLECTOR_ENDPOINT` includes space path
 - **WHEN** system queries span annotations via `phoenix_client.py:412`
@@ -105,32 +93,6 @@ All Phoenix REST API calls SHALL use space-based URL structure.
 - **THEN** annotation is sent to space-based API endpoint
 - **AND** annotation appears in correct Phoenix space project
 - **AND** annotation is associated with correct span
-
-## Configuration Changes
-
-### Environment Variables
-
-**Added**:
-- `PHOENIX_SPACE_ID` - Required. Set to `aiinfra` for AIINFRA project. Identifies the Phoenix space for organizational isolation.
-
-**Modified**:
-- `PHOENIX_COLLECTOR_ENDPOINT` - **Required change**. Must be set to `https://app.phoenix.arize.com/s/aiinfra` instead of `https://app.phoenix.arize.com`
-- `PHOENIX_BASE_URL` - (Backup script only) Update default from `/legacy` to `https://app.phoenix.arize.com/s/aiinfra`
-
-**Deprecated**:
-- Legacy URL format without space path (still works but logs deprecation warning)
-
-### Documentation Requirements
-
-Documentation SHALL include:
-
-1. **AIINFRA Space**: Explanation that `aiinfra` is the AIINFRA project space containing all ATLAS variants
-2. **Configuration Examples**: Complete examples showing `PHOENIX_SPACE_ID=aiinfra` for all environments
-3. **Migration Steps**: How to update from legacy to `aiinfra` space
-4. **Organizational Structure**: How space boundaries enable future research projects
-5. **Darwin Fork**: Instructions for applying same configuration to ATLAS Darwin codebase
-
-## Non-Functional Requirements
 
 ### Requirement: Clear Error Messages for Configuration Issues
 The system SHALL provide actionable warnings for legacy configuration.

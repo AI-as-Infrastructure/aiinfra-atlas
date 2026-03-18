@@ -289,8 +289,8 @@ sudo mkdir -p /var/log/$APP_NAME
 cat > /tmp/gunicorn.service << EOL
 [Unit]
 Description=Gunicorn instance for $APP_NAME (Cloudflare Tunnel)
-After=network.target redis-server.service
-Requires=redis-server.service
+After=network.target redis-server.service cloudflared.service
+Requires=redis-server.service cloudflared.service
 
 [Service]
 User=$DEPLOY_USER
@@ -364,6 +364,17 @@ sudo systemctl restart llm-worker
 sudo systemctl restart nginx
 sudo systemctl restart cloudflared
 
+# ---- PRE-FLIGHT: CLOUDFLARED CHECK ----
+echo ""
+echo "Verifying cloudflared tunnel is active before starting application services..."
+sleep 3
+if ! sudo systemctl is-active --quiet cloudflared; then
+    echo "ERROR: cloudflared service failed to start. Gunicorn will not be accessible."
+    echo "Check logs: journalctl -u cloudflared -n 50"
+    exit 1
+fi
+echo "  cloudflared: running"
+
 # ---- HEALTH CHECK ----
 echo ""
 echo "Checking service status..."
@@ -384,6 +395,27 @@ if [ -n "$FAILED" ]; then
     echo "WARNING: Some services failed to start:$FAILED"
     echo "Check logs: journalctl -u <service> -n 50"
     exit 1
+fi
+
+# ---- FIREWALL VERIFICATION ----
+echo ""
+echo "Checking firewall status..."
+if command -v ufw &> /dev/null; then
+    UFW_STATUS=$(sudo ufw status 2>/dev/null | head -1)
+    if echo "$UFW_STATUS" | grep -q "active"; then
+        echo "  UFW: active"
+        # Verify port 8000 is not exposed publicly
+        if sudo ufw status | grep -q "8000.*ALLOW.*Anywhere"; then
+            echo "  WARNING: Port 8000 is open in UFW. This should be localhost-only for Cloudflare deployments."
+        else
+            echo "  Port 8000: not exposed (correct for Cloudflare tunnel)"
+        fi
+    else
+        echo "  WARNING: UFW is installed but not active. Enable UFW for defence-in-depth."
+        echo "  Recommended: sudo ufw default deny incoming && sudo ufw default allow outgoing && sudo ufw enable"
+    fi
+else
+    echo "  WARNING: UFW not found. Install and configure a firewall for defence-in-depth."
 fi
 
 echo ""
