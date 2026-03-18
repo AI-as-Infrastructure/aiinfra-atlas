@@ -81,10 +81,19 @@ For detailed environment file setup, refer to the [Configuration Guide](configur
 **Frontend:** No special handling. Cloudflare Access authenticates users at the edge transparently (SSO, MFA, email OTP). No Bearer tokens are injected.
 
 **Backend (FastAPI):**
-1. **Header Extraction**: Read `Cf-Access-Authenticated-User-Email` header
-2. **Trust Model**: Header is trusted because origin is unreachable outside the tunnel (no public ports, UFW deny-all-incoming)
+1. **JWT Validation** (when configured): Verify `Cf-Access-Jwt-Assertion` header against Cloudflare JWKS public keys (RS256, audience, issuer, expiry). Email is extracted from validated JWT claims, not the spoofable email header.
+2. **Header Fallback** (when JWT not configured): Read `Cf-Access-Authenticated-User-Email` header. Trusted because origin is unreachable outside the tunnel (no public ports, UFW deny-all-incoming).
 3. **User Identification**: Email address used as identity string
 4. **Anonymous ID**: Generate privacy-preserving anonymous ID from email
+
+**JWT Validation Configuration** (defence-in-depth, optional):
+- `CLOUDFLARE_TEAM_DOMAIN` -- Team domain from Cloudflare Zero Trust dashboard (Settings > Custom Pages)
+- `CLOUDFLARE_ACCESS_AUD` -- Application Audience tag from Access > Applications > your app > Overview
+- When both are set, JWT validation is enforced and header-only requests are rejected
+- When empty, falls back to header trust (backward compatible)
+- JWKS keys are cached for 1 hour with automatic re-fetch on key rotation
+
+**Rate Limiting:** Query endpoints (`/api/ask/stream`, `/api/ask/async`) are rate-limited via SlowAPI. The limit is configurable via `RATE_LIMIT_PER_MINUTE` (default: 60). Client IP is extracted from `Cf-Connecting-IP` when behind Cloudflare, with fallback to `X-Forwarded-For` and then remote address. Rate limiting applies to all auth modes.
 
 ### None Mode (AUTH_METHOD=none)
 
