@@ -244,23 +244,11 @@ fi
 cd $APP_DIR
 
 # ---- CLOUDFLARED CONFIGURATION ----
-echo "Configuring cloudflared..."
-sudo mkdir -p /etc/cloudflared
-
-cat > /tmp/cloudflared-config.yml << EOL
-# Cloudflare Tunnel configuration for ATLAS
-# Tunnel name: $CLOUDFLARE_TUNNEL_NAME
-# All traffic routes through a single HTTP ingress to Nginx.
-# Nginx serves static files and proxies API/WS to Gunicorn.
-
-tunnel: $CLOUDFLARE_TUNNEL_NAME
-ingress:
-  - service: http://localhost:80
-EOL
-
-sudo mv /tmp/cloudflared-config.yml /etc/cloudflared/config.yml
-sudo chmod 644 /etc/cloudflared/config.yml
-echo "cloudflared config written to /etc/cloudflared/config.yml"
+# Token-based tunnels are configured in the Cloudflare dashboard.
+# Ingress rules (SSH, HTTP, etc.) are managed remotely via Zero Trust.
+# Writing a local config file would override dashboard routes (e.g. SSH)
+# and break any non-HTTP services routed through the tunnel.
+echo "cloudflared: using dashboard-managed tunnel config (token-based)"
 
 # ---- NGINX CONFIGURATION ----
 echo "Configuring Nginx (localhost-only reverse proxy)..."
@@ -340,7 +328,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/cloudflared tunnel --config /etc/cloudflared/config.yml run --token $CLOUDFLARE_TUNNEL_TOKEN
+ExecStart=/usr/bin/cloudflared tunnel run --token $CLOUDFLARE_TUNNEL_TOKEN
 Restart=on-failure
 RestartSec=5
 TimeoutStartSec=0

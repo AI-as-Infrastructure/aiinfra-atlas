@@ -96,9 +96,8 @@ The script will:
 2. Set up Python venv and install from `requirements.lock`
 3. Install Node.js via nvm and build the Vue.js frontend
 4. Configure Nginx as a localhost-only reverse proxy (static files + API/WS proxy)
-5. Generate `/etc/cloudflared/config.yml`
-6. Create systemd services (gunicorn, llm-worker, cloudflared)
-7. Start services and run health checks
+5. Create systemd services (gunicorn, llm-worker, cloudflared)
+6. Start services and run health checks
 
 The script does **not** install system packages, configure the firewall, or set up Redis authentication -- these are server prerequisites handled by the operator.
 
@@ -134,7 +133,7 @@ make help-dcf
 - Nginx site configuration
 - Application directory (`/opt/atlas`)
 - Logs (`/var/log/atlas`)
-- cloudflared config (`/etc/cloudflared/config.yml`)
+- cloudflared config (`/etc/cloudflared/`, if present)
 
 Does **not** remove:
 - Nginx package (uninstall manually if needed)
