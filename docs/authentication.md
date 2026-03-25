@@ -78,7 +78,9 @@ For detailed environment file setup, refer to the [Configuration Guide](configur
 
 ### Cloudflare Mode (AUTH_METHOD=cloudflare)
 
-**Frontend:** No special handling. Cloudflare Access authenticates users at the edge transparently (SSO, MFA, email OTP). No Bearer tokens are injected.
+**Prerequisites:** A Cloudflare Access application must be configured in the Zero Trust dashboard before this mode works. See [Cloudflare Deployment Guide -- Cloudflare Access](cloudflare.md#cloudflare-access-authentication) for step-by-step dashboard setup instructions.
+
+**Frontend:** No special handling. Cloudflare Access authenticates users at the edge transparently (SSO, MFA, email OTP). No Bearer tokens are injected by the frontend -- Cloudflare injects identity headers automatically.
 
 **Backend (FastAPI):**
 1. **JWT Validation** (when configured): Verify `Cf-Access-Jwt-Assertion` header against Cloudflare JWKS public keys (RS256, audience, issuer, expiry). Email is extracted from validated JWT claims, not the spoofable email header.
@@ -86,8 +88,8 @@ For detailed environment file setup, refer to the [Configuration Guide](configur
 3. **User Identification**: Email address used as identity string
 4. **Anonymous ID**: Generate privacy-preserving anonymous ID from email
 
-**JWT Validation Configuration** (defence-in-depth, optional):
-- `CLOUDFLARE_TEAM_DOMAIN` -- Team domain from Cloudflare Zero Trust dashboard (Settings > Custom Pages)
+**JWT Validation Configuration** (defence-in-depth, recommended for production):
+- `CLOUDFLARE_TEAM_DOMAIN` -- Team domain from Zero Trust dashboard (Settings > Custom Pages)
 - `CLOUDFLARE_ACCESS_AUD` -- Application Audience tag from Access > Applications > your app > Overview
 - When both are set, JWT validation is enforced and header-only requests are rejected
 - When empty, falls back to header trust (backward compatible)

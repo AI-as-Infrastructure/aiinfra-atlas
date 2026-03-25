@@ -347,6 +347,16 @@ echo "Setting permissions and starting services..."
 sudo chown -R $DEPLOY_USER:$DEPLOY_USER $APP_DIR /var/log/$APP_NAME
 sudo systemctl daemon-reload
 sudo systemctl enable nginx gunicorn llm-worker cloudflared
+
+# Warn if deploying over a Cloudflare SSH tunnel (restarting cloudflared will
+# briefly disconnect SSH). Application services are restarted first so they
+# are ready when the tunnel reconnects.
+echo ""
+echo "NOTE: Restarting cloudflared will briefly disconnect the tunnel."
+echo "      If you are connected via Cloudflare SSH, your session may drop"
+echo "      but should reconnect automatically within a few seconds."
+echo ""
+
 sudo systemctl restart gunicorn
 sudo systemctl restart llm-worker
 sudo systemctl restart nginx

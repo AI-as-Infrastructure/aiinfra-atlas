@@ -2,6 +2,48 @@
 
 Deploy ATLAS behind a Cloudflare Zero Trust Tunnel with no exposed ports and no SSL certificate management.
 
+## Deployment Checklist
+
+End-to-end sequence for a fresh deployment. Each step references the detailed section below.
+
+### 1. Cloudflare dashboard
+
+- [ ] Create a Cloudflare Tunnel (Networks > Tunnels > Create, type: Cloudflared) and copy the token
+- [ ] Add public hostname route for the app (`http://localhost:80`) -- see [Tunnel setup](#cloudflare-zero-trust-tunnel)
+- [ ] Add public hostname route for SSH (`ssh://localhost:22`) if needed
+- [ ] Verify DNS CNAME records were auto-created for each route
+- [ ] Set SSL/TLS mode to **Full** (SSL/TLS > Overview) -- see [Dashboard assumptions](#cloudflare-dashboard-assumptions)
+- [ ] Create a Cloudflare Access application for the app domain -- see [Cloudflare Access](#cloudflare-access-authentication)
+- [ ] Create an Allow policy with your identity rules (emails, domain, IdP)
+- [ ] Note the **Application Audience (AUD) tag** and **Team domain** for JWT validation
+- [ ] Optionally create a separate Access application for SSH with tighter policies
+
+### 2. Server prerequisites
+
+- [ ] Install system packages (Python 3.10, Redis, Nginx, etc.) -- see [System packages](#system-packages)
+- [ ] Install cloudflared -- see [cloudflared](#cloudflared)
+- [ ] Configure Redis authentication -- see [Redis authentication](#redis-authentication)
+- [ ] Configure UFW firewall (deny all incoming, allow outbound 443/53) -- see [Firewall](#firewall)
+
+### 3. Application configuration
+
+- [ ] Clone the repository to `/opt/atlas`
+- [ ] Copy `config/.env.template` to `config/.env.production`
+- [ ] Set required variables (`AUTH_METHOD=cloudflare`, tunnel token, `VITE_API_URL`, `REDIS_URL`, etc.) -- see [Configuration](#configuration)
+- [ ] Set JWT validation variables (`CLOUDFLARE_TEAM_DOMAIN`, `CLOUDFLARE_ACCESS_AUD`) -- see [JWT validation](#configuring-jwt-validation-defence-in-depth)
+- [ ] Generate `requirements.lock` if needed (`make l`)
+
+### 4. Deploy
+
+- [ ] Run `make cf` -- see [Deployment](#deployment)
+
+### 5. Verify
+
+- [ ] Check all services are running -- see [Verify Deployment](#verify-deployment)
+- [ ] Test backend directly: `curl -s http://127.0.0.1:8000/api/health`
+- [ ] Test full path: open `https://YOUR_DOMAIN` in a browser (should see Access login gate)
+- [ ] Verify firewall: `sudo ufw status` (no incoming ports open)
+
 ## Architecture
 
 ```
@@ -58,10 +100,23 @@ Configure UFW (or equivalent) according to your security requirements. The deplo
 
 ### Cloudflare Zero Trust tunnel
 
+Create the tunnel and configure its public hostname routes in the Cloudflare dashboard. The deploy script does **not** manage tunnel routes -- they are entirely dashboard-managed (token-based tunnel). This prevents the deploy script from accidentally overwriting routes (e.g. SSH) that were configured in the dashboard.
+
 1. Go to [Cloudflare Zero Trust dashboard](https://one.dash.cloudflare.com/) > Networks > Tunnels
-2. Create a new tunnel (type: Cloudflared)
-3. Copy the tunnel token
-4. Add a public hostname pointing your domain to `http://localhost:80`
+2. Create a new tunnel (type: **Cloudflared**)
+3. Copy the tunnel token (used as `CLOUDFLARE_TUNNEL_TOKEN` in the env file)
+4. Add **public hostname routes** for each service:
+
+| Route | Subdomain | Domain | Path | Service | Description |
+|-------|-----------|--------|------|---------|-------------|
+| ATLAS app | `atlas-hansard` | `yourdomain.org` | *(empty)* | `http://localhost:80` | Main application (via Nginx) |
+| SSH web | `ssh-web` | `yourdomain.org` | *(empty)* | `ssh://localhost:22` | Browser-based SSH (Cloudflare renders terminal) |
+
+For each route, go to the tunnel's **Public Hostname** tab and click **Add a public hostname**. Set the subdomain, domain, and service URL as above.
+
+**DNS records**: Each public hostname route automatically creates a CNAME record in Cloudflare DNS pointing the subdomain to the tunnel. Verify these exist in your domain's DNS settings.
+
+**Important**: Do not create a local `/etc/cloudflared/config.yml` file. Token-based tunnels are configured entirely via the dashboard. A local config file would override dashboard routes and break non-HTTP services (like SSH).
 
 ## Configuration
 
@@ -238,12 +293,85 @@ curl -s http://127.0.0.1:8000/api/health | python3 -m json.tool
 
 If you need full nginx-proxied access for debugging, temporarily comment out the `Cf-Ray` check in `/etc/nginx/sites-available/atlas` and reload nginx. Restore it when done.
 
+## Cloudflare Access (Authentication)
+
+Cloudflare Access puts an authentication layer in front of the ATLAS application at the Cloudflare edge. Users must authenticate before any request reaches the origin server. This is configured entirely in the Cloudflare dashboard -- the deploy script does not manage Access policies.
+
+### Setting up Cloudflare Access
+
+1. Go to [Cloudflare Zero Trust dashboard](https://one.dash.cloudflare.com/) > Access > Applications
+2. Click **Add an application** > **Self-hosted**
+
+#### ATLAS application policy
+
+| Setting | Value |
+|---------|-------|
+| Application name | `ATLAS Hansard` (or your preferred name) |
+| Session duration | `24 hours` (adjust for your use case) |
+| Application domain | `atlas-hansard.yourdomain.org` |
+
+3. Under **Policies**, create an **Allow** policy:
+   - **Policy name**: e.g. `Allow research team`
+   - **Include rule**: Use one of:
+     - **Emails**: List specific email addresses
+     - **Emails ending in**: e.g. `@youruniversity.edu` for institutional access
+     - **Access groups**: Pre-defined groups from your identity provider
+   - **Authentication method**: Select identity providers (e.g. One-time PIN, Google, GitHub, SAML)
+
+4. Under **Settings** (optional):
+   - Enable **CORS bypass** if needed for API testing tools
+   - Set **Cookie same-site attribute** to `Lax`
+
+#### SSH application policy
+
+| Setting | Value |
+|---------|-------|
+| Application name | `SSH Web Access` |
+| Session duration | `1 hour` (shorter for SSH) |
+| Application domain | `ssh-web.yourdomain.org` |
+| Application type | Self-hosted |
+
+5. Under **Policies**, create an **Allow** policy with more restrictive access (e.g. specific admin emails only)
+6. Under **Settings**, enable **Browser rendering** for SSH (this renders the terminal in the browser)
+
+### Configuring JWT validation (defence-in-depth)
+
+Once Cloudflare Access is set up, configure JWT validation on the backend for defence-in-depth. This verifies that requests actually passed through Cloudflare Access (not spoofed headers).
+
+1. In the Zero Trust dashboard, go to **Settings** > **Custom Pages** and note your **Team domain** (e.g. `yourteam.cloudflareaccess.com`)
+2. Go to **Access** > **Applications** > your ATLAS app > **Overview** and copy the **Application Audience (AUD) tag**
+3. Add both to your `.env.production`:
+
+```bash
+CLOUDFLARE_TEAM_DOMAIN="yourteam.cloudflareaccess.com"
+CLOUDFLARE_ACCESS_AUD="your-application-audience-tag"
+```
+
+When both are set, the backend validates `Cf-Access-Jwt-Assertion` JWT headers using Cloudflare's public keys (RS256). Requests without a valid JWT are rejected with 401. When unset, the backend falls back to trusting the `Cf-Access-Authenticated-User-Email` header (safe when the origin is unreachable outside the tunnel, but JWT validation is recommended).
+
+See [Authentication](authentication.md) for details on how the backend processes Cloudflare identity.
+
+### Cloudflare dashboard assumptions
+
+The deploy script assumes the following are configured in the Cloudflare dashboard (not on the server):
+
+| Component | Where to configure | What to set |
+|-----------|-------------------|-------------|
+| Tunnel routes | Networks > Tunnels > your tunnel > Public Hostname | HTTP route to `localhost:80`, SSH route to `localhost:22` |
+| Access policies | Access > Applications | Allow/deny rules, identity providers, session duration |
+| DNS records | DNS > Records | CNAME records for each subdomain (auto-created by tunnel routes) |
+| WAF rules | Security > WAF | Cloudflare-managed rulesets (enabled by default) |
+| DDoS protection | Security > DDoS | Enabled by default on all Cloudflare plans |
+| SSL/TLS mode | SSL/TLS > Overview | Set to **Full** (Cloudflare terminates TLS, connects to origin over HTTP via tunnel) |
+| HSTS | SSL/TLS > Edge Certificates | Enable HSTS if desired (applied at edge, not by Nginx) |
+| Caching | Caching > Configuration | Default caching respects Cache-Control headers from Nginx |
+
 ## Security Notes
 
 - No ports are exposed to the internet; all traffic flows through Cloudflare's edge
 - Nginx binds to `127.0.0.1:80` only -- not accessible from public network interfaces
 - Nginx origin verification rejects requests without `Cf-Ray` header (blocks direct localhost access)
-- Cloudflare Access JWT validation available as defence-in-depth (optional, see [Authentication](authentication.md))
+- Cloudflare Access JWT validation available as defence-in-depth (see above and [Authentication](authentication.md))
 - Query endpoints are rate-limited (configurable via `RATE_LIMIT_PER_MINUTE`, default 60/min)
 - CORS restricted to GET/POST/OPTIONS with explicit header allowlist
 - Error messages sanitised -- no env var names or provider details leak to clients
@@ -253,3 +381,4 @@ If you need full nginx-proxied access for debugging, temporarily comment out the
 - UFW denies all incoming connections by default; deploy script verifies port 8000 is not exposed
 - Redis is authenticated via password extracted from `REDIS_URL`
 - The tunnel token is the primary credential -- treat it like a private key
+- Redeploying (`make cf`) restarts cloudflared, briefly disconnecting the tunnel (including SSH sessions)
