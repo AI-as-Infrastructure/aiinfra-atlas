@@ -397,7 +397,7 @@ mypy-extensions==1.1.0
     # via typing-inspect
 networkx==3.4.2
     # via torch
-nltk==3.9.3
+nltk==3.9.4
     # via
     #   -r config/requirements.txt
     #   unstructured
