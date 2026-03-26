@@ -61,25 +61,25 @@
             </div>
             <div class="column">
               <div class="stat-item">
-                <span class="stat-number">{{ totalAllocatedSessions }}</span>
-                <span class="stat-label">Total Sessions</span>
+                <span class="stat-number">{{ sessions.length }}</span>
+                <span class="stat-label">Remaining Sessions</span>
               </div>
             </div>
             <div class="column">
               <div class="stat-item">
-                <span class="stat-number">{{ totalCompletedSessions }}</span>
-                <span class="stat-label">Completed</span>
+                <span class="stat-number">{{ completedSessions }}</span>
+                <span class="stat-label">Completed This Visit</span>
               </div>
             </div>
           </div>
         </div>
 
-        <progress 
-          class="progress" style="background-color: #e9ecef;" :style="{ '--progress-value': (totalCompletedSessions / totalAllocatedSessions) * 100 + '%' }" 
-          :value="totalCompletedSessions" 
-          :max="totalAllocatedSessions"
+        <progress
+          class="progress" style="background-color: #e9ecef;" :style="{ '--progress-value': ((currentSessionIndex + 1) / sessions.length) * 100 + '%' }"
+          :value="currentSessionIndex + 1"
+          :max="sessions.length"
         >
-          {{ Math.round((totalCompletedSessions / totalAllocatedSessions) * 100) }}%
+          {{ Math.round(((currentSessionIndex + 1) / sessions.length) * 100) }}%
         </progress>
       </div>
 
@@ -120,10 +120,8 @@ export default {
     const error = ref(null)
     const showSuccessMessage = ref(false)
     const successMessage = ref('')
-    const completedSessions = ref(0)
-    const totalCompletedSessions = ref(0) // Track total completed across all batches
-    const totalAllocatedSessions = ref(0) // Total sessions allocated to this user
-    const hasCompletedAllSessions = ref(false) // Track if user has completed all their assigned sessions
+    const completedSessions = ref(0)  // Track completed in this visit
+    const hasCompletedAllSessions = ref(false)  // Track if user has no remaining sessions
 
     const currentSession = computed(() => {
       return sessions.value[currentSessionIndex.value] || null
@@ -132,21 +130,16 @@ export default {
     const loadSessions = async () => {
       loading.value = true
       error.value = null
-      
+
       try {
         const data = await get('/inter-rater/sessions')
         sessions.value = data.sessions || []
-        
-        // On first load, set total allocated sessions (this is the user's full allocation)
-        if (totalAllocatedSessions.value === 0) {
-          totalAllocatedSessions.value = sessions.value.length
-        }
-        
+
         // Reset session index if we have sessions
         if (sessions.value.length > 0) {
           currentSessionIndex.value = 0
         }
-        
+
       } catch (err) {
         console.error('Error loading inter-rater sessions:', err)
         // Provide more detailed error messages
@@ -171,35 +164,27 @@ export default {
     const handleFeedbackSubmission = async (feedbackData) => {
       try {
         console.log('Submitting inter-rater feedback:', feedbackData)
-        
+
         const result = await post('/feedback', feedbackData)
         console.log('API Response:', result)
-        
+
         if (result.status === 'success') {
-          // Check if this is the last session to show appropriate message
-          const isLastSession = (totalCompletedSessions.value + 1) >= totalAllocatedSessions.value
-          
-          if (isLastSession) {
-            successMessage.value = 'Inter-rating submitted successfully!'
-          } else {
-            successMessage.value = 'Inter-rating submitted! Loading next session...'
-          }
-          
+          successMessage.value = 'Inter-rating submitted! Loading next session...'
           showSuccessMessage.value = true
-          
+
           // Auto-hide success message and move to next session
           setTimeout(() => {
             showSuccessMessage.value = false
             moveToNextSession()
-          }, 2000)  // Increased to 2 seconds for better UX
-          
+          }, 2000)  // 2 seconds for better UX
+
         } else {
           throw new Error(result.message || 'Failed to submit inter-rating')
         }
 
       } catch (err) {
         console.error('Error submitting inter-rater feedback:', err)
-        
+
         // Provide more specific error messages
         let errorMsg = 'Failed to submit inter-rating'
         if (err.message.includes('Unable to associate')) {
@@ -211,9 +196,9 @@ export default {
         } else {
           errorMsg = `${errorMsg}: ${err.message}`
         }
-        
+
         error.value = errorMsg
-        
+
         // Clear error after 10 seconds
         setTimeout(() => {
           error.value = null
@@ -224,53 +209,50 @@ export default {
 
     const moveToNextSession = async () => {
       completedSessions.value++
-      totalCompletedSessions.value++
-      
-      // Check if user has completed all allocated sessions
-      if (totalCompletedSessions.value >= totalAllocatedSessions.value) {
+
+      // Re-fetch sessions to get updated list after backend cache refresh
+      // (the just-rated session should drop out)
+      await loadSessions()
+
+      // Check if there are remaining sessions
+      if (sessions.value.length === 0) {
         showCompletionMessage()
         return
       }
-      
-      if (currentSessionIndex.value < sessions.value.length - 1) {
-        currentSessionIndex.value++
-        
-        // Scroll to top to show the new question (small delay for better UX)
-        setTimeout(() => {
-          window.scrollTo({
-            top: 0,
-            behavior: 'smooth'
-          })
-        }, 300) // 300ms delay allows success message to fully disappear first
-      } else {
-        // All sessions completed - should not happen since we have exact allocation
-        showCompletionMessage()
-      }
+
+      // Reset to first session (the list is already filtered by backend)
+      currentSessionIndex.value = 0
+
+      // Scroll to top to show the new question
+      setTimeout(() => {
+        window.scrollTo({
+          top: 0,
+          behavior: 'smooth'
+        })
+      }, 300)
     }
 
     const showCompletionMessage = () => {
       // Show completion notification and set completion flag
       hasCompletedAllSessions.value = true
-      successMessage.value = `All sessions completed! You've successfully rated ${totalCompletedSessions.value} sessions.`
+      successMessage.value = `All sessions completed! You've successfully rated ${completedSessions.value} sessions this visit.`
       showSuccessMessage.value = true
-      
+
       // Clear sessions to prevent showing old content
       sessions.value = []
       currentSessionIndex.value = 0
-      
+
       setTimeout(() => {
         showSuccessMessage.value = false
-        
+
         // Scroll to top to show the thank you message properly
         window.scrollTo({
           top: 0,
           behavior: 'smooth'
         })
-        
-        // Emit event to update button counter after additional delay to ensure backend processing is complete
-        setTimeout(() => {
-          window.dispatchEvent(new CustomEvent('inter-rater-completed'))
-        }, 2000) // Additional 2 second delay for backend processing
+
+        // Emit event to update button counter
+        window.dispatchEvent(new CustomEvent('inter-rater-completed'))
       }, 3000)
     }
 
@@ -288,8 +270,6 @@ export default {
       showSuccessMessage,
       successMessage,
       completedSessions,
-      totalCompletedSessions,
-      totalAllocatedSessions,
       hasCompletedAllSessions,
       loadSessions,
       handleFeedbackSubmission
