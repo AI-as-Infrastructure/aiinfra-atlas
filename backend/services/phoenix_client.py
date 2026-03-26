@@ -170,6 +170,9 @@ class PhoenixAPIClient:
                 qa_id = attributes.get('qa_id', f"qa_{span_id[:8]}")
                 citations = self._extract_citations_from_attributes(attributes)
 
+                # Remove user_id from original_feedback before sending to frontend (privacy)
+                safe_feedback = {k: v for k, v in original_feedback.items() if k != 'user_id'}
+
                 session_data = {
                     "session_id": session_id,
                     "qa_id": qa_id,
@@ -177,11 +180,11 @@ class PhoenixAPIClient:
                     "timestamp": row.get('start_time', datetime.now()).isoformat(),
                     "question": attributes.get('input.value', 'Question not available'),
                     "answer": attributes.get('output', 'Answer not available'),
-                    "original_feedback": original_feedback,
+                    "original_feedback": safe_feedback,
                     "citations": citations,
                     "inter_rater_count": annotations_cache.get_inter_rater_count(span_id),
                     "project_name": self.project_name,
-                    "original_user_id": original_feedback.get('user_id', 'unknown')
+                    "original_user_id": original_feedback.get('user_id', 'unknown')  # Used only for filtering, not sent to frontend
                 }
 
                 feedback_spans.append(session_data)
@@ -212,6 +215,10 @@ class PhoenixAPIClient:
             # Sort by timestamp (most recent first) and limit
             feedback_spans.sort(key=lambda x: x['timestamp'], reverse=True)
             result = feedback_spans[:limit]
+
+            # Remove original_user_id before sending to frontend (privacy - used only for filtering)
+            for session in result:
+                session.pop('original_user_id', None)
 
             logger.info(f"Returning {len(result)} spans with feedback for inter-rating")
             return result
