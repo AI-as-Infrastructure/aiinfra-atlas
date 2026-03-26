@@ -104,6 +104,31 @@ fi
 
 echo "All prerequisites satisfied"
 
+# ---- VALIDATE TUNNEL TOKEN ----
+# Verify the token is accepted by Cloudflare before proceeding. If the token
+# is invalid the deploy would still replace the cloudflared systemd service,
+# breaking an existing tunnel (including SSH sessions) with no way to recover
+# remotely.
+echo "Validating Cloudflare tunnel token..."
+cloudflared tunnel run --token "$CLOUDFLARE_TUNNEL_TOKEN" &>/dev/null &
+TOKEN_PID=$!
+sleep 5
+if kill -0 $TOKEN_PID 2>/dev/null; then
+    # Process still running after 5s = token accepted, tunnel connecting
+    kill $TOKEN_PID 2>/dev/null
+    wait $TOKEN_PID 2>/dev/null
+    echo "Tunnel token validated"
+else
+    # Process exited quickly = token rejected
+    wait $TOKEN_PID 2>/dev/null
+    echo "ERROR: Cloudflare tunnel token is invalid or rejected."
+    echo "Get a fresh token from: Zero Trust dashboard > Networks > Tunnels > your tunnel"
+    echo "Update CLOUDFLARE_TUNNEL_TOKEN in $APP_ENV_FILE"
+    echo ""
+    echo "Aborting deploy -- no services were modified."
+    exit 1
+fi
+
 # Extract domain from VITE_API_URL
 DOMAIN=$(echo "$VITE_API_URL" | sed -E 's|^https?://||')
 echo ""

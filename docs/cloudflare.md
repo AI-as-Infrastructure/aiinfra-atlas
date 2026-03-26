@@ -35,7 +35,7 @@ End-to-end sequence for a fresh deployment. Each step references the detailed se
 
 ### 4. Deploy
 
-- [ ] Run `make cf` -- see [Deployment](#deployment)
+- [ ] Run `make cf` inside `tmux` (deploy restarts cloudflared, dropping SSH tunnel sessions) -- see [Deployment](#deployment)
 
 ### 5. Verify
 
@@ -71,7 +71,7 @@ The deploy script assumes the server is already set up and hardened. Install and
 ### System packages
 
 ```bash
-sudo apt install -y python3.10 python3.10-venv python3.10-dev git-lfs redis-server nginx curl build-essential make
+sudo apt install -y python3.10 python3.10-venv python3.10-dev git-lfs redis-server nginx curl build-essential make tmux
 ```
 
 ### cloudflared
@@ -139,11 +139,20 @@ See [Configuration Guide](configuration.md) for full details on all application 
 
 ## Deployment
 
-Clone the repository to `/opt/atlas` on the target server, then:
+Clone the repository to `/opt/atlas` on the target server.
+
+**Important**: The deploy script restarts the cloudflared systemd service, which will disconnect any SSH sessions running through the tunnel. Always run the deploy inside `tmux` (or `screen`) so it survives the disconnection:
 
 ```bash
+tmux
 cd /opt/atlas
 make cf
+```
+
+If your SSH session drops mid-deploy, reconnect and reattach:
+
+```bash
+tmux attach
 ```
 
 The script will:
@@ -248,7 +257,7 @@ sudo systemctl cat cloudflared | grep token
 ```
 
 Common causes:
-- Invalid or expired tunnel token (regenerate in Cloudflare dashboard)
+- Invalid or expired tunnel token (regenerate in Cloudflare dashboard). The deploy script validates the token before modifying any services, so an invalid token will abort the deploy safely.
 - Outbound HTTPS blocked (cloudflared needs port 443 outbound)
 - DNS CNAME not pointing to the tunnel
 
