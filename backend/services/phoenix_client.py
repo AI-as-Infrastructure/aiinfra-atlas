@@ -125,7 +125,15 @@ class PhoenixAPIClient:
 
             logger.info(f"Found {len(spans_df)} generation response spans from Phoenix")
 
-            # Get the set of span_ids that have feedback (single dict lookup)
+            # Collect all span IDs and batch-fetch their annotations
+            all_span_ids = [
+                row.get('context.span_id')
+                for _, row in spans_df.iterrows()
+                if row.get('context.span_id')
+            ]
+            annotations_cache.load(all_span_ids)
+
+            # Now all lookups are local dict reads
             spans_with_feedback = annotations_cache.span_ids_with_feedback()
             logger.info(f"Annotations cache: {len(spans_with_feedback)} spans have user feedback")
 

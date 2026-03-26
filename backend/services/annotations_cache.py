@@ -1,14 +1,15 @@
 """
 Local annotations cache for ATLAS inter-rater reliability.
 
-Fetches all span annotations from Phoenix once, stores in memory,
-and refreshes periodically. Eliminates per-span HTTP round-trips
-that made inter-rater page loads take 60-90 seconds.
+Fetches span annotations from Phoenix in batches (grouped by span_id),
+stores in memory, and provides instant local lookups. Eliminates
+per-span HTTP round-trips that made inter-rater loads take 60-90s.
 
-Pattern: bulk load on first access, local lookups, periodic delta sync.
+The Phoenix API requires span_ids on every request, so the cache is
+populated by passing span IDs from the spans dataframe query. Once
+loaded, all annotation lookups are local dict reads (<1ms).
 """
 
-import asyncio
 import logging
 import os
 import time
@@ -26,14 +27,17 @@ _USER_FEEDBACK_NAMES = frozenset([
     'Analysis Quality', 'Additional Comments', 'Query Difficulty',
 ])
 
+# Max span_ids per request (URL length safety — ~20 chars per ID)
+_BATCH_SIZE = 100
+
 
 class AnnotationsCache:
     """
-    In-memory cache of all Phoenix span annotations for a project.
+    In-memory cache of Phoenix span annotations for a project.
 
-    On first access, fetches all annotations via the REST API and indexes
-    them by span_id. Subsequent lookups are local dict reads (<1ms).
-    A background thread refreshes the cache every REFRESH_INTERVAL seconds.
+    Call load(span_ids) with the span IDs from get_spans_dataframe().
+    Annotations are fetched in batches and indexed by span_id.
+    All subsequent lookups are local dict reads (<1ms).
     """
 
     REFRESH_INTERVAL = 300  # 5 minutes
@@ -49,10 +53,37 @@ class AnnotationsCache:
 
         # span_id -> list of raw annotation dicts
         self._by_span: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
-        self._loaded = False
+        # Track which span_ids we've fetched annotations for
+        self._known_span_ids: Set[str] = set()
         self._last_refresh: float = 0
         self._lock = threading.Lock()
-        self._refresh_thread: Optional[threading.Thread] = None
+
+    # ------------------------------------------------------------------
+    # Loading — called by phoenix_client after spans query
+    # ------------------------------------------------------------------
+
+    def load(self, span_ids: List[str]):
+        """
+        Fetch annotations for the given span_ids in batches and cache locally.
+
+        Safe to call multiple times — only fetches IDs not already cached.
+        Call refresh() to force a full re-fetch of all known IDs.
+        """
+        new_ids = [sid for sid in span_ids if sid not in self._known_span_ids]
+        if not new_ids:
+            logger.debug(f"All {len(span_ids)} span_ids already cached")
+            return
+
+        logger.info(f"Fetching annotations for {len(new_ids)} new span_ids ({len(self._known_span_ids)} already cached)")
+        self._fetch_annotations_for_ids(new_ids)
+
+    def refresh(self):
+        """Force re-fetch annotations for all known span_ids."""
+        if not self._known_span_ids:
+            return
+        all_ids = list(self._known_span_ids)
+        logger.info(f"Refreshing annotations for {len(all_ids)} span_ids")
+        self._fetch_annotations_for_ids(all_ids, replace=True)
 
     # ------------------------------------------------------------------
     # Public lookup API (all synchronous, <1ms)
@@ -66,7 +97,6 @@ class AnnotationsCache:
         schema used by inter_rater_service / phoenix_client.
         Returns empty dict if span has no user feedback.
         """
-        self._ensure_loaded()
         feedback: Dict[str, Any] = {}
 
         for ann in self._by_span.get(span_id, []):
@@ -107,7 +137,6 @@ class AnnotationsCache:
 
     def has_user_feedback(self, span_id: str) -> bool:
         """True if span has at least one original user feedback annotation."""
-        self._ensure_loaded()
         for ann in self._by_span.get(span_id, []):
             metadata = ann.get("metadata", {})
             if metadata.get("is_inter_rater", False):
@@ -118,7 +147,6 @@ class AnnotationsCache:
 
     def span_ids_with_feedback(self) -> Set[str]:
         """Return set of span_ids that have original user feedback."""
-        self._ensure_loaded()
         result = set()
         for span_id, annotations in self._by_span.items():
             for ann in annotations:
@@ -132,7 +160,6 @@ class AnnotationsCache:
 
     def check_user_already_rated(self, span_id: str, user_id: str) -> bool:
         """True if user has already submitted inter-rater feedback for this span."""
-        self._ensure_loaded()
         for ann in self._by_span.get(span_id, []):
             metadata = ann.get("metadata", {})
             if metadata.get("is_inter_rater") and metadata.get("rater_id") == user_id:
@@ -141,7 +168,6 @@ class AnnotationsCache:
 
     def get_inter_rater_count(self, span_id: str) -> int:
         """Count of unique inter-rater users who have rated this span."""
-        self._ensure_loaded()
         raters: Set[str] = set()
         for ann in self._by_span.get(span_id, []):
             metadata = ann.get("metadata", {})
@@ -150,97 +176,77 @@ class AnnotationsCache:
         return len(raters)
 
     # ------------------------------------------------------------------
-    # Loading / refresh
+    # Internal fetch
     # ------------------------------------------------------------------
 
-    def _ensure_loaded(self):
-        """Load annotations on first access, start background refresh."""
-        if self._loaded:
-            return
-        with self._lock:
-            if self._loaded:
-                return
-            self._fetch_all_annotations()
-            self._loaded = True
-            self._start_background_refresh()
-
-    def refresh(self):
-        """Force an immediate refresh (e.g. after feedback submission)."""
-        self._fetch_all_annotations()
-
-    def _fetch_all_annotations(self):
+    def _fetch_annotations_for_ids(self, span_ids: List[str], replace: bool = False):
         """
-        Fetch all annotations for the project via paginated REST API.
-        Replaces the entire local index atomically.
+        Fetch annotations for span_ids in batches and add to the local index.
+
+        Args:
+            span_ids: List of span IDs to fetch annotations for
+            replace: If True, clear existing entries for these IDs first
         """
         url = f"{self._phoenix_endpoint}/v1/projects/{self.project_name}/span_annotations"
         headers = self._get_headers()
-        new_index: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
-        total = 0
-        cursor = None
+        total_fetched = 0
+
+        if replace:
+            with self._lock:
+                for sid in span_ids:
+                    self._by_span.pop(sid, None)
+
+        # Batch into groups to avoid URL length limits
+        batches = [span_ids[i:i + _BATCH_SIZE] for i in range(0, len(span_ids), _BATCH_SIZE)]
 
         try:
             with httpx.Client(timeout=30.0) as client:
-                while True:
-                    params: Dict[str, Any] = {"limit": 1000}
-                    if cursor:
-                        params["cursor"] = cursor
+                for batch_num, batch in enumerate(batches):
+                    cursor = None
 
-                    resp = client.get(url, headers=headers, params=params)
-                    if resp.status_code != 200:
-                        logger.error(
-                            f"Annotations fetch failed: {resp.status_code} {resp.text[:200]}"
-                        )
-                        break
+                    while True:
+                        # Pass span_ids as repeated query params
+                        params: List[tuple] = [("span_ids", sid) for sid in batch]
+                        params.append(("limit", "1000"))
+                        if cursor:
+                            params.append(("cursor", cursor))
 
-                    body = resp.json()
-                    data = body.get("data", [])
-                    if not data:
-                        break
+                        resp = client.get(url, headers=headers, params=params)
+                        if resp.status_code != 200:
+                            logger.error(
+                                f"Annotations batch {batch_num + 1}/{len(batches)} failed: "
+                                f"{resp.status_code} {resp.text[:200]}"
+                            )
+                            break
 
-                    for ann in data:
-                        span_id = ann.get("span_id", "")
-                        if span_id:
-                            new_index[span_id].append(ann)
-                            total += 1
+                        body = resp.json()
+                        data = body.get("data", [])
+                        if not data:
+                            break
 
-                    cursor = body.get("next_cursor")
-                    if not cursor:
-                        break
+                        with self._lock:
+                            for ann in data:
+                                sid = ann.get("span_id", "")
+                                if sid:
+                                    self._by_span[sid].append(ann)
+                                    total_fetched += 1
 
-            # Atomic swap
-            self._by_span = new_index
+                        cursor = body.get("next_cursor")
+                        if not cursor:
+                            break
+
+            # Track all IDs we've fetched
+            self._known_span_ids.update(span_ids)
             self._last_refresh = time.time()
+
+            spans_with_data = sum(1 for sid in span_ids if sid in self._by_span and self._by_span[sid])
             logger.info(
-                f"Annotations cache loaded: {total} annotations across "
-                f"{len(new_index)} spans for project '{self.project_name}'"
+                f"Annotations cache: fetched {total_fetched} annotations "
+                f"for {spans_with_data}/{len(span_ids)} spans"
             )
 
         except Exception as e:
             logger.error(f"Failed to fetch annotations: {e}")
-            # Keep stale data if we had any
-            if not self._by_span:
-                self._by_span = new_index
-
-    def _start_background_refresh(self):
-        """Start a daemon thread that refreshes the cache periodically."""
-        if self._refresh_thread and self._refresh_thread.is_alive():
-            return
-
-        def _loop():
-            while True:
-                time.sleep(self.REFRESH_INTERVAL)
-                try:
-                    self._fetch_all_annotations()
-                except Exception as e:
-                    logger.error(f"Background annotations refresh failed: {e}")
-
-        self._refresh_thread = threading.Thread(target=_loop, daemon=True)
-        self._refresh_thread.start()
-        logger.info(
-            f"Annotations cache background refresh started "
-            f"(every {self.REFRESH_INTERVAL}s)"
-        )
 
     def _get_headers(self) -> Dict[str, str]:
         """Auth headers for Phoenix REST API."""
