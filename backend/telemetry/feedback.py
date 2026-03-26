@@ -255,12 +255,11 @@ async def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str =
     inter_rater_number = None
     if is_inter_rater:
         try:
-            # Query existing inter-rater count for the original span
-            from backend.services.phoenix_client import phoenix_client
+            # Query existing inter-rater count from local annotations cache
+            from backend.services.annotations_cache import annotations_cache
             original_span_id = feedback_data.get('original_span_id')
 
-            # Call async method directly with await (no asyncio.run needed - we're already in async context)
-            count = await phoenix_client.get_inter_rater_count(original_span_id)
+            count = annotations_cache.get_inter_rater_count(original_span_id)
             inter_rater_number = count + 1
 
             logger.info(f"Inter-rater number determined: {inter_rater_number} (existing count: {count})")
