@@ -107,46 +107,38 @@ class PhoenixAPIClient:
         logger.info(f"Querying Phoenix for project '{self.project_name}' (last {days_back} days)")
         
         try:
-            # Use the same method as your phoenix_export.py
+            # Server-side filter: only fetch generation response LLM spans
+            # instead of all spans (reduces data transfer from ~1000s to ~10s of rows)
+            filter_expr = "name == 'com.atlas.rag.generation.response' and span_kind == 'LLM'"
+
             spans_df = self.client.get_spans_dataframe(
+                filter_expr,
                 project_name=self.project_name,
                 start_time=start_date,
                 end_time=end_date,
                 timeout=30
             )
-            
+
             if spans_df.empty:
-                logger.info("No spans found in Phoenix for the specified criteria")
+                logger.info("No generation response spans found in Phoenix")
                 return []
-            
-            logger.info(f"Found {len(spans_df)} total spans in Phoenix")
-            
-            # Filter for generation response spans (these are the ones with user feedback)
+
+            logger.info(f"Found {len(spans_df)} generation response spans from Phoenix")
+
+            # Filter for sufficient output (lightweight local filter)
             generation_response_spans = []
-            
+
             for _, row in spans_df.iterrows():
-                # Look specifically for com.atlas.rag.generation.response spans
-                span_name = row.get('name', '')
-                span_kind = row.get('attributes.openinference.span.kind')
-                
-                logger.debug(f"Checking span: name='{span_name}', kind='{span_kind}'")
-                
-                if span_name != 'com.atlas.rag.generation.response' or span_kind != 'LLM':
-                    continue
-                    
-                # Must have some output (can be short metadata like "Generated response (244 words, 11.01s)")
                 output_value = row.get('attributes.output.value')
                 output_len = len(str(output_value)) if output_value else 0
-                logger.debug(f"Output length: {output_len}")
-                
+
                 if not output_value or output_len < 10:
                     logger.debug(f"Skipping span - insufficient output: {output_len} chars")
                     continue
-                    
+
                 generation_response_spans.append(row)
-                logger.debug(f"Added generation response span: {row.get('context.span_id', 'unknown')}")
-            
-            logger.info(f"Found {len(generation_response_spans)} generation response spans")
+
+            logger.info(f"Filtered to {len(generation_response_spans)} spans with sufficient output")
             
             # Filter generation response spans to only include those with user feedback annotations
             feedback_spans = []
@@ -171,10 +163,13 @@ class PhoenixAPIClient:
                     logger.debug(f"Skipping span {span_id[:8]}... - no user feedback annotations found")
                     continue
                 
-                # Look for citations in related reference spans
+                # Extract session identifiers
                 session_id = attributes.get('session.id', f"session_{span_id[:8]}")
                 qa_id = attributes.get('qa_id', f"qa_{span_id[:8]}")
-                citations = await self._get_citations_for_session(session_id, qa_id, spans_df)
+
+                # Citations from reference spans — extracted from attributes if available,
+                # otherwise empty (reference spans are excluded by the server-side filter)
+                citations = self._extract_citations_from_attributes(attributes)
                 
                 # Extract session data
                 session_data = {

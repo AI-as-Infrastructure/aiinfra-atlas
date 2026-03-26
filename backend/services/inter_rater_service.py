@@ -23,13 +23,13 @@ class InterRaterService:
         self.max_ratings = int(os.getenv("INTER_RATER_MAX_RATINGS", "3"))
         self.sessions_per_user = int(os.getenv("INTER_RATER_SESSIONS_PER_USER", "5"))
         
-        # Simple in-memory cache for sessions (could be Redis in production)
+        # In-memory cache for sessions
         self._session_cache = {}
-        self._cache_timeout = 60  # 1 minute - faster updates for development
-        
+        self._cache_timeout = 300  # 5 minutes — Phoenix queries are expensive (~30-70s)
+
         # Stats cache to avoid duplicate API calls during the same request
         self._stats_cache = {}
-        self._stats_cache_timeout = 10  # 10 seconds for stats - faster updates
+        self._stats_cache_timeout = 300  # 5 minutes — aligned with session cache
     
     def is_enabled(self) -> bool:
         """Check if inter-rater functionality is enabled."""
@@ -157,25 +157,11 @@ class InterRaterService:
         if not self.enabled:
             return []
         
-        # Try cache first, but validate sessions still exist in Phoenix
+        # Return cached sessions if valid (skip re-validation — sessions don't
+        # get deleted between requests, and the cache already has a 5-min TTL)
         cached_sessions = await self._get_cached_sessions(user_id)
         if cached_sessions is not None:
-            # Validate cached sessions still exist in Phoenix
-            validated_sessions = await self._validate_sessions_in_phoenix(cached_sessions)
-            
-            # If validation removed sessions, update cache or refresh if too many were removed
-            if len(validated_sessions) != len(cached_sessions):
-                if len(validated_sessions) == 0:
-                    # All cached sessions were deleted, clear cache and fetch fresh
-                    self.invalidate_user_cache(user_id)
-                    logger.info(f"All cached sessions were deleted, fetching fresh sessions for user {user_id[:8]}...")
-                else:
-                    # Some sessions were deleted, update cache with validated sessions
-                    self._cache_sessions(user_id, validated_sessions)
-                    return validated_sessions
-            else:
-                # All cached sessions are still valid
-                return validated_sessions
+            return cached_sessions
         
         try:
             from .phoenix_client import phoenix_client
