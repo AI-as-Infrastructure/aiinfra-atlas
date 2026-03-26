@@ -22,9 +22,6 @@ class InterRaterService:
         self.project_name = os.getenv("INTER_RATER_PROJECT", "atlas-hansard")
         self.max_ratings = int(os.getenv("INTER_RATER_MAX_RATINGS", "3"))
         self.sessions_per_user = int(os.getenv("INTER_RATER_SESSIONS_PER_USER", "5"))
-        # Expected number of raters — used for deterministic session assignment.
-        # Each session is assigned to max_ratings out of expected_raters users.
-        self.expected_raters = int(os.getenv("INTER_RATER_EXPECTED_RATERS", "5"))
 
         # In-memory cache for per-user session allocations
         self._session_cache = {}
@@ -52,37 +49,30 @@ class InterRaterService:
 
     def _allocate_sessions_to_user(self, available_sessions: List[Dict[str, Any]], user_id: str) -> List[Dict[str, Any]]:
         """
-        Deterministically assign sessions to a user using consistent hashing.
+        Deterministically rank sessions for a user using consistent hashing.
 
-        Each session is assigned to exactly max_ratings users out of the
-        expected rater pool. The same user always gets the same sessions,
-        and different users get non-overlapping sets (when max_ratings=1)
-        or controlled overlap (when max_ratings>1).
-
-        Uses SHA-256 of (span_id + user_id) so assignment is deterministic
-        and doesn't require knowing the full set of users upfront.
+        Each user gets a unique, deterministic ordering of available sessions
+        via SHA-256(span_id:user_id). Different users see different orderings,
+        so they naturally spread across sessions. The max_ratings cap is
+        enforced upstream by the inter_rater_count pre-filter — once a
+        session reaches max_ratings, it drops out of available_sessions
+        for all users on the next cache refresh.
         """
         if not available_sessions:
             return []
 
-        pool = max(self.max_ratings, self.expected_raters)
-        allocated = []
-
+        # Score each session deterministically for this user
+        scored = []
         for session in available_sessions:
-            # Deterministic score for this user-session pair
             pair = f"{session.get('span_id', '')}:{user_id}"
             h = hashlib.sha256(pair.encode()).hexdigest()
-            score = int(h[:8], 16)
+            score = int(h[:16], 16)
+            scored.append((score, session))
 
-            # Assign if this user falls within the max_ratings slots
-            # out of the expected pool. E.g. max_ratings=1, pool=5 → 1 in 5 users.
-            if score % pool < self.max_ratings:
-                allocated.append(session)
+        # Sort by score — each user gets a different ordering
+        scored.sort(key=lambda x: x[0])
 
-            if len(allocated) >= self.sessions_per_user:
-                break
-
-        return allocated
+        return [s for _, s in scored[:self.sessions_per_user]]
 
     async def _get_cached_sessions(self, user_id: str) -> Optional[List[Dict[str, Any]]]:
         """Get sessions from cache if valid."""
