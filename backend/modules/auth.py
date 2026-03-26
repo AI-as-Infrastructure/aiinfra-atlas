@@ -316,9 +316,11 @@ def extract_cloudflare_user(request: Request) -> Optional[Dict[str, Any]]:
             return None
         # Use email from validated JWT claims (authoritative)
         email = jwt_claims.get("email", "")
+        logger.info(f"Cloudflare JWT auth: email={email}")
     else:
         # Fallback: trust header without JWT validation (development/migration)
         email = request.headers.get("Cf-Access-Authenticated-User-Email", "")
+        logger.info(f"Cloudflare header auth: email={email}, jwt_config=team_domain={bool(team_domain)},aud={bool(audience)}")
 
     if not email:
         return None
