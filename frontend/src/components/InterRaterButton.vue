@@ -8,7 +8,7 @@
     >
       Inter-rate ({{ availableSessions }})
     </router-link>
-    <span v-else class="loading-text">Loading...</span>
+    <span v-else class="loading-text">Loading inter-rating tasks...</span>
   </div>
 </template>
 
