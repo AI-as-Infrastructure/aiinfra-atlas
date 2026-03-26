@@ -22,6 +22,8 @@ End-to-end sequence for a fresh deployment. Each step references the detailed se
 
 - [ ] Install system packages (Python 3.10, Redis, Nginx, etc.) -- see [System packages](#system-packages)
 - [ ] Install cloudflared -- see [cloudflared](#cloudflared)
+- [ ] Install the tunnel connector: `sudo cloudflared service install <token>` -- see [Cloudflare Zero Trust tunnel](#cloudflare-zero-trust-tunnel)
+- [ ] Verify tunnel is running: `sudo systemctl status cloudflared`
 - [ ] Configure Redis authentication -- see [Redis authentication](#redis-authentication)
 - [ ] Configure UFW firewall (deny all incoming, allow outbound 443/53) -- see [Firewall](#firewall)
 
@@ -35,7 +37,7 @@ End-to-end sequence for a fresh deployment. Each step references the detailed se
 
 ### 4. Deploy
 
-- [ ] Run `make cf` inside `tmux` (deploy restarts cloudflared, dropping SSH tunnel sessions) -- see [Deployment](#deployment)
+- [ ] Run `make cf` -- see [Deployment](#deployment)
 
 ### 5. Verify
 
@@ -62,7 +64,7 @@ Key differences from the [production deployment](production.md):
 | SSL | Let's Encrypt | Cloudflare Edge |
 | Firewall | Ports 80/443 open | All incoming denied |
 | Static files | Nginx | Nginx |
-| Services | 4 (nginx, gunicorn, llm-worker, redis) | 5 (cloudflared, nginx, gunicorn, llm-worker, redis) |
+| Services (deploy-managed) | 4 (nginx, gunicorn, llm-worker, redis) | 3 (nginx, gunicorn, llm-worker) + cloudflared (operator-managed) + redis |
 
 ## Server Prerequisites
 
@@ -100,12 +102,11 @@ Configure UFW (or equivalent) according to your security requirements. The deplo
 
 ### Cloudflare Zero Trust tunnel
 
-Create the tunnel and configure its public hostname routes in the Cloudflare dashboard. The deploy script does **not** manage tunnel routes -- they are entirely dashboard-managed (token-based tunnel). This prevents the deploy script from accidentally overwriting routes (e.g. SSH) that were configured in the dashboard.
+The cloudflared tunnel is **operator-managed** -- the deploy script (`make cf`) does not create, modify, or restart the cloudflared service. This prevents application deploys from breaking SSH access through the tunnel.
 
 1. Go to [Cloudflare Zero Trust dashboard](https://one.dash.cloudflare.com/) > Networks > Tunnels
 2. Create a new tunnel (type: **Cloudflared**)
-3. Copy the tunnel token (used as `CLOUDFLARE_TUNNEL_TOKEN` in the env file)
-4. Add **public hostname routes** for each service:
+3. Add **public hostname routes** for each service:
 
 | Route | Subdomain | Domain | Path | Service | Description |
 |-------|-----------|--------|------|---------|-------------|
@@ -113,6 +114,20 @@ Create the tunnel and configure its public hostname routes in the Cloudflare das
 | SSH web | `ssh-web` | `yourdomain.org` | *(empty)* | `ssh://localhost:22` | Browser-based SSH (Cloudflare renders terminal) |
 
 For each route, go to the tunnel's **Public Hostname** tab and click **Add a public hostname**. Set the subdomain, domain, and service URL as above.
+
+4. **Install the connector on the server** using the command from the dashboard:
+
+```bash
+sudo cloudflared service install <token>
+```
+
+This registers the connector, stores credentials, and creates a systemd service that starts on boot. The token from this command is also used as `CLOUDFLARE_TUNNEL_TOKEN` in the env file.
+
+5. Verify the tunnel is running:
+
+```bash
+sudo systemctl status cloudflared
+```
 
 **DNS records**: Each public hostname route automatically creates a CNAME record in Cloudflare DNS pointing the subdomain to the tunnel. Verify these exist in your domain's DNS settings.
 
@@ -141,7 +156,7 @@ See [Configuration Guide](configuration.md) for full details on all application 
 
 Clone the repository to `/opt/atlas` on the target server.
 
-**Important**: The deploy script restarts the cloudflared systemd service, which will disconnect any SSH sessions running through the tunnel. Always run the deploy inside `tmux` (or `screen`) so it survives the disconnection:
+The deploy script does **not** restart cloudflared, so SSH tunnel sessions are not interrupted. Running inside `tmux` is recommended for long deploys in case of network issues:
 
 ```bash
 tmux
@@ -149,21 +164,17 @@ cd /opt/atlas
 make cf
 ```
 
-If your SSH session drops mid-deploy, reconnect and reattach:
-
-```bash
-tmux attach
-```
+If your SSH session drops mid-deploy, reconnect and reattach with `tmux attach`.
 
 The script will:
-1. Check server prerequisites (Python 3.10, Redis, Nginx, cloudflared)
+1. Check server prerequisites (Python 3.10, Redis, Nginx, cloudflared running)
 2. Set up Python venv and install from `requirements.lock`
 3. Install Node.js via nvm and build the Vue.js frontend
 4. Configure Nginx as a localhost-only reverse proxy (static files + API/WS proxy)
-5. Create systemd services (gunicorn, llm-worker, cloudflared)
-6. Start services and run health checks
+5. Create systemd services (gunicorn, llm-worker)
+6. Start application services and run health checks
 
-The script does **not** install system packages, configure the firewall, or set up Redis authentication -- these are server prerequisites handled by the operator.
+The script does **not** install system packages, configure the firewall, set up Redis authentication, or manage the cloudflared service -- these are server prerequisites handled by the operator.
 
 ## Lifecycle Commands
 
@@ -183,23 +194,22 @@ make help-dcf
 
 ### Graceful stop order
 
-`make scf` stops services in dependency order:
-1. cloudflared (site goes offline immediately)
-2. nginx (stop reverse proxy)
-3. llm-worker (10-second wait for in-flight LLM requests)
-4. gunicorn (stop API)
-5. redis-server (stop last, preserves data)
+`make scf` stops application services in dependency order (cloudflared is **not** stopped -- it is operator-managed and may serve SSH access):
+1. nginx (site goes offline)
+2. llm-worker (10-second wait for in-flight LLM requests)
+3. gunicorn (stop API)
+4. redis-server (stop last, preserves data)
 
 ### Cleanup
 
 `make dcf` removes:
-- systemd services (gunicorn, llm-worker, cloudflared)
+- systemd services (gunicorn, llm-worker)
 - Nginx site configuration
 - Application directory (`/opt/atlas`)
 - Logs (`/var/log/atlas`)
-- cloudflared config (`/etc/cloudflared/`, if present)
 
 Does **not** remove:
+- cloudflared (operator-managed; uninstall with `sudo cloudflared service uninstall`)
 - Nginx package (uninstall manually if needed)
 - UFW firewall rules (manage with `sudo ufw status`)
 - Cloudflare tunnel in the dashboard (delete manually)
@@ -257,7 +267,7 @@ sudo systemctl cat cloudflared | grep token
 ```
 
 Common causes:
-- Invalid or expired tunnel token (regenerate in Cloudflare dashboard). The deploy script validates the token before modifying any services, so an invalid token will abort the deploy safely.
+- Invalid or expired tunnel token (regenerate in Cloudflare dashboard and reinstall with `sudo cloudflared service install <new-token>`)
 - Outbound HTTPS blocked (cloudflared needs port 443 outbound)
 - DNS CNAME not pointing to the tunnel
 
@@ -384,7 +394,7 @@ The deploy script assumes the following are configured in the Cloudflare dashboa
 - Query endpoints are rate-limited (configurable via `RATE_LIMIT_PER_MINUTE`, default 60/min)
 - CORS restricted to GET/POST/OPTIONS with explicit header allowlist
 - Error messages sanitised -- no env var names or provider details leak to clients
-- Gunicorn requires cloudflared to be running (systemd `Requires=` dependency)
+- cloudflared is operator-managed (installed via `cloudflared service install`) -- the deploy script never modifies or restarts it, preserving SSH access during deploys
 - Static files are served by Nginx (a battle-tested web server), not the application process
 - Zero Trust Access policies (SSO, MFA, device posture) are configured in the Cloudflare dashboard, not on the server
 - UFW denies all incoming connections by default; deploy script verifies port 8000 is not exposed

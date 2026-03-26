@@ -28,13 +28,13 @@ echo "This will completely remove the Cloudflare tunnel deployment."
 echo "WARNING: This action cannot be undone!"
 echo ""
 echo "The following will be removed:"
-echo "  - systemd services: gunicorn, llm-worker, cloudflared"
+echo "  - systemd services: gunicorn, llm-worker"
 echo "  - Nginx site config: /etc/nginx/sites-available/$APP_NAME"
 echo "  - Application directory: $APP_DIR"
 echo "  - Logs: /var/log/$APP_NAME"
-echo "  - cloudflared config: /etc/cloudflared/ (if present)"
 echo ""
 echo "The following will NOT be removed:"
+echo "  - cloudflared (operator-managed; uninstall with 'sudo cloudflared service uninstall')"
 echo "  - UFW firewall rules (manage manually with 'sudo ufw status')"
 echo "  - Cloudflare tunnel in dashboard (delete manually if needed)"
 echo "  - Redis data (clear manually if needed)"
@@ -48,24 +48,19 @@ fi
 
 echo "Stopping and removing services..."
 
-# Stop and disable services
-sudo systemctl stop cloudflared gunicorn llm-worker 2>/dev/null || true
-sudo systemctl disable cloudflared gunicorn llm-worker 2>/dev/null || true
+# Stop and disable application services (cloudflared is operator-managed)
+sudo systemctl stop gunicorn llm-worker 2>/dev/null || true
+sudo systemctl disable gunicorn llm-worker 2>/dev/null || true
 
 # Remove systemd units
 sudo rm -f /etc/systemd/system/gunicorn.service
 sudo rm -f /etc/systemd/system/llm-worker.service
-sudo rm -f /etc/systemd/system/cloudflared.service
 
 # Remove Nginx site config
 echo "Removing Nginx site config..."
 sudo rm -f /etc/nginx/sites-enabled/$APP_NAME
 sudo rm -f /etc/nginx/sites-available/$APP_NAME
 sudo systemctl reload nginx 2>/dev/null || true
-
-# Remove cloudflared config
-sudo rm -f /etc/cloudflared/config.yml
-sudo rmdir /etc/cloudflared 2>/dev/null || true
 
 # Remove application directory
 echo "Removing application directory..."
@@ -76,7 +71,7 @@ echo "Removing logs..."
 sudo rm -rf /var/log/$APP_NAME
 
 # Clean up temp files
-sudo rm -f /tmp/gunicorn.service /tmp/llm-worker.service /tmp/cloudflared.service /tmp/cloudflared-config.yml /tmp/atlas-cloudflare.conf
+sudo rm -f /tmp/gunicorn.service /tmp/llm-worker.service /tmp/atlas-cloudflare.conf
 
 # Reload systemd
 sudo systemctl daemon-reload
@@ -85,8 +80,8 @@ echo ""
 echo "Cleanup complete."
 echo ""
 echo "Remaining manual steps (if needed):"
+echo "  - Uninstall cloudflared: sudo cloudflared service uninstall && sudo apt remove cloudflared"
 echo "  - Delete tunnel in Cloudflare Zero Trust dashboard"
 echo "  - Remove DNS records pointing to the tunnel"
 echo "  - Adjust UFW rules: sudo ufw status / sudo ufw disable"
-echo "  - Uninstall cloudflared: sudo apt remove cloudflared"
 echo "  - Stop Redis: sudo systemctl stop redis-server"

@@ -17,12 +17,17 @@
 #   - Python 3.10, python3.10-venv, python3.10-dev
 #   - Redis server (running, with authentication configured)
 #   - Nginx
-#   - cloudflared
+#   - cloudflared (installed and running via 'cloudflared service install')
 #   - nvm and Node.js (or script will install nvm)
-#   - git-lfs, curl, build-essential, make
+#   - git-lfs, curl, build-essential, make, tmux
 #   - UFW or equivalent firewall (configured by operator)
 #   - Cloudflare Zero Trust tunnel created in dashboard
 #   - DNS record (CNAME) pointing your domain to the tunnel
+#
+# IMPORTANT: This script does NOT manage the cloudflared service. The tunnel
+#   is installed by the operator using 'sudo cloudflared service install <token>'
+#   and runs independently of application deployments. This prevents deploys
+#   from breaking SSH access through the tunnel.
 #
 # ARCHITECTURE:
 #   Internet -> Cloudflare Edge (TLS, WAF, DDoS) -> Zero Trust Access (SSO/MFA)
@@ -102,32 +107,15 @@ if ! systemctl is-active --quiet redis-server 2>/dev/null; then
     exit 1
 fi
 
-echo "All prerequisites satisfied"
-
-# ---- VALIDATE TUNNEL TOKEN ----
-# Verify the token is accepted by Cloudflare before proceeding. If the token
-# is invalid the deploy would still replace the cloudflared systemd service,
-# breaking an existing tunnel (including SSH sessions) with no way to recover
-# remotely.
-echo "Validating Cloudflare tunnel token..."
-cloudflared tunnel run --token "$CLOUDFLARE_TUNNEL_TOKEN" &>/dev/null &
-TOKEN_PID=$!
-sleep 5
-if kill -0 $TOKEN_PID 2>/dev/null; then
-    # Process still running after 5s = token accepted, tunnel connecting
-    kill $TOKEN_PID 2>/dev/null
-    wait $TOKEN_PID 2>/dev/null
-    echo "Tunnel token validated"
-else
-    # Process exited quickly = token rejected
-    wait $TOKEN_PID 2>/dev/null
-    echo "ERROR: Cloudflare tunnel token is invalid or rejected."
-    echo "Get a fresh token from: Zero Trust dashboard > Networks > Tunnels > your tunnel"
-    echo "Update CLOUDFLARE_TUNNEL_TOKEN in $APP_ENV_FILE"
-    echo ""
-    echo "Aborting deploy -- no services were modified."
+# Check cloudflared is running (operator-managed, installed via 'sudo cloudflared service install')
+if ! systemctl is-active --quiet cloudflared 2>/dev/null; then
+    echo "ERROR: cloudflared is not running."
+    echo "Install the tunnel connector first: sudo cloudflared service install <token>"
+    echo "See docs/cloudflare.md for details."
     exit 1
 fi
+
+echo "All prerequisites satisfied"
 
 # Extract domain from VITE_API_URL
 DOMAIN=$(echo "$VITE_API_URL" | sed -E 's|^https?://||')
@@ -268,13 +256,6 @@ fi
 
 cd $APP_DIR
 
-# ---- CLOUDFLARED CONFIGURATION ----
-# Token-based tunnels are configured in the Cloudflare dashboard.
-# Ingress rules (SSH, HTTP, etc.) are managed remotely via Zero Trust.
-# Writing a local config file would override dashboard routes (e.g. SSH)
-# and break any non-HTTP services routed through the tunnel.
-echo "cloudflared: using dashboard-managed tunnel config (token-based)"
-
 # ---- NGINX CONFIGURATION ----
 echo "Configuring Nginx (localhost-only reverse proxy)..."
 SERVER_NAME="$DOMAIN"
@@ -302,8 +283,8 @@ sudo mkdir -p /var/log/$APP_NAME
 cat > /tmp/gunicorn.service << EOL
 [Unit]
 Description=Gunicorn instance for $APP_NAME (Cloudflare Tunnel)
-After=network.target redis-server.service cloudflared.service
-Requires=redis-server.service cloudflared.service
+After=network.target redis-server.service
+Requires=redis-server.service
 
 [Service]
 User=$DEPLOY_USER
@@ -344,59 +325,19 @@ RestartSec=5
 WantedBy=multi-user.target
 EOL
 
-# cloudflared service (token-based authentication)
-cat > /tmp/cloudflared.service << EOL
-[Unit]
-Description=Cloudflare Tunnel for $APP_NAME
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-ExecStart=/usr/bin/cloudflared tunnel run --token $CLOUDFLARE_TUNNEL_TOKEN
-Restart=on-failure
-RestartSec=5
-TimeoutStartSec=0
-
-[Install]
-WantedBy=multi-user.target
-EOL
-
-# Install services
+# Install services (cloudflared is operator-managed, not deployed here)
 sudo mv /tmp/gunicorn.service /etc/systemd/system/
 sudo mv /tmp/llm-worker.service /etc/systemd/system/
-sudo mv /tmp/cloudflared.service /etc/systemd/system/
 
 # ---- SET PERMISSIONS AND START SERVICES ----
 echo "Setting permissions and starting services..."
 sudo chown -R $DEPLOY_USER:$DEPLOY_USER $APP_DIR /var/log/$APP_NAME
 sudo systemctl daemon-reload
-sudo systemctl enable nginx gunicorn llm-worker cloudflared
-
-# Warn if deploying over a Cloudflare SSH tunnel (restarting cloudflared will
-# briefly disconnect SSH). Application services are restarted first so they
-# are ready when the tunnel reconnects.
-echo ""
-echo "NOTE: Restarting cloudflared will briefly disconnect the tunnel."
-echo "      If you are connected via Cloudflare SSH, your session may drop"
-echo "      but should reconnect automatically within a few seconds."
-echo ""
+sudo systemctl enable nginx gunicorn llm-worker
 
 sudo systemctl restart gunicorn
 sudo systemctl restart llm-worker
 sudo systemctl restart nginx
-sudo systemctl restart cloudflared
-
-# ---- PRE-FLIGHT: CLOUDFLARED CHECK ----
-echo ""
-echo "Verifying cloudflared tunnel is active before starting application services..."
-sleep 3
-if ! sudo systemctl is-active --quiet cloudflared; then
-    echo "ERROR: cloudflared service failed to start. Gunicorn will not be accessible."
-    echo "Check logs: journalctl -u cloudflared -n 50"
-    exit 1
-fi
-echo "  cloudflared: running"
 
 # ---- HEALTH CHECK ----
 echo ""
@@ -404,7 +345,7 @@ echo "Checking service status..."
 sleep 5
 
 FAILED=""
-for svc in redis-server nginx gunicorn llm-worker cloudflared; do
+for svc in cloudflared redis-server nginx gunicorn llm-worker; do
     if sudo systemctl is-active --quiet $svc; then
         echo "  $svc: running"
     else
@@ -445,11 +386,12 @@ echo ""
 echo "====================================="
 echo "  Deployment complete!"
 echo "====================================="
-echo "  Tunnel:    $CLOUDFLARE_TUNNEL_NAME"
+echo "  Tunnel:    $CLOUDFLARE_TUNNEL_NAME (operator-managed)"
 echo "  Domain:    $DOMAIN"
 echo "  Nginx:     127.0.0.1:80 (static files + proxy)"
 echo "  Backend:   127.0.0.1:8000 (API only, no exposed ports)"
 echo ""
+echo "  cloudflared is managed independently (not restarted by this script)."
 echo "  Manage Zero Trust policies in the Cloudflare dashboard."
 echo "  Localhost access blocked by nginx origin verification (Cf-Ray check)."
 echo ""
