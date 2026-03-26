@@ -57,6 +57,7 @@ class AnnotationsCache:
         self._known_span_ids: Set[str] = set()
         self._last_refresh: float = 0
         self._lock = threading.Lock()
+        self._refresh_thread: Optional[threading.Thread] = None
 
     # ------------------------------------------------------------------
     # Loading — called by phoenix_client after spans query
@@ -67,7 +68,8 @@ class AnnotationsCache:
         Fetch annotations for the given span_ids in batches and cache locally.
 
         Safe to call multiple times — only fetches IDs not already cached.
-        Call refresh() to force a full re-fetch of all known IDs.
+        Starts a background refresh thread on first call to keep data fresh
+        for concurrent users.
         """
         new_ids = [sid for sid in span_ids if sid not in self._known_span_ids]
         if not new_ids:
@@ -76,6 +78,7 @@ class AnnotationsCache:
 
         logger.info(f"Fetching annotations for {len(new_ids)} new span_ids ({len(self._known_span_ids)} already cached)")
         self._fetch_annotations_for_ids(new_ids)
+        self._start_background_refresh()
 
     def refresh(self):
         """Force re-fetch annotations for all known span_ids."""
@@ -247,6 +250,28 @@ class AnnotationsCache:
 
         except Exception as e:
             logger.error(f"Failed to fetch annotations: {e}")
+
+    def _start_background_refresh(self):
+        """Start a daemon thread that refreshes known annotations periodically."""
+        if self._refresh_thread and self._refresh_thread.is_alive():
+            return
+
+        def _loop():
+            while True:
+                time.sleep(self.REFRESH_INTERVAL)
+                try:
+                    if self._known_span_ids:
+                        self._fetch_annotations_for_ids(
+                            list(self._known_span_ids), replace=True
+                        )
+                except Exception as e:
+                    logger.error(f"Background annotations refresh failed: {e}")
+
+        self._refresh_thread = threading.Thread(target=_loop, daemon=True)
+        self._refresh_thread.start()
+        logger.info(
+            f"Annotations background refresh started (every {self.REFRESH_INTERVAL}s)"
+        )
 
     def _get_headers(self) -> Dict[str, str]:
         """Auth headers for Phoenix REST API."""

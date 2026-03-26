@@ -232,16 +232,19 @@ class InterRaterService:
             return error_stats
 
     def invalidate_user_cache(self, user_id: str):
-        """Invalidate cached sessions for a user (call after they submit feedback)."""
-        cache_key = self._get_cache_key(user_id)
-        stats_cache_key = f"stats_{user_id}"
+        """
+        Invalidate caches after a user submits inter-rater feedback.
 
-        if cache_key in self._session_cache:
-            del self._session_cache[cache_key]
-        if stats_cache_key in self._stats_cache:
-            del self._stats_cache[stats_cache_key]
+        Clears ALL users' session/stats caches (not just the submitter's)
+        so that other concurrent users see updated already_rated and
+        inter_rater_count values on their next request.
+        """
+        # Clear all users' caches — another user's view depends on this
+        # user's rating (already_rated, inter_rater_count, max_ratings)
+        self._session_cache.clear()
+        self._stats_cache.clear()
 
-        # Also refresh the annotations cache so new feedback is visible immediately
+        # Refresh the annotations cache so new feedback is visible immediately
         try:
             from .annotations_cache import annotations_cache
             annotations_cache.refresh()
@@ -249,7 +252,7 @@ class InterRaterService:
             logger.warning(f"Failed to refresh annotations cache: {e}")
 
         sanitized_user_id = user_id[:8] + "..." if len(user_id) > 8 else user_id
-        logger.debug(f"Invalidated cache for user {sanitized_user_id}")
+        logger.info(f"Cleared all caches after feedback from user {sanitized_user_id}")
 
     def clear_all_cache(self):
         """Clear all cached sessions."""
