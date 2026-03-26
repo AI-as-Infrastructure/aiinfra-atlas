@@ -111,7 +111,8 @@ class PhoenixAPIClient:
             spans_df = self.client.get_spans_dataframe(
                 project_name=self.project_name,
                 start_time=start_date,
-                end_time=end_date
+                end_time=end_date,
+                timeout=30
             )
             
             if spans_df.empty:
@@ -506,7 +507,8 @@ class PhoenixAPIClient:
             # Query for specific span using Python client
             spans_df = self.client.get_spans_dataframe(
                 project_name=self.project_name,
-                filter_condition=f"span_id == '{span_id}'"
+                filter_condition=f"span_id == '{span_id}'",
+                timeout=30
             )
             
             if spans_df.empty:
