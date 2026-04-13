@@ -197,9 +197,17 @@ async def submit_feedback(feedback: Union[InterRaterFeedback, UserFeedback] if I
         else:
             logger.error(f"Failed to record {feedback_type} feedback for session_id={session_id}, qa_id={qa_id}")
             if is_inter_rater:
+                # Invalidate cache so deleted/unavailable span is dropped on next load
+                try:
+                    if anon_user_id:
+                        from backend.services.inter_rater_service import inter_rater_service as allocation_ir_service
+                        if allocation_ir_service and allocation_ir_service.is_enabled():
+                            allocation_ir_service.invalidate_user_cache(anon_user_id)
+                except Exception as cache_error:
+                    logger.warning(f"Failed to invalidate cache after inter-rater failure: {cache_error}")
                 return FeedbackResponse(
-                    message="Unable to submit inter-rater feedback. Please check that the original conversation is available and try again.",
-                    status="error"
+                    message="This inter-rating session is no longer available.",
+                    status="session_unavailable"
                 )
             else:
                 return FeedbackResponse(

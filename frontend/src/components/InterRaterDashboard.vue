@@ -178,6 +178,15 @@ export default {
             moveToNextSession()
           }, 2000)  // 2 seconds for better UX
 
+        } else if (result.status === 'session_unavailable') {
+          // Session was deleted from Phoenix after allocation - skip it gracefully
+          successMessage.value = 'Session no longer available, loading next...'
+          showSuccessMessage.value = true
+          setTimeout(() => {
+            showSuccessMessage.value = false
+            moveToNextSession()
+          }, 2000)
+
         } else {
           throw new Error(result.message || 'Failed to submit inter-rating')
         }
@@ -185,11 +194,8 @@ export default {
       } catch (err) {
         console.error('Error submitting inter-rater feedback:', err)
 
-        // Provide more specific error messages
         let errorMsg = 'Failed to submit inter-rating'
-        if (err.message.includes('Unable to associate')) {
-          errorMsg = 'Unable to associate feedback with the session. The session may have expired. Please try refreshing the page.'
-        } else if (err.message.includes('HTTP 500')) {
+        if (err.message.includes('HTTP 500')) {
           errorMsg = 'Server error occurred. Please try again in a moment.'
         } else if (err.message.includes('HTTP 400')) {
           errorMsg = 'Invalid feedback data. Please check all fields are completed.'
