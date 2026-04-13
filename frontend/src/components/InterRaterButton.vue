@@ -27,32 +27,14 @@ export default {
       isLoading.value = true
       try {
         const data = await get('/inter-rater/stats')
-        
+
         isEnabled.value = data.enabled || false
         availableSessions.value = data.available_sessions || 0
-        
-        // Pre-load sessions if there are any available (improves UX when user clicks button)
-        if (data.enabled && data.available_sessions > 0) {
-          console.log('Pre-loading inter-rater sessions for better UX...')
-          preloadInterRaterSessions()
-        }
       } catch (error) {
         console.error('Error checking inter-rater status:', error)
         isEnabled.value = false
       } finally {
         isLoading.value = false
-      }
-    }
-
-    const preloadInterRaterSessions = async () => {
-      try {
-        // Pre-load the sessions data in the background
-        await get('/inter-rater/sessions')
-        console.log('Inter-rater sessions pre-loaded successfully')
-        // Data will be cached by the backend for faster access when user navigates
-      } catch (error) {
-        console.warn('Error pre-loading inter-rater sessions:', error)
-        // Non-critical error, don't show to user
       }
     }
 

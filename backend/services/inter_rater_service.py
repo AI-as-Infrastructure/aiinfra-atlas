@@ -96,21 +96,26 @@ class InterRaterService:
         sanitized_user_id = user_id[:8] + "..." if len(user_id) > 8 else user_id
         logger.debug(f"Cached {len(sessions)} sessions for user {sanitized_user_id}")
 
-    async def get_sessions_for_inter_rating(self, user_id: str) -> List[Dict[str, Any]]:
+    async def get_sessions_for_inter_rating(self, user_id: str, include_citations: bool = True) -> List[Dict[str, Any]]:
         """
         Get sessions available for inter-rating by a specific user.
 
         Annotations are resolved from the local AnnotationsCache (no per-span
         HTTP calls). The only remote call is get_spans_dataframe() for the span
         data itself.
+
+        Args:
+            include_citations: If False, skip REFERENCES span query (faster for counts).
+                               Results without citations are not cached.
         """
         if not self.enabled:
             return []
 
-        # Return cached sessions if valid
-        cached_sessions = await self._get_cached_sessions(user_id)
-        if cached_sessions is not None:
-            return cached_sessions
+        # Only use cache for full queries (with citations)
+        if include_citations:
+            cached_sessions = await self._get_cached_sessions(user_id)
+            if cached_sessions is not None:
+                return cached_sessions
 
         try:
             from .phoenix_client import phoenix_client
@@ -122,7 +127,8 @@ class InterRaterService:
             # query_spans_with_feedback already uses the annotations cache internally
             all_sessions = await phoenix_client.query_spans_with_feedback(
                 exclude_user_id=user_id,
-                limit=self.sessions_per_user * 10
+                limit=self.sessions_per_user * 10,
+                include_citations=include_citations
             )
 
             # Filter: user hasn't already rated, and span hasn't reached max ratings
@@ -145,8 +151,10 @@ class InterRaterService:
             # Allocate sessions to this specific user
             final_sessions = self._allocate_sessions_to_user(available_sessions, user_id)
 
-            # Cache the results
-            self._cache_sessions(user_id, final_sessions)
+            # Only cache full results (with citations) to avoid serving
+            # incomplete data from the sessions endpoint
+            if include_citations:
+                self._cache_sessions(user_id, final_sessions)
 
             logger.info(f"Found {len(final_sessions)} available sessions for user {sanitized_user_id}")
             return final_sessions
@@ -175,7 +183,7 @@ class InterRaterService:
                 return cache_entry['stats']
 
         try:
-            available_sessions = await self.get_sessions_for_inter_rating(user_id)
+            available_sessions = await self.get_sessions_for_inter_rating(user_id, include_citations=False)
 
             stats = {
                 "enabled": True,

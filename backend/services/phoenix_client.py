@@ -44,7 +44,8 @@ class PhoenixAPIClient:
         self,
         exclude_user_id: str = None,
         limit: int = 10,
-        days_back: int = 30
+        days_back: int = 30,
+        include_citations: bool = True
     ) -> List[Dict[str, Any]]:
         """
         Query Phoenix for spans that have original feedback and are eligible for inter-rating.
@@ -55,6 +56,7 @@ class PhoenixAPIClient:
             exclude_user_id: User ID to exclude (don't show user their own sessions)
             limit: Maximum number of sessions to return
             days_back: How many days back to look for sessions
+            include_citations: If False, skip REFERENCES span query (faster for counts)
 
         Returns:
             List of session data suitable for inter-rating
@@ -70,7 +72,7 @@ class PhoenixAPIClient:
             )
 
         try:
-            real_sessions = await self._query_phoenix_with_client(exclude_user_id, limit, days_back)
+            real_sessions = await self._query_phoenix_with_client(exclude_user_id, limit, days_back, include_citations)
             if real_sessions:
                 logger.info(f"Retrieved {len(real_sessions)} sessions from Phoenix project '{self.project_name}'")
                 return real_sessions
@@ -89,7 +91,8 @@ class PhoenixAPIClient:
         self,
         exclude_user_id: str = None,
         limit: int = 10,
-        days_back: int = 30
+        days_back: int = 30,
+        include_citations: bool = True
     ) -> List[Dict[str, Any]]:
         """
         Query Phoenix for generation response spans, then match against
@@ -190,11 +193,12 @@ class PhoenixAPIClient:
                 feedback_spans.append(session_data)
 
             # Fetch REFERENCES spans to populate citations (stored separately from LLM spans)
-            citations_by_qa_id = self._fetch_citations_by_qa_id(start_date, end_date)
-            if citations_by_qa_id:
-                for session in feedback_spans:
-                    if not session['citations']:
-                        session['citations'] = citations_by_qa_id.get(session['qa_id'], [])
+            if include_citations:
+                citations_by_qa_id = self._fetch_citations_by_qa_id(start_date, end_date)
+                if citations_by_qa_id:
+                    for session in feedback_spans:
+                        if not session['citations']:
+                            session['citations'] = citations_by_qa_id.get(session['qa_id'], [])
 
             # Exclude sessions created by requesting user
             if exclude_user_id:
