@@ -254,18 +254,11 @@ async def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str =
     # Determine inter-rater number FIRST if this is inter-rater feedback
     inter_rater_number = None
     if is_inter_rater:
-        try:
-            # Query existing inter-rater count from local annotations cache
-            from backend.services.annotations_cache import annotations_cache
-            original_span_id = feedback_data.get('original_span_id')
-
-            count = annotations_cache.get_inter_rater_count(original_span_id)
-            inter_rater_number = count + 1
-
-            logger.info(f"Inter-rater number determined: {inter_rater_number} (existing count: {count})")
-        except Exception as e:
-            logger.warning(f"Failed to determine inter-rater number: {e}. Using fallback format.")
-            inter_rater_number = None
+        from backend.services.annotations_cache import annotations_cache
+        original_span_id = feedback_data.get('original_span_id')
+        count = annotations_cache.get_inter_rater_count(original_span_id)
+        inter_rater_number = count + 1
+        logger.info(f"Inter-rater number determined: {inter_rater_number} (existing count: {count})")
 
     # Generate annotation ID - include inter_rater_number for uniqueness
     if is_inter_rater:

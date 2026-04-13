@@ -189,6 +189,13 @@ class PhoenixAPIClient:
 
                 feedback_spans.append(session_data)
 
+            # Fetch REFERENCES spans to populate citations (stored separately from LLM spans)
+            citations_by_qa_id = self._fetch_citations_by_qa_id(start_date, end_date)
+            if citations_by_qa_id:
+                for session in feedback_spans:
+                    if not session['citations']:
+                        session['citations'] = citations_by_qa_id.get(session['qa_id'], [])
+
             # Exclude sessions created by requesting user
             if exclude_user_id:
                 original_count = len(feedback_spans)
@@ -226,6 +233,44 @@ class PhoenixAPIClient:
         except Exception as e:
             logger.error(f"Error querying Phoenix with client: {e}")
             raise
+
+    def _fetch_citations_by_qa_id(self, start_date, end_date) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Query REFERENCES spans to build a qa_id → citations map.
+        Citations are stored on REFERENCES spans, not on the LLM span queried for inter-rater.
+        """
+        try:
+            refs_df = self.client.get_spans_dataframe(
+                "span_kind == 'REFERENCES'",
+                project_name=self.project_name,
+                start_time=start_date,
+                end_time=end_date,
+                timeout=30
+            )
+            if refs_df is None or refs_df.empty:
+                return {}
+
+            citations_map = {}
+            for _, row in refs_df.iterrows():
+                attributes = {}
+                for col in refs_df.columns:
+                    if col.startswith('attributes.'):
+                        attributes[col.replace('attributes.', '')] = row[col]
+
+                qa_id = attributes.get('qa_id')
+                if not qa_id:
+                    continue
+
+                citations = self._extract_citations_from_attributes(attributes)
+                if citations:
+                    citations_map[qa_id] = citations
+
+            logger.info(f"Built citations map for {len(citations_map)} qa_ids from REFERENCES spans")
+            return citations_map
+
+        except Exception as e:
+            logger.warning(f"Failed to fetch REFERENCES spans for citations: {e}")
+            return {}
 
     def _extract_citations_from_attributes(self, attributes: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Extract citations from span attributes."""

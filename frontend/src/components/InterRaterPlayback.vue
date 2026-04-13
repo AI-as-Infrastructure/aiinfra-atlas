@@ -571,9 +571,13 @@ export default {
 
     const submitFeedback = async () => {
       if (!isFormValid.value || isSubmitting.value) return
+      if (!props.session?.span_id) {
+        console.error('Cannot submit inter-rater feedback: session missing span_id')
+        return
+      }
 
       isSubmitting.value = true
-      
+
       try {
         const feedbackData = {
           session_id: props.session.session_id,
@@ -620,10 +624,12 @@ export default {
       // Reset all feedback fields
       feedback.value = {
         factual_accuracy: '',
+        corpus_fidelity: '',
         analysis_quality: '',
         relevance: '',
         difficulty: '',
         clarity: '',
+        user_type: '',
         feedback_text: '',
         faults: {
           hallucination: false,

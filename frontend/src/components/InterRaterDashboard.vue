@@ -169,14 +169,27 @@ export default {
         console.log('API Response:', result)
 
         if (result.status === 'success') {
-          successMessage.value = 'Inter-rating submitted! Loading next session...'
-          showSuccessMessage.value = true
+          // Remove submitted session locally — re-fetching risks returning it again
+          // before Phoenix propagates the new annotation to the cache
+          sessions.value.splice(currentSessionIndex.value, 1)
+          completedSessions.value++
 
-          // Auto-hide success message and move to next session
-          setTimeout(() => {
-            showSuccessMessage.value = false
-            moveToNextSession()
-          }, 2000)  // 2 seconds for better UX
+          if (sessions.value.length === 0) {
+            successMessage.value = 'All inter-ratings complete!'
+            showSuccessMessage.value = true
+            setTimeout(() => {
+              showSuccessMessage.value = false
+              showCompletionMessage()
+            }, 2000)
+          } else {
+            currentSessionIndex.value = 0
+            successMessage.value = 'Inter-rating submitted! Loading next session...'
+            showSuccessMessage.value = true
+            setTimeout(() => {
+              showSuccessMessage.value = false
+              window.scrollTo({ top: 0, behavior: 'smooth' })
+            }, 2000)
+          }
 
         } else if (result.status === 'session_unavailable') {
           // Session deleted from Phoenix after allocation - remove locally, don't re-fetch

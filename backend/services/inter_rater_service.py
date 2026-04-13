@@ -214,16 +214,18 @@ class InterRaterService:
         """
         Invalidate caches after a user submits inter-rater feedback.
 
-        Clears ALL users' session/stats caches (not just the submitter's)
-        so that other concurrent users see updated already_rated and
-        inter_rater_count values on their next request.
+        Clears only the submitting user's session/stats cache. Other users'
+        caches expire naturally (5-min TTL). If another user hits a span
+        that has since reached max_ratings, session_unavailable handles it
+        gracefully on the frontend without needing eager cache invalidation.
         """
-        # Clear all users' caches — another user's view depends on this
-        # user's rating (already_rated, inter_rater_count, max_ratings)
-        self._session_cache.clear()
-        self._stats_cache.clear()
+        cache_key = self._get_cache_key(user_id)
+        self._session_cache.pop(cache_key, None)
+        stats_key = f"stats_{user_id}"
+        self._stats_cache.pop(stats_key, None)
 
-        # Refresh the annotations cache so new feedback is visible immediately
+        # Refresh the annotations cache so the submitting user's next
+        # session load sees the updated already_rated and inter_rater_count
         try:
             from .annotations_cache import annotations_cache
             annotations_cache.refresh()
@@ -231,7 +233,7 @@ class InterRaterService:
             logger.warning(f"Failed to refresh annotations cache: {e}")
 
         sanitized_user_id = user_id[:8] + "..." if len(user_id) > 8 else user_id
-        logger.info(f"Cleared all caches after feedback from user {sanitized_user_id}")
+        logger.info(f"Invalidated cache for user {sanitized_user_id} after feedback submission")
 
     def clear_all_cache(self):
         """Clear all cached sessions."""
