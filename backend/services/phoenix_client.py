@@ -241,7 +241,7 @@ class PhoenixAPIClient:
         """
         try:
             refs_df = self.client.get_spans_dataframe(
-                "span_kind == 'REFERENCES'",
+                "name == 'com.atlas.rag.references'",
                 project_name=self.project_name,
                 start_time=start_date,
                 end_time=end_date,
