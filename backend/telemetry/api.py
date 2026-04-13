@@ -180,15 +180,18 @@ async def submit_feedback(feedback: Union[InterRaterFeedback, UserFeedback] if I
                 except Exception as cache_error:
                     logger.warning(f"Failed to clear inter-rater cache after regular feedback: {cache_error}")
             else:
-                # For inter-rater feedback, invalidate only this user's cache so the header count updates instantly
+                # For inter-rater feedback, record the rating locally so check_user_already_rated()
+                # sees it instantly (before Phoenix propagation), then invalidate user's cache
                 try:
+                    if anon_user_id and feedback.original_span_id:
+                        from backend.services.annotations_cache import annotations_cache as ac
+                        ac.record_user_rating(feedback.original_span_id, anon_user_id)
                     if anon_user_id:
                         from backend.services.inter_rater_service import inter_rater_service as allocation_ir_service
                         if allocation_ir_service and allocation_ir_service.is_enabled():
                             allocation_ir_service.invalidate_user_cache(anon_user_id)
-                            logger.debug("Invalidated inter-rater cache for user after inter-rater submission")
                 except Exception as cache_error:
-                    logger.warning(f"Failed to invalidate user inter-rater cache after inter-rater feedback: {cache_error}")
+                    logger.warning(f"Failed to update cache after inter-rater feedback: {cache_error}")
             
             return FeedbackResponse(
                 message=f"{feedback_type.title()} feedback recorded successfully",

@@ -196,10 +196,13 @@ export default {
           sessions.value.splice(currentSessionIndex.value, 1)
           if (sessions.value.length > 0) {
             currentSessionIndex.value = 0
+            successMessage.value = 'Session no longer available, loading next...'
+            showSuccessMessage.value = true
+            setTimeout(() => { showSuccessMessage.value = false }, 2000)
+          } else {
+            // No sessions remain — dispatch event so nav button updates
+            window.dispatchEvent(new CustomEvent('inter-rater-completed'))
           }
-          successMessage.value = 'Session no longer available, loading next...'
-          showSuccessMessage.value = true
-          setTimeout(() => { showSuccessMessage.value = false }, 2000)
 
         } else {
           throw new Error(result.message || 'Failed to submit inter-rating')
@@ -226,31 +229,6 @@ export default {
       }
     }
 
-
-    const moveToNextSession = async () => {
-      completedSessions.value++
-
-      // Re-fetch sessions to get updated list after backend cache refresh
-      // (the just-rated session should drop out)
-      await loadSessions()
-
-      // Check if there are remaining sessions
-      if (sessions.value.length === 0) {
-        showCompletionMessage()
-        return
-      }
-
-      // Reset to first session (the list is already filtered by backend)
-      currentSessionIndex.value = 0
-
-      // Scroll to top to show the new question
-      setTimeout(() => {
-        window.scrollTo({
-          top: 0,
-          behavior: 'smooth'
-        })
-      }, 300)
-    }
 
     const showCompletionMessage = () => {
       // Show completion notification and set completion flag

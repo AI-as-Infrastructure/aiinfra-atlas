@@ -58,6 +58,9 @@ class AnnotationsCache:
         self._last_refresh: float = 0
         self._lock = threading.Lock()
         self._refresh_thread: Optional[threading.Thread] = None
+        # Local write cache: (span_id, user_id) pairs for ratings submitted
+        # this process but not yet propagated to Phoenix
+        self._local_ratings: Set[tuple] = set()
 
     # ------------------------------------------------------------------
     # Loading — called by phoenix_client after spans query
@@ -161,8 +164,14 @@ class AnnotationsCache:
                     break
         return result
 
+    def record_user_rating(self, span_id: str, user_id: str):
+        """Record a local inter-rater rating before Phoenix propagation."""
+        self._local_ratings.add((span_id, user_id))
+
     def check_user_already_rated(self, span_id: str, user_id: str) -> bool:
         """True if user has already submitted inter-rater feedback for this span."""
+        if (span_id, user_id) in self._local_ratings:
+            return True
         for ann in self._by_span.get(span_id, []):
             metadata = ann.get("metadata", {})
             if metadata.get("is_inter_rater") and metadata.get("rater_id") == user_id:
