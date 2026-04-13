@@ -7,8 +7,6 @@
 --index-url https://download.pytorch.org/whl/cpu
 --extra-index-url https://pypi.org/simple
 
-aiofiles==24.1.0
-    # via unstructured-client
 aiohappyeyeballs==2.6.1
     # via aiohttp
 aiohttp==3.13.3
@@ -25,13 +23,14 @@ annotated-doc==0.0.4
     # via fastapi
 annotated-types==0.7.0
     # via pydantic
-anthropic[vertex]==0.84.0
+anthropic[vertex]==0.94.0
     # via
     #   -r config/requirements.txt
     #   langchain-anthropic
 anyio==4.11.0
     # via
     #   anthropic
+    #   google-genai
     #   httpx
     #   openai
     #   starlette
@@ -43,9 +42,7 @@ arize-phoenix-client==1.21.0
     #   -r config/requirements.txt
     #   arize-phoenix
 arize-phoenix-evals==2.5.0
-    # via
-    #   -r config/requirements.txt
-    #   arize-phoenix
+    # via arize-phoenix
 arize-phoenix-otel==0.10.3
     # via
     #   -r config/requirements.txt
@@ -55,7 +52,7 @@ asgiref==3.8.1
 async-timeout==4.0.3
     # via
     #   aiohttp
-    #   langchain
+    #   langchain-classic
     #   redis
 attrs==25.3.0
     # via
@@ -64,19 +61,13 @@ attrs==25.3.0
     #   referencing
 authlib==1.6.6
     # via arize-phoenix
-backoff==2.2.1
-    # via
-    #   posthog
-    #   unstructured
 bcrypt==5.0.0
     # via chromadb
-beautifulsoup4==4.13.5
-    # via unstructured
 blinker==1.9.0
     # via flask
-boto3==1.40.39
+boto3==1.42.88
     # via langchain-aws
-botocore==1.40.39
+botocore==1.42.88
     # via
     #   boto3
     #   s3transfer
@@ -85,9 +76,7 @@ brotli==1.2.0
 build==1.3.0
     # via chromadb
 cachetools==5.5.2
-    # via
-    #   arize-phoenix
-    #   google-auth
+    # via arize-phoenix
 certifi==2025.8.3
     # via
     #   geventhttpclient
@@ -96,14 +85,10 @@ certifi==2025.8.3
     #   kubernetes
     #   requests
 cffi==2.0.0
-    # via
-    #   cryptography
-    #   sounddevice
+    # via cryptography
 charset-normalizer==3.4.3
-    # via
-    #   requests
-    #   unstructured
-chromadb==1.0.15
+    # via requests
+chromadb==1.5.7
     # via
     #   -r config/requirements.txt
     #   langchain-chroma
@@ -111,7 +96,6 @@ click==8.3.0
     # via
     #   flask
     #   nltk
-    #   python-oxmsg
     #   typer
     #   uvicorn
 coloredlogs==15.0.1
@@ -123,21 +107,19 @@ contourpy==1.3.2
 cryptography==46.0.5
     # via
     #   authlib
+    #   google-auth
     #   python-jose
-    #   unstructured-client
 cycler==0.12.1
     # via matplotlib
 dataclasses-json==0.6.7
-    # via
-    #   langchain-community
-    #   unstructured
+    # via langchain-community
 deprecated==1.2.18
     # via limits
 distro==1.9.0
     # via
     #   anthropic
+    #   google-genai
     #   openai
-    #   posthog
 dnspython==2.8.0
     # via email-validator
 docstring-parser==0.17.0
@@ -148,8 +130,6 @@ ecdsa==0.19.1
     # via python-jose
 email-validator==2.3.0
     # via arize-phoenix
-emoji==2.15.0
-    # via unstructured
 exceptiongroup==1.3.0
     # via anyio
 faker==22.0.0
@@ -164,9 +144,7 @@ filelock==3.20.3
     #   torch
     #   transformers
 filetype==1.2.0
-    # via
-    #   langchain-google-genai
-    #   unstructured
+    # via langchain-google-genai
 flask==3.1.3
     # via
     #   flask-basicauth
@@ -194,21 +172,15 @@ gevent==25.9.1
     #   locust
 geventhttpclient==2.3.4
     # via locust
-google-ai-generativelanguage==0.6.18
-    # via langchain-google-genai
-google-api-core[grpc]==2.25.1
-    # via google-ai-generativelanguage
-google-auth[requests]==2.40.1
+google-auth[requests]==2.49.2
     # via
-    #   -r config/requirements.txt
     #   anthropic
-    #   google-ai-generativelanguage
-    #   google-api-core
+    #   google-genai
     #   kubernetes
+google-genai==1.72.0
+    # via langchain-google-genai
 googleapis-common-protos==1.70.0
     # via
-    #   google-api-core
-    #   grpcio-status
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
 graphql-core==3.2.6
@@ -223,12 +195,8 @@ grpcio==1.75.0
     # via
     #   arize-phoenix
     #   chromadb
-    #   google-api-core
     #   grpc-interceptor
-    #   grpcio-status
     #   opentelemetry-exporter-otlp-proto-grpc
-grpcio-status==1.71.2
-    # via google-api-core
 gunicorn==23.0.0
     # via -r config/requirements.txt
 h11==0.16.0
@@ -237,25 +205,21 @@ h11==0.16.0
     #   uvicorn
 hf-xet==1.1.10
     # via huggingface-hub
-html5lib==1.1
-    # via unstructured
 httpcore==1.0.9
-    # via
-    #   httpx
-    #   unstructured-client
+    # via httpx
 httptools==0.6.4
     # via uvicorn
-httpx==0.27.2
+httpx==0.28.1
     # via
     #   -r config/requirements.txt
     #   anthropic
     #   arize-phoenix
     #   arize-phoenix-client
     #   chromadb
+    #   google-genai
+    #   langgraph-sdk
     #   langsmith
-    #   ollama
     #   openai
-    #   unstructured-client
 httpx-sse==0.4.1
     # via langchain-community
 huggingface-hub==0.35.1
@@ -311,60 +275,63 @@ kiwisolver==1.4.9
     # via matplotlib
 kubernetes==33.1.0
     # via chromadb
-langchain==0.3.27
-    # via
-    #   -r config/requirements.txt
-    #   langchain-community
-langchain-anthropic==0.3.13
+langchain==1.2.15
     # via -r config/requirements.txt
-langchain-aws==0.2.27
+langchain-anthropic==1.4.0
     # via -r config/requirements.txt
-langchain-chroma==0.2.4
+langchain-aws==1.4.3
     # via -r config/requirements.txt
-langchain-community==0.3.27
+langchain-chroma==1.1.0
     # via -r config/requirements.txt
-langchain-core==0.3.81
+langchain-classic==1.0.3
+    # via langchain-community
+langchain-community==0.4.1
+    # via -r config/requirements.txt
+langchain-core==1.2.28
     # via
     #   -r config/requirements.txt
     #   langchain
     #   langchain-anthropic
     #   langchain-aws
     #   langchain-chroma
+    #   langchain-classic
     #   langchain-community
     #   langchain-google-genai
     #   langchain-huggingface
-    #   langchain-ollama
     #   langchain-openai
     #   langchain-text-splitters
-langchain-google-genai==2.1.6
+    #   langgraph
+    #   langgraph-checkpoint
+    #   langgraph-prebuilt
+langchain-google-genai==4.2.1
     # via -r config/requirements.txt
-langchain-huggingface==0.2.0
+langchain-huggingface==1.2.1
     # via -r config/requirements.txt
-langchain-ollama==0.3.2
+langchain-openai==1.1.12
     # via -r config/requirements.txt
-langchain-openai==0.3.16
-    # via -r config/requirements.txt
-langchain-text-splitters==0.3.9
+langchain-text-splitters==1.1.1
     # via
     #   -r config/requirements.txt
-    #   langchain
-langchainhub==0.1.21
-    # via -r config/requirements.txt
-langdetect==1.0.9
-    # via unstructured
+    #   langchain-classic
+langgraph==1.1.6
+    # via langchain
+langgraph-checkpoint==4.0.1
+    # via
+    #   langgraph
+    #   langgraph-prebuilt
+langgraph-prebuilt==1.0.9
+    # via langgraph
+langgraph-sdk==0.3.6
+    # via langgraph
 langsmith==0.3.45
     # via
-    #   langchain
+    #   langchain-classic
     #   langchain-community
     #   langchain-core
-lark==1.2.2
-    # via -r config/requirements.txt
 limits==5.5.0
     # via slowapi
 locust==2.20.0
     # via -r config/requirements.txt
-lxml==6.0.2
-    # via unstructured
 mako==1.3.10
     # via alembic
 markdown-it-py==4.0.0
@@ -398,9 +365,7 @@ mypy-extensions==1.1.0
 networkx==3.4.2
     # via torch
 nltk==3.9.4
-    # via
-    #   -r config/requirements.txt
-    #   unstructured
+    # via -r config/requirements.txt
 numpy==1.26.4
     # via
     #   -r config/requirements.txt
@@ -419,18 +384,13 @@ numpy==1.26.4
     #   seaborn
     #   sentence-transformers
     #   transformers
-    #   unstructured
 oauthlib==3.3.1
     # via
     #   kubernetes
     #   requests-oauthlib
-olefile==0.47
-    # via python-oxmsg
-ollama==0.6.0
-    # via langchain-ollama
 onnxruntime==1.23.0
     # via chromadb
-openai==1.78.0
+openai==2.31.0
     # via
     #   -r config/requirements.txt
     #   langchain-openai
@@ -508,7 +468,10 @@ orjson==3.11.3
     # via
     #   arize-phoenix
     #   chromadb
+    #   langgraph-sdk
     #   langsmith
+ormsgpack==1.12.2
+    # via langgraph-checkpoint
 overrides==7.7.0
     # via chromadb
 packaging==24.2
@@ -517,7 +480,6 @@ packaging==24.2
     #   gunicorn
     #   huggingface-hub
     #   langchain-core
-    #   langchainhub
     #   langsmith
     #   limits
     #   marshmallow
@@ -538,34 +500,23 @@ pillow==12.1.1
     #   sentence-transformers
 ply==3.11
     # via jsonpath-ng
-posthog==5.4.0
-    # via chromadb
 prometheus-client==0.23.1
     # via arize-phoenix
 propcache==0.3.2
     # via
     #   aiohttp
     #   yarl
-proto-plus==1.26.1
-    # via
-    #   google-ai-generativelanguage
-    #   google-api-core
 protobuf==5.29.6
     # via
     #   arize-phoenix
-    #   google-ai-generativelanguage
-    #   google-api-core
     #   googleapis-common-protos
-    #   grpcio-status
     #   onnxruntime
     #   opentelemetry-proto
-    #   proto-plus
 psutil==5.9.8
     # via
     #   -r config/requirements.txt
     #   arize-phoenix
     #   locust
-    #   unstructured
 pyarrow==21.0.0
     # via arize-phoenix
 pyasn1==0.6.2
@@ -587,29 +538,27 @@ pydantic==2.11.4
     #   arize-phoenix-evals
     #   chromadb
     #   fastapi
+    #   google-genai
     #   langchain
     #   langchain-anthropic
     #   langchain-aws
+    #   langchain-classic
     #   langchain-core
     #   langchain-google-genai
+    #   langgraph
     #   langsmith
-    #   ollama
     #   openai
-    #   pydantic-compat
     #   pydantic-settings
-    #   unstructured-client
-pydantic-compat==0.1.2
-    # via -r config/requirements.txt
 pydantic-core==2.33.2
     # via pydantic
 pydantic-settings==2.11.0
-    # via langchain-community
+    # via
+    #   chromadb
+    #   langchain-community
 pygments==2.19.2
     # via rich
 pyparsing==3.2.5
     # via matplotlib
-pypdf==6.7.5
-    # via unstructured-client
 pypika==0.48.9
     # via chromadb
 pyproject-hooks==1.2.0
@@ -624,25 +573,18 @@ python-dateutil==2.9.0.post0
     #   kubernetes
     #   matplotlib
     #   pandas
-    #   posthog
     #   strawberry-graphql
 python-dotenv==1.1.0
     # via
     #   -r config/requirements.txt
     #   pydantic-settings
     #   uvicorn
-python-iso639==2025.2.18
-    # via unstructured
 python-jose[cryptography]==3.5.0
     # via -r config/requirements.txt
-python-magic==0.4.27
-    # via unstructured
 python-multipart==0.0.22
     # via
     #   -r config/requirements.txt
     #   arize-phoenix
-python-oxmsg==0.0.2
-    # via unstructured
 pytz==2025.2
     # via pandas
 pyyaml==6.0.1
@@ -651,7 +593,7 @@ pyyaml==6.0.1
     #   chromadb
     #   huggingface-hub
     #   kubernetes
-    #   langchain
+    #   langchain-classic
     #   langchain-community
     #   langchain-core
     #   transformers
@@ -660,8 +602,6 @@ pyzmq==27.1.0
     # via locust
 rank-bm25==0.2.2
     # via -r config/requirements.txt
-rapidfuzz==3.14.1
-    # via unstructured
 redis==5.0.1
     # via -r config/requirements.txt
 referencing==0.36.2
@@ -673,31 +613,26 @@ regex==2025.9.18
     #   nltk
     #   tiktoken
     #   transformers
-requests==2.32.4
+requests==2.33.0
     # via
     #   -r config/requirements.txt
-    #   google-api-core
     #   google-auth
+    #   google-genai
     #   huggingface-hub
     #   kubernetes
-    #   langchain
+    #   langchain-classic
     #   langchain-community
-    #   langchainhub
     #   langsmith
     #   locust
     #   opentelemetry-exporter-otlp-proto-http
-    #   posthog
     #   requests-oauthlib
     #   requests-toolbelt
     #   tiktoken
     #   transformers
-    #   unstructured
 requests-oauthlib==2.0.0
     # via kubernetes
 requests-toolbelt==1.0.0
-    # via
-    #   langsmith
-    #   unstructured-client
+    # via langsmith
 rich==14.1.0
     # via
     #   chromadb
@@ -709,10 +644,8 @@ rpds-py==0.27.1
     #   jsonschema
     #   referencing
 rsa==4.9.1
-    # via
-    #   google-auth
-    #   python-jose
-s3transfer==0.14.0
+    # via python-jose
+s3transfer==0.16.0
     # via boto3
 safetensors==0.6.2
     # via transformers
@@ -728,18 +661,13 @@ scipy==1.15.3
 seaborn==0.13.2
     # via -r config/requirements.txt
 sentence-transformers==2.6.1
-    # via
-    #   -r config/requirements.txt
-    #   langchain-huggingface
+    # via -r config/requirements.txt
 shellingham==1.5.4
     # via typer
 six==1.17.0
     # via
     #   ecdsa
-    #   html5lib
     #   kubernetes
-    #   langdetect
-    #   posthog
     #   python-dateutil
 slowapi==0.1.9
     # via -r config/requirements.txt
@@ -747,17 +675,13 @@ sniffio==1.3.1
     # via
     #   anthropic
     #   anyio
-    #   httpx
+    #   google-genai
     #   openai
-sounddevice==0.5.1
-    # via -r config/requirements.txt
-soupsieve==2.8
-    # via beautifulsoup4
 sqlalchemy[asyncio]==2.0.43
     # via
     #   alembic
     #   arize-phoenix
-    #   langchain
+    #   langchain-classic
     #   langchain-community
 sqlean-py==3.50.4.3
     # via arize-phoenix
@@ -766,9 +690,7 @@ starlette==0.49.1
     #   arize-phoenix
     #   fastapi
 strawberry-graphql==0.270.1
-    # via
-    #   -r config/requirements.txt
-    #   arize-phoenix
+    # via arize-phoenix
 sympy==1.14.0
     # via
     #   onnxruntime
@@ -776,6 +698,7 @@ sympy==1.14.0
 tenacity==9.1.2
     # via
     #   chromadb
+    #   google-genai
     #   langchain-community
     #   langchain-core
 threadpoolctl==3.6.0
@@ -809,16 +732,12 @@ tqdm==4.67.1
     #   openai
     #   sentence-transformers
     #   transformers
-    #   unstructured
 transformers==4.53.0
     # via
     #   -r config/requirements.txt
-    #   langchain-huggingface
     #   sentence-transformers
 typer==0.19.2
     # via chromadb
-types-requests==2.32.4.20250913
-    # via langchainhub
 typing-extensions==4.15.0
     # via
     #   aiosignal
@@ -831,11 +750,11 @@ typing-extensions==4.15.0
     #   arize-phoenix-evals
     #   arize-phoenix-otel
     #   asgiref
-    #   beautifulsoup4
     #   chromadb
     #   cryptography
     #   exceptiongroup
     #   fastapi
+    #   google-genai
     #   grpcio
     #   huggingface-hub
     #   langchain-core
@@ -849,8 +768,6 @@ typing-extensions==4.15.0
     #   opentelemetry-semantic-conventions
     #   pydantic
     #   pydantic-core
-    #   pypdf
-    #   python-oxmsg
     #   referencing
     #   sqlalchemy
     #   starlette
@@ -859,7 +776,6 @@ typing-extensions==4.15.0
     #   typer
     #   typing-inspect
     #   typing-inspection
-    #   unstructured
     #   uvicorn
 typing-inspect==0.9.0
     # via dataclasses-json
@@ -870,17 +786,14 @@ typing-inspection==0.4.2
     #   pydantic-settings
 tzdata==2025.2
     # via pandas
-unstructured==0.18.18
-    # via -r config/requirements.txt
-unstructured-client==0.42.3
-    # via unstructured
 urllib3==2.6.3
     # via
     #   botocore
     #   geventhttpclient
     #   kubernetes
     #   requests
-    #   types-requests
+uuid-utils==0.14.1
+    # via langchain-core
 uvicorn[standard]==0.34.2
     # via
     #   -r config/requirements.txt
@@ -890,8 +803,6 @@ uvloop==0.21.0
     # via uvicorn
 watchfiles==1.1.0
     # via uvicorn
-webencodings==0.5.1
-    # via html5lib
 websocket-client==1.7.0
     # via
     #   -r config/requirements.txt
@@ -899,6 +810,7 @@ websocket-client==1.7.0
 websockets==15.0.1
     # via
     #   -r config/requirements.txt
+    #   google-genai
     #   uvicorn
 werkzeug==3.1.6
     # via
@@ -913,7 +825,8 @@ wrapt==1.17.3
     #   openinference-instrumentation
     #   openinference-instrumentation-langchain
     #   opentelemetry-instrumentation
-    #   unstructured
+xxhash==3.6.0
+    # via langgraph
 yarl==1.20.1
     # via aiohttp
 zipp==3.23.0
