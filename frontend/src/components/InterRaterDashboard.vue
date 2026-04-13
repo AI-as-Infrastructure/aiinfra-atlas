@@ -179,13 +179,14 @@ export default {
           }, 2000)  // 2 seconds for better UX
 
         } else if (result.status === 'session_unavailable') {
-          // Session was deleted from Phoenix after allocation - skip it gracefully
+          // Session deleted from Phoenix after allocation - remove locally, don't re-fetch
+          sessions.value.splice(currentSessionIndex.value, 1)
+          if (sessions.value.length > 0) {
+            currentSessionIndex.value = 0
+          }
           successMessage.value = 'Session no longer available, loading next...'
           showSuccessMessage.value = true
-          setTimeout(() => {
-            showSuccessMessage.value = false
-            moveToNextSession()
-          }, 2000)
+          setTimeout(() => { showSuccessMessage.value = false }, 2000)
 
         } else {
           throw new Error(result.message || 'Failed to submit inter-rating')
