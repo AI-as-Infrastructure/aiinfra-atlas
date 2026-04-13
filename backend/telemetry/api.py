@@ -161,8 +161,14 @@ async def submit_feedback(feedback: Union[InterRaterFeedback, UserFeedback] if I
                 "rater_id": anon_user_id
             })
         
-        # Route to feedback processing (use unified path)
-        success = await associate_feedback_with_spans(session_id, qa_id, feedback_data)
+        # Route to feedback processing
+        if is_inter_rater:
+            # Inter-rater: use original_span_id directly — the span registry
+            # only has entries for the current process, not other users' sessions
+            from .feedback import submit_span_annotation
+            success = await submit_span_annotation(feedback.original_span_id, feedback_data, qa_id)
+        else:
+            success = await associate_feedback_with_spans(session_id, qa_id, feedback_data)
         
         # Respond with success
         if success:
