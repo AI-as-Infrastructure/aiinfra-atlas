@@ -6,7 +6,7 @@ python-multipart==0.0.22
 websockets==15.0.1
 
 # Vector Search Support
-chromadb==1.0.15
+chromadb==1.5.7
 langchain-chroma==1.1.0
 
 # BM25 Search Support
