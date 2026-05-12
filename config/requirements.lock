@@ -285,7 +285,7 @@ langchain-classic==1.0.3
     # via langchain-community
 langchain-community==0.4.1
     # via -r config/requirements.txt
-langchain-core==1.2.28
+langchain-core==1.4.0
     # via
     #   -r config/requirements.txt
     #   langchain
@@ -305,9 +305,11 @@ langchain-google-genai==4.2.1
     # via -r config/requirements.txt
 langchain-huggingface==1.2.1
     # via -r config/requirements.txt
-langchain-openai==1.1.12
+langchain-openai==1.2.1
     # via -r config/requirements.txt
-langchain-text-splitters==1.1.1
+langchain-protocol==0.0.15
+    # via langchain-core
+langchain-text-splitters==1.1.2
     # via
     #   -r config/requirements.txt
     #   langchain-classic
@@ -571,12 +573,12 @@ python-dateutil==2.9.0.post0
     #   matplotlib
     #   pandas
     #   strawberry-graphql
-python-dotenv==1.1.0
+python-dotenv==1.2.2
     # via
     #   -r config/requirements.txt
     #   pydantic-settings
     #   uvicorn
-python-multipart==0.0.22
+python-multipart==0.0.28
     # via
     #   -r config/requirements.txt
     #   arize-phoenix
@@ -750,6 +752,7 @@ typing-extensions==4.15.0
     #   grpcio
     #   huggingface-hub
     #   langchain-core
+    #   langchain-protocol
     #   limits
     #   multidict
     #   openai
