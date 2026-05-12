@@ -268,6 +268,24 @@ Each target file defines:
 - Consider stricter limits in production
 - Monitor for abuse patterns
 
+### Security Headers
+FastAPI sets defense-in-depth security headers on all responses:
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `Referrer-Policy: strict-origin-when-cross-origin`
+- `Permissions-Policy: camera=(), microphone=(), geolocation=()`
+
+Nginx also sets these (plus HSTS and CSP) in production/staging deployments.
+
+### Anonymous ID Salt
+- Set `ANONYMOUS_ID_SALT` to a cryptographically random value per environment
+- Generate with: `python3 -c "import secrets; print(secrets.token_hex(32))"`
+- The application rejects default salts in production
+
+### Debug Endpoint
+- `/api/debug/user-id` is disabled in production (returns 404)
+- Available in development/staging for testing auth configuration
+
 ## Validation and Testing
 
 ### Verify Configuration

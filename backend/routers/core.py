@@ -127,7 +127,10 @@ async def diagnostics(request: Request):
 
 @router.get("/api/debug/user-id")
 def debug_user_id_extraction(request: Request):
-    """Debug endpoint to verify user ID extraction is working correctly."""
+    """Debug endpoint to verify user ID extraction is working correctly.
+    Not available in production."""
+    if os.getenv("ENVIRONMENT", "").lower() == "production":
+        raise HTTPException(status_code=404, detail="Not found")
     from backend.services.anonymous_id_service import anonymous_id_service
 
     result = {

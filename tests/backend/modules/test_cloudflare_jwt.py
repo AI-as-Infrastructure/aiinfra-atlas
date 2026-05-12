@@ -17,8 +17,9 @@ These tests mock the Cloudflare JWKS endpoint and JWT tokens to validate:
 import pytest
 import time
 import json
+import base64
 from unittest.mock import patch, MagicMock, Mock
-from jose import jwt as jose_jwt
+import jwt as pyjwt
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
@@ -33,17 +34,23 @@ _test_private_key = rsa.generate_private_key(
 _test_public_key = _test_private_key.public_key()
 
 
+def _long_to_base64(n):
+    """Convert a large integer to base64url-encoded bytes (replaces jose.utils.long_to_base64)."""
+    byte_length = (n.bit_length() + 7) // 8
+    n_bytes = n.to_bytes(byte_length, byteorder="big")
+    return base64.urlsafe_b64encode(n_bytes).rstrip(b"=").decode("utf-8")
+
+
 def _get_public_key_jwk():
     """Convert the test public key to JWK format for mock JWKS response."""
-    from jose.utils import long_to_base64
     public_numbers = _test_public_key.public_numbers()
     return {
         "kty": "RSA",
         "kid": "test-kid-1",
         "use": "sig",
         "alg": "RS256",
-        "n": long_to_base64(public_numbers.n).decode("utf-8"),
-        "e": long_to_base64(public_numbers.e).decode("utf-8"),
+        "n": _long_to_base64(public_numbers.n),
+        "e": _long_to_base64(public_numbers.e),
     }
 
 
@@ -54,7 +61,7 @@ def _make_jwt(claims, kid="test-kid-1"):
         format=serialization.PrivateFormat.PKCS8,
         encryption_algorithm=serialization.NoEncryption()
     )
-    return jose_jwt.encode(
+    return pyjwt.encode(
         claims,
         private_pem,
         algorithm="RS256",

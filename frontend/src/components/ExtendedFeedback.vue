@@ -34,6 +34,19 @@
               </label>
             </div>
           </div>
+          <div v-if="ratings.factual_accuracy !== null" class="scale-comment">
+            <textarea
+              v-model="scaleComments.factual_accuracy"
+              class="textarea is-small"
+              :placeholder="isCommentRequired('factual_accuracy') ? 'Please explain your rating (required)' : 'Optional: explain your rating'"
+              rows="2"
+              maxlength="300"
+              :disabled="disabled"
+            ></textarea>
+            <p v-if="isCommentRequired('factual_accuracy') && !scaleComments.factual_accuracy.trim()" class="help is-danger">
+              Comment required for this rating
+            </p>
+          </div>
         </div>
 
         <!-- Corpus Fidelity -->
@@ -61,6 +74,19 @@
                 <span class="likert-text">{{ value }}</span>
               </label>
             </div>
+          </div>
+          <div v-if="ratings.corpus_fidelity !== null" class="scale-comment">
+            <textarea
+              v-model="scaleComments.corpus_fidelity"
+              class="textarea is-small"
+              :placeholder="isCommentRequired('corpus_fidelity') ? 'Please explain your rating (required)' : 'Optional: explain your rating'"
+              rows="2"
+              maxlength="300"
+              :disabled="disabled"
+            ></textarea>
+            <p v-if="isCommentRequired('corpus_fidelity') && !scaleComments.corpus_fidelity.trim()" class="help is-danger">
+              Comment required for this rating
+            </p>
           </div>
         </div>
 
@@ -90,6 +116,19 @@
               </label>
             </div>
           </div>
+          <div v-if="ratings.analysis_quality !== null" class="scale-comment">
+            <textarea
+              v-model="scaleComments.analysis_quality"
+              class="textarea is-small"
+              :placeholder="isCommentRequired('analysis_quality') ? 'Please explain your rating (required)' : 'Optional: explain your rating'"
+              rows="2"
+              maxlength="300"
+              :disabled="disabled"
+            ></textarea>
+            <p v-if="isCommentRequired('analysis_quality') && !scaleComments.analysis_quality.trim()" class="help is-danger">
+              Comment required for this rating
+            </p>
+          </div>
         </div>
 
         <!-- Relevance -->
@@ -117,6 +156,19 @@
                 <span class="likert-text">{{ value }}</span>
               </label>
             </div>
+          </div>
+          <div v-if="ratings.relevance !== null" class="scale-comment">
+            <textarea
+              v-model="scaleComments.relevance"
+              class="textarea is-small"
+              :placeholder="isCommentRequired('relevance') ? 'Please explain your rating (required)' : 'Optional: explain your rating'"
+              rows="2"
+              maxlength="300"
+              :disabled="disabled"
+            ></textarea>
+            <p v-if="isCommentRequired('relevance') && !scaleComments.relevance.trim()" class="help is-danger">
+              Comment required for this rating
+            </p>
           </div>
         </div>
 
@@ -146,6 +198,19 @@
               </label>
             </div>
           </div>
+          <div v-if="ratings.difficulty !== null" class="scale-comment">
+            <textarea
+              v-model="scaleComments.difficulty"
+              class="textarea is-small"
+              :placeholder="isCommentRequired('difficulty') ? 'Please explain your rating (required)' : 'Optional: explain your rating'"
+              rows="2"
+              maxlength="300"
+              :disabled="disabled"
+            ></textarea>
+            <p v-if="isCommentRequired('difficulty') && !scaleComments.difficulty.trim()" class="help is-danger">
+              Comment required for this rating
+            </p>
+          </div>
         </div>
 
         <!-- Clarity -->
@@ -174,6 +239,19 @@
               </label>
             </div>
           </div>
+          <div v-if="ratings.clarity !== null" class="scale-comment">
+            <textarea
+              v-model="scaleComments.clarity"
+              class="textarea is-small"
+              :placeholder="isCommentRequired('clarity') ? 'Please explain your rating (required)' : 'Optional: explain your rating'"
+              rows="2"
+              maxlength="300"
+              :disabled="disabled"
+            ></textarea>
+            <p v-if="isCommentRequired('clarity') && !scaleComments.clarity.trim()" class="help is-danger">
+              Comment required for this rating
+            </p>
+          </div>
         </div>
       </div>
 
@@ -191,19 +269,6 @@
           </label>
         </div>
       </div>
-      <div class="comments-section">
-        <label class="section-label">Would you like to provide any additional information about your ratings?</label>
-        <textarea
-          v-model="additionalComments"
-          class="textarea"
-          placeholder="Please provide any additional feedback or context about your ratings..."
-          rows="3"
-          maxlength="500"
-          :disabled="disabled"
-        ></textarea>
-        <p class="help">{{ additionalComments.length }}/500 characters</p>
-      </div>
-
       <!-- Faults Section -->
       <div class="faults-section">
         <label class="section-label">Faults</label>
@@ -320,7 +385,14 @@ export default {
         inappropriate: false,
         bias: false
       },
-      additionalComments: '',
+      scaleComments: {
+        factual_accuracy: '',
+        corpus_fidelity: '',
+        analysis_quality: '',
+        relevance: '',
+        difficulty: '',
+        clarity: ''
+      },
       userType: '',
       isSubmitting: false,
       configData: null
@@ -330,11 +402,20 @@ export default {
     hasExtendedFeedback() {
       const hasRatings = Object.values(this.ratings).some(rating => rating !== null)
       const hasFaults = Object.values(this.faults).some(fault => fault === true)
-      const hasComments = this.additionalComments.trim().length > 0
-      return hasRatings || hasFaults || hasComments
+      if (!hasRatings && !hasFaults) return false
+      // Block submit if any required comments are missing
+      const requiredCommentsMissing = Object.keys(this.ratings).some(scale => {
+        return this.isCommentRequired(scale) && !this.scaleComments[scale].trim()
+      })
+      return !requiredCommentsMissing
     }
   },
   methods: {
+    isCommentRequired(scale) {
+      const rating = this.ratings[scale]
+      return rating !== null && (rating === 1 || rating === 2 || rating === 5)
+    },
+
     setRating(category, value) {
       if (this.disabled) return
       this.ratings[category] = value
@@ -423,9 +504,11 @@ export default {
           feedbackData.faults = this.faults
         }
         
-        // Include additional comments if provided
-        if (this.additionalComments.trim().length > 0) {
-          feedbackData.additional_comments = this.additionalComments.trim()
+        // Include per-scale comments if provided
+        for (const [scale, comment] of Object.entries(this.scaleComments)) {
+          if (comment.trim()) {
+            feedbackData[`${scale}_comments`] = comment.trim()
+          }
         }
         if (this.userType) {
           feedbackData.user_type = this.userType
@@ -478,7 +561,14 @@ export default {
         inappropriate: false,
         bias: false
       }
-      this.additionalComments = ''
+      this.scaleComments = {
+        factual_accuracy: '',
+        corpus_fidelity: '',
+        analysis_quality: '',
+        relevance: '',
+        difficulty: '',
+        clarity: ''
+      }
       this.userType = ''
     }
   },
@@ -598,21 +688,21 @@ export default {
   color: #6c757d;
 }
 
-.comments-section {
-  border-top: 1px solid #e9ecef;
-  padding-top: 1.5rem;
-  margin-bottom: 1.5rem;
+.scale-comment {
+  margin-top: 0.5rem;
+  max-width: 300px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
-.comments-section .textarea {
+.scale-comment .textarea {
   resize: vertical;
-  min-height: 80px;
+  min-height: 50px;
+  font-size: 13px;
 }
 
-.comments-section .help {
-  text-align: right;
+.scale-comment .help.is-danger {
   font-size: 12px;
-  color: #6c757d;
   margin-top: 0.25rem;
 }
 

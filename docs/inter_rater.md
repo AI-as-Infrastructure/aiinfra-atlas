@@ -22,7 +22,7 @@ INTER_RATER_PROJECT=YourPhoenixProject
 
 # Allocation limits
 INTER_RATER_MAX_RATINGS=3          # Max inter-rater ratings per session (default: 3)
-INTER_RATER_SESSIONS_PER_USER=5    # Sessions offered per user (default: 5)
+INTER_RATER_SESSIONS_PER_USER=20   # Sessions offered per user (default: 20)
 ```
 
 Also ensure authentication is enabled (inter-rater requires user identity):
@@ -49,11 +49,18 @@ INTER_RATER_SESSIONS_PER_USER=10   # 10 sessions per user
 **Medium Teams (5-10 users):**
 ```bash
 INTER_RATER_MAX_RATINGS=3          # 3 inter-raters per session (recommended)
-INTER_RATER_SESSIONS_PER_USER=5    # 5 sessions per user (default)
+INTER_RATER_SESSIONS_PER_USER=10   # 10 sessions per user
 ```
-- Recommended for most use cases
 - Provides good statistical reliability
 - Balanced workload per user
+
+**Current Study (15 users, 100 prompts):**
+```bash
+INTER_RATER_MAX_RATINGS=3          # 3 inter-raters per session
+INTER_RATER_SESSIONS_PER_USER=20   # 20 sessions per user (default)
+```
+- 100 prompts x 3 ratings = 300 total = 15 users x 20 ratings
+- SHA-256 allocation with max_ratings cap ensures even distribution
 
 **Large Teams (10+ users):**
 ```bash
@@ -71,11 +78,11 @@ To achieve full coverage of N sessions:
 Minimum users needed = (N × INTER_RATER_MAX_RATINGS) / INTER_RATER_SESSIONS_PER_USER
 ```
 
-**Example:**
-- 20 sessions to cover
+**Example (current study):**
+- 100 sessions to cover
 - MAX_RATINGS=3
-- SESSIONS_PER_USER=5
-- Minimum users = (20 × 3) / 5 = **12 users needed**
+- SESSIONS_PER_USER=20
+- Minimum users = (100 × 3) / 20 = **15 users needed**
 
 ### Workload Estimation
 
@@ -85,14 +92,14 @@ Time per session: ~5-10 minutes (all 9 fields)
 Total time = SESSIONS_PER_USER × 5-10 minutes
 ```
 
-With `SESSIONS_PER_USER=5`: **25-50 minutes per user**
+With `SESSIONS_PER_USER=20`: **100-200 minutes per user**
 
 ## Architecture
 - Backend
   - `backend/services/inter_rater_service.py`: allocation, per-user cache, limits
   - `backend/services/phoenix_client.py`: queries/duplicate checks against Phoenix
   - `backend/telemetry/api.py`: unified feedback endpoint (regular + inter-rater)
-  - `backend/telemetry/feedback.py`: Phoenix span annotations (adds "[Inter-rater]" prefix and metadata)
+  - `backend/telemetry/feedback.py`: Phoenix span annotations (adds "[inter-rating-N]" prefix and per-scale comments)
   - `backend/services/anonymous_id_service.py`: generates environment-scoped anonymous IDs from Cognito `sub`
 - Frontend
   - `frontend/src/components/InterRaterButton.vue`: shows available session count
@@ -109,7 +116,7 @@ With `SESSIONS_PER_USER=5`: **25-50 minutes per user**
    - **Exclude sessions already inter-rated by this user** (prevents duplicate rating)
    - **Enforce `INTER_RATER_MAX_RATINGS`** limit (default: 3 per session)
    - **Apply deterministic user-specific allocation** (same user always gets same sessions)
-   - **Limit to `INTER_RATER_SESSIONS_PER_USER`** (default: 5 per user)
+   - **Limit to `INTER_RATER_SESSIONS_PER_USER`** (default: 20 per user)
 5. Counts cached per user (short TTL). Cache invalidated when the user submits inter-rater feedback.
 
 ## Allocation Algorithm Details

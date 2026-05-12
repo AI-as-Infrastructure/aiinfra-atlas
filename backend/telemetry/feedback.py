@@ -59,7 +59,15 @@ class UserFeedback(BaseModel):
     # New extended feedback fields
     analysis_quality: Optional[int] = None  # 1-5 Likert scale
     difficulty: Optional[int] = None  # 1-5 Likert scale
-    additional_comments: Optional[str] = None  # Free text field for additional user feedback
+    additional_comments: Optional[str] = None  # Free text field (legacy, kept for backward compatibility)
+
+    # Per-scale comments (mandatory when scale rating is 1, 2, or 5)
+    factual_accuracy_comments: Optional[str] = None
+    corpus_fidelity_comments: Optional[str] = None
+    analysis_quality_comments: Optional[str] = None
+    relevance_comments: Optional[str] = None
+    difficulty_comments: Optional[str] = None
+    clarity_comments: Optional[str] = None
     
     # New faults structure (alternative to tags)
     faults: Optional[Dict[str, bool]] = None  # {hallucination, off_topic, inappropriate, bias}
@@ -584,6 +592,30 @@ async def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str =
             "metadata": {"qa_id": qa_id, "feedback_type": "extended"} if qa_id else {"feedback_type": "extended"}
         })
     
+    # Add per-scale comment annotations
+    scale_comment_fields = {
+        "factual_accuracy_comments": "Factual Accuracy Comment",
+        "corpus_fidelity_comments": "Corpus Fidelity Comment",
+        "analysis_quality_comments": "Analysis Quality Comment",
+        "relevance_comments": "Relevance Comment",
+        "difficulty_comments": "Difficulty Comment",
+        "clarity_comments": "Clarity Comment",
+    }
+    for field_name, annotation_label in scale_comment_fields.items():
+        if field_name in feedback_data and feedback_data[field_name]:
+            annotation_data.append({
+                "id": f"{annotation_id}_{field_name}",
+                "name": get_annotation_name(annotation_label, inter_rater_number),
+                "span_id": formatted_span_id,
+                "annotator_kind": "HUMAN",
+                "result": {
+                    "label": field_name,
+                    "score": None,
+                    "explanation": feedback_data[field_name]
+                },
+                "metadata": {"qa_id": qa_id} if qa_id else {}
+            })
+
     # Note: We don't need to add feedback_text here as it's already handled above as user_comment
     
     # Add AI-Enhanced feedback annotations (minimal addition - only if feedback_type is ai_enhanced)

@@ -136,6 +136,11 @@ async def security_middleware(request: Request, call_next):
             content={"error": "Request too large", "max_size": f"{max_size // (1024*1024)}MB"}
         )
     response = await call_next(request)
+    # Defense-in-depth security headers (nginx sets these too)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     return response
 
 
@@ -184,7 +189,7 @@ if "localhost" not in allowed_hosts:
 if "127.0.0.1" not in allowed_hosts:
     allowed_hosts.append("127.0.0.1")
 
-print(f"TrustedHostMiddleware: Allowing hosts {allowed_hosts}")
+logger.info(f"TrustedHostMiddleware: Allowing hosts {allowed_hosts}")
 
 app.add_middleware(
     TrustedHostMiddleware,

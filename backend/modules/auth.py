@@ -17,8 +17,7 @@ import time
 from typing import Optional, Dict, Any
 
 COGNITO_SESSION_TIMEOUT = 3600  # 1 hour for research sessions
-from jose import jwk, jwt
-from jose.utils import base64url_decode
+import jwt
 import requests
 from fastapi import HTTPException, Request, status
 
@@ -148,15 +147,18 @@ def verify_cognito_token(token: str) -> Optional[Dict[str, Any]]:
             return None
 
         # Find the matching key
-        rsa_key = None
+        rsa_key_data = None
         for key in jwks.get("keys", []):
             if key.get("kid") == kid:
-                rsa_key = key
+                rsa_key_data = key
                 break
 
-        if not rsa_key:
+        if not rsa_key_data:
             logger.error(f"No matching key found for kid: {kid}")
             return None
+
+        # Convert JWK dict to PyJWT key object
+        public_key = jwt.PyJWK(rsa_key_data).key
 
         # Verify the token
         cognito_config = get_cognito_config()
@@ -164,25 +166,18 @@ def verify_cognito_token(token: str) -> Optional[Dict[str, Any]]:
         user_pool_id = cognito_config.get("user_pool_id")
         client_id = cognito_config.get("client_id")
 
-        # Decode without at_hash verification since we don't pass the access_token here.
         payload = jwt.decode(
             token,
-            rsa_key,
+            public_key,
             algorithms=["RS256"],
             audience=client_id,
             issuer=f"https://cognito-idp.{region}.amazonaws.com/{user_pool_id}",
-            options={"verify_at_hash": False}
         )
 
-        # Check token expiration
-        if 'exp' in payload:
-            exp_time = payload['exp']
-            current_time = time.time()
-            if current_time > exp_time:
-                logger.warning("Token expired")
-                return None
-
         return payload
+    except jwt.ExpiredSignatureError:
+        logger.warning("Token expired")
+        return None
     except Exception as e:
         logger.error(f"Error verifying token: {e}")
         return None
@@ -255,23 +250,26 @@ def verify_cloudflare_jwt(request: Request) -> Optional[Dict[str, Any]]:
             kid = header.get("kid")
 
             # Find matching key
-            rsa_key = None
+            rsa_key_data = None
             for key in jwks_data.get("keys", []):
                 if key.get("kid") == kid:
-                    rsa_key = key
+                    rsa_key_data = key
                     break
 
-            if not rsa_key:
+            if not rsa_key_data:
                 if attempt == 0:
                     logger.info(f"No matching key for kid={kid}, refreshing JWKS")
                     continue  # Retry with fresh keys
                 logger.warning(f"No matching Cloudflare key for kid={kid} after refresh")
                 return None
 
+            # Convert JWK dict to PyJWT key object
+            public_key = jwt.PyJWK(rsa_key_data).key
+
             # Validate the token
             payload = jwt.decode(
                 token,
-                rsa_key,
+                public_key,
                 algorithms=["RS256"],
                 audience=audience,
                 issuer=f"https://{team_domain}",
@@ -282,8 +280,11 @@ def verify_cloudflare_jwt(request: Request) -> Optional[Dict[str, Any]]:
         except jwt.ExpiredSignatureError:
             logger.warning("Cloudflare Access JWT expired")
             return None
-        except jwt.JWTClaimsError as e:
-            logger.warning(f"Cloudflare Access JWT claims error: {e}")
+        except jwt.InvalidTokenError as e:
+            if attempt == 0:
+                logger.info(f"JWT validation failed, retrying with fresh keys: {type(e).__name__}")
+                continue
+            logger.warning(f"Cloudflare Access JWT validation failed: {type(e).__name__}")
             return None
         except Exception as e:
             if attempt == 0:

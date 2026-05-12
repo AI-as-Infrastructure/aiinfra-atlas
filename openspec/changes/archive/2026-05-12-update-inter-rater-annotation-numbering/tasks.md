@@ -24,6 +24,6 @@
 - [x] 4.5 Test Phoenix query error handling (fallback behavior)
 
 ## 5. Validation
-- [ ] 5.1 Verify annotations appear correctly in Phoenix UI
-- [ ] 5.2 Verify Inter-Rater Dashboard displays numbered annotations
-- [ ] 5.3 Ensure backward compatibility with existing `[Inter-rater]` annotations
+- [x] 5.1 Verify annotations appear correctly in Phoenix UI
+- [x] 5.2 Verify Inter-Rater Dashboard displays numbered annotations
+- [x] 5.3 Ensure backward compatibility with existing `[Inter-rater]` annotations

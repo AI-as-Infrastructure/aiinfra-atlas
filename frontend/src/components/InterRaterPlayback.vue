@@ -121,6 +121,18 @@
                   </label>
                 </div>
               </div>
+              <div v-if="feedback.factual_accuracy !== null" class="scale-comment">
+                <textarea
+                  v-model="feedback.scaleComments.factual_accuracy"
+                  class="textarea is-small"
+                  :placeholder="isCommentRequired('factual_accuracy') ? 'Please explain your rating (required)' : 'Optional: explain your rating'"
+                  rows="2"
+                  maxlength="300"
+                ></textarea>
+                <p v-if="isCommentRequired('factual_accuracy') && !feedback.scaleComments.factual_accuracy.trim()" class="help is-danger">
+                  Comment required for this rating
+                </p>
+              </div>
             </div>
             
             
@@ -149,6 +161,18 @@
                   </label>
                 </div>
               </div>
+              <div v-if="feedback.corpus_fidelity !== null" class="scale-comment">
+                <textarea
+                  v-model="feedback.scaleComments.corpus_fidelity"
+                  class="textarea is-small"
+                  :placeholder="isCommentRequired('corpus_fidelity') ? 'Please explain your rating (required)' : 'Optional: explain your rating'"
+                  rows="2"
+                  maxlength="300"
+                ></textarea>
+                <p v-if="isCommentRequired('corpus_fidelity') && !feedback.scaleComments.corpus_fidelity.trim()" class="help is-danger">
+                  Comment required for this rating
+                </p>
+              </div>
             </div>
 
             <div class="feedback-section">
@@ -174,6 +198,18 @@
                     <span class="likert-text">{{ value }}</span>
                   </label>
                 </div>
+              </div>
+              <div v-if="feedback.analysis_quality !== null" class="scale-comment">
+                <textarea
+                  v-model="feedback.scaleComments.analysis_quality"
+                  class="textarea is-small"
+                  :placeholder="isCommentRequired('analysis_quality') ? 'Please explain your rating (required)' : 'Optional: explain your rating'"
+                  rows="2"
+                  maxlength="300"
+                ></textarea>
+                <p v-if="isCommentRequired('analysis_quality') && !feedback.scaleComments.analysis_quality.trim()" class="help is-danger">
+                  Comment required for this rating
+                </p>
               </div>
             </div>
             
@@ -201,6 +237,18 @@
                   </label>
                 </div>
               </div>
+              <div v-if="feedback.relevance !== null" class="scale-comment">
+                <textarea
+                  v-model="feedback.scaleComments.relevance"
+                  class="textarea is-small"
+                  :placeholder="isCommentRequired('relevance') ? 'Please explain your rating (required)' : 'Optional: explain your rating'"
+                  rows="2"
+                  maxlength="300"
+                ></textarea>
+                <p v-if="isCommentRequired('relevance') && !feedback.scaleComments.relevance.trim()" class="help is-danger">
+                  Comment required for this rating
+                </p>
+              </div>
             </div>
             
             <div class="feedback-section">
@@ -226,6 +274,18 @@
                     <span class="likert-text">{{ value }}</span>
                   </label>
                 </div>
+              </div>
+              <div v-if="feedback.difficulty !== null" class="scale-comment">
+                <textarea
+                  v-model="feedback.scaleComments.difficulty"
+                  class="textarea is-small"
+                  :placeholder="isCommentRequired('difficulty') ? 'Please explain your rating (required)' : 'Optional: explain your rating'"
+                  rows="2"
+                  maxlength="300"
+                ></textarea>
+                <p v-if="isCommentRequired('difficulty') && !feedback.scaleComments.difficulty.trim()" class="help is-danger">
+                  Comment required for this rating
+                </p>
               </div>
             </div>
             
@@ -253,6 +313,18 @@
                   </label>
                 </div>
               </div>
+              <div v-if="feedback.clarity !== null" class="scale-comment">
+                <textarea
+                  v-model="feedback.scaleComments.clarity"
+                  class="textarea is-small"
+                  :placeholder="isCommentRequired('clarity') ? 'Please explain your rating (required)' : 'Optional: explain your rating'"
+                  rows="2"
+                  maxlength="300"
+                ></textarea>
+                <p v-if="isCommentRequired('clarity') && !feedback.scaleComments.clarity.trim()" class="help is-danger">
+                  Comment required for this rating
+                </p>
+              </div>
             </div>
 
             
@@ -271,21 +343,6 @@
                 Non-expert User
               </label>
             </div>
-          </div>
-
-          <!-- Comments Section -->
-          <div class="field mt-4">
-            <label class="label has-text-weight-bold">Additional Comments (Optional)</label>
-            <div class="control">
-              <textarea 
-                class="textarea" 
-                v-model="feedback.feedback_text"
-                placeholder="Any additional observations about this interaction..."
-                rows="3"
-              ></textarea>
-            </div>
-
-            
           </div>
 
           <!-- Faults Section -->
@@ -540,6 +597,14 @@ export default {
         off_topic: false,
         inappropriate: false,
         bias: false
+      },
+      scaleComments: {
+        factual_accuracy: '',
+        corpus_fidelity: '',
+        analysis_quality: '',
+        relevance: '',
+        difficulty: '',
+        clarity: ''
       }
     })
     
@@ -550,14 +615,26 @@ export default {
     const showAllCitations = ref(false)
     const hoveredCitation = ref(null)
 
+    const isCommentRequired = (scale) => {
+      const rating = feedback.value[scale]
+      return rating !== null && rating !== '' && (parseInt(rating) === 1 || parseInt(rating) === 2 || parseInt(rating) === 5)
+    }
+
     const isFormValid = computed(() => {
-      return feedback.value.factual_accuracy && 
-             feedback.value.corpus_fidelity && 
-             feedback.value.analysis_quality && 
-             feedback.value.relevance && 
-             feedback.value.difficulty && 
+      const hasAllRatings = feedback.value.factual_accuracy &&
+             feedback.value.corpus_fidelity &&
+             feedback.value.analysis_quality &&
+             feedback.value.relevance &&
+             feedback.value.difficulty &&
              feedback.value.clarity &&
              feedback.value.user_type
+      if (!hasAllRatings) return false
+      // Check required comments are filled
+      const scales = ['factual_accuracy', 'corpus_fidelity', 'analysis_quality', 'relevance', 'difficulty', 'clarity']
+      const requiredCommentsMissing = scales.some(scale => {
+        return isCommentRequired(scale) && !feedback.value.scaleComments[scale].trim()
+      })
+      return !requiredCommentsMissing
     })
 
     const formatDate = (dateString) => {
@@ -589,7 +666,6 @@ export default {
           difficulty: parseInt(feedback.value.difficulty),
           clarity: parseInt(feedback.value.clarity),
           user_type: feedback.value.user_type || null,
-          feedback_text: feedback.value.feedback_text,
           faults: feedback.value.faults,
           is_inter_rater: true,
           // rater_id is assigned by backend from the authenticated user; do not set on client
@@ -599,6 +675,13 @@ export default {
           answer: props.session.answer,
           citations: props.session.citations || [],
           feedback_type: 'inter_rater'
+        }
+
+        // Include per-scale comments if provided
+        for (const [scale, comment] of Object.entries(feedback.value.scaleComments)) {
+          if (comment.trim()) {
+            feedbackData[`${scale}_comments`] = comment.trim()
+          }
         }
 
         emit('submit-feedback', feedbackData)
@@ -636,6 +719,14 @@ export default {
           off_topic: false,
           inappropriate: false,
           bias: false
+        },
+        scaleComments: {
+          factual_accuracy: '',
+          corpus_fidelity: '',
+          analysis_quality: '',
+          relevance: '',
+          difficulty: '',
+          clarity: ''
         }
       }
       
@@ -652,6 +743,7 @@ export default {
       feedback,
       isSubmitting,
       isFormValid,
+      isCommentRequired,
       formatDate,
       submitFeedback,
       renderMarkdown,
@@ -1153,6 +1245,24 @@ export default {
 .likert-text {
   font-size: 12px;
   color: #6c757d;
+}
+
+.scale-comment {
+  margin-top: 0.5rem;
+  max-width: 300px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.scale-comment .textarea {
+  resize: vertical;
+  min-height: 50px;
+  font-size: 13px;
+}
+
+.scale-comment .help.is-danger {
+  font-size: 12px;
+  margin-top: 0.25rem;
 }
 
 /* Action Buttons (matching ExtendedFeedback.vue) */

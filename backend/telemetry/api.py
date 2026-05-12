@@ -138,6 +138,14 @@ async def submit_feedback(feedback: Union[InterRaterFeedback, UserFeedback] if I
             "answer": feedback.answer,
             "citations": feedback.citations,
             
+            # Per-scale comments
+            "factual_accuracy_comments": feedback.factual_accuracy_comments,
+            "corpus_fidelity_comments": feedback.corpus_fidelity_comments,
+            "analysis_quality_comments": feedback.analysis_quality_comments,
+            "relevance_comments": feedback.relevance_comments,
+            "difficulty_comments": feedback.difficulty_comments,
+            "clarity_comments": feedback.clarity_comments,
+
             # AI-Enhanced feedback fields
             "ai_validation": feedback.ai_validation,
             "ai_agreement": feedback.ai_agreement,
