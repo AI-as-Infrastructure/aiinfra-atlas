@@ -127,7 +127,7 @@ For the default focus group target (15 × 20 = 300 rating slots) with `MAX_RATIN
 - `make seed-dry` — validate JSON and print the sizing check without submitting
 - `make seed SEED_ARGS="--count 5"` — seed only the first 5 questions (testing)
 - `make seed SEED_ARGS="--no-verify"` — skip the post-seed Phoenix verification pass
-- `ENV_FILE=config/.env.production make seed` — use the prod env file when running on the prod box
+- `ENV_FILE=config/.env.production make seed` — explicitly use the prod env file (only needed when both env files exist on the same box; otherwise the Makefile auto-falls-back to `.env.production` when `.env.development` is absent)
 
 ### Resetting between test runs
 

@@ -154,23 +154,29 @@ pm: ## Prepare embedding model
 # Inter-rater seeding
 .PHONY: seed seed-dry seed-reset
 SEED_ARGS ?=
+# Pick the first env file that exists: explicit ENV_FILE > .env.development > .env.production
+define resolve_seed_env
+	if [ -n "$$ENV_FILE" ]; then \
+		if [ ! -f "$$ENV_FILE" ]; then echo "ERROR: ENV_FILE=$$ENV_FILE not found"; exit 1; fi; \
+	elif [ -f config/.env.development ]; then ENV_FILE=config/.env.development; \
+	elif [ -f config/.env.production ]; then ENV_FILE=config/.env.production; \
+	else echo "ERROR: no env file found (looked for config/.env.development, config/.env.production)"; exit 1; fi; \
+	echo "Using $$ENV_FILE"; \
+	set -a; . "$$ENV_FILE"; set +a
+endef
+
 seed: ## Seed inter-rater sessions from data/seed_questions.json (server must be running on localhost:8000)
 	@if [ ! -d ".venv" ]; then echo "ERROR: .venv not found — run setup first"; exit 1; fi
-	@ENV_FILE=$${ENV_FILE:-config/.env.development}; \
-		if [ ! -f "$$ENV_FILE" ]; then echo "ERROR: $$ENV_FILE not found"; exit 1; fi; \
-		set -a; . "$$ENV_FILE"; set +a; \
+	@$(resolve_seed_env); \
 		.venv/bin/python utils/scripts/seed_questions.py $(SEED_ARGS)
 
 seed-dry: ## Dry-run seed: validate JSON and print sizing check
 	@if [ ! -d ".venv" ]; then echo "ERROR: .venv not found — run setup first"; exit 1; fi
-	@ENV_FILE=$${ENV_FILE:-config/.env.development}; \
-		set -a; [ -f "$$ENV_FILE" ] && . "$$ENV_FILE"; set +a; \
+	@$(resolve_seed_env); \
 		.venv/bin/python utils/scripts/seed_questions.py --dry-run $(SEED_ARGS)
 
 seed-reset: ## Delete INTER_RATER_PROJECT from Phoenix to reset to baseline (then run `make seed`)
 	@if [ ! -d ".venv" ]; then echo "ERROR: .venv not found — run setup first"; exit 1; fi
-	@ENV_FILE=$${ENV_FILE:-config/.env.development}; \
-		if [ ! -f "$$ENV_FILE" ]; then echo "ERROR: $$ENV_FILE not found"; exit 1; fi; \
-		set -a; . "$$ENV_FILE"; set +a; \
+	@$(resolve_seed_env); \
 		.venv/bin/python utils/scripts/seed_reset.py $(SEED_ARGS)
 
