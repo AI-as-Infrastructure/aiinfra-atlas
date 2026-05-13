@@ -296,9 +296,12 @@ Both main ratings and inter-ratings use the same field order - **all 9 fields ar
 ## Troubleshooting
 - **No sessions available**: 
   - Verify `INTER_RATER_ENABLED=true` in .env
-  - Check `INTER_RATER_PROJECT` matches your Phoenix project
+  - **`INTER_RATER_PROJECT` must exactly match `PHOENIX_PROJECT_NAME`** — spans are exported to the project named by `PHOENIX_PROJECT_NAME`, so inter-rater must query the same project. A mismatch (e.g. `ATLAS-Prod` vs `Hansard-Prod`) results in zero sessions.
   - Confirm `com.atlas.rag.generation.response` spans exist in the project (either from real user traffic or from `make seed`)
-  - Verify user is authenticated (Cognito JWT token present)
+  - Verify user is authenticated (Cognito or Cloudflare Access — inter-rater requires user identity)
+- **Seeded sessions not appearing in Phoenix**:
+  - The seed script must send `X-Telemetry-Opt-In: true` and `X-Trace-Id` headers with each request, otherwise the app's telemetry middleware disables span creation. These headers are included automatically by the current script.
+  - Seeding runs against `localhost:8000` and does not require `AUTH_METHOD=none` — the `/api/ask/stream` endpoint has no auth enforcement. Keep `AUTH_METHOD=cloudflare` (or `cognito`) active so inter-rating works simultaneously.
 - **User sees own ratings**: 
   - Fixed: Frontend now sends Authorization headers with all feedback submissions
   - Ensure user_id is properly captured during original feedback submission
