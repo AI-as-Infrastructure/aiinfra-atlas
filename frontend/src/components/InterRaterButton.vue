@@ -13,42 +13,25 @@
 </template>
 
 <script>
-import { ref, onMounted } from 'vue'
-import { get } from '../utils/api'
+import { computed, onMounted } from 'vue'
+import { useInterRaterStore } from '../stores/interRater'
 
 export default {
   name: 'InterRaterButton',
   setup() {
-    const isEnabled = ref(false)
-    const availableSessions = ref(0)
-    const isLoading = ref(true)
+    const store = useInterRaterStore()
 
-    const checkInterRaterStatus = async () => {
-      isLoading.value = true
-      try {
-        const data = await get('/inter-rater/stats')
-
-        isEnabled.value = data.enabled || false
-        availableSessions.value = data.available_sessions || 0
-      } catch (error) {
-        console.error('Error checking inter-rater status:', error)
-        isEnabled.value = false
-      } finally {
-        isLoading.value = false
-      }
-    }
+    const isEnabled = computed(() => store.isEnabled)
+    const availableSessions = computed(() => store.availableSessions)
+    const isLoading = computed(() => !store.loaded)
 
     onMounted(() => {
-      checkInterRaterStatus()
-      
-      // Refresh status periodically if enabled
-      if (isEnabled.value) {
-        setInterval(checkInterRaterStatus, 300000) // Every 5 minutes
-      }
-      
-      // Listen for completion events to refresh immediately
+      store.fetchConfig()
+
+      setInterval(() => store.refresh(), 300000) // Every 5 minutes
+
       window.addEventListener('inter-rater-completed', () => {
-        checkInterRaterStatus()
+        store.refresh()
       })
     })
 

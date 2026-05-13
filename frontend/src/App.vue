@@ -4,7 +4,7 @@
       <nav class="navbar is-light" role="navigation" aria-label="main navigation">
         <div class="container">
           <div class="navbar-brand"> 
-            <router-link to="/" class="navbar-item has-text-weight-bold site-title-link">{{ siteTitle }}</router-link>
+            <router-link :to="interRaterStore.defaultUi ? '/inter-rater' : '/'" class="navbar-item has-text-weight-bold site-title-link">{{ siteTitle }}</router-link>
           </div>
           <div class="navbar-menu" v-if="!isLoginPage">
             <div class="navbar-link-group">
@@ -13,7 +13,7 @@
               
               <!-- Center section with main navigation items -->
               <div class="nav-section center-section">
-                <div class="nav-item">
+                <div v-if="!interRaterStore.defaultUi" class="nav-item">
                   <NewSessionButton />
                 </div>
                 <div class="nav-item">
@@ -56,8 +56,10 @@ import AuthControls from './components/AuthControls.vue'
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from './stores/auth'
+import { useInterRaterStore } from './stores/interRater'
 
 const route = useRoute()
+const interRaterStore = useInterRaterStore()
 const siteTitle = ref(import.meta.env.VITE_SITE_TITLE || 'ATLAS')
 const atlasVersion = ref(import.meta.env.VITE_ATLAS_VERSION || '0.1.0')
 const lastModified = ref(import.meta.env.VITE_LAST_MODIFIED || 'May 2025')

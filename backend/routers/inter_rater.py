@@ -66,7 +66,7 @@ async def get_inter_rater_stats(request: Request):
         from backend.services.inter_rater_service import inter_rater_service
 
         if not inter_rater_service.is_enabled():
-            return {"enabled": False}
+            return {"enabled": False, "default_ui": False}
 
         auth_method = get_auth_method()
         user_id = None
@@ -76,7 +76,7 @@ async def get_inter_rater_stats(request: Request):
 
         # If no authenticated user, return default stats
         if not user_id:
-            return {"enabled": True, "available_sessions": 0, "completed_sessions": 0}
+            return {"enabled": True, "available_sessions": 0, "completed_sessions": 0, "default_ui": inter_rater_service.default_ui}
 
         stats = await inter_rater_service.get_inter_rater_stats(user_id)
         return stats

@@ -21,7 +21,7 @@
 					</div>
 				</div>
 				<div class="column is-one-quarter sidebar-panel">
-					<div class="mb-4">
+					<div v-if="!interRaterStore.defaultUi" class="mb-4">
 						<TelemetryToggle />
 					</div>
 					<div class="mb-4">
@@ -45,8 +45,10 @@ import ExportButton from './ExportButton.vue'
 import { storeToRefs } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import { useSessionStore } from '@/stores/session'
+import { useInterRaterStore } from '@/stores/interRater'
 
 const sessionStore = useSessionStore()
+const interRaterStore = useInterRaterStore()
 const { 
 	chatHistory, 
 	isResponseComplete,

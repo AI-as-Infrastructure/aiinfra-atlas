@@ -22,6 +22,7 @@ class InterRaterService:
         self.project_name = os.getenv("INTER_RATER_PROJECT", "atlas-hansard")
         self.max_ratings = int(os.getenv("INTER_RATER_MAX_RATINGS", "3"))
         self.sessions_per_user = int(os.getenv("INTER_RATER_SESSIONS_PER_USER", "5"))
+        self.default_ui = os.getenv("INTER_RATER_DEFAULT_UI", "false").lower() == "true"
 
         # In-memory cache for per-user session allocations
         self._session_cache = {}
@@ -190,7 +191,8 @@ class InterRaterService:
                 "available_sessions": len(available_sessions),
                 "completed_sessions": 0,
                 "max_sessions_per_user": self.sessions_per_user,
-                "project_name": self.project_name
+                "project_name": self.project_name,
+                "default_ui": self.default_ui
             }
 
             self._stats_cache[stats_cache_key] = {
@@ -208,6 +210,7 @@ class InterRaterService:
                 "completed_sessions": 0,
                 "max_sessions_per_user": self.sessions_per_user,
                 "project_name": self.project_name,
+                "default_ui": self.default_ui,
                 "error": "Failed to retrieve inter-rater stats"
             }
 

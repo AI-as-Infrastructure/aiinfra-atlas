@@ -6,6 +6,7 @@ import InterRaterPage from '@/pages/InterRaterPage.vue'
 import AmplifyCallback from '@/pages/AmplifyCallback.vue'
 import LoginPage from '@/pages/LoginPage.vue'
 import { isCognitoEnabled, isAuthenticated } from '@/auth/amplify-auth'
+import { useInterRaterStore } from '@/stores/interRater'
 
 const routes = [
   { path: '/', component: ChatContainer, meta: { requiresAuth: true } },
@@ -27,6 +28,20 @@ const router = createRouter({
 
 // Navigation guard for authentication
 router.beforeEach(async (to, from, next) => {
+  // Inter-rater default UI redirect (before auth checks so it works for all auth modes)
+  if (to.path === '/') {
+    try {
+      const interRaterStore = useInterRaterStore()
+      await interRaterStore.fetchConfig()
+      if (interRaterStore.defaultUi) {
+        next('/inter-rater')
+        return
+      }
+    } catch (e) {
+      console.error('Error checking inter-rater default UI:', e)
+    }
+  }
+
   // Skip auth check if Cognito is disabled
   if (!isCognitoEnabled()) {
     next()

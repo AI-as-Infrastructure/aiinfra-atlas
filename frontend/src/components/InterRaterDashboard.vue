@@ -3,7 +3,7 @@
     <div v-if="loading" class="loading-state">
       <div class="has-text-centered">
         <div class="loading-spinner"></div>
-        <p class="mt-3">Loading inter-ratings...</p>
+        <p class="mt-3">Loading inter-rating tasks, please wait...</p>
       </div>
     </div>
 

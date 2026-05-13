@@ -23,6 +23,9 @@ INTER_RATER_PROJECT=YourPhoenixProject
 # Allocation limits
 INTER_RATER_MAX_RATINGS=3          # Max inter-rater ratings per session (default: 3)
 INTER_RATER_SESSIONS_PER_USER=20   # Sessions offered per user (default: 20)
+
+# Default UI mode for focus group testing
+INTER_RATER_DEFAULT_UI=false       # Set to true for focus groups (see below)
 ```
 
 Also ensure authentication is enabled (inter-rater requires user identity):
@@ -30,6 +33,26 @@ Also ensure authentication is enabled (inter-rater requires user identity):
 AUTH_METHOD=cognito          # or AUTH_METHOD=cloudflare for tunnel deployments
 # VITE_AUTH_METHOD is derived automatically from AUTH_METHOD at build time
 ```
+
+### INTER_RATER_ENABLED vs INTER_RATER_DEFAULT_UI
+
+These two flags serve different purposes:
+
+- **`INTER_RATER_ENABLED`** — backend gate that controls whether the inter-rater feature exists at all. When `false`, the API returns `enabled: false`, the nav button is hidden, and the `/inter-rater` page shows nothing. This is the master switch.
+
+- **`INTER_RATER_DEFAULT_UI`** — UI mode toggle (requires `INTER_RATER_ENABLED=true`). When `true`, the application enters "focus group mode":
+  - Users land on the inter-rater page instead of the chat page
+  - The site title link points to `/inter-rater` instead of `/`
+  - The "New Session" button is hidden from the header
+  - The privacy toggle is hidden (telemetry must be on for focus group data collection)
+
+**Typical configurations:**
+
+| Scenario | INTER_RATER_ENABLED | INTER_RATER_DEFAULT_UI |
+|----------|--------------------|-----------------------|
+| Normal operation (no inter-rating) | `false` | `false` |
+| Inter-rating available alongside chat | `true` | `false` |
+| Focus group testing (inter-rater only) | `true` | `true` |
 
 ## Configuration Guidelines
 
