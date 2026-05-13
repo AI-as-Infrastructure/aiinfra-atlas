@@ -29,6 +29,7 @@ DEFAULT_FILE = Path("data/seed_questions.json")
 DEFAULT_API = "http://localhost:8000"
 DEFAULT_MAX_RATINGS = 1  # matches .env.development; overridden by INTER_RATER_MAX_RATINGS
 SSE_TIMEOUT_SECS = 300
+MAX_RETRIES = 2
 
 
 @dataclass
@@ -157,6 +158,18 @@ def post_and_drain(api_base: str, q: dict, index: int) -> SeedResult:
     return result
 
 
+def _submit_with_retry(api_base: str, q: dict, index: int, max_retries: int) -> SeedResult:
+    """Submit a question, retrying with fresh IDs on failure."""
+    for attempt in range(1 + max_retries):
+        r = post_and_drain(api_base, q, index)
+        if r.ok:
+            return r
+        if attempt < max_retries:
+            print(f"      ↻ retry {attempt + 1}/{max_retries} for question {index}", flush=True)
+            time.sleep(2)
+    return r
+
+
 def verify_in_phoenix(qa_ids: List[str]) -> dict:
     """
     Best-effort Phoenix verification: check that each qa_id has both an LLM
@@ -227,6 +240,7 @@ def main() -> int:
     parser.add_argument("--count", type=int, default=0, help="Seed only the first N questions (0 = all)")
     parser.add_argument("--dry-run", action="store_true", help="Validate JSON and print sizing check, then exit")
     parser.add_argument("--api", default=DEFAULT_API, help="API base URL")
+    parser.add_argument("--retries", type=int, default=MAX_RETRIES, help="Max retries per failed question")
     parser.add_argument("--no-verify", action="store_true", help="Skip Phoenix span verification at end")
     parser.add_argument("--verify-wait", type=int, default=15, help="Seconds to wait for spans to flush before verification")
     args = parser.parse_args()
@@ -246,7 +260,7 @@ def main() -> int:
     results: List[SeedResult] = []
     for i, q in enumerate(questions, start=1):
         print(f"[{i}/{len(questions)}] {q['corpus_filter']} :: {q['question'][:80]}", flush=True)
-        r = post_and_drain(args.api, q, i)
+        r = _submit_with_retry(args.api, q, i, args.retries)
         results.append(r)
         status = "ok" if r.ok else "FAIL"
         details = []
