@@ -107,7 +107,11 @@ def post_and_drain(api_base: str, q: dict, index: int) -> SeedResult:
             json=payload,
             stream=True,
             timeout=SSE_TIMEOUT_SECS,
-            headers={"Accept": "text/event-stream"},
+            headers={
+                "Accept": "text/event-stream",
+                "X-Telemetry-Opt-In": "true",
+                "X-Trace-Id": qa_id,
+            },
         ) as resp:
             if resp.status_code != 200:
                 result.error = f"HTTP {resp.status_code}: {resp.text[:200]}"
@@ -169,8 +173,14 @@ def verify_in_phoenix(qa_ids: List[str]) -> dict:
         print("PHOENIX_PROJECT_NAME not set; skipping post-seed verification")
         return {}
 
+    endpoint = os.getenv("PHOENIX_COLLECTOR_ENDPOINT")
+    api_key = os.getenv("PHOENIX_API_KEY")
+    if not endpoint or not api_key:
+        print("PHOENIX_COLLECTOR_ENDPOINT or PHOENIX_API_KEY not set; skipping verification")
+        return {}
+
     from datetime import datetime, timedelta
-    client = Client()
+    client = Client(endpoint=endpoint, headers={"Authorization": f"Bearer {api_key}"})
     end = datetime.now()
     start = end - timedelta(hours=1)
 
