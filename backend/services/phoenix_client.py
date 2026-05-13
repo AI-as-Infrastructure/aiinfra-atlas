@@ -22,10 +22,16 @@ class PhoenixAPIClient:
     """Client for querying Phoenix API for inter-rater functionality."""
 
     def __init__(self):
-        # Use Phoenix Python client (same as your reports/phoenix_export.py)
+        # Use Phoenix Python client with explicit endpoint/auth to avoid
+        # env-var parsing issues (URL-encoding) and version-mismatch problems.
         try:
             from phoenix import Client
-            self.client = Client()
+            endpoint = os.getenv("PHOENIX_COLLECTOR_ENDPOINT")
+            api_key = os.getenv("PHOENIX_API_KEY")
+            if endpoint and api_key:
+                self.client = Client(endpoint=endpoint, headers={"Authorization": f"Bearer {api_key}"})
+            else:
+                self.client = Client()
             self.has_phoenix_client = True
             logger.info("Phoenix client initialized successfully")
         except ImportError as e:
