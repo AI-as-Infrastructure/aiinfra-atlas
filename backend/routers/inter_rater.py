@@ -86,51 +86,6 @@ async def get_inter_rater_stats(request: Request):
         return {"enabled": False, "error": "Failed to retrieve inter-rater stats"}
 
 
-@router.get("/api/inter-rater/debug")
-async def debug_inter_rater(request: Request):
-    """Diagnostic endpoint for inter-rater Phoenix query issues."""
-    from backend.services.inter_rater_service import inter_rater_service
-    from backend.services.phoenix_client import phoenix_client
-
-    info = {
-        "enabled": inter_rater_service.is_enabled(),
-        "project_name": phoenix_client.project_name,
-        "has_phoenix_client": phoenix_client.has_phoenix_client,
-    }
-
-    if not phoenix_client.has_phoenix_client:
-        info["error"] = "Phoenix client not initialized"
-        return info
-
-    try:
-        from datetime import datetime, timedelta
-        end = datetime.now()
-        start = end - timedelta(days=30)
-        filter_expr = "name == 'com.atlas.rag.generation.response' and span_kind == 'LLM'"
-        spans_df = phoenix_client.client.get_spans_dataframe(
-            filter_expr,
-            project_name=phoenix_client.project_name,
-            start_time=start,
-            end_time=end,
-            timeout=30,
-        )
-        if spans_df is None or spans_df.empty:
-            info["spans_found"] = 0
-            info["columns"] = []
-        else:
-            info["spans_found"] = len(spans_df)
-            info["columns"] = list(spans_df.columns)[:20]
-            # Check first span for key attributes
-            first = spans_df.iloc[0]
-            info["sample_span_id"] = str(first.get("context.span_id", "MISSING"))
-            info["sample_output"] = str(first.get("attributes.output.value", "MISSING"))[:100]
-            info["sample_input"] = str(first.get("attributes.input.value", "MISSING"))[:100]
-    except Exception as e:
-        info["query_error"] = f"{type(e).__name__}: {e}"
-
-    return info
-
-
 @router.post("/api/inter-rater/refresh-cache")
 async def refresh_inter_rater_cache(request: Request):
     """
