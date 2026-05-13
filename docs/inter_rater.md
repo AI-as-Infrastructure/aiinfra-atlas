@@ -6,7 +6,7 @@ The inter-rater feature enables authenticated users to provide secondary (inter-
 ## Key Guarantees
 - **Authentication required** (Cognito JWT tokens)
 - **Users only rate sessions they did not originally author** (automatic exclusion)
-- **Users only see sessions with existing feedback annotations** (no empty sessions)
+- **Sessions are eligible regardless of baseline feedback** — both organically generated sessions and seeded focus-group sessions are surfaced
 - **Anonymity**: users are represented by irreversible anonymous IDs
 - **No client IPs** collected, logged, or exported
 - **Inter-rater annotations** in Phoenix are clearly labeled and separate from original ratings
@@ -94,6 +94,53 @@ Total time = SESSIONS_PER_USER × 5-10 minutes
 
 With `SESSIONS_PER_USER=20`: **100-200 minutes per user**
 
+## Seeding Sessions for Focus Group Testing
+
+For focus-group studies (e.g. 15 raters × 20 ratings each), there is rarely enough organic traffic to provide a pre-populated pool of sessions. The seeding script runs a JSON file of questions through the live RAG pipeline so each question becomes a ratable session in Phoenix — with real LLM answers and real citations, but no baseline feedback (so the only feedback comes from focus-group participants).
+
+### Workflow on prod
+
+```bash
+git pull
+make seed   # uses config/.env.development by default; override with ENV_FILE
+```
+
+The script targets `localhost:8000` directly, so `AUTH_METHOD=cloudflare` stays on for public traffic the entire time — no maintenance window is required.
+
+### Sizing
+
+The seed pool must be large enough to support the focus group's total ratings:
+
+```
+pool_size ≥ (participants × ratings_per_participant) / INTER_RATER_MAX_RATINGS
+```
+
+For the default focus group target (15 × 20 = 300 rating slots) with `MAX_RATINGS=3`, that means ≥100 questions. The script prints a sizing check at startup and warns if the pool is undersized.
+
+### Files
+
+- `data/seed_questions.json` — editable list of `{question, corpus_filter}` entries. Update on the server before running `make seed`; no code deployment required.
+- `utils/scripts/seed_questions.py` — POSTs each question to `/api/ask/stream`, drains the SSE stream to completion, and verifies that both the LLM span and the `com.atlas.rag.references` (citations) span land in Phoenix.
+
+### Useful options
+
+- `make seed-dry` — validate JSON and print the sizing check without submitting
+- `make seed SEED_ARGS="--count 5"` — seed only the first 5 questions (testing)
+- `make seed SEED_ARGS="--no-verify"` — skip the post-seed Phoenix verification pass
+- `ENV_FILE=config/.env.production make seed` — use the prod env file when running on the prod box
+
+### Resetting between test runs
+
+For iterative testing of the inter-rating UI, `make seed-reset` deletes the configured `INTER_RATER_PROJECT` from Phoenix entirely — sessions, annotations, the lot. Run `make seed` afterwards to restore the baseline. The reset workflow is intended for dedicated test projects (e.g. set `INTER_RATER_PROJECT=ATLAS-SeedTest` in your env file) so it doesn't disturb organic data.
+
+Safety:
+- The script refuses to delete projects whose names contain "prod" or "production" unless `--force` is passed (`make seed-reset SEED_ARGS="--force --yes"`).
+- An exact project-name confirmation prompt is required unless `--yes` is passed.
+
+### Behavior
+
+Seeded sessions have no baseline (`original`) feedback. The inter-rater service surfaces them anyway; the first participant rating on a seeded session is tagged `inter_rater_1` (no `original` annotation is ever created for seeded sessions, so all 15 raters are treated symmetrically).
+
 ## Architecture
 - Backend
   - `backend/services/inter_rater_service.py`: allocation, per-user cache, limits
@@ -111,8 +158,8 @@ With `SESSIONS_PER_USER=20`: **100-200 minutes per user**
 2. Inter-rater button calls `GET /api/inter-rater/stats`
 3. Backend verifies JWT, derives anonymous ID
 4. Allocation service queries Phoenix for eligible sessions and applies rules:
-   - **Only include sessions with existing feedback annotations** (no empty sessions)
-   - **Exclude sessions authored by this anonymous user** (prevents self-rating)
+   - **Include all generation-response spans** (sessions without baseline feedback are eligible — see Seeding section)
+   - **Exclude sessions authored by this anonymous user** (prevents self-rating; seeded sessions have no `original_user_id` and pass through)
    - **Exclude sessions already inter-rated by this user** (prevents duplicate rating)
    - **Enforce `INTER_RATER_MAX_RATINGS`** limit (default: 3 per session)
    - **Apply deterministic user-specific allocation** (same user always gets same sessions)
@@ -250,7 +297,7 @@ Both main ratings and inter-ratings use the same field order - **all 9 fields ar
 - **No sessions available**: 
   - Verify `INTER_RATER_ENABLED=true` in .env
   - Check `INTER_RATER_PROJECT` matches your Phoenix project
-  - Ensure initial feedback with **user_id** exists in Phoenix annotations
+  - Confirm `com.atlas.rag.generation.response` spans exist in the project (either from real user traffic or from `make seed`)
   - Verify user is authenticated (Cognito JWT token present)
 - **User sees own ratings**: 
   - Fixed: Frontend now sends Authorization headers with all feedback submissions

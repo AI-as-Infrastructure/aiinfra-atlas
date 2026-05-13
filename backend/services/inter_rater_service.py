@@ -124,8 +124,8 @@ class InterRaterService:
             sanitized_user_id = user_id[:8] + "..." if len(user_id) > 8 else user_id
             logger.info(f"Querying Phoenix for inter-rater sessions for user {sanitized_user_id}")
 
-            # query_spans_with_feedback already uses the annotations cache internally
-            all_sessions = await phoenix_client.query_spans_with_feedback(
+            # query_spans_for_inter_rating already uses the annotations cache internally
+            all_sessions = await phoenix_client.query_spans_for_inter_rating(
                 exclude_user_id=user_id,
                 limit=self.sessions_per_user * 10,
                 include_citations=include_citations

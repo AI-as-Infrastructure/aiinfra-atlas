@@ -1,13 +1,13 @@
 """
-Phoenix API client for querying spans with feedback for inter-rater reliability.
+Phoenix API client for querying spans eligible for inter-rater reliability.
 
 This client handles:
-1. Querying Phoenix for existing spans with feedback using the Python client
+1. Querying Phoenix for generation response spans using the Python client
 2. Extracting session data for inter-rating
-3. Using the local AnnotationsCache for fast feedback lookups
+3. Using the local AnnotationsCache for fast annotation lookups
 
-The client uses the Phoenix Python client for span queries and the
-AnnotationsCache for annotation lookups (no per-span HTTP round-trips).
+Spans with no baseline ("original") feedback are still eligible — seeded
+sessions for focus group testing intentionally have no baseline ratings.
 """
 
 import logging
@@ -40,7 +40,7 @@ class PhoenixAPIClient:
         # Align default with telemetry project if env not provided
         self.project_name = os.getenv("INTER_RATER_PROJECT", os.getenv("PHOENIX_PROJECT_NAME", "atlas-telemetry"))
 
-    async def query_spans_with_feedback(
+    async def query_spans_for_inter_rating(
         self,
         exclude_user_id: str = None,
         limit: int = 10,
@@ -48,9 +48,10 @@ class PhoenixAPIClient:
         include_citations: bool = True
     ) -> List[Dict[str, Any]]:
         """
-        Query Phoenix for spans that have original feedback and are eligible for inter-rating.
+        Query Phoenix for generation response spans eligible for inter-rating.
 
-        Uses the AnnotationsCache for feedback lookups (no per-span HTTP calls).
+        Spans are surfaced whether or not they carry baseline ("original")
+        feedback — seeded focus-group sessions intentionally have none.
 
         Args:
             exclude_user_id: User ID to exclude (don't show user their own sessions)
@@ -62,7 +63,7 @@ class PhoenixAPIClient:
             List of session data suitable for inter-rating
 
         Raises:
-            ValueError: When no Phoenix data is available for inter-rating
+            ValueError: When Phoenix is unavailable or the query fails
         """
 
         if not self.has_phoenix_client:
@@ -77,7 +78,7 @@ class PhoenixAPIClient:
                 logger.info(f"Retrieved {len(real_sessions)} sessions from Phoenix project '{self.project_name}'")
                 return real_sessions
             else:
-                logger.info(f"No sessions with feedback found in Phoenix project '{self.project_name}' for the last {days_back} days")
+                logger.info(f"No eligible sessions found in Phoenix project '{self.project_name}' for the last {days_back} days")
                 return []
         except ValueError:
             raise
@@ -136,10 +137,6 @@ class PhoenixAPIClient:
             ]
             annotations_cache.load(all_span_ids)
 
-            # Now all lookups are local dict reads
-            spans_with_feedback = annotations_cache.span_ids_with_feedback()
-            logger.info(f"Annotations cache: {len(spans_with_feedback)} spans have user feedback")
-
             # Build session data — all lookups are local, no HTTP calls
             feedback_spans = []
 
@@ -153,14 +150,8 @@ class PhoenixAPIClient:
                 if not span_id:
                     continue
 
-                # Fast local check: does this span have user feedback?
-                if span_id not in spans_with_feedback:
-                    continue
-
-                # Get feedback from cache (local dict read)
-                original_feedback = annotations_cache.get_user_feedback(span_id)
-                if not original_feedback:
-                    continue
+                # Baseline feedback is optional — seeded sessions have none.
+                original_feedback = annotations_cache.get_user_feedback(span_id) or {}
 
                 # Extract attributes
                 attributes = {}
@@ -187,7 +178,8 @@ class PhoenixAPIClient:
                     "citations": citations,
                     "inter_rater_count": annotations_cache.get_inter_rater_count(span_id),
                     "project_name": self.project_name,
-                    "original_user_id": original_feedback.get('user_id', 'unknown')  # Used only for filtering, not sent to frontend
+                    # Used only for filtering own sessions; None when seeded / no baseline.
+                    "original_user_id": original_feedback.get('user_id'),
                 }
 
                 feedback_spans.append(session_data)
@@ -231,7 +223,7 @@ class PhoenixAPIClient:
             for session in result:
                 session.pop('original_user_id', None)
 
-            logger.info(f"Returning {len(result)} spans with feedback for inter-rating")
+            logger.info(f"Returning {len(result)} spans for inter-rating")
             return result
 
         except Exception as e:
