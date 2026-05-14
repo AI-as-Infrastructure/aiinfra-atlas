@@ -24,9 +24,11 @@ class InterRaterService:
         self.sessions_per_user = int(os.getenv("INTER_RATER_SESSIONS_PER_USER", "5"))
         self.default_ui = os.getenv("INTER_RATER_DEFAULT_UI", "false").lower() == "true"
 
-        # In-memory cache for per-user session allocations
+        # In-memory cache for per-user session allocations.
+        # Short window so count-aware ranking stays in step with current
+        # inter_rater_count as the focus group progresses.
         self._session_cache = {}
-        self._cache_timeout = 300  # 5 minutes
+        self._cache_timeout = 60  # 1 minute
 
         # Stats cache
         self._stats_cache = {}
@@ -50,27 +52,30 @@ class InterRaterService:
 
     def _allocate_sessions_to_user(self, available_sessions: List[Dict[str, Any]], user_id: str) -> List[Dict[str, Any]]:
         """
-        Deterministically rank sessions for a user using consistent hashing.
+        Rank sessions for a user, prioritising under-rated sessions.
 
-        Each user gets a unique, deterministic ordering of available sessions
-        via SHA-256(span_id:user_id). Different users see different orderings,
-        so they naturally spread across sessions. The max_ratings cap is
-        enforced upstream by the inter_rater_count pre-filter — once a
-        session reaches max_ratings, it drops out of available_sessions
-        for all users on the next cache refresh.
+        Primary sort key: inter_rater_count ASC — sessions with fewer existing
+        ratings surface first, so the pool fills bottom-up and every session
+        is more likely to clear the ≥2-ratings floor before any session is
+        saturated. Tie-breaker: SHA-256(span_id:user_id) — gives each user a
+        deterministic, de-correlated ordering within a count bucket so two
+        users at the same count don't dogpile the same session.
+
+        The max_ratings cap is enforced upstream by the inter_rater_count
+        pre-filter — once a session reaches max_ratings it drops out of
+        available_sessions for all users on the next cache refresh.
         """
         if not available_sessions:
             return []
 
-        # Score each session deterministically for this user
         scored = []
         for session in available_sessions:
+            count = session.get('inter_rater_count', 0)
             pair = f"{session.get('span_id', '')}:{user_id}"
             h = hashlib.sha256(pair.encode()).hexdigest()
-            score = int(h[:16], 16)
-            scored.append((score, session))
+            tiebreak = int(h[:16], 16)
+            scored.append(((count, tiebreak), session))
 
-        # Sort by score — each user gets a different ordering
         scored.sort(key=lambda x: x[0])
 
         return [s for _, s in scored[:self.sessions_per_user]]

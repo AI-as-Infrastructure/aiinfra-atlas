@@ -1,6 +1,6 @@
 # auth Specification
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Debug Endpoint Not Available in Production
 The `/api/debug/user-id` endpoint MUST NOT be accessible in production environments.

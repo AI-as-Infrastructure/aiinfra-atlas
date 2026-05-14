@@ -54,6 +54,46 @@ These two flags serve different purposes:
 | Inter-rating available alongside chat | `true` | `false` |
 | Focus group testing (inter-rater only) | `true` | `true` |
 
+## Default Focus-Group Study Configuration
+
+The canonical configuration for inter-rater reliability studies in ATLAS:
+
+```bash
+INTER_RATER_ENABLED=true            # required
+INTER_RATER_MAX_RATINGS=3           # 3 independent ratings per prompt
+INTER_RATER_SESSIONS_PER_USER=20    # each reviewer rates 20 prompts
+INTER_RATER_DEFAULT_UI=true         # reviewers see only the inter-rater page
+INTER_RATER_PROJECT=<must match PHOENIX_PROJECT_NAME>
+```
+
+Paired with a seed pool of **100 prompts** and **15 paid reviewers**, this gives a perfectly saturated 1:1 design — `100 × 3 = 300 = 15 × 20`. Under full attendance every prompt receives exactly 3 independent ratings, suitable for academic IRR analysis (Fleiss' κ across the whole pool with no mixed-N caveats) and for fine-tuning labels.
+
+These values are the default in `config/.env.production` and `config/.env.staging`. The development template (`config/.env.template`) carries the same `MAX_RATINGS=3` so a fresh install matches the canonical study design; if you're iterating locally as a solo developer, override `INTER_RATER_MAX_RATINGS=1` in your `.env.development` so a single rating is enough to saturate a session for visual testing.
+
+### Issues Researchers Must Address
+
+The harness enforces the rating-allocation math, but a good study outcome depends on several things outside its control. Plan for each of these before launching:
+
+1. **Reviewer recruitment and payment.** Payment must be contingent on completing all 20 ratings, with the contract signed before reviewers see any prompts. The saturated 1:1 design has no automatic recovery path if a reviewer abandons mid-study — their share of triple-coverage is permanently lost. Have 1–2 standby reviewers ready in case of legitimate withdrawal (illness, hardware failure).
+
+2. **Reviewer briefing and rubric.** The 6 Likert scales (factual accuracy, corpus fidelity, analysis quality, relevance, difficulty, clarity) need consistent interpretation across raters, or IRR will be artificially depressed. Provide written rubrics with concrete examples for each scale point and run a short calibration session — ideally rating 2–3 sample prompts together — before launch.
+
+3. **Pilot run.** Seed and rate at least 5 prompts with 1–2 reviewers before the main study to verify the full pipeline (seeding → allocation → submission → Phoenix annotations → export). Use `make seed SEED_ARGS="--count 5"` against a dedicated test project (e.g. `INTER_RATER_PROJECT=ATLAS-Pilot`) so the live study's data stays clean.
+
+4. **Question pool curation.** `data/seed_questions.json` should be reviewed by domain experts before seeding. Once a study has begun, the pool is locked — replacing a question mid-study invalidates the IRR analysis. Edit-then-seed is the workflow; never edit during a live study.
+
+5. **Phoenix project naming.** `INTER_RATER_PROJECT` must match `PHOENIX_PROJECT_NAME` exactly (case-sensitive). Mismatches cause seeded sessions to land in one project while the allocator queries another, surfacing zero sessions to reviewers. Verify the match with `make seed-dry` before launch.
+
+6. **Ethics, consent, and anonymisation.** Get appropriate IRB / ethics-committee approval and signed consent before reviewers begin. ATLAS anonymises user IDs irreversibly via `anonymous_id_service`, but the reviewer-identity → payment-record mapping is the researcher's responsibility and must be stored separately from the rating data.
+
+7. **Data export and backup.** Phoenix annotations are the only source of truth for ratings. Export and back up the project immediately after the study completes, before any reset or cleanup. Phoenix retention policies vary by host — do not assume the data will persist indefinitely.
+
+8. **Outlier handling protocol.** Decide in advance what to do if one reviewer's ratings are systematically distant from the others (e.g. always 5/5, or consistently low). Pre-registering the outlier-exclusion rule (on OSF or similar) avoids post-hoc bias accusations in peer review.
+
+9. **Schedule and fatigue.** At 5–10 minutes per prompt, 20 prompts is 100–200 minutes per reviewer. Encourage reviewers to split this across two sittings rather than rush through in one — rating quality degrades with fatigue. The 60-second allocation cache expires between sittings so reviewers can resume without seeing stale queues.
+
+10. **Reproducibility for the paper.** Record at study launch: the exact commit SHA, the active test target (LLM provider, model name, temperature), the vector store version, and the Phoenix project name. Replication requires the same code, the same RAG configuration, and the same prompt pool.
+
 ## Configuration Guidelines
 
 ### Choosing Optimal Values
@@ -77,13 +117,13 @@ INTER_RATER_SESSIONS_PER_USER=10   # 10 sessions per user
 - Provides good statistical reliability
 - Balanced workload per user
 
-**Current Study (15 users, 100 prompts):**
+**Current Study (15 paid reviewers × 20 ratings = exactly 3 ratings/prompt):**
 ```bash
 INTER_RATER_MAX_RATINGS=3          # 3 inter-raters per session
 INTER_RATER_SESSIONS_PER_USER=20   # 20 sessions per user (default)
 ```
-- 100 prompts x 3 ratings = 300 total = 15 users x 20 ratings
-- SHA-256 allocation with max_ratings cap ensures even distribution
+- 100 prompts × 3 ratings = 300 = 15 reviewers × 20 ratings — perfectly saturated 1:1
+- Count-aware allocation drives every prompt to exactly 3 ratings under staggered arrival; suitable for Fleiss' κ across the full pool
 
 **Large Teams (10+ users):**
 ```bash
@@ -105,7 +145,8 @@ Minimum users needed = (N × INTER_RATER_MAX_RATINGS) / INTER_RATER_SESSIONS_PER
 - 100 sessions to cover
 - MAX_RATINGS=3
 - SESSIONS_PER_USER=20
-- Minimum users = (100 × 3) / 20 = **15 users needed**
+- Demand = 15 × 20 = **300 ratings**, distributed by the count-aware allocator so each of the 100 sessions receives **exactly 3 ratings** under full attendance
+- Worst-case (one reviewer fully no-shows): 80 prompts triple-rated, 20 double-rated — still cleanly above the ≥2 floor
 
 ### Workload Estimation
 
@@ -132,13 +173,15 @@ The script targets `localhost:8000` directly, so `AUTH_METHOD=cloudflare` stays 
 
 ### Sizing
 
-The seed pool must be large enough to support the focus group's total ratings:
+The seed pool size determines the rating-density per prompt:
 
 ```
-pool_size ≥ (participants × ratings_per_participant) / INTER_RATER_MAX_RATINGS
+pool_size = (participants × ratings_per_participant) / INTER_RATER_MAX_RATINGS
 ```
 
-For the default focus group target (15 × 20 = 300 rating slots) with `MAX_RATINGS=3`, that means ≥100 questions. The script prints a sizing check at startup and warns if the pool is undersized.
+For the default focus group target (15 reviewers × 20 ratings = 300 ratings) with `MAX_RATINGS=3`, this gives a saturated 1:1 design at **100 prompts × 3 ratings = 300**. Every prompt receives exactly 3 ratings under full attendance, which is the gold standard for inter-rater reliability (single Fleiss' κ across the pool, no mixed-N caveats).
+
+This design assumes paid reviewers with completion-linked payment so attrition is rare. If you can't assume that, add a buffer of ~20% (pool=120) to protect the ≥2-ratings-per-prompt floor against dropouts — at the cost of mixing 2- and 3-rated prompts in the output. The script prints a sizing check at startup and warns if the pool is undersized.
 
 ### Files
 
@@ -191,36 +234,17 @@ Seeded sessions have no baseline (`original`) feedback. The inter-rater service 
 
 ## Allocation Algorithm Details
 
-The allocation system uses **deterministic user-specific allocation** to ensure:
-- Each user gets a consistent set of sessions (same user → same sessions)
-- Different users get different, non-overlapping sessions
-- Fair distribution across all available sessions
+The allocator (`_allocate_sessions_to_user` in `backend/services/inter_rater_service.py`) ranks eligible sessions for each user using a **count-aware** sort that fills the pool bottom-up:
 
-### How It Works
+1. Primary key — `inter_rater_count ASC`. Sessions with fewer existing ratings surface first, so the pool fills evenly and every session is more likely to clear the ≥2-ratings floor before any session is saturated.
+2. Tiebreaker — `SHA-256(span_id:user_id)`. Within a count bucket (e.g. all sessions still at 0 ratings) each user gets a deterministic, de-correlated ordering so two users at the same count don't dogpile the same session.
+3. Top-N selected — first `INTER_RATER_SESSIONS_PER_USER` sessions returned.
 
-**Implementation:** `backend/services/inter_rater_service.py` (_allocate_sessions_to_user method, lines 51-123)
+The per-user cache TTL is **60 seconds** so rankings stay in step with current `inter_rater_count` as ratings come in during the focus group. The `INTER_RATER_MAX_RATINGS` cap is enforced upstream of the ranker via the `inter_rater_count` pre-filter — capped sessions drop out of `available_sessions` on the next cache refresh.
 
-1. **Sort Sessions:** All eligible sessions are sorted by `span_id` for consistent ordering
-2. **Hash User ID:** User's Cognito UUID is hashed to generate a starting position
-3. **Allocate Sequential Sessions:** Starting from hash position, allocate N sessions where N = `INTER_RATER_SESSIONS_PER_USER`
-4. **Wrap Around:** If needed, wrap around to the beginning (modulo operation)
+### Why count-aware ranking
 
-### Example with 15 Sessions
-
-```
-Configuration:
-- INTER_RATER_SESSIONS_PER_USER=5
-- 15 eligible sessions available (sorted by span_id)
-
-User A (hash=0):  → Sessions [0, 1, 2, 3, 4]
-User B (hash=5):  → Sessions [5, 6, 7, 8, 9]
-User C (hash=10): → Sessions [10, 11, 12, 13, 14]
-User D (hash=2):  → Sessions [2, 3, 4, 5, 6]  (overlaps with A and B)
-```
-
-**Note:** Some overlap occurs naturally. This is acceptable because the system also checks:
-- User hasn't already rated the session
-- Session hasn't reached `INTER_RATER_MAX_RATINGS` capacity
+Pure hash-based ranking (the previous behaviour) de-correlates users but does not load-balance ratings across sessions. With 15 users picking top-20 from a 100-session pool, ~16% of sessions end up with fewer than 2 raters under the binomial distribution. Count-aware ranking corrects this by progressively concentrating fresh ratings on the least-rated sessions, so the floor is reliably met under realistic focus-group conditions (simulated dogpile and 15-minute staggered arrival both produce 0 sessions below floor with `pool=120`).
 
 ### Progressive Filling
 
