@@ -84,6 +84,13 @@ ATLAS uses a simplified command structure for common operations. Here are the ma
 - `make backup-prod` - Backup Phoenix telemetry data from production
 - `make hansard-analysis` - Run Hansard parliamentary data analysis with visualizations
 
+### Inter-rater Reliability Study
+- `make seed` - Seed inter-rater sessions from `data/seed_questions.json` (backend must be running on localhost:8000)
+- `make seed-dry` - Validate the seed JSON and print the sizing check without submitting
+- `make seed-reset` - Delete the configured `INTER_RATER_PROJECT` from Phoenix to return to baseline (refuses prod-looking names without `--force`)
+
+See [Inter-rater Ratings](docs/inter_rater.md) for the full focus-group workflow, canonical configuration, and the researcher checklist.
+
 For detailed help on any command, use:
 ```bash
 make help-<command>
