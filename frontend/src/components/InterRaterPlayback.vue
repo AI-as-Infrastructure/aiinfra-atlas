@@ -330,21 +330,6 @@
             
           </div>
 
-          <!-- User Type -->
-          <div class="field mt-4">
-            <label class="label has-text-weight-bold">User Type</label>
-            <div class="control">
-              <label class="radio" title="Expert user: you have substantial domain knowledge relevant to this content">
-                <input type="radio" value="expert" v-model="feedback.user_type" />
-                Expert User
-              </label>
-              <label class="radio ml-3" title="Non-expert user: you do not have substantial domain expertise for this content">
-                <input type="radio" value="non_expert" v-model="feedback.user_type" />
-                Non-expert User
-              </label>
-            </div>
-          </div>
-
           <!-- Faults Section -->
           <div class="faults-section">
             <label class="section-label">Faults</label>
@@ -360,26 +345,10 @@
               <div class="fault-option">
                 <input
                   type="checkbox"
-                  id="fault-off-topic"
-                  v-model="feedback.faults.off_topic"
-                />
-                <label for="fault-off-topic">Off-topic</label>
-              </div>
-              <div class="fault-option">
-                <input
-                  type="checkbox"
                   id="fault-inappropriate"
                   v-model="feedback.faults.inappropriate"
                 />
                 <label for="fault-inappropriate">Inappropriate</label>
-              </div>
-              <div class="fault-option">
-                <input
-                  type="checkbox"
-                  id="fault-bias"
-                  v-model="feedback.faults.bias"
-                />
-                <label for="fault-bias">Bias</label>
               </div>
             </div>
           </div>
@@ -590,13 +559,10 @@ export default {
       relevance: '',
       difficulty: '',
       clarity: '',
-      user_type: '',
       feedback_text: '',
       faults: {
         hallucination: false,
-        off_topic: false,
-        inappropriate: false,
-        bias: false
+        inappropriate: false
       },
       scaleComments: {
         factual_accuracy: '',
@@ -626,8 +592,7 @@ export default {
              feedback.value.analysis_quality &&
              feedback.value.relevance &&
              feedback.value.difficulty &&
-             feedback.value.clarity &&
-             feedback.value.user_type
+             feedback.value.clarity
       if (!hasAllRatings) return false
       // Check required comments are filled
       const scales = ['factual_accuracy', 'corpus_fidelity', 'analysis_quality', 'relevance', 'difficulty', 'clarity']
@@ -665,7 +630,6 @@ export default {
           relevance: parseInt(feedback.value.relevance),
           difficulty: parseInt(feedback.value.difficulty),
           clarity: parseInt(feedback.value.clarity),
-          user_type: feedback.value.user_type || null,
           faults: feedback.value.faults,
           is_inter_rater: true,
           // rater_id is assigned by backend from the authenticated user; do not set on client
@@ -712,13 +676,10 @@ export default {
         relevance: '',
         difficulty: '',
         clarity: '',
-        user_type: '',
         feedback_text: '',
         faults: {
           hallucination: false,
-          off_topic: false,
-          inappropriate: false,
-          bias: false
+          inappropriate: false
         },
         scaleComments: {
           factual_accuracy: '',

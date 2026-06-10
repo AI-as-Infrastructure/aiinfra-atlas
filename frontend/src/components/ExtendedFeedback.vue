@@ -255,20 +255,6 @@
         </div>
       </div>
 
-      <!-- Additional Comments Section -->
-      <div class="field mt-4">
-        <label class="label has-text-weight-bold">User Type</label>
-        <div class="control">
-          <label class="radio" title="Expert user: you have substantial domain knowledge relevant to this content">
-            <input type="radio" value="expert" v-model="userType" :disabled="disabled" />
-            Expert User
-          </label>
-          <label class="radio ml-3" title="Non-expert user: you do not have substantial domain expertise for this content">
-            <input type="radio" value="non_expert" v-model="userType" :disabled="disabled" />
-            Non-expert User
-          </label>
-        </div>
-      </div>
       <!-- Faults Section -->
       <div class="faults-section">
         <label class="section-label">Faults</label>
@@ -285,29 +271,11 @@
           <div class="fault-option">
             <input
               type="checkbox"
-              id="fault-off-topic"
-              v-model="faults.off_topic"
-              :disabled="disabled"
-            />
-            <label for="fault-off-topic">Off-topic</label>
-          </div>
-          <div class="fault-option">
-            <input
-              type="checkbox"
               id="fault-inappropriate"
               v-model="faults.inappropriate"
               :disabled="disabled"
             />
             <label for="fault-inappropriate">Inappropriate</label>
-          </div>
-          <div class="fault-option">
-            <input
-              type="checkbox"
-              id="fault-bias"
-              v-model="faults.bias"
-              :disabled="disabled"
-            />
-            <label for="fault-bias">Bias</label>
           </div>
         </div>
       </div>
@@ -381,9 +349,7 @@ export default {
       },
       faults: {
         hallucination: false,
-        off_topic: false,
-        inappropriate: false,
-        bias: false
+        inappropriate: false
       },
       scaleComments: {
         factual_accuracy: '',
@@ -393,7 +359,6 @@ export default {
         difficulty: '',
         clarity: ''
       },
-      userType: '',
       isSubmitting: false,
       configData: null
     }
@@ -510,10 +475,6 @@ export default {
             feedbackData[`${scale}_comments`] = comment.trim()
           }
         }
-        if (this.userType) {
-          feedbackData.user_type = this.userType
-        }
-        
         // The simple feedback data (sentiment, feedback_text, etc.) is already included from completeFeedbackPayload
         // Just need to add any additional config data if it exists
         if (this.configData && Object.keys(this.configData).length > 0) {
@@ -557,9 +518,7 @@ export default {
       }
       this.faults = {
         hallucination: false,
-        off_topic: false,
-        inappropriate: false,
-        bias: false
+        inappropriate: false
       }
       this.scaleComments = {
         factual_accuracy: '',
@@ -569,7 +528,6 @@ export default {
         difficulty: '',
         clarity: ''
       }
-      this.userType = ''
     }
   },
   
