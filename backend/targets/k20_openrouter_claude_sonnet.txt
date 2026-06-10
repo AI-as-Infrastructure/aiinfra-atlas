@@ -1,0 +1,14 @@
+# K20 Claude Sonnet 4.6 via OpenRouter Test Target Configuration
+
+# LLM Configuration
+LLM_PROVIDER=OPENROUTER
+LLM_MODEL=anthropic/claude-sonnet-4.6
+
+# Search-K (fetch-k) controls the number of document chunks sent to the LLM for analysis
+SEARCH_K=20
+# Citation limit only controls the number of citations displayed in the UI
+CITATION_LIMIT=20
+SEARCH_SCORE_THRESHOLD=0.0
+
+# Target Information
+TARGET_VERSION=1.0

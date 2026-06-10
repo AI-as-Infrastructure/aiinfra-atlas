@@ -116,6 +116,7 @@ async def diagnostics(request: Request):
         "PHOENIX_API_KEY": bool(os.getenv("PHOENIX_API_KEY")),
         "ANTHROPIC_API_KEY": bool(os.getenv("ANTHROPIC_API_KEY")),
         "OPENAI_API_KEY": bool(os.getenv("OPENAI_API_KEY")),
+        "OPENROUTER_API_KEY": bool(os.getenv("OPENROUTER_API_KEY")),
     }
 
     return {

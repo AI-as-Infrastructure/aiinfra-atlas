@@ -97,11 +97,11 @@ def create_llm(
     Create an LLM instance for any supported provider.
 
     This function is the centralized implementation for creating LLM instances
-    in the ATLAS system, supporting OpenAI, Anthropic, Ollama, Bedrock, and Google providers.
+    in the ATLAS system, supporting OpenAI, Anthropic, OpenRouter, Ollama, Bedrock, and Google providers.
 
     Args:
         model_name: Name of the model
-        provider: LLM provider (openai, anthropic, ollama, bedrock, google)
+        provider: LLM provider (openai, anthropic, openrouter, ollama, bedrock, google)
         temperature: Temperature for generation
         streaming: Whether to use streaming mode
 
@@ -148,6 +148,22 @@ def create_llm(
             temperature=temperature,
             streaming=streaming
         )
+    elif provider == 'OPENROUTER':
+        openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
+        if not openrouter_api_key:
+            logger.error("OPENROUTER_API_KEY not found in environment - check environment variable loading")
+            raise ValueError("LLM provider configuration error. Contact administrator.")
+
+        # OpenRouter is OpenAI-API-compatible; route through ChatOpenAI with its base URL.
+        # Models use namespaced ids, e.g. "anthropic/claude-sonnet-4.6".
+        logger.debug("Using OpenRouter with API key")
+        return ChatOpenAI(
+            api_key=openrouter_api_key,
+            base_url=os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
+            model=model,
+            temperature=temperature,
+            streaming=streaming
+        )
     elif provider == 'OPENAI':
         openai_api_key = os.getenv("OPENAI_API_KEY")
         if not openai_api_key:
@@ -188,7 +204,7 @@ def create_llm(
             # Note: streaming is enabled by default, no need to specify
         )
     else:
-        logger.error(f"Unknown LLM provider '{provider}'. Supported: OLLAMA, ANTHROPIC, OPENAI, BEDROCK, GOOGLE.")
+        logger.error(f"Unknown LLM provider '{provider}'. Supported: OLLAMA, ANTHROPIC, OPENROUTER, OPENAI, BEDROCK, GOOGLE.")
         raise ValueError("LLM provider configuration error. Contact administrator.")
 
 def create_qa_prompt(

@@ -53,7 +53,8 @@ class TokenCounter:
         tokens = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         
         try:
-            if self.provider == "OPENAI":
+            if self.provider in ("OPENAI", "OPENROUTER"):
+                # OpenRouter returns OpenAI-format usage (prompt/completion/total_tokens)
                 tokens.update(self._extract_openai_tokens(response))
             elif self.provider == "ANTHROPIC":
                 tokens.update(self._extract_anthropic_tokens(response))
