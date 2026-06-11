@@ -41,7 +41,7 @@
             <textarea
               v-model="scaleComments.corpus_fidelity"
               class="textarea is-small"
-              :placeholder="isCommentRequired('corpus_fidelity') ? 'Free text rationale (for extreme ratings only): (required)' : 'Free text rationale (for extreme ratings only):'"
+              :placeholder="isCommentRequired('corpus_fidelity') ? 'Free text rationale (for extreme ratings only): Required' : 'Free text rationale (for extreme ratings only): Not required'"
               rows="2"
               maxlength="300"
               :disabled="disabled"
@@ -84,7 +84,7 @@
             <textarea
               v-model="scaleComments.citation_quality"
               class="textarea is-small"
-              :placeholder="isCommentRequired('citation_quality') ? 'Free text rationale (for extreme ratings only): (required)' : 'Free text rationale (for extreme ratings only):'"
+              :placeholder="isCommentRequired('citation_quality') ? 'Free text rationale (for extreme ratings only): Required' : 'Free text rationale (for extreme ratings only): Not required'"
               rows="2"
               maxlength="300"
               :disabled="disabled"
@@ -127,7 +127,7 @@
             <textarea
               v-model="scaleComments.relevance"
               class="textarea is-small"
-              :placeholder="isCommentRequired('relevance') ? 'Free text rationale (for extreme ratings only): (required)' : 'Free text rationale (for extreme ratings only):'"
+              :placeholder="isCommentRequired('relevance') ? 'Free text rationale (for extreme ratings only): Required' : 'Free text rationale (for extreme ratings only): Not required'"
               rows="2"
               maxlength="300"
               :disabled="disabled"
@@ -170,7 +170,7 @@
             <textarea
               v-model="scaleComments.coherence"
               class="textarea is-small"
-              :placeholder="isCommentRequired('coherence') ? 'Free text rationale (for extreme ratings only): (required)' : 'Free text rationale (for extreme ratings only):'"
+              :placeholder="isCommentRequired('coherence') ? 'Free text rationale (for extreme ratings only): Required' : 'Free text rationale (for extreme ratings only): Not required'"
               rows="2"
               maxlength="300"
               :disabled="disabled"
@@ -213,7 +213,7 @@
             <textarea
               v-model="scaleComments.uncertainty"
               class="textarea is-small"
-              :placeholder="isCommentRequired('uncertainty') ? 'Free text rationale (for extreme ratings only): (required)' : 'Free text rationale (for extreme ratings only):'"
+              :placeholder="isCommentRequired('uncertainty') ? 'Free text rationale (for extreme ratings only): Required' : 'Free text rationale (for extreme ratings only): Not required'"
               rows="2"
               maxlength="300"
               :disabled="disabled"
@@ -256,7 +256,7 @@
             <textarea
               v-model="scaleComments.historical_contextualisation"
               class="textarea is-small"
-              :placeholder="isCommentRequired('historical_contextualisation') ? 'Free text rationale (for extreme ratings only): (required)' : 'Free text rationale (for extreme ratings only):'"
+              :placeholder="isCommentRequired('historical_contextualisation') ? 'Free text rationale (for extreme ratings only): Required' : 'Free text rationale (for extreme ratings only): Not required'"
               rows="2"
               maxlength="300"
               :disabled="disabled"
