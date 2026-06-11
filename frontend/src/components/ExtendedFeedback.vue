@@ -2,60 +2,21 @@
   <div class="extended-feedback">
     <div class="feedback-header">
       <h4>Extended Feedback</h4>
-      <p class="subtitle">Help us improve our understanding of LLM RAG systems by providing detailed feedback on the LLM output. Rate each of the following, where 1 is the lowest rating, and 5 is the highest.</p>
+      <p class="subtitle"><em>Please provide an independent evaluation of this LLM response.</em></p>
+      <p class="subtitle"><em>For each of the following points, rate the LLM response on a scale of 1 (very poor) to 5 (very good). For ratings that are 1, 2, or 5, please provide a one sentence rationale.</em></p>
     </div>
 
     <div class="feedback-content">
       <!-- Likert Scale Sections -->
       <div class="likert-sections">
-        <!-- Factual Accuracy -->
-        <div class="feedback-section">
-          <label class="section-label">
-            Factual Accuracy
-            <span class="tooltip" title="Factual accuracy of LLM output">ⓘ</span>
-          </label>
-          <div class="likert-scale">
-            <div
-              v-for="value in 5"
-              :key="`accuracy-${value}`"
-              class="likert-option"
-              @click="setRating('factual_accuracy', value)"
-            >
-              <input
-                type="radio"
-                :id="`accuracy-${value}`"
-                :value="value"
-                v-model="ratings.factual_accuracy"
-                :disabled="disabled"
-              />
-              <label :for="`accuracy-${value}`" class="likert-label">
-                <span class="likert-circle" :class="{ active: ratings.factual_accuracy >= value }"></span>
-                <span class="likert-text">{{ value }}</span>
-              </label>
-            </div>
-          </div>
-          <div v-if="ratings.factual_accuracy !== null" class="scale-comment">
-            <textarea
-              v-model="scaleComments.factual_accuracy"
-              class="textarea is-small"
-              :placeholder="isCommentRequired('factual_accuracy') ? 'Please explain your rating (required)' : 'Optional: explain your rating'"
-              rows="2"
-              maxlength="300"
-              :disabled="disabled"
-            ></textarea>
-            <p v-if="isCommentRequired('factual_accuracy') && !scaleComments.factual_accuracy.trim()" class="help is-danger">
-              Comment required for this rating
-            </p>
-          </div>
-        </div>
-
         <!-- Corpus Fidelity -->
         <div class="feedback-section">
           <label class="section-label">
             Corpus Fidelity
-            <span class="tooltip" title="How well the answer is grounded in, supported by, and faithful to the retrieved corpus">ⓘ</span>
+            <span class="tooltip" title="i.e. are all claims about what the Hansard records contain supported by a Hansard citation?">ⓘ</span>
           </label>
           <div class="likert-scale">
+            <span class="likert-endpoint">1 (very poor)</span>
             <div
               v-for="value in 5"
               :key="`corpus_fidelity-${value}`"
@@ -74,59 +35,62 @@
                 <span class="likert-text">{{ value }}</span>
               </label>
             </div>
+            <span class="likert-endpoint">5 (very good)</span>
           </div>
           <div v-if="ratings.corpus_fidelity !== null" class="scale-comment">
             <textarea
               v-model="scaleComments.corpus_fidelity"
               class="textarea is-small"
-              :placeholder="isCommentRequired('corpus_fidelity') ? 'Please explain your rating (required)' : 'Optional: explain your rating'"
+              :placeholder="isCommentRequired('corpus_fidelity') ? 'Free text rationale (for extreme ratings only): (required)' : 'Free text rationale (for extreme ratings only):'"
               rows="2"
               maxlength="300"
               :disabled="disabled"
             ></textarea>
             <p v-if="isCommentRequired('corpus_fidelity') && !scaleComments.corpus_fidelity.trim()" class="help is-danger">
-              Comment required for this rating
+              Rationale required for this rating
             </p>
           </div>
         </div>
 
-        <!-- Analysis Quality -->
+        <!-- Citation Quality -->
         <div class="feedback-section">
           <label class="section-label">
-            Analysis Quality
-            <span class="tooltip" title="Quality of historical analysis">ⓘ</span>
+            Citation Quality
+            <span class="tooltip" title="i.e. does each citation support the specific claim it is attached to?">ⓘ</span>
           </label>
           <div class="likert-scale">
+            <span class="likert-endpoint">1 (very poor)</span>
             <div
               v-for="value in 5"
-              :key="`analysis-${value}`"
+              :key="`citation_quality-${value}`"
               class="likert-option"
-              @click="setRating('analysis_quality', value)"
+              @click="setRating('citation_quality', value)"
             >
               <input
                 type="radio"
-                :id="`analysis-${value}`"
+                :id="`citation_quality-${value}`"
                 :value="value"
-                v-model="ratings.analysis_quality"
+                v-model="ratings.citation_quality"
                 :disabled="disabled"
               />
-              <label :for="`analysis-${value}`" class="likert-label">
-                <span class="likert-circle" :class="{ active: ratings.analysis_quality >= value }"></span>
+              <label :for="`citation_quality-${value}`" class="likert-label">
+                <span class="likert-circle" :class="{ active: ratings.citation_quality >= value }"></span>
                 <span class="likert-text">{{ value }}</span>
               </label>
             </div>
+            <span class="likert-endpoint">5 (very good)</span>
           </div>
-          <div v-if="ratings.analysis_quality !== null" class="scale-comment">
+          <div v-if="ratings.citation_quality !== null" class="scale-comment">
             <textarea
-              v-model="scaleComments.analysis_quality"
+              v-model="scaleComments.citation_quality"
               class="textarea is-small"
-              :placeholder="isCommentRequired('analysis_quality') ? 'Please explain your rating (required)' : 'Optional: explain your rating'"
+              :placeholder="isCommentRequired('citation_quality') ? 'Free text rationale (for extreme ratings only): (required)' : 'Free text rationale (for extreme ratings only):'"
               rows="2"
               maxlength="300"
               :disabled="disabled"
             ></textarea>
-            <p v-if="isCommentRequired('analysis_quality') && !scaleComments.analysis_quality.trim()" class="help is-danger">
-              Comment required for this rating
+            <p v-if="isCommentRequired('citation_quality') && !scaleComments.citation_quality.trim()" class="help is-danger">
+              Rationale required for this rating
             </p>
           </div>
         </div>
@@ -135,9 +99,10 @@
         <div class="feedback-section">
           <label class="section-label">
             Relevance
-            <span class="tooltip" title="Relevance of retrieved sources to query">ⓘ</span>
+            <span class="tooltip" title="i.e. does the LLM answer actually address the question asked, without padding or drift?">ⓘ</span>
           </label>
           <div class="likert-scale">
+            <span class="likert-endpoint">1 (very poor)</span>
             <div
               v-for="value in 5"
               :key="`relevance-${value}`"
@@ -156,100 +121,148 @@
                 <span class="likert-text">{{ value }}</span>
               </label>
             </div>
+            <span class="likert-endpoint">5 (very good)</span>
           </div>
           <div v-if="ratings.relevance !== null" class="scale-comment">
             <textarea
               v-model="scaleComments.relevance"
               class="textarea is-small"
-              :placeholder="isCommentRequired('relevance') ? 'Please explain your rating (required)' : 'Optional: explain your rating'"
+              :placeholder="isCommentRequired('relevance') ? 'Free text rationale (for extreme ratings only): (required)' : 'Free text rationale (for extreme ratings only):'"
               rows="2"
               maxlength="300"
               :disabled="disabled"
             ></textarea>
             <p v-if="isCommentRequired('relevance') && !scaleComments.relevance.trim()" class="help is-danger">
-              Comment required for this rating
+              Rationale required for this rating
             </p>
           </div>
         </div>
 
-        <!-- Difficulty -->
+        <!-- Coherence -->
         <div class="feedback-section">
           <label class="section-label">
-            Difficulty
-            <span class="tooltip" title="Difficulty of the query">ⓘ</span>
+            Coherence
+            <span class="tooltip" title="i.e. to what extent is the LLM answer well-reasoned and argued?">ⓘ</span>
           </label>
           <div class="likert-scale">
+            <span class="likert-endpoint">1 (very poor)</span>
             <div
               v-for="value in 5"
-              :key="`difficulty-${value}`"
+              :key="`coherence-${value}`"
               class="likert-option"
-              @click="setRating('difficulty', value)"
+              @click="setRating('coherence', value)"
             >
               <input
                 type="radio"
-                :id="`difficulty-${value}`"
+                :id="`coherence-${value}`"
                 :value="value"
-                v-model="ratings.difficulty"
+                v-model="ratings.coherence"
                 :disabled="disabled"
               />
-              <label :for="`difficulty-${value}`" class="likert-label">
-                <span class="likert-circle" :class="{ active: ratings.difficulty >= value }"></span>
+              <label :for="`coherence-${value}`" class="likert-label">
+                <span class="likert-circle" :class="{ active: ratings.coherence >= value }"></span>
                 <span class="likert-text">{{ value }}</span>
               </label>
             </div>
+            <span class="likert-endpoint">5 (very good)</span>
           </div>
-          <div v-if="ratings.difficulty !== null" class="scale-comment">
+          <div v-if="ratings.coherence !== null" class="scale-comment">
             <textarea
-              v-model="scaleComments.difficulty"
+              v-model="scaleComments.coherence"
               class="textarea is-small"
-              :placeholder="isCommentRequired('difficulty') ? 'Please explain your rating (required)' : 'Optional: explain your rating'"
+              :placeholder="isCommentRequired('coherence') ? 'Free text rationale (for extreme ratings only): (required)' : 'Free text rationale (for extreme ratings only):'"
               rows="2"
               maxlength="300"
               :disabled="disabled"
             ></textarea>
-            <p v-if="isCommentRequired('difficulty') && !scaleComments.difficulty.trim()" class="help is-danger">
-              Comment required for this rating
+            <p v-if="isCommentRequired('coherence') && !scaleComments.coherence.trim()" class="help is-danger">
+              Rationale required for this rating
             </p>
           </div>
         </div>
 
-        <!-- Clarity -->
+        <!-- Uncertainty -->
         <div class="feedback-section">
           <label class="section-label">
-            Clarity
-            <span class="tooltip" title="Clarity of the response">ⓘ</span>
+            Uncertainty
+            <span class="tooltip" title="i.e. to what extent does the LLM answer flag contested interpretations, gaps, or ambiguity?">ⓘ</span>
           </label>
           <div class="likert-scale">
+            <span class="likert-endpoint">1 (very poor)</span>
             <div
               v-for="value in 5"
-              :key="`clarity-${value}`"
+              :key="`uncertainty-${value}`"
               class="likert-option"
-              @click="setRating('clarity', value)"
+              @click="setRating('uncertainty', value)"
             >
               <input
                 type="radio"
-                :id="`clarity-${value}`"
+                :id="`uncertainty-${value}`"
                 :value="value"
-                v-model="ratings.clarity"
+                v-model="ratings.uncertainty"
                 :disabled="disabled"
               />
-              <label :for="`clarity-${value}`" class="likert-label">
-                <span class="likert-circle" :class="{ active: ratings.clarity >= value }"></span>
+              <label :for="`uncertainty-${value}`" class="likert-label">
+                <span class="likert-circle" :class="{ active: ratings.uncertainty >= value }"></span>
                 <span class="likert-text">{{ value }}</span>
               </label>
             </div>
+            <span class="likert-endpoint">5 (very good)</span>
           </div>
-          <div v-if="ratings.clarity !== null" class="scale-comment">
+          <div v-if="ratings.uncertainty !== null" class="scale-comment">
             <textarea
-              v-model="scaleComments.clarity"
+              v-model="scaleComments.uncertainty"
               class="textarea is-small"
-              :placeholder="isCommentRequired('clarity') ? 'Please explain your rating (required)' : 'Optional: explain your rating'"
+              :placeholder="isCommentRequired('uncertainty') ? 'Free text rationale (for extreme ratings only): (required)' : 'Free text rationale (for extreme ratings only):'"
               rows="2"
               maxlength="300"
               :disabled="disabled"
             ></textarea>
-            <p v-if="isCommentRequired('clarity') && !scaleComments.clarity.trim()" class="help is-danger">
-              Comment required for this rating
+            <p v-if="isCommentRequired('uncertainty') && !scaleComments.uncertainty.trim()" class="help is-danger">
+              Rationale required for this rating
+            </p>
+          </div>
+        </div>
+
+        <!-- Historical Contextualisation -->
+        <div class="feedback-section">
+          <label class="section-label">
+            Historical Contextualisation
+            <span class="tooltip" title="i.e. to what extent does the LLM answer contextualise the primary material with additional knowledge?">ⓘ</span>
+          </label>
+          <div class="likert-scale">
+            <span class="likert-endpoint">1 (very poor)</span>
+            <div
+              v-for="value in 5"
+              :key="`historical_contextualisation-${value}`"
+              class="likert-option"
+              @click="setRating('historical_contextualisation', value)"
+            >
+              <input
+                type="radio"
+                :id="`historical_contextualisation-${value}`"
+                :value="value"
+                v-model="ratings.historical_contextualisation"
+                :disabled="disabled"
+              />
+              <label :for="`historical_contextualisation-${value}`" class="likert-label">
+                <span class="likert-circle" :class="{ active: ratings.historical_contextualisation >= value }"></span>
+                <span class="likert-text">{{ value }}</span>
+              </label>
+            </div>
+            <span class="likert-endpoint">5 (very good)</span>
+          </div>
+          <div v-if="ratings.historical_contextualisation !== null" class="scale-comment">
+            <textarea
+              v-model="scaleComments.historical_contextualisation"
+              class="textarea is-small"
+              :placeholder="isCommentRequired('historical_contextualisation') ? 'Free text rationale (for extreme ratings only): (required)' : 'Free text rationale (for extreme ratings only):'"
+              rows="2"
+              maxlength="300"
+              :disabled="disabled"
+            ></textarea>
+            <p v-if="isCommentRequired('historical_contextualisation') && !scaleComments.historical_contextualisation.trim()" class="help is-danger">
+              Rationale required for this rating
             </p>
           </div>
         </div>
@@ -257,7 +270,7 @@
 
       <!-- Faults Section -->
       <div class="faults-section">
-        <label class="section-label">Faults</label>
+        <p class="faults-instruction">Finally, please note that if you identified any of the following faults in the LLM answer. If a fault is identified please provide a one sentence explanation.</p>
         <div class="faults-grid">
           <div class="fault-option">
             <input
@@ -266,17 +279,37 @@
               v-model="faults.hallucination"
               :disabled="disabled"
             />
-            <label for="fault-hallucination">Hallucination</label>
+            <label for="fault-hallucination">
+              Hallucination
+              <span class="tooltip" title="e.g. invented facts in the answer or false attributions of content to a source">ⓘ</span>
+            </label>
           </div>
           <div class="fault-option">
             <input
               type="checkbox"
-              id="fault-inappropriate"
-              v-model="faults.inappropriate"
+              id="fault-harmful-handling"
+              v-model="faults.harmful_handling"
               :disabled="disabled"
             />
-            <label for="fault-inappropriate">Inappropriate</label>
+            <label for="fault-harmful-handling">
+              Harmful handling
+              <span class="tooltip" title="i.e. the LLM adopts or endorses prejudices contained in the Hansard records in its own analytical voice, or introduces stereotyping/derogatory framing not present in the cited material">ⓘ</span>
+            </label>
           </div>
+        </div>
+        <div class="fault-rationale">
+          <label class="fault-rationale-label">Free text rationale (only required if hallucination or harmful handling present):</label>
+          <textarea
+            v-model="faultRationale"
+            class="textarea is-small"
+            placeholder="Please provide a one sentence explanation."
+            rows="2"
+            maxlength="300"
+            :disabled="disabled"
+          ></textarea>
+          <p v-if="isFaultRationaleRequired && !faultRationale.trim()" class="help is-danger">
+            Rationale required when a fault is identified
+          </p>
         </div>
       </div>
     </div>
@@ -340,39 +373,46 @@ export default {
   data() {
     return {
       ratings: {
-        factual_accuracy: null,
         corpus_fidelity: null,
-        analysis_quality: null,
+        citation_quality: null,
         relevance: null,
-        difficulty: null,
-        clarity: null
+        coherence: null,
+        uncertainty: null,
+        historical_contextualisation: null
       },
       faults: {
         hallucination: false,
-        inappropriate: false
+        harmful_handling: false
       },
       scaleComments: {
-        factual_accuracy: '',
         corpus_fidelity: '',
-        analysis_quality: '',
+        citation_quality: '',
         relevance: '',
-        difficulty: '',
-        clarity: ''
+        coherence: '',
+        uncertainty: '',
+        historical_contextualisation: ''
       },
+      faultRationale: '',
       isSubmitting: false,
       configData: null
     }
   },
   computed: {
+    isFaultRationaleRequired() {
+      return this.faults.hallucination || this.faults.harmful_handling
+    },
     hasExtendedFeedback() {
       const hasRatings = Object.values(this.ratings).some(rating => rating !== null)
       const hasFaults = Object.values(this.faults).some(fault => fault === true)
       if (!hasRatings && !hasFaults) return false
-      // Block submit if any required comments are missing
+      // Block submit if any required scale comments are missing
       const requiredCommentsMissing = Object.keys(this.ratings).some(scale => {
         return this.isCommentRequired(scale) && !this.scaleComments[scale].trim()
       })
-      return !requiredCommentsMissing
+      if (requiredCommentsMissing) return false
+      // Block submit if fault rationale required but missing
+      if (this.isFaultRationaleRequired && !this.faultRationale.trim()) return false
+      return true
     }
   },
   methods: {
@@ -385,7 +425,7 @@ export default {
       if (this.disabled) return
       this.ratings[category] = value
     },
-    
+
     async fetchConfigData() {
       try {
         const response = await fetch('/api/config')
@@ -397,27 +437,18 @@ export default {
         this.configData = {}
       }
     },
-    
-    convertFactualAccuracyRating(rating) {
-      // Convert 1-5 Likert scale to string format for backend
-      // But send the actual numeric score instead of string conversion
-      // This preserves the user's intended rating
-      return rating // Send numeric rating directly
-    },
-    
+
     async submitExtendedFeedback() {
       if (!this.hasExtendedFeedback || this.isSubmitting) return
-      
+
       this.isSubmitting = true
-      
+
       try {
-        // Get current session data for the submission
         const chatHistory = this.sessionStore.chatHistory
         const currentQuestion = chatHistory[chatHistory.length - 2]?.content || ''
         const currentAnswer = chatHistory[chatHistory.length - 1]?.content || ''
         const fullCitations = chatHistory[chatHistory.length - 1]?.citations || []
-        
-        // Build the complete feedback payload for extended feedback
+
         const feedbackData = {
           qa_id: this.qaId,
           session_id: this.sessionId,
@@ -426,115 +457,82 @@ export default {
           question: currentQuestion,
           answer: currentAnswer,
           citations: fullCitations,
-          
-          // Add trace ID if available
           trace_id: this.telemetryStore.traceId
         }
-        
-        console.log('EXTENDED: feedbackData after spread:', feedbackData)
-        console.log('EXTENDED: About to submit to API')
-        console.log('EXTENDED: This should be the ONLY API call for extended feedback path')
-        
-        // Extended feedback ratings - only include if set
-        // Send factual accuracy as numeric rating (1-5) to preserve user intent
-        if (this.ratings.factual_accuracy !== null) {
-          feedbackData.factual_accuracy = this.ratings.factual_accuracy
+
+        // Include ratings if set
+        for (const [key, value] of Object.entries(this.ratings)) {
+          if (value !== null) {
+            feedbackData[key] = value
+          }
         }
-        if (this.ratings.corpus_fidelity !== null) {
-          feedbackData.corpus_fidelity = this.ratings.corpus_fidelity
-        }
-        
-        if (this.ratings.analysis_quality !== null) {
-          feedbackData.analysis_quality = this.ratings.analysis_quality
-        }
-        
-        if (this.ratings.relevance !== null) {
-          feedbackData.relevance = this.ratings.relevance
-        }
-        
-        if (this.ratings.difficulty !== null) {
-          feedbackData.difficulty = this.ratings.difficulty
-        }
-        
-        if (this.ratings.clarity !== null) {
-          feedbackData.clarity = this.ratings.clarity
-        }
-        
-        // Faults - only include if any are selected (use faults structure, not tags to avoid duplication)
-        const activeFaults = Object.entries(this.faults)
-          .filter(([_, value]) => value === true)
-        
+
+        // Include faults if any are selected
+        const activeFaults = Object.entries(this.faults).filter(([_, v]) => v === true)
         if (activeFaults.length > 0) {
-          // Only send faults structure, not both tags and faults to avoid duplication
           feedbackData.faults = this.faults
         }
-        
+
+        // Include fault rationale if provided
+        if (this.faultRationale.trim()) {
+          feedbackData.faults_rationale = this.faultRationale.trim()
+        }
+
         // Include per-scale comments if provided
         for (const [scale, comment] of Object.entries(this.scaleComments)) {
           if (comment.trim()) {
             feedbackData[`${scale}_comments`] = comment.trim()
           }
         }
-        // The simple feedback data (sentiment, feedback_text, etc.) is already included from completeFeedbackPayload
-        // Just need to add any additional config data if it exists
+
         if (this.configData && Object.keys(this.configData).length > 0) {
           feedbackData.test_target = { ...feedbackData.test_target, ...this.configData }
         }
-        
-        
-        console.log('EXTENDED: Final payload being sent:', feedbackData)
-        
-        // Submit to API with proper authentication using api utility
+
         await post('/feedback', feedbackData, {
           headers: {
             ...this.telemetryStore.telemetryHeaders
           }
         })
-        
-        console.log('EXTENDED: API call completed successfully')
-        
-        // Emit success
+
         this.$emit('feedback-submitted', 'extended')
-        
-        // Reset form
         this.resetForm()
-        
+
       } catch (error) {
         console.error('Error submitting extended feedback:', error)
-        // Could emit error event or show notification
       } finally {
         this.isSubmitting = false
       }
     },
-    
+
     resetForm() {
       this.ratings = {
-        factual_accuracy: null,
         corpus_fidelity: null,
-        analysis_quality: null,
+        citation_quality: null,
         relevance: null,
-        difficulty: null,
-        clarity: null
+        coherence: null,
+        uncertainty: null,
+        historical_contextualisation: null
       }
       this.faults = {
         hallucination: false,
-        inappropriate: false
+        harmful_handling: false
       }
       this.scaleComments = {
-        factual_accuracy: '',
         corpus_fidelity: '',
-        analysis_quality: '',
+        citation_quality: '',
         relevance: '',
-        difficulty: '',
-        clarity: ''
+        coherence: '',
+        uncertainty: '',
+        historical_contextualisation: ''
       }
+      this.faultRationale = ''
     }
   },
-  
+
   async mounted() {
     await this.fetchConfigData()
-    
-    // Load any initial data if provided
+
     if (this.initialData.ratings) {
       this.ratings = { ...this.ratings, ...this.initialData.ratings }
     }
@@ -567,7 +565,7 @@ export default {
 }
 
 .subtitle {
-  margin: 0;
+  margin: 0 0 0.25rem 0;
   color: #6c757d;
   font-size: 14px;
 }
@@ -602,9 +600,18 @@ export default {
 
 .likert-scale {
   display: flex;
-  justify-content: space-between;
-  max-width: 300px;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  max-width: 420px;
   margin: 0 auto;
+}
+
+.likert-endpoint {
+  font-size: 11px;
+  color: #6c757d;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .likert-option {
@@ -648,7 +655,7 @@ export default {
 
 .scale-comment {
   margin-top: 0.5rem;
-  max-width: 300px;
+  max-width: 420px;
   margin-left: auto;
   margin-right: auto;
 }
@@ -669,11 +676,17 @@ export default {
   padding-top: 1.5rem;
 }
 
+.faults-instruction {
+  font-size: 14px;
+  color: #495057;
+  margin-bottom: 0.75rem;
+}
+
 .faults-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 1rem;
-  margin-top: 0.75rem;
+  margin-bottom: 1rem;
 }
 
 .fault-option {
@@ -687,9 +700,34 @@ export default {
 }
 
 .fault-option label {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
   font-size: 14px;
   color: #495057;
   cursor: pointer;
+}
+
+.fault-rationale {
+  margin-top: 0.75rem;
+}
+
+.fault-rationale-label {
+  display: block;
+  font-size: 13px;
+  color: #495057;
+  margin-bottom: 0.25rem;
+}
+
+.fault-rationale .textarea {
+  resize: vertical;
+  min-height: 50px;
+  font-size: 13px;
+}
+
+.fault-rationale .help.is-danger {
+  font-size: 12px;
+  margin-top: 0.25rem;
 }
 
 .feedback-actions {
@@ -741,15 +779,15 @@ export default {
   .extended-feedback {
     padding: 1rem;
   }
-  
+
   .likert-scale {
-    max-width: 250px;
+    max-width: 320px;
   }
-  
+
   .faults-grid {
     grid-template-columns: repeat(2, 1fr);
   }
-  
+
   .feedback-actions {
     flex-direction: column;
   }

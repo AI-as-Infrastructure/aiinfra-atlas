@@ -61,6 +61,12 @@ class UserFeedback(BaseModel):
     difficulty: Optional[int] = None  # 1-5 Likert scale
     additional_comments: Optional[str] = None  # Free text field (legacy, kept for backward compatibility)
 
+    # New rubric fields (2026-06 evaluation rubric update)
+    citation_quality: Optional[int] = None
+    coherence: Optional[int] = None
+    uncertainty: Optional[int] = None
+    historical_contextualisation: Optional[int] = None
+
     # Per-scale comments (mandatory when scale rating is 1, 2, or 5)
     factual_accuracy_comments: Optional[str] = None
     corpus_fidelity_comments: Optional[str] = None
@@ -68,9 +74,16 @@ class UserFeedback(BaseModel):
     relevance_comments: Optional[str] = None
     difficulty_comments: Optional[str] = None
     clarity_comments: Optional[str] = None
-    
+    citation_quality_comments: Optional[str] = None
+    coherence_comments: Optional[str] = None
+    uncertainty_comments: Optional[str] = None
+    historical_contextualisation_comments: Optional[str] = None
+
+    # Fault rationale (required when any fault is checked)
+    faults_rationale: Optional[str] = None
+
     # New faults structure (alternative to tags)
-    faults: Optional[Dict[str, bool]] = None  # {hallucination, off_topic, inappropriate, bias}
+    faults: Optional[Dict[str, bool]] = None  # {hallucination, harmful_handling}
     
     # Additional rich data from frontend
     test_target: Optional[Dict[str, Any]] = None
@@ -178,6 +191,50 @@ def get_difficulty_description(score: int) -> str:
         5: "5/5: Very difficult - Highly complex query requiring deep expertise"
     }
     return descriptions.get(score, f"Query difficulty score: {score}/5")
+
+def get_citation_quality_description(score: int) -> str:
+    """Return a description for citation quality score (does each citation support its specific claim)."""
+    descriptions = {
+        1: "1/5: Very poor - Citations do not support the claims they are attached to",
+        2: "2/5: Poor - Citations provide weak or tangential support for claims",
+        3: "3/5: Moderate - Citations partially support claims but with gaps",
+        4: "4/5: Good - Citations clearly support most specific claims",
+        5: "5/5: Very good - Every citation directly and precisely supports its specific claim"
+    }
+    return descriptions.get(score, f"Citation quality score: {score}/5")
+
+def get_coherence_description(score: int) -> str:
+    """Return a description for coherence score (well-reasoned and argued response)."""
+    descriptions = {
+        1: "1/5: Very poor - Response lacks logical structure or coherent argument",
+        2: "2/5: Poor - Reasoning is weak or inconsistent",
+        3: "3/5: Moderate - Response is reasonably argued but with gaps in logic",
+        4: "4/5: Good - Response is well-reasoned with clear argumentation",
+        5: "5/5: Very good - Response is exceptionally coherent and well-argued throughout"
+    }
+    return descriptions.get(score, f"Coherence score: {score}/5")
+
+def get_uncertainty_description(score: int) -> str:
+    """Return a description for uncertainty score (flags contested interpretations, gaps, ambiguity)."""
+    descriptions = {
+        1: "1/5: Very poor - No acknowledgment of uncertainty, gaps, or contested interpretations",
+        2: "2/5: Poor - Minimal flagging of ambiguity or contested claims",
+        3: "3/5: Moderate - Some uncertainty acknowledged but incompletely",
+        4: "4/5: Good - Most contested interpretations and gaps appropriately flagged",
+        5: "5/5: Very good - Exemplary acknowledgment of uncertainty, gaps, and contested interpretations"
+    }
+    return descriptions.get(score, f"Uncertainty score: {score}/5")
+
+def get_historical_contextualisation_description(score: int) -> str:
+    """Return a description for historical contextualisation score (contextualises primary material with additional knowledge)."""
+    descriptions = {
+        1: "1/5: Very poor - No contextualisation beyond the cited primary material",
+        2: "2/5: Poor - Minimal additional historical context provided",
+        3: "3/5: Moderate - Some contextualisation present but incomplete",
+        4: "4/5: Good - Primary material well contextualised with appropriate scholarly knowledge",
+        5: "5/5: Very good - Exemplary contextualisation situating primary material in broader historical framework"
+    }
+    return descriptions.get(score, f"Historical contextualisation score: {score}/5")
 
 def get_sentiment_description(sentiment: str) -> str:
     """Return a description for sentiment feedback"""
@@ -560,6 +617,29 @@ async def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str =
             "metadata": get_annotation_metadata()
         })
     
+    # Add new rubric annotations (2026-06 evaluation rubric)
+    new_rubric_fields = {
+        "citation_quality": ("Citation Quality", get_citation_quality_description),
+        "coherence": ("Coherence", get_coherence_description),
+        "uncertainty": ("Uncertainty", get_uncertainty_description),
+        "historical_contextualisation": ("Historical Contextualisation", get_historical_contextualisation_description),
+    }
+    for field_key, (annotation_label, desc_fn) in new_rubric_fields.items():
+        if field_key in feedback_data and feedback_data[field_key] is not None:
+            score_val = feedback_data[field_key]
+            annotation_data.append({
+                "id": f"{annotation_id}_{field_key}",
+                "name": get_annotation_name(annotation_label, inter_rater_number),
+                "span_id": formatted_span_id,
+                "annotator_kind": "HUMAN",
+                "result": {
+                    "label": field_key,
+                    "score": score_val,
+                    "explanation": desc_fn(score_val)
+                },
+                "metadata": get_annotation_metadata()
+            })
+
     # Add faults annotations if present
     if "faults" in feedback_data and feedback_data["faults"]:
         active_faults = format_faults_list(feedback_data["faults"])
@@ -592,6 +672,21 @@ async def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str =
             "metadata": {"qa_id": qa_id, "feedback_type": "extended"} if qa_id else {"feedback_type": "extended"}
         })
     
+    # Add fault rationale annotation if present
+    if "faults_rationale" in feedback_data and feedback_data["faults_rationale"]:
+        annotation_data.append({
+            "id": f"{annotation_id}_faults_rationale",
+            "name": get_annotation_name("Fault Rationale", inter_rater_number),
+            "span_id": formatted_span_id,
+            "annotator_kind": "HUMAN",
+            "result": {
+                "label": "faults_rationale",
+                "score": None,
+                "explanation": feedback_data["faults_rationale"]
+            },
+            "metadata": get_annotation_metadata()
+        })
+
     # Add per-scale comment annotations
     scale_comment_fields = {
         "factual_accuracy_comments": "Factual Accuracy Comment",
@@ -600,6 +695,10 @@ async def submit_span_annotation(span_id: str, feedback_data: dict, qa_id: str =
         "relevance_comments": "Relevance Comment",
         "difficulty_comments": "Difficulty Comment",
         "clarity_comments": "Clarity Comment",
+        "citation_quality_comments": "Citation Quality Comment",
+        "coherence_comments": "Coherence Comment",
+        "uncertainty_comments": "Uncertainty Comment",
+        "historical_contextualisation_comments": "Historical Contextualisation Comment",
     }
     for field_name, annotation_label in scale_comment_fields.items():
         if field_name in feedback_data and feedback_data[field_name]:
