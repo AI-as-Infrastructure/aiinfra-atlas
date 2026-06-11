@@ -342,7 +342,7 @@
 
           <!-- Faults Section -->
           <div class="faults-section">
-            <p class="faults-instruction">Finally, please note that if you identified any of the following faults in the LLM answer. If a fault is identified please provide a one sentence explanation.</p>
+            <p class="faults-instruction">Please note that if you identified any of the following faults in the LLM answer. If a fault is identified please provide a one sentence explanation.</p>
             <div class="faults-grid">
               <div class="fault-option">
                 <input
