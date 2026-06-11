@@ -138,6 +138,13 @@ async def submit_feedback(feedback: Union[InterRaterFeedback, UserFeedback] if I
             "answer": feedback.answer,
             "citations": feedback.citations,
             
+            # New rubric fields (2026-06 evaluation rubric)
+            "citation_quality": getattr(feedback, 'citation_quality', None),
+            "coherence": getattr(feedback, 'coherence', None),
+            "uncertainty": getattr(feedback, 'uncertainty', None),
+            "historical_contextualisation": getattr(feedback, 'historical_contextualisation', None),
+            "faults_rationale": getattr(feedback, 'faults_rationale', None),
+
             # Per-scale comments
             "factual_accuracy_comments": feedback.factual_accuracy_comments,
             "corpus_fidelity_comments": feedback.corpus_fidelity_comments,
@@ -145,6 +152,10 @@ async def submit_feedback(feedback: Union[InterRaterFeedback, UserFeedback] if I
             "relevance_comments": feedback.relevance_comments,
             "difficulty_comments": feedback.difficulty_comments,
             "clarity_comments": feedback.clarity_comments,
+            "citation_quality_comments": getattr(feedback, 'citation_quality_comments', None),
+            "coherence_comments": getattr(feedback, 'coherence_comments', None),
+            "uncertainty_comments": getattr(feedback, 'uncertainty_comments', None),
+            "historical_contextualisation_comments": getattr(feedback, 'historical_contextualisation_comments', None),
 
             # AI-Enhanced feedback fields
             "ai_validation": feedback.ai_validation,
