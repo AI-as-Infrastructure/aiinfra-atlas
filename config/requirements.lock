@@ -88,7 +88,7 @@ cffi==2.0.0
     # via cryptography
 charset-normalizer==3.4.3
     # via requests
-chromadb==1.5.7
+chromadb==1.5.9
     # via
     #   -r config/requirements.txt
     #   langchain-chroma
@@ -364,7 +364,7 @@ mypy-extensions==1.1.0
     # via typing-inspect
 networkx==3.4.2
     # via torch
-nltk==3.9.4
+nltk==3.10.0
     # via -r config/requirements.txt
 numpy==1.26.4
     # via

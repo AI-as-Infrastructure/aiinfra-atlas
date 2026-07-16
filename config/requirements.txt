@@ -6,7 +6,7 @@ python-multipart==0.0.31
 websockets==15.0.1
 
 # Vector Search Support
-chromadb==1.5.7
+chromadb==1.5.9
 langchain-chroma==1.1.0
 
 # BM25 Search Support
@@ -55,7 +55,7 @@ pandas>=1.5.0,<3.0.0
 # ---
 # Additional requirements for create/create_hansard_store.py
 # These are needed for standalone execution of the Hansard vector store creation script.
-nltk==3.9.4
+nltk==3.10.0
 langchain-text-splitters==1.1.2
 tqdm==4.67.1
 
