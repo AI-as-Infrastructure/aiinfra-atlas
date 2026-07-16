@@ -165,10 +165,10 @@ def debug_user_id_extraction(request: Request):
             }
 
     except Exception as e:
+        logger.error("Identity extraction failed: %s", e)
         result["extraction_result"] = {
             "success": False,
-            "error": f"Exception during extraction: {str(e)}",
-            "exception_type": type(e).__name__
+            "error": "Identity extraction failed"
         }
 
     return JSONResponse(content=result)
