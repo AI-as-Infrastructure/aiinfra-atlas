@@ -26,7 +26,7 @@ anthropic[vertex]==0.96.0
 openai==2.31.0
 
 # AI/ML Model Dependencies
-transformers==4.53.0
+transformers==5.5.0
 torch>=2.8.0
 
 # Utilities
@@ -60,7 +60,7 @@ langchain-text-splitters==1.1.2
 tqdm==4.67.1
 
 # Used for converting Livingwithmachines/bert_1890_1900 to a compatible format
-sentence-transformers==2.6.1
+sentence-transformers==5.2.0
 
 # ---
 # Load Testing Dependencies
