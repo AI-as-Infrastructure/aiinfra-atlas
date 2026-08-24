@@ -43,15 +43,17 @@ class PhoenixAPIClient:
             self.client = None
             self.has_phoenix_client = False
 
-        # Align default with telemetry project if env not provided
-        self.project_name = os.getenv("INTER_RATER_PROJECT", os.getenv("PHOENIX_PROJECT_NAME", "atlas-telemetry"))
+        # Inter-rating must query the same explicitly configured project used
+        # for telemetry export; study settings are not embedded in code.
+        self.project_name = os.getenv("INTER_RATER_PROJECT") or os.getenv("PHOENIX_PROJECT_NAME")
 
     async def query_spans_for_inter_rating(
         self,
         exclude_user_id: str = None,
         limit: int = 10,
         days_back: int = 30,
-        include_citations: bool = True
+        include_citations: bool = True,
+        keep_author_id: bool = False
     ) -> List[Dict[str, Any]]:
         """
         Query Phoenix for generation response spans eligible for inter-rating.
@@ -64,6 +66,8 @@ class PhoenixAPIClient:
             limit: Maximum number of sessions to return
             days_back: How many days back to look for sessions
             include_citations: If False, skip REFERENCES span query (faster for counts)
+            keep_author_id: Retain original_user_id so a shared pool can be
+                            filtered per user by the caller
 
         Returns:
             List of session data suitable for inter-rating
@@ -79,7 +83,9 @@ class PhoenixAPIClient:
             )
 
         try:
-            real_sessions = await self._query_phoenix_with_client(exclude_user_id, limit, days_back, include_citations)
+            real_sessions = await self._query_phoenix_with_client(
+                exclude_user_id, limit, days_back, include_citations, keep_author_id
+            )
             if real_sessions:
                 logger.info(f"Retrieved {len(real_sessions)} sessions from Phoenix project '{self.project_name}'")
                 return real_sessions
@@ -99,7 +105,8 @@ class PhoenixAPIClient:
         exclude_user_id: str = None,
         limit: int = 10,
         days_back: int = 30,
-        include_citations: bool = True
+        include_citations: bool = True,
+        keep_author_id: bool = False
     ) -> List[Dict[str, Any]]:
         """
         Query Phoenix for generation response spans, then match against
@@ -135,13 +142,16 @@ class PhoenixAPIClient:
 
             logger.info(f"Found {len(spans_df)} generation response spans from Phoenix")
 
-            # Collect all span IDs and batch-fetch their annotations
+            # Collect all span IDs and batch-fetch current annotations. Session
+            # allocations must not use a process-local five-minute snapshot:
+            # focus-group requests are distributed across multiple workers.
             all_span_ids = [
                 row.get('context.span_id')
                 for _, row in spans_df.iterrows()
                 if row.get('context.span_id')
             ]
-            annotations_cache.load(all_span_ids)
+            if not await annotations_cache.refresh_spans(all_span_ids):
+                raise ValueError("Failed to refresh Phoenix annotations")
 
             # Build session data — all lookups are local, no HTTP calls
             feedback_spans = []
@@ -225,9 +235,11 @@ class PhoenixAPIClient:
             feedback_spans.sort(key=lambda x: x['timestamp'], reverse=True)
             result = feedback_spans[:limit]
 
-            # Remove original_user_id before sending to frontend (privacy - used only for filtering)
-            for session in result:
-                session.pop('original_user_id', None)
+            # Remove original_user_id before sending to frontend (privacy - used
+            # only for filtering). Retained when the caller filters a shared pool.
+            if not keep_author_id:
+                for session in result:
+                    session.pop('original_user_id', None)
 
             logger.info(f"Returning {len(result)} spans for inter-rating")
             return result

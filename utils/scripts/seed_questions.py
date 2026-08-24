@@ -17,17 +17,24 @@ import argparse
 import json
 import os
 import sys
+import tempfile
 import time
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
 import requests
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from backend.services.inter_rater_pool import (  # noqa: E402
+    active_project,
+    require_manifest_path,
+)
+
 DEFAULT_FILE = Path("data/seed_questions.json")
 DEFAULT_API = "http://localhost:8000"
-DEFAULT_MAX_RATINGS = 1  # matches .env.development; overridden by INTER_RATER_MAX_RATINGS
 SSE_TIMEOUT_SECS = 300
 MAX_RETRIES = 2
 
@@ -72,12 +79,22 @@ def load_questions(path: Path) -> List[dict]:
 
 
 def print_sizing_check(n: int) -> int:
-    max_ratings = int(os.getenv("INTER_RATER_MAX_RATINGS", DEFAULT_MAX_RATINGS))
+    max_ratings_raw = os.getenv("INTER_RATER_MAX_RATINGS")
+    if not max_ratings_raw:
+        raise SystemExit("INTER_RATER_MAX_RATINGS must be set in the selected environment file")
+    max_ratings = int(max_ratings_raw)
     capacity = n * max_ratings
     print(f"Seed pool: {n} questions × INTER_RATER_MAX_RATINGS={max_ratings} → up to {capacity} total ratings")
-    print(f"  Focus group target: 15 raters × 20 ratings = 300 rating slots")
-    if capacity < 300:
-        print(f"  WARNING: capacity ({capacity}) is below the 300-slot focus group target")
+    reviewers = os.getenv("INTER_RATER_REVIEWERS")
+    sessions_per_user = os.getenv("INTER_RATER_SESSIONS_PER_USER")
+    if reviewers and sessions_per_user:
+        demand = int(reviewers) * int(sessions_per_user)
+        print(
+            f"  Focus group target: {reviewers} reviewers × {sessions_per_user} ratings "
+            f"= {demand} rating slots"
+        )
+        if capacity < demand:
+            print(f"  WARNING: capacity ({capacity}) is below the {demand}-slot focus group target")
     return max_ratings
 
 
@@ -234,6 +251,110 @@ def verify_in_phoenix(qa_ids: List[str]) -> dict:
     return out
 
 
+def prepare_manifest_target(force: bool) -> str:
+    """Validate the study target before any questions are submitted."""
+    try:
+        path = require_manifest_path()
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
+
+    if active_project() is None:
+        raise SystemExit(
+            "INTER_RATER_PROJECT or PHOENIX_PROJECT_NAME must be set before seeding"
+        )
+
+    if os.path.exists(path) and not force:
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                existing = len(json.load(handle).get("qa_ids", []))
+        except (OSError, ValueError, AttributeError):
+            existing = "unreadable"
+        raise SystemExit(
+            f"Refusing to overwrite existing study pool manifest at {path} "
+            f"({existing} prompts). Run `make seed-reset` first, or pass "
+            f"--force-manifest to replace it. No prompts were submitted."
+        )
+
+    return path
+
+
+def write_pool_manifest(
+    seeded: List[SeedResult], total: int, force: bool, path: str
+) -> bool:
+    """
+    Record the seeded prompts as the authoritative study pool.
+
+    The allocator restricts itself to these qa_ids, so organic traffic in the
+    same Phoenix project cannot enter the study, every reviewer sees an
+    identical pool, and the cohort fingerprint stays stable for the whole run.
+
+    Two guards, because a wrong manifest silently changes the study design:
+
+    - A partial run is never written. A manifest listing only the prompts that
+      happened to succeed shrinks the pool, which breaks the capacity equation
+      and drops allocation back to unbalanced ranking.
+    - An existing manifest is never overwritten without --force-manifest, so a
+      pilot run (`--count 5`) cannot quietly replace a full study pool. The
+      documented reset workflow removes it first, so this does not get in the
+      way.
+    """
+    if len(seeded) != total and not force:
+        print(
+            f"NOT writing study pool manifest: only {len(seeded)}/{total} prompts seeded.\n"
+            f"  A partial pool would break the capacity equation and disable balanced\n"
+            f"  allocation. Fix the failures and re-run, or pass --force-manifest to\n"
+            f"  accept a {len(seeded)}-prompt pool and size the study to it."
+        )
+        return False
+
+    # Repeat the preflight check to close the long seeding window: another
+    # process may have established a pool while questions were being generated.
+    if os.path.exists(path) and not force:
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                existing = len(json.load(handle).get("qa_ids", []))
+        except (OSError, ValueError):
+            existing = "unreadable"
+        raise SystemExit(
+            f"Refusing to overwrite study pool manifest created during seeding at "
+            f"{path} ({existing} prompts). The newly submitted prompts were not "
+            f"made authoritative; inspect the project before retrying."
+        )
+
+    manifest = {
+        "project": active_project(),
+        "created": datetime.now(timezone.utc).isoformat(),
+        "count": len(seeded),
+        "qa_ids": [r.qa_id for r in seeded],
+    }
+    directory = os.path.dirname(path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    # Write beside the destination and atomically replace it. Readers therefore
+    # observe either the complete previous snapshot or the complete new one,
+    # never truncated JSON during a forced re-seed.
+    fd, temporary_path = tempfile.mkstemp(
+        dir=directory or ".", prefix=".seed_pool.", suffix=".tmp", text=True
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(manifest, handle, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, path)
+    except Exception:
+        try:
+            os.unlink(temporary_path)
+        except FileNotFoundError:
+            pass
+        raise
+
+    print(f"Wrote study pool manifest: {path} ({len(seeded)} prompts)")
+    print("  The allocator will treat exactly these prompts as the study pool.")
+    return True
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--file", type=Path, default=DEFAULT_FILE, help="Seed questions JSON file")
@@ -243,6 +364,11 @@ def main() -> int:
     parser.add_argument("--retries", type=int, default=MAX_RETRIES, help="Max retries per failed question")
     parser.add_argument("--no-verify", action="store_true", help="Skip Phoenix span verification at end")
     parser.add_argument("--verify-wait", type=int, default=15, help="Seconds to wait for spans to flush before verification")
+    parser.add_argument(
+        "--force-manifest",
+        action="store_true",
+        help="Write the study pool manifest even if it exists or the run was partial",
+    )
     args = parser.parse_args()
 
     questions = load_questions(args.file)
@@ -255,6 +381,8 @@ def main() -> int:
     if args.dry_run:
         print("Dry run — exiting before submission.")
         return 0
+
+    manifest_target = prepare_manifest_target(args.force_manifest)
 
     stats = RunStats(total=len(questions))
     results: List[SeedResult] = []
@@ -304,6 +432,14 @@ def main() -> int:
                 print(f"  Missing LLM span: {missing_llm[:5]}{' …' if len(missing_llm) > 5 else ''}")
             if missing_refs:
                 print(f"  Missing references span: {missing_refs[:5]}{' …' if len(missing_refs) > 5 else ''}")
+
+    if stats.succeeded > 0:
+        write_pool_manifest(
+            [r for r in results if r.ok],
+            len(questions),
+            args.force_manifest,
+            manifest_target,
+        )
 
     return 0 if not stats.failed else 1
 

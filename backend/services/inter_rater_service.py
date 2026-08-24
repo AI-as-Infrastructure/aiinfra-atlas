@@ -9,7 +9,6 @@ import logging
 import os
 from typing import List, Dict, Any, Optional
 from datetime import datetime
-import json
 import hashlib
 
 logger = logging.getLogger(__name__)
@@ -19,38 +18,78 @@ class InterRaterService:
 
     def __init__(self):
         self.enabled = os.getenv("INTER_RATER_ENABLED", "false").lower() == "true"
-        self.project_name = os.getenv("INTER_RATER_PROJECT", "atlas-hansard")
-        self.max_ratings = int(os.getenv("INTER_RATER_MAX_RATINGS", "3"))
-        self.sessions_per_user = int(os.getenv("INTER_RATER_SESSIONS_PER_USER", "5"))
+        self.project_name = os.getenv("INTER_RATER_PROJECT") or os.getenv("PHOENIX_PROJECT_NAME")
+        self.max_ratings = self._positive_int_setting("INTER_RATER_MAX_RATINGS")
+        self.reviewer_count = self._positive_int_setting("INTER_RATER_REVIEWERS")
+        self.sessions_per_user = self._positive_int_setting("INTER_RATER_SESSIONS_PER_USER")
         self.default_ui = os.getenv("INTER_RATER_DEFAULT_UI", "false").lower() == "true"
 
-        # In-memory cache for per-user session allocations.
-        # Short window so count-aware ranking stays in step with current
-        # inter_rater_count as the focus group progresses.
-        self._session_cache = {}
-        self._cache_timeout = 60  # 1 minute
+        if self.enabled and not self.project_name:
+            raise ValueError(
+                "INTER_RATER_PROJECT or PHOENIX_PROJECT_NAME is required when inter-rating is enabled"
+            )
+        telemetry_project = os.getenv("PHOENIX_PROJECT_NAME")
+        inter_rater_project = os.getenv("INTER_RATER_PROJECT")
+        if self.enabled and telemetry_project and inter_rater_project:
+            if telemetry_project != inter_rater_project:
+                raise ValueError(
+                    "INTER_RATER_PROJECT must exactly match PHOENIX_PROJECT_NAME"
+                )
+        if self.enabled and not os.getenv("REDIS_URL"):
+            raise ValueError("REDIS_URL is required when inter-rating is enabled")
+
+        # Focus-group mode without a study pool has no legitimate reading, and
+        # it is the one remaining way to lose every study guarantee silently:
+        # no pool purity, no capacity check, and the cohort key falls back to a
+        # fingerprint over query results that moves whenever a span does. A
+        # single organic session in the project would then switch balanced
+        # allocation off and under-rate part of the pool. Ad-hoc inter-rating
+        # runs with INTER_RATER_DEFAULT_UI=false and is unaffected.
+        if self.enabled and self.default_ui:
+            from .inter_rater_pool import MANIFEST_PATH_ENV, manifest_path
+
+            if manifest_path() is None:
+                raise ValueError(
+                    f"{MANIFEST_PATH_ENV} is required when INTER_RATER_DEFAULT_UI=true. "
+                    f"Focus-group mode runs a study, so the study pool must be explicit; "
+                    f"without it the allocator falls back to project-wide ad-hoc rating "
+                    f"and the pool, capacity and cohort guarantees do not apply."
+                )
+
+        # Study pool cache. Shared across users — the Phoenix span query is the
+        # expensive part of an allocation and returns the same pool for everyone.
+        self._pool_cache = {}
+        self._pool_cache_timeout = 60  # 1 minute
 
         # Stats cache
         self._stats_cache = {}
         self._stats_cache_timeout = 300  # 5 minutes
 
+    def _positive_int_setting(self, name: str) -> Optional[int]:
+        """Read a positive integer setting without embedding study-design defaults."""
+        raw_value = os.getenv(name)
+        if raw_value is None:
+            if self.enabled:
+                raise ValueError(f"{name} is required when inter-rating is enabled")
+            return None
+        try:
+            value = int(raw_value)
+        except ValueError as error:
+            raise ValueError(f"{name} must be a positive integer") from error
+        if value <= 0:
+            raise ValueError(f"{name} must be a positive integer")
+        return value
+
     def is_enabled(self) -> bool:
         """Check if inter-rater functionality is enabled."""
         return self.enabled
 
-    def _get_cache_key(self, user_id: str) -> str:
-        """Generate cache key for user sessions."""
-        return f"inter_rater_sessions_{user_id}"
-
-    def _is_cache_valid(self, cache_entry: Dict) -> bool:
-        """Check if cache entry is still valid."""
-        if not cache_entry:
-            return False
-        cache_time = cache_entry.get('timestamp', 0)
-        current_time = datetime.now().timestamp()
-        return (current_time - cache_time) < self._cache_timeout
-
-    def _allocate_sessions_to_user(self, available_sessions: List[Dict[str, Any]], user_id: str) -> List[Dict[str, Any]]:
+    def _allocate_sessions_to_user(
+        self,
+        available_sessions: List[Dict[str, Any]],
+        user_id: str,
+        limit: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
         """
         Rank sessions for a user, prioritising under-rated sessions.
 
@@ -63,7 +102,7 @@ class InterRaterService:
 
         The max_ratings cap is enforced upstream by the inter_rater_count
         pre-filter — once a session reaches max_ratings it drops out of
-        available_sessions for all users on the next cache refresh.
+        available_sessions on the next allocation refresh.
         """
         if not available_sessions:
             return []
@@ -78,69 +117,225 @@ class InterRaterService:
 
         scored.sort(key=lambda x: x[0])
 
-        return [s for _, s in scored[:self.sessions_per_user]]
+        allocation_limit = self.sessions_per_user if limit is None else limit
+        return [s for _, s in scored[:allocation_limit]]
 
-    async def _get_cached_sessions(self, user_id: str) -> Optional[List[Dict[str, Any]]]:
-        """Get sessions from cache if valid."""
-        cache_key = self._get_cache_key(user_id)
-        cache_entry = self._session_cache.get(cache_key)
+    def _study_assignment(self, span_ids: List[str]) -> List[List[str]]:
+        """
+        Assign every prompt to exactly max_ratings reviewer slots.
 
-        if self._is_cache_valid(cache_entry):
-            sanitized_user_id = user_id[:8] + "..." if len(user_id) > 8 else user_id
-            logger.debug(f"Returning cached sessions for user {sanitized_user_id}")
-            return cache_entry['sessions']
+        Each prompt is given to the slots with the most quota left, tie-broken
+        by SHA-256(span_id:slot). Filling by remaining quota keeps every
+        reviewer at exactly sessions_per_user, and the hash tiebreak spreads
+        each reviewer's items across the whole pool so reviewer pairs overlap
+        evenly — mean overlap converges on the theoretical
+        pool*cap*(cap-1) / (reviewers*(reviewers-1)).
 
-        return None
+        Even overlap is what makes cohort-wide analysis possible: it keeps
+        rater severity from being confounded with any block of prompts, and
+        lets any reviewer be compared against the rest of the cohort rather
+        than only against whoever shares their queue.
 
-    def _cache_sessions(self, user_id: str, sessions: List[Dict[str, Any]]):
-        """Cache sessions for user."""
-        cache_key = self._get_cache_key(user_id)
-        self._session_cache[cache_key] = {
+        Deterministic, so every worker derives the same assignment without
+        coordination.
+        """
+        quota = [self.sessions_per_user] * self.reviewer_count
+        queues: List[List[str]] = [[] for _ in range(self.reviewer_count)]
+
+        for span_id in sorted(span_ids):
+            eligible = [slot for slot in range(self.reviewer_count) if quota[slot] > 0]
+            if len(eligible) < self.max_ratings:
+                raise ValueError(
+                    "Inter-rater study assignment exhausted reviewer quota; check "
+                    "INTER_RATER_REVIEWERS, INTER_RATER_SESSIONS_PER_USER and "
+                    "INTER_RATER_MAX_RATINGS against the study pool size"
+                )
+            eligible.sort(
+                key=lambda slot: (
+                    -quota[slot],
+                    hashlib.sha256(f"{span_id}:{slot}".encode()).hexdigest(),
+                )
+            )
+            for slot in eligible[: self.max_ratings]:
+                queues[slot].append(span_id)
+                quota[slot] -= 1
+
+        return queues
+
+    def _balanced_assignment(
+        self,
+        sessions: List[Dict[str, Any]],
+        reviewer_slot: int,
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Return a balanced queue when configured demand exactly matches capacity."""
+        pool_size = len(sessions)
+        if not pool_size:
+            return []
+        if self.reviewer_count * self.sessions_per_user != pool_size * self.max_ratings:
+            return None
+        if self.sessions_per_user > pool_size:
+            raise ValueError("INTER_RATER_SESSIONS_PER_USER cannot exceed the study pool size")
+
+        by_span_id = {session["span_id"]: session for session in sessions}
+        assigned = self._study_assignment(list(by_span_id))[reviewer_slot]
+        return [by_span_id[span_id] for span_id in assigned]
+
+    async def _get_pool(
+        self, include_citations: bool
+    ) -> tuple[List[Dict[str, Any]], Optional[str]]:
+        """
+        Return (study pool, pool fingerprint), cached briefly and shared across users.
+
+        The Phoenix span query is the expensive part of an allocation and its
+        result is the same for every reviewer, so it is cached rather than
+        repeated per request. Caching is safe because the queue a reviewer sees
+        no longer depends on live rating counts: cohort assignment is
+        deterministic, and the authoritative cap check happens under a
+        distributed lock in inter_rater_submission_gate at submission time. A
+        count that goes stale within the TTL can only mean a reviewer is shown
+        an item that has since filled, which the gate rejects and the dashboard
+        replaces.
+        """
+        from .phoenix_client import phoenix_client
+        from .inter_rater_pool import inter_rater_pool
+
+        cache_key = f"pool_{self.project_name}_{include_citations}"
+        cached = self._pool_cache.get(cache_key)
+        if cached and (datetime.now().timestamp() - cached['timestamp']) < self._pool_cache_timeout:
+            return cached['sessions'], cached['fingerprint']
+
+        # Fetched without exclude_user_id so one pool serves every reviewer;
+        # per-user exclusion is applied by the caller.
+        sessions = await phoenix_client.query_spans_for_inter_rating(
+            exclude_user_id=None,
+            limit=self.sessions_per_user * 10,
+            include_citations=include_citations,
+            keep_author_id=True,
+        )
+        # Restriction and fingerprinting deliberately share one manifest
+        # snapshot. Calling restrict() and fingerprint() separately leaves a
+        # re-seed race between the two reads even if the resulting values are
+        # subsequently cached together.
+        sessions, fingerprint = inter_rater_pool.restrict_with_fingerprint(sessions)
+        self._validate_study_capacity(sessions, fingerprint)
+
+        self._pool_cache[cache_key] = {
             'sessions': sessions,
-            'timestamp': datetime.now().timestamp()
+            'fingerprint': fingerprint,
+            'timestamp': datetime.now().timestamp(),
         }
-        sanitized_user_id = user_id[:8] + "..." if len(user_id) > 8 else user_id
-        logger.debug(f"Cached {len(sessions)} sessions for user {sanitized_user_id}")
+        return sessions, fingerprint
+
+    def _validate_study_capacity(self, sessions: List[Dict[str, Any]], fingerprint: Optional[str]) -> None:
+        """
+        Refuse to run a study whose pool no longer matches the configuration.
+
+        Balanced allocation is active only while
+        reviewers x sessions_per_user == pool x max_ratings. If the pool has
+        shrunk — prompts that failed to seed, a deleted span, a partially
+        written manifest — allocation would quietly fall back to unbalanced
+        ranking and under-rate part of the pool. That is invisible until the
+        data is analysed and the session cannot be repeated, so it fails here
+        instead. Only enforced in study mode: without a manifest, ad-hoc
+        inter-rating is expected to use whatever is in the project.
+        """
+        if fingerprint is None:
+            # A configured pool must never fall through to ad-hoc rating. The
+            # manifest can define a study even when the normal chat UI remains
+            # available, so data integrity cannot depend on default_ui. Only an
+            # explicitly unset path in non-focus-group mode means ad-hoc use.
+            #
+            # Checked here rather than at startup on purpose: the manifest is
+            # written by `make seed`, which POSTs to the running backend, so
+            # requiring a loadable manifest to boot would deadlock a first-time
+            # study (no manifest -> no boot -> no seeding -> no manifest). The
+            # backend starts, seeding works, and only inter-rating itself
+            # refuses until the pool exists.
+            from .inter_rater_pool import MANIFEST_PATH_ENV, manifest_path
+
+            configured_path = manifest_path()
+            if self.default_ui or configured_path is not None:
+                raise ValueError(
+                    f"Inter-rating requires the configured study pool manifest to be "
+                    f"readable, but none loaded from "
+                    f"{MANIFEST_PATH_ENV}={configured_path!r}. Run `make seed` to create "
+                    f"it, restore the file, or unset {MANIFEST_PATH_ENV} for deliberate "
+                    f"project-wide ad-hoc rating when INTER_RATER_DEFAULT_UI=false."
+                )
+            return
+
+        demand = self.reviewer_count * self.sessions_per_user
+        capacity = len(sessions) * self.max_ratings
+        if demand == capacity:
+            return
+
+        raise ValueError(
+            f"Inter-rater study pool does not match the configured design: "
+            f"{len(sessions)} prompts x INTER_RATER_MAX_RATINGS={self.max_ratings} "
+            f"= {capacity} ratings, but INTER_RATER_REVIEWERS={self.reviewer_count} "
+            f"x INTER_RATER_SESSIONS_PER_USER={self.sessions_per_user} = {demand}. "
+            f"Re-seed the missing prompts, or align the settings with the pool "
+            f"(pool must be demand / max_ratings = {demand / self.max_ratings:g} prompts)."
+        )
 
     async def get_sessions_for_inter_rating(self, user_id: str, include_citations: bool = True) -> List[Dict[str, Any]]:
         """
         Get sessions available for inter-rating by a specific user.
 
-        Annotations are resolved from the local AnnotationsCache (no per-span
-        HTTP calls). The only remote call is get_spans_dataframe() for the span
-        data itself.
+        Span data and current annotations are refreshed from Phoenix before
+        eligibility, quota, and allocation rules are applied.
 
         Args:
             include_citations: If False, skip REFERENCES span query (faster for counts).
-                               Results without citations are not cached.
         """
         if not self.enabled:
             return []
 
-        # Only use cache for full queries (with citations)
-        if include_citations:
-            cached_sessions = await self._get_cached_sessions(user_id)
-            if cached_sessions is not None:
-                return cached_sessions
-
         try:
-            from .phoenix_client import phoenix_client
             from .annotations_cache import annotations_cache
-
             sanitized_user_id = user_id[:8] + "..." if len(user_id) > 8 else user_id
-            logger.info(f"Querying Phoenix for inter-rater sessions for user {sanitized_user_id}")
+            logger.info(f"Building inter-rater allocation for user {sanitized_user_id}")
 
-            # query_spans_for_inter_rating already uses the annotations cache internally
-            all_sessions = await phoenix_client.query_spans_for_inter_rating(
-                exclude_user_id=user_id,
-                limit=self.sessions_per_user * 10,
-                include_citations=include_citations
+            pool_sessions, pool_fingerprint = await self._get_pool(include_citations)
+
+            # Exclude sessions this user authored. Applied locally so the pool
+            # stays identical for every reviewer and can be shared from cache;
+            # seeded sessions have no author and always pass through.
+            all_sessions = [
+                session for session in pool_sessions
+                if not session.get("original_user_id")
+                or session.get("original_user_id") != user_id
+            ]
+
+            # For an exactly saturated design, assign each reviewer a shared
+            # Redis cohort slot and derive a balanced queue before filtering.
+            balanced_design = (
+                self.reviewer_count * self.sessions_per_user
+                == len(all_sessions) * self.max_ratings
             )
+            assigned_sessions = None
+            if balanced_design:
+                from .inter_rater_cohort import inter_rater_cohort_registry
+
+                # Prefer the manifest fingerprint: it is stable for the whole
+                # run, where a fingerprint over query results moves whenever a
+                # span is added, removed, or filtered.
+                cohort_key = pool_fingerprint or "\n".join(
+                    sorted(session["span_id"] for session in all_sessions)
+                )
+                reviewer_slot = await inter_rater_cohort_registry.get_slot(
+                    self.project_name,
+                    [cohort_key],
+                    user_id,
+                    self.reviewer_count,
+                )
+                assigned_sessions = self._balanced_assignment(all_sessions, reviewer_slot)
+            candidate_sessions = assigned_sessions if assigned_sessions is not None else all_sessions
 
             # Filter: user hasn't already rated, and span hasn't reached max ratings
             # All lookups are local dict reads from the annotations cache
             available_sessions = []
-            for session in all_sessions:
+            for session in candidate_sessions:
                 span_id = session['span_id']
 
                 already_rated = annotations_cache.check_user_already_rated(span_id, user_id)
@@ -151,16 +346,37 @@ class InterRaterService:
                 if inter_rater_count >= self.max_ratings:
                     continue
 
-                session['inter_rater_count'] = inter_rater_count
-                available_sessions.append(session)
+                # Copy before mutating: these dicts belong to the shared pool
+                # cache. Drop original_user_id — it is used only for the local
+                # self-authored filter above and must not reach the frontend.
+                candidate = {k: v for k, v in session.items() if k != 'original_user_id'}
+                candidate['inter_rater_count'] = inter_rater_count
+                available_sessions.append(candidate)
+
+            # Enforce the per-user quota across reloads and browser sessions.
+            # In study mode quota belongs to this manifest, not to every
+            # inter-rating the user has ever submitted in the Phoenix project.
+            # This is essential when a new manifest intentionally starts a new
+            # cohort without deleting the old project.
+            study_span_ids = (
+                {session["span_id"] for session in all_sessions}
+                if pool_fingerprint is not None
+                else None
+            )
+            completed_sessions = annotations_cache.get_user_inter_rater_count(
+                user_id, study_span_ids
+            )
+            remaining_slots = max(self.sessions_per_user - completed_sessions, 0)
 
             # Allocate sessions to this specific user
-            final_sessions = self._allocate_sessions_to_user(available_sessions, user_id)
-
-            # Only cache full results (with citations) to avoid serving
-            # incomplete data from the sessions endpoint
-            if include_citations:
-                self._cache_sessions(user_id, final_sessions)
+            if assigned_sessions is not None:
+                final_sessions = available_sessions[:remaining_slots]
+            else:
+                final_sessions = self._allocate_sessions_to_user(
+                    available_sessions,
+                    user_id,
+                    limit=remaining_slots,
+                )
 
             logger.info(f"Found {len(final_sessions)} available sessions for user {sanitized_user_id}")
             return final_sessions
@@ -194,7 +410,9 @@ class InterRaterService:
             stats = {
                 "enabled": True,
                 "available_sessions": len(available_sessions),
-                "completed_sessions": 0,
+                "completed_sessions": await self.get_completed_sessions_for_inter_rating(
+                    user_id, include_citations=False
+                ),
                 "max_sessions_per_user": self.sessions_per_user,
                 "project_name": self.project_name,
                 "default_ui": self.default_ui
@@ -226,36 +444,48 @@ class InterRaterService:
 
             return error_stats
 
+    async def get_completed_sessions_for_inter_rating(
+        self, user_id: str, include_citations: bool = True
+    ) -> int:
+        """Count completed work against the active pool used by allocation."""
+        pool_sessions, pool_fingerprint = await self._get_pool(include_citations)
+        if pool_fingerprint is None:
+            return self.get_completed_sessions(user_id)
+
+        study_span_ids = {
+            session["span_id"]
+            for session in pool_sessions
+            if not session.get("original_user_id")
+            or session.get("original_user_id") != user_id
+        }
+        return self.get_completed_sessions(user_id, study_span_ids)
+
+    def get_completed_sessions(
+        self, user_id: str, span_ids: Optional[set[str]] = None
+    ) -> int:
+        """Return distinct rated spans, optionally scoped to the active study."""
+        from .annotations_cache import annotations_cache
+
+        return annotations_cache.get_user_inter_rater_count(user_id, span_ids)
+
     def invalidate_user_cache(self, user_id: str):
         """
         Invalidate caches after a user submits inter-rater feedback.
 
-        Clears only the submitting user's session/stats cache. Other users'
-        caches expire naturally (5-min TTL). If another user hits a span
-        that has since reached max_ratings, session_unavailable handles it
-        gracefully on the frontend without needing eager cache invalidation.
+        Clears the submitting user's stats cache. Session retrieval
+        refreshes annotation counts from Phoenix, while submission uses a
+        distributed per-span lock to enforce max_ratings across workers.
         """
-        cache_key = self._get_cache_key(user_id)
-        self._session_cache.pop(cache_key, None)
         stats_key = f"stats_{user_id}"
         self._stats_cache.pop(stats_key, None)
-
-        # Refresh the annotations cache so the submitting user's next
-        # session load sees the updated already_rated and inter_rater_count
-        try:
-            from .annotations_cache import annotations_cache
-            annotations_cache.refresh()
-        except Exception as e:
-            logger.warning(f"Failed to refresh annotations cache: {e}")
 
         sanitized_user_id = user_id[:8] + "..." if len(user_id) > 8 else user_id
         logger.info(f"Invalidated cache for user {sanitized_user_id} after feedback submission")
 
     def clear_all_cache(self):
-        """Clear all cached sessions."""
-        self._session_cache.clear()
+        """Clear cached inter-rater statistics."""
         self._stats_cache.clear()
-        logger.info("Cleared all inter-rater session and stats cache")
+        logger.info("Cleared inter-rater stats cache")
 
 # Global instance
 inter_rater_service = InterRaterService()

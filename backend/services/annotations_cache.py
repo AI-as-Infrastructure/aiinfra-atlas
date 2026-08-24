@@ -43,10 +43,7 @@ class AnnotationsCache:
     REFRESH_INTERVAL = 300  # 5 minutes
 
     def __init__(self):
-        self.project_name = os.getenv(
-            "INTER_RATER_PROJECT",
-            os.getenv("PHOENIX_PROJECT_NAME", "atlas-telemetry"),
-        )
+        self.project_name = os.getenv("INTER_RATER_PROJECT") or os.getenv("PHOENIX_PROJECT_NAME")
         self._phoenix_endpoint = os.getenv(
             "PHOENIX_COLLECTOR_ENDPOINT", "https://app.phoenix.arize.com"
         )
@@ -58,8 +55,8 @@ class AnnotationsCache:
         self._last_refresh: float = 0
         self._lock = threading.Lock()
         self._refresh_thread: Optional[threading.Thread] = None
-        # Local write cache: (span_id, user_id) pairs for ratings submitted
-        # this process but not yet propagated to Phoenix
+        # Local write cache: (span_id, user_id) pairs successfully submitted
+        # by this process, retained for immediate read-your-write behaviour.
         self._local_ratings: Set[tuple] = set()
 
     # ------------------------------------------------------------------
@@ -165,14 +162,18 @@ class AnnotationsCache:
         return result
 
     def record_user_rating(self, span_id: str, user_id: str):
-        """Record a local inter-rater rating before Phoenix propagation."""
-        self._local_ratings.add((span_id, user_id))
+        """Record a successful local inter-rater rating for immediate lookups."""
+        with self._lock:
+            self._local_ratings.add((span_id, user_id))
 
     def check_user_already_rated(self, span_id: str, user_id: str) -> bool:
         """True if user has already submitted inter-rater feedback for this span."""
-        if (span_id, user_id) in self._local_ratings:
+        with self._lock:
+            locally_rated = (span_id, user_id) in self._local_ratings
+            annotations = list(self._by_span.get(span_id, []))
+        if locally_rated:
             return True
-        for ann in self._by_span.get(span_id, []):
+        for ann in annotations:
             metadata = ann.get("metadata", {})
             if metadata.get("is_inter_rater") and metadata.get("rater_id") == user_id:
                 return True
@@ -180,12 +181,115 @@ class AnnotationsCache:
 
     def get_inter_rater_count(self, span_id: str) -> int:
         """Count of unique inter-rater users who have rated this span."""
-        raters: Set[str] = set()
-        for ann in self._by_span.get(span_id, []):
+        raters = self.get_inter_rater_raters(span_id)
+        return len(raters)
+
+    def get_inter_rater_raters(self, span_id: str) -> Set[str]:
+        """Return unique inter-rater user IDs, including local pending writes."""
+        with self._lock:
+            annotations = list(self._by_span.get(span_id, []))
+            local_raters = {
+                user_id
+                for local_span_id, user_id in self._local_ratings
+                if local_span_id == span_id
+            }
+
+        raters: Set[str] = set(local_raters)
+        for ann in annotations:
             metadata = ann.get("metadata", {})
             if metadata.get("is_inter_rater") and metadata.get("rater_id"):
                 raters.add(metadata["rater_id"])
-        return len(raters)
+        return raters
+
+    def get_user_inter_rater_count(
+        self, user_id: str, span_ids: Optional[Set[str]] = None
+    ) -> int:
+        """
+        Return distinct spans rated by one user.
+
+        When span_ids is supplied, count only that study snapshot. Without the
+        scope this remains the project-wide count used by ad-hoc inter-rating.
+        """
+        with self._lock:
+            if span_ids is None:
+                relevant_span_ids = set(self._by_span.keys())
+                relevant_span_ids.update(
+                    span_id
+                    for span_id, local_user_id in self._local_ratings
+                    if local_user_id == user_id
+                )
+            else:
+                relevant_span_ids = set(span_ids)
+        return sum(
+            1 for span_id in relevant_span_ids
+            if user_id in self.get_inter_rater_raters(span_id)
+        )
+
+    async def refresh_span(self, span_id: str) -> bool:
+        """
+        Refresh one span's annotations directly from Phoenix.
+
+        Submission-time capacity checks use this method while holding a
+        distributed per-span lock. The cached entry is replaced only after a
+        complete successful response, so a Phoenix error cannot turn an
+        unknown count into zero.
+        """
+        return await self.refresh_spans([span_id])
+
+    async def refresh_spans(self, span_ids: List[str]) -> bool:
+        """Refresh annotations for a set of spans, replacing cache entries atomically."""
+        if not span_ids:
+            return True
+
+        url = f"{self._phoenix_endpoint}/v1/projects/{self.project_name}/span_annotations"
+        headers = self._get_headers()
+        annotations: List[Dict[str, Any]] = []
+        requested_span_ids = set(span_ids)
+        batches = [
+            span_ids[index:index + _BATCH_SIZE]
+            for index in range(0, len(span_ids), _BATCH_SIZE)
+        ]
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                for batch in batches:
+                    cursor = None
+                    while True:
+                        params: List[tuple] = [("span_ids", sid) for sid in batch]
+                        params.append(("limit", "1000"))
+                        if cursor:
+                            params.append(("cursor", cursor))
+
+                        response = await client.get(url, headers=headers, params=params)
+                        if response.status_code != 200:
+                            logger.error(
+                                "Failed to refresh annotations: "
+                                f"{response.status_code} {response.text[:200]}"
+                            )
+                            return False
+
+                        body = response.json()
+                        annotations.extend(body.get("data", []))
+                        cursor = body.get("next_cursor")
+                        if not cursor:
+                            break
+
+            with self._lock:
+                for span_id in span_ids:
+                    self._by_span[span_id] = []
+                for annotation in annotations:
+                    annotation_span_id = annotation.get("span_id")
+                    if annotation_span_id in requested_span_ids:
+                        self._by_span[annotation_span_id].append(annotation)
+                self._known_span_ids.update(span_ids)
+                self._last_refresh = time.time()
+            return True
+        except Exception as error:
+            logger.error(
+                "Failed to refresh annotations: "
+                f"{type(error).__name__}"
+            )
+            return False
 
     # ------------------------------------------------------------------
     # Internal fetch

@@ -1,7 +1,7 @@
 # Testing Dependencies for ATLAS
 
 # Core testing framework
-pytest==9.0.3
+pytest==8.3.5
 pytest-asyncio==0.25.2
 pytest-mock==3.14.0
 pytest-cov==6.0.0
