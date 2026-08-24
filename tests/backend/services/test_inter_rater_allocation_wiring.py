@@ -54,7 +54,10 @@ def wired(monkeypatch, tmp_path):
     monkeypatch.setenv("INTER_RATER_SESSIONS_PER_USER", str(PER_USER))
 
     manifest = tmp_path / "seed_pool.json"
-    manifest.write_text(json.dumps({"qa_ids": [f"seed-{i}" for i in range(POOL_SIZE)]}))
+    manifest.write_text(json.dumps({
+        "project": "test-project",
+        "qa_ids": [f"seed-{i}" for i in range(POOL_SIZE)],
+    }))
     monkeypatch.setenv("INTER_RATER_POOL_MANIFEST", str(manifest))
 
     query = AsyncMock(return_value=_pool(author="anon_0"))
@@ -69,7 +72,7 @@ def wired(monkeypatch, tmp_path):
         annotations_cache=types.SimpleNamespace(
             check_user_already_rated=lambda span_id, user_id: False,
             get_inter_rater_count=lambda span_id: 0,
-            get_user_inter_rater_count=lambda user_id: 0,
+            get_user_inter_rater_count=lambda user_id, span_ids=None: 0,
         ),
     )
     slots: dict = {}
@@ -145,6 +148,48 @@ async def test_quota_respected_and_counts_annotated(wired):
 
     assert 0 < len(sessions) <= PER_USER
     assert all(s["inter_rater_count"] == 0 for s in sessions)
+
+
+async def test_prior_pool_ratings_do_not_consume_current_study_quota(wired):
+    """Quota must be scoped to the active manifest when a cohort is replaced."""
+    service, _ = wired
+    annotations_cache = sys.modules[
+        "backend.services.annotations_cache"
+    ].annotations_cache
+    scopes = []
+
+    def completed_count(user_id, span_ids=None):
+        scopes.append(span_ids)
+        # Simulate a reviewer who exhausted a previous pool. A project-wide
+        # lookup would block them; the new pool itself has no completed work.
+        return PER_USER if span_ids is None else 0
+
+    annotations_cache.get_user_inter_rater_count = completed_count
+
+    sessions = await service.get_sessions_for_inter_rating("returning-reviewer")
+
+    assert len(sessions) == PER_USER
+    assert scopes == [{f"span_{i:03d}" for i in range(POOL_SIZE)}]
+
+
+async def test_stats_report_completion_for_current_study_only(wired):
+    service, _ = wired
+    annotations_cache = sys.modules[
+        "backend.services.annotations_cache"
+    ].annotations_cache
+    scopes = []
+
+    def completed_count(user_id, span_ids=None):
+        scopes.append(span_ids)
+        return PER_USER if span_ids is None else 1
+
+    annotations_cache.get_user_inter_rater_count = completed_count
+
+    stats = await service.get_inter_rater_stats("returning-reviewer")
+
+    assert stats["completed_sessions"] == 1
+    assert scopes
+    assert all(scope == {f"span_{i:03d}" for i in range(POOL_SIZE)} for scope in scopes)
 
 
 async def test_saturated_design_covers_every_prompt_exactly(wired):

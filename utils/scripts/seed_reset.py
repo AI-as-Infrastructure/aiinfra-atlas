@@ -25,7 +25,7 @@ from pathlib import Path
 import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from backend.services.inter_rater_pool import manifest_path  # noqa: E402
+from backend.services.inter_rater_pool import require_manifest_path  # noqa: E402
 
 PROD_HINTS = ("prod", "production")
 
@@ -37,7 +37,10 @@ def remove_pool_manifest() -> None:
     Left behind it would name qa_ids that no longer exist, so the allocator
     would surface an empty pool until the next `make seed` rewrites it.
     """
-    path = manifest_path()
+    try:
+        path = require_manifest_path()
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
     try:
         os.remove(path)
     except FileNotFoundError:
@@ -77,6 +80,14 @@ def main() -> int:
     parser.add_argument("--yes", action="store_true", help="Skip the confirmation prompt")
     parser.add_argument("--force", action="store_true", help="Allow deleting a project whose name looks like prod")
     args = parser.parse_args()
+
+    # Validate all environment-specific targets before deleting the project.
+    # Otherwise a missing manifest setting could leave a stale pool behind only
+    # after the irreversible part of the reset had already succeeded.
+    try:
+        require_manifest_path()
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
 
     endpoint = get_endpoint()
     project = get_project_name()

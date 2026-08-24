@@ -22,22 +22,34 @@ import hashlib
 import json
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
 MANIFEST_PATH_ENV = "INTER_RATER_POOL_MANIFEST"
-DEFAULT_MANIFEST_PATH = "data/seed_pool.json"
 
 
-def manifest_path() -> str:
+def manifest_path() -> Optional[str]:
     """
-    Single resolution point for the manifest location.
+    Return the configured manifest location, or None for ad-hoc mode.
 
     Imported by the seed and reset scripts so the writer, the remover and the
-    reader can never disagree about which file is the study pool.
+    reader can never disagree about which file is the study pool. There is no
+    code default: a filesystem path is environment-specific and must live in
+    the selected environment file.
     """
-    return os.getenv(MANIFEST_PATH_ENV, DEFAULT_MANIFEST_PATH)
+    value = os.getenv(MANIFEST_PATH_ENV)
+    return value.strip() if value and value.strip() else None
+
+
+def require_manifest_path() -> str:
+    """Return the configured path or fail a study-management command loudly."""
+    path = manifest_path()
+    if path is None:
+        raise ValueError(
+            f"{MANIFEST_PATH_ENV} must be set in the selected environment file"
+        )
+    return path
 
 
 def active_project() -> Optional[str]:
@@ -49,10 +61,10 @@ class InterRaterPool:
 
     def __init__(self):
         self._cache: Optional[Dict[str, Any]] = None
-        self._cache_mtime: Optional[float] = None
+        self._cache_mtime_ns: Optional[int] = None
 
     @property
-    def manifest_path(self) -> str:
+    def manifest_path(self) -> Optional[str]:
         return manifest_path()
 
     def load(self) -> Optional[Dict[str, Any]]:
@@ -62,20 +74,30 @@ class InterRaterPool:
         Re-reads on mtime change so a re-seed takes effect without a restart.
         """
         path = self.manifest_path
+        if path is None:
+            self._cache = None
+            self._cache_mtime_ns = None
+            return None
+
         try:
-            mtime = os.path.getmtime(path)
+            mtime_ns = os.stat(path).st_mtime_ns
         except OSError:
             if self._cache is not None:
                 logger.warning(f"Inter-rater pool manifest no longer readable at {path}")
             self._cache = None
-            self._cache_mtime = None
+            self._cache_mtime_ns = None
             return None
 
-        if self._cache is not None and self._cache_mtime == mtime:
+        if self._cache is not None and self._cache_mtime_ns == mtime_ns:
             return self._cache
 
         with open(path, "r", encoding="utf-8") as handle:
             manifest = json.load(handle)
+            # Cache the timestamp of the inode we actually read. If an atomic
+            # replacement occurred after os.stat(), the next load sees the new
+            # path timestamp and refreshes rather than pinning new data to an
+            # old timestamp (or vice versa).
+            loaded_mtime_ns = os.fstat(handle.fileno()).st_mtime_ns
 
         qa_ids = manifest.get("qa_ids")
         if not isinstance(qa_ids, list) or not qa_ids:
@@ -96,7 +118,7 @@ class InterRaterPool:
             )
 
         self._cache = manifest
-        self._cache_mtime = mtime
+        self._cache_mtime_ns = loaded_mtime_ns
         logger.info(
             f"Loaded inter-rater study pool: {len(qa_ids)} prompts "
             f"for project '{manifest.get('project')}' from {path}"
@@ -117,8 +139,23 @@ class InterRaterPool:
         manifest = self.load()
         if not manifest:
             return None
+        return self._fingerprint(manifest)
+
+    @staticmethod
+    def _fingerprint(manifest: Dict[str, Any]) -> str:
         payload = "\n".join(sorted(manifest["qa_ids"]))
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    def restrict_with_fingerprint(
+        self, sessions: List[Dict[str, Any]]
+    ) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+        """Filter sessions and fingerprint the exact same manifest snapshot."""
+        manifest = self.load()
+        if manifest is None:
+            return sessions, None
+
+        in_pool = self._restrict(sessions, manifest["qa_ids"])
+        return in_pool, self._fingerprint(manifest)
 
     def restrict(self, sessions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
@@ -128,10 +165,16 @@ class InterRaterPool:
         with no span in Phoenix silently shrinks capacity, so it must be
         visible before reviewers arrive.
         """
-        pool_qa_ids = self.qa_ids()
-        if pool_qa_ids is None:
+        manifest = self.load()
+        if manifest is None:
             return sessions
 
+        return self._restrict(sessions, manifest["qa_ids"])
+
+    def _restrict(
+        self, sessions: List[Dict[str, Any]], pool_qa_ids: List[str]
+    ) -> List[Dict[str, Any]]:
+        """Apply one already-loaded manifest snapshot to a Phoenix result."""
         wanted = set(pool_qa_ids)
         in_pool = [session for session in sessions if session.get("qa_id") in wanted]
 

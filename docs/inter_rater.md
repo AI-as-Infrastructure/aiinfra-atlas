@@ -25,6 +25,9 @@ INTER_RATER_MAX_RATINGS=4          # Max inter-rater ratings per session (requir
 INTER_RATER_REVIEWERS=20           # Expected reviewers; used by seed sizing checks
 INTER_RATER_SESSIONS_PER_USER=20   # Sessions each reviewer must complete
 
+# Required by make seed/seed-reset; omit only for ad-hoc project-wide rating
+INTER_RATER_POOL_MANIFEST=data/seed_pool.json
+
 # Default UI mode for focus group testing
 INTER_RATER_DEFAULT_UI=false       # Set to true for focus groups (see below)
 ```
@@ -199,7 +202,9 @@ This design assumes paid reviewers with completion-linked payment so attrition i
 - `make seed SEED_ARGS="--no-verify"` — skip the post-seed Phoenix verification pass
 - `make seed SEED_ARGS="--force-manifest"` — write the study pool manifest even if one
   exists or the run was partial. Needed only when deliberately replacing a pool without
-  a reset, or accepting a short pool and re-sizing the study to match.
+  a reset, or accepting a short pool and re-sizing the study to match. Reviewer completion
+  counts are scoped to the active manifest, so ratings from the replaced pool do not consume
+  the new cohort's quota.
 - `ENV_FILE=config/.env.production make seed` — explicitly use the prod env file (only needed when both env files exist on the same box; otherwise the Makefile auto-falls-back to `.env.production` when `.env.development` is absent)
 
 ### Resetting between test runs
@@ -443,9 +448,12 @@ Plus:
 
 ## The study pool
 
-`make seed` writes `data/seed_pool.json` recording the `qa_id` of every prompt it
-created, and the allocator treats exactly those prompts as the study pool.
-Override the path with `INTER_RATER_POOL_MANIFEST`.
+`make seed` writes the path configured by `INTER_RATER_POOL_MANIFEST`, recording
+the `qa_id` of every prompt it created, and the allocator treats exactly those
+prompts as the study pool. The path has no code default because it is
+environment-specific. Seeding and reset commands fail before making changes if
+the setting is absent; the backend interprets an absent setting as explicit
+ad-hoc mode over all eligible project spans.
 
 This gives three properties the study depends on:
 
@@ -457,14 +465,18 @@ This gives three properties the study depends on:
   land in different cohorts and be handed the same queue.
 - **A stable cohort key** — reviewer slots are keyed on the manifest fingerprint,
   so adding, deleting, or slow-indexing a span cannot re-slot the cohort
-  mid-study. Re-seeding intentionally changes the fingerprint and starts a fresh
-  cohort.
+  mid-study. Filtering and fingerprinting use the same loaded snapshot, and
+  manifest writes use atomic replacement, so a concurrent re-seed cannot combine
+  old prompts with a new cohort key. Re-seeding intentionally changes the
+  fingerprint and starts a fresh cohort.
+- **Study-scoped completion** — the per-reviewer quota counts only ratings whose
+  span IDs belong to the active manifest. Ratings from an earlier pool in the
+  same Phoenix project cannot shorten a replacement cohort.
 
 `make seed-reset` deletes the manifest along with the project, since a manifest
 naming deleted spans would surface an empty pool. If the manifest is absent the
 allocator falls back to every eligible span in the project, which is the right
-behaviour for ad-hoc inter-rating outside a study — a startup log line records
-which mode is active.
+behaviour for ad-hoc inter-rating outside a study.
 
 ### Guards
 
@@ -475,10 +487,13 @@ each of these fails loudly rather than degrading:
   no manifest and says so. A manifest listing only the prompts that happened to
   succeed shrinks the pool, breaks the capacity equation, and drops allocation
   back to unbalanced ranking.
-- **An existing manifest is never overwritten.** `make seed` refuses and reports
-  the existing prompt count, so a pilot run (`--count 5`) cannot quietly replace
-  a full study pool. `make seed-reset` removes it first, so the documented
-  workflow is unaffected. `SEED_ARGS="--force-manifest"` overrides both guards.
+- **An existing manifest is never overwritten.** `make seed` checks before any
+  API submission, refuses with a non-zero exit, and reports the existing prompt
+  count, so a pilot run (`--count 5`) cannot create untracked spans or quietly
+  replace a full study pool. It checks again before the final atomic write in
+  case another seeder created a manifest while the prompts were generated.
+  `make seed-reset` removes it first, so the documented workflow is unaffected.
+  `SEED_ARGS="--force-manifest"` overrides both guards.
 - **Cross-environment manifests are rejected.** The manifest records the project
   it was seeded for; loading it against a different `INTER_RATER_PROJECT` raises
   rather than silently matching no spans.
@@ -495,7 +510,7 @@ stop, not a steady state.
 Check the manifest matches the intended pool before reviewers arrive:
 
 ```bash
-python3 -c "import json; d=json.load(open('data/seed_pool.json')); print(d['count'], d['project'])"
+python3 -c "import json,os; d=json.load(open(os.environ['INTER_RATER_POOL_MANIFEST'])); print(d['count'], d['project'])"
 ```
 
 ## Phoenix Notes

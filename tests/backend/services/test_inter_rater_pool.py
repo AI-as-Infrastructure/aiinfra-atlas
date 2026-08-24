@@ -42,6 +42,23 @@ def test_no_manifest_leaves_sessions_untouched(pool):
     assert p.restrict(sessions) == sessions
 
 
+def test_manifest_path_has_no_code_default(monkeypatch, tmp_path):
+    """Environment-specific paths must not be inferred from the working tree."""
+    from backend.services.inter_rater_pool import manifest_path, require_manifest_path
+
+    monkeypatch.delenv("INTER_RATER_POOL_MANIFEST", raising=False)
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "seed_pool.json").write_text(
+        json.dumps({"project": "test-project", "qa_ids": ["must-not-load"]})
+    )
+    monkeypatch.chdir(tmp_path)
+
+    assert manifest_path() is None
+    assert InterRaterPool().load() is None
+    with pytest.raises(ValueError, match="INTER_RATER_POOL_MANIFEST"):
+        require_manifest_path()
+
+
 def test_restrict_excludes_organic_sessions(pool):
     p = pool(["seed-1", "seed-2"])
     sessions = [{"qa_id": "seed-1"}, {"qa_id": "organic-9"}, {"qa_id": "seed-2"}]
@@ -79,6 +96,30 @@ def test_fingerprint_changes_when_pool_is_reseeded(pool):
 
 def test_fingerprint_ignores_qa_id_ordering(pool):
     assert pool(["a", "b", "c"]).fingerprint() == pool(["c", "a", "b"]).fingerprint()
+
+
+def test_restriction_and_fingerprint_use_one_manifest_snapshot(monkeypatch):
+    """A re-seed cannot occur between filtering and fingerprinting the pool."""
+    p = InterRaterPool()
+    snapshot = {"project": "test-project", "qa_ids": ["old-1", "old-2"]}
+    loads = []
+
+    def load_once():
+        loads.append(True)
+        return snapshot
+
+    monkeypatch.setattr(p, "load", load_once)
+    sessions = [
+        {"qa_id": "old-1"},
+        {"qa_id": "old-2"},
+        {"qa_id": "new-1"},
+    ]
+
+    restricted, fingerprint = p.restrict_with_fingerprint(sessions)
+
+    assert [session["qa_id"] for session in restricted] == ["old-1", "old-2"]
+    assert fingerprint == p._fingerprint(snapshot)
+    assert len(loads) == 1
 
 
 def test_malformed_manifest_fails_loudly(pool, tmp_path, monkeypatch):

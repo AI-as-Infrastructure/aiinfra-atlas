@@ -194,14 +194,11 @@ class InterRaterService:
             include_citations=include_citations,
             keep_author_id=True,
         )
-        sessions = inter_rater_pool.restrict(sessions)
-
-        # Read the fingerprint from the same manifest load that produced these
-        # sessions and cache the pair. Read separately at allocation time it
-        # could advance after a re-seed while the cached sessions were still the
-        # previous pool, handing reviewers a new cohort's slot over an old
-        # cohort's prompts until the cache expired.
-        fingerprint = inter_rater_pool.fingerprint()
+        # Restriction and fingerprinting deliberately share one manifest
+        # snapshot. Calling restrict() and fingerprint() separately leaves a
+        # re-seed race between the two reads even if the resulting values are
+        # subsequently cached together.
+        sessions, fingerprint = inter_rater_pool.restrict_with_fingerprint(sessions)
         self._validate_study_capacity(sessions, fingerprint)
 
         self._pool_cache[cache_key] = {
@@ -256,8 +253,6 @@ class InterRaterService:
 
         try:
             from .annotations_cache import annotations_cache
-            from .inter_rater_pool import inter_rater_pool
-
             sanitized_user_id = user_id[:8] + "..." if len(user_id) > 8 else user_id
             logger.info(f"Building inter-rater allocation for user {sanitized_user_id}")
 
@@ -319,7 +314,18 @@ class InterRaterService:
                 available_sessions.append(candidate)
 
             # Enforce the per-user quota across reloads and browser sessions.
-            completed_sessions = annotations_cache.get_user_inter_rater_count(user_id)
+            # In study mode quota belongs to this manifest, not to every
+            # inter-rating the user has ever submitted in the Phoenix project.
+            # This is essential when a new manifest intentionally starts a new
+            # cohort without deleting the old project.
+            study_span_ids = (
+                {session["span_id"] for session in all_sessions}
+                if pool_fingerprint is not None
+                else None
+            )
+            completed_sessions = annotations_cache.get_user_inter_rater_count(
+                user_id, study_span_ids
+            )
             remaining_slots = max(self.sessions_per_user - completed_sessions, 0)
 
             # Allocate sessions to this specific user
@@ -360,11 +366,22 @@ class InterRaterService:
 
         try:
             available_sessions = await self.get_sessions_for_inter_rating(user_id, include_citations=False)
+            pool_sessions, pool_fingerprint = await self._get_pool(False)
+            user_pool_sessions = [
+                session for session in pool_sessions
+                if not session.get("original_user_id")
+                or session.get("original_user_id") != user_id
+            ]
+            study_span_ids = (
+                {session["span_id"] for session in user_pool_sessions}
+                if pool_fingerprint is not None
+                else None
+            )
 
             stats = {
                 "enabled": True,
                 "available_sessions": len(available_sessions),
-                "completed_sessions": self.get_completed_sessions(user_id),
+                "completed_sessions": self.get_completed_sessions(user_id, study_span_ids),
                 "max_sessions_per_user": self.sessions_per_user,
                 "project_name": self.project_name,
                 "default_ui": self.default_ui
@@ -396,11 +413,13 @@ class InterRaterService:
 
             return error_stats
 
-    def get_completed_sessions(self, user_id: str) -> int:
-        """Return the current cached count of distinct spans rated by a user."""
+    def get_completed_sessions(
+        self, user_id: str, span_ids: Optional[set[str]] = None
+    ) -> int:
+        """Return distinct rated spans, optionally scoped to the active study."""
         from .annotations_cache import annotations_cache
 
-        return annotations_cache.get_user_inter_rater_count(user_id)
+        return annotations_cache.get_user_inter_rater_count(user_id, span_ids)
 
     def invalidate_user_cache(self, user_id: str):
         """

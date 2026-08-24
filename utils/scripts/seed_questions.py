@@ -17,6 +17,7 @@ import argparse
 import json
 import os
 import sys
+import tempfile
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -27,7 +28,10 @@ from typing import List, Optional
 import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from backend.services.inter_rater_pool import manifest_path  # noqa: E402
+from backend.services.inter_rater_pool import (  # noqa: E402
+    active_project,
+    require_manifest_path,
+)
 
 DEFAULT_FILE = Path("data/seed_questions.json")
 DEFAULT_API = "http://localhost:8000"
@@ -247,7 +251,36 @@ def verify_in_phoenix(qa_ids: List[str]) -> dict:
     return out
 
 
-def write_pool_manifest(seeded: List[SeedResult], total: int, force: bool) -> None:
+def prepare_manifest_target(force: bool) -> str:
+    """Validate the study target before any questions are submitted."""
+    try:
+        path = require_manifest_path()
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
+
+    if active_project() is None:
+        raise SystemExit(
+            "INTER_RATER_PROJECT or PHOENIX_PROJECT_NAME must be set before seeding"
+        )
+
+    if os.path.exists(path) and not force:
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                existing = len(json.load(handle).get("qa_ids", []))
+        except (OSError, ValueError, AttributeError):
+            existing = "unreadable"
+        raise SystemExit(
+            f"Refusing to overwrite existing study pool manifest at {path} "
+            f"({existing} prompts). Run `make seed-reset` first, or pass "
+            f"--force-manifest to replace it. No prompts were submitted."
+        )
+
+    return path
+
+
+def write_pool_manifest(
+    seeded: List[SeedResult], total: int, force: bool, path: str
+) -> bool:
     """
     Record the seeded prompts as the authoritative study pool.
 
@@ -265,8 +298,6 @@ def write_pool_manifest(seeded: List[SeedResult], total: int, force: bool) -> No
       documented reset workflow removes it first, so this does not get in the
       way.
     """
-    path = manifest_path()
-
     if len(seeded) != total and not force:
         print(
             f"NOT writing study pool manifest: only {len(seeded)}/{total} prompts seeded.\n"
@@ -274,22 +305,24 @@ def write_pool_manifest(seeded: List[SeedResult], total: int, force: bool) -> No
             f"  allocation. Fix the failures and re-run, or pass --force-manifest to\n"
             f"  accept a {len(seeded)}-prompt pool and size the study to it."
         )
-        return
+        return False
 
+    # Repeat the preflight check to close the long seeding window: another
+    # process may have established a pool while questions were being generated.
     if os.path.exists(path) and not force:
         try:
             with open(path, "r", encoding="utf-8") as handle:
                 existing = len(json.load(handle).get("qa_ids", []))
         except (OSError, ValueError):
             existing = "unreadable"
-        print(
-            f"NOT overwriting existing study pool manifest at {path} ({existing} prompts).\n"
-            f"  Run `make seed-reset` first, or pass --force-manifest to replace it."
+        raise SystemExit(
+            f"Refusing to overwrite study pool manifest created during seeding at "
+            f"{path} ({existing} prompts). The newly submitted prompts were not "
+            f"made authoritative; inspect the project before retrying."
         )
-        return
 
     manifest = {
-        "project": os.getenv("INTER_RATER_PROJECT") or os.getenv("PHOENIX_PROJECT_NAME"),
+        "project": active_project(),
         "created": datetime.now(timezone.utc).isoformat(),
         "count": len(seeded),
         "qa_ids": [r.qa_id for r in seeded],
@@ -297,12 +330,29 @@ def write_pool_manifest(seeded: List[SeedResult], total: int, force: bool) -> No
     directory = os.path.dirname(path)
     if directory:
         os.makedirs(directory, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as handle:
-        json.dump(manifest, handle, indent=2)
-        handle.write("\n")
+    # Write beside the destination and atomically replace it. Readers therefore
+    # observe either the complete previous snapshot or the complete new one,
+    # never truncated JSON during a forced re-seed.
+    fd, temporary_path = tempfile.mkstemp(
+        dir=directory or ".", prefix=".seed_pool.", suffix=".tmp", text=True
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(manifest, handle, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, path)
+    except Exception:
+        try:
+            os.unlink(temporary_path)
+        except FileNotFoundError:
+            pass
+        raise
 
     print(f"Wrote study pool manifest: {path} ({len(seeded)} prompts)")
     print("  The allocator will treat exactly these prompts as the study pool.")
+    return True
 
 
 def main() -> int:
@@ -331,6 +381,8 @@ def main() -> int:
     if args.dry_run:
         print("Dry run — exiting before submission.")
         return 0
+
+    manifest_target = prepare_manifest_target(args.force_manifest)
 
     stats = RunStats(total=len(questions))
     results: List[SeedResult] = []
@@ -383,7 +435,10 @@ def main() -> int:
 
     if stats.succeeded > 0:
         write_pool_manifest(
-            [r for r in results if r.ok], len(questions), args.force_manifest
+            [r for r in results if r.ok],
+            len(questions),
+            args.force_manifest,
+            manifest_target,
         )
 
     return 0 if not stats.failed else 1

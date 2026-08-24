@@ -201,17 +201,27 @@ class AnnotationsCache:
                 raters.add(metadata["rater_id"])
         return raters
 
-    def get_user_inter_rater_count(self, user_id: str) -> int:
-        """Return the number of distinct spans rated by one inter-rater user."""
+    def get_user_inter_rater_count(
+        self, user_id: str, span_ids: Optional[Set[str]] = None
+    ) -> int:
+        """
+        Return distinct spans rated by one user.
+
+        When span_ids is supplied, count only that study snapshot. Without the
+        scope this remains the project-wide count used by ad-hoc inter-rating.
+        """
         with self._lock:
-            span_ids = set(self._by_span.keys())
-            span_ids.update(
-                span_id
-                for span_id, local_user_id in self._local_ratings
-                if local_user_id == user_id
-            )
+            if span_ids is None:
+                relevant_span_ids = set(self._by_span.keys())
+                relevant_span_ids.update(
+                    span_id
+                    for span_id, local_user_id in self._local_ratings
+                    if local_user_id == user_id
+                )
+            else:
+                relevant_span_ids = set(span_ids)
         return sum(
-            1 for span_id in span_ids
+            1 for span_id in relevant_span_ids
             if user_id in self.get_inter_rater_raters(span_id)
         )
 
