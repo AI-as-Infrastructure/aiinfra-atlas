@@ -10,7 +10,7 @@ The inter-rater feature enables authenticated users to provide secondary (inter-
 - **Anonymity**: users are represented by irreversible anonymous IDs
 - **No client IPs** collected, logged, or exported
 - **Inter-rater annotations** in Phoenix are clearly labeled and separate from original ratings
-- **All 9 evaluation fields** are captured and stored in Phoenix
+- **All rubric fields** are captured and stored in Phoenix (see Evaluation Fields below)
 
 ## Configuration (.env)
 ```bash
@@ -21,7 +21,7 @@ INTER_RATER_ENABLED=true
 INTER_RATER_PROJECT=YourPhoenixProject
 
 # Allocation limits
-INTER_RATER_MAX_RATINGS=3          # Max inter-rater ratings per session (default: 3)
+INTER_RATER_MAX_RATINGS=4          # Max inter-rater ratings per session (code default: 3)
 INTER_RATER_SESSIONS_PER_USER=20   # Sessions offered per user (default: 20)
 
 # Default UI mode for focus group testing
@@ -60,23 +60,25 @@ The canonical configuration for inter-rater reliability studies in ATLAS:
 
 ```bash
 INTER_RATER_ENABLED=true            # required
-INTER_RATER_MAX_RATINGS=3           # 3 independent ratings per prompt
+INTER_RATER_MAX_RATINGS=4           # 4 independent ratings per prompt
 INTER_RATER_SESSIONS_PER_USER=20    # each reviewer rates 20 prompts
 INTER_RATER_DEFAULT_UI=true         # reviewers see only the inter-rater page
 INTER_RATER_PROJECT=<must match PHOENIX_PROJECT_NAME>
 ```
 
-Paired with a seed pool of **100 prompts** and **15 paid reviewers**, this gives a perfectly saturated 1:1 design — `100 × 3 = 300 = 15 × 20`. Under full attendance every prompt receives exactly 3 independent ratings, suitable for academic IRR analysis (Fleiss' κ across the whole pool with no mixed-N caveats) and for fine-tuning labels.
+Paired with a seed pool of **100 prompts** and **20 paid reviewers**, this gives a perfectly saturated 1:1 design — `100 × 4 = 400 = 20 × 20`. Under full attendance every prompt receives exactly 4 independent ratings, suitable for academic IRR analysis (Fleiss' κ across the whole pool with no mixed-N caveats) and for fine-tuning labels.
 
-These values are the default in `config/.env.production` and `config/.env.staging`. The development template (`config/.env.template`) carries the same `MAX_RATINGS=3` so a fresh install matches the canonical study design; if you're iterating locally as a solo developer, override `INTER_RATER_MAX_RATINGS=1` in your `.env.development` so a single rating is enough to saturate a session for visual testing.
+`MAX_RATINGS` must be set so that `pool × MAX_RATINGS = reviewers × SESSIONS_PER_USER`. Leaving it at 3 with 20 reviewers caps capacity at 300 against 400 ratings demanded, and reviewers run out of work before completing their 20 — see `test_undersized_pool_starves_raters`.
+
+These values are the default in `config/.env.production` and `config/.env.staging`. The development template (`config/.env.template`) carries the same `MAX_RATINGS=4` so a fresh install matches the canonical study design; if you're iterating locally as a solo developer, override `INTER_RATER_MAX_RATINGS=1` in your `.env.development` so a single rating is enough to saturate a session for visual testing.
 
 ### Issues Researchers Must Address
 
 The harness enforces the rating-allocation math, but a good study outcome depends on several things outside its control. Plan for each of these before launching:
 
-1. **Reviewer recruitment and payment.** Payment must be contingent on completing all 20 ratings, with the contract signed before reviewers see any prompts. The saturated 1:1 design has no automatic recovery path if a reviewer abandons mid-study — their share of triple-coverage is permanently lost. Have 1–2 standby reviewers ready in case of legitimate withdrawal (illness, hardware failure).
+1. **Reviewer recruitment and payment.** Payment must be contingent on completing all 20 ratings, with the contract signed before reviewers see any prompts. The saturated 1:1 design has no automatic recovery path if a reviewer abandons mid-study — their share of the coverage is permanently lost. Have 1–2 standby reviewers ready in case of legitimate withdrawal (illness, hardware failure).
 
-2. **Reviewer briefing and rubric.** The 6 Likert scales (factual accuracy, corpus fidelity, analysis quality, relevance, difficulty, clarity) need consistent interpretation across raters, or IRR will be artificially depressed. Provide written rubrics with concrete examples for each scale point and run a short calibration session — ideally rating 2–3 sample prompts together — before launch.
+2. **Reviewer briefing and rubric.** The 6 Likert scales (corpus fidelity, citation quality, relevance, coherence, uncertainty, historical contextualisation — see Evaluation Fields below) need consistent interpretation across raters, or IRR will be artificially depressed. Provide written rubrics with concrete examples for each scale point and run a short calibration session — ideally rating 2–3 sample prompts together — before launch.
 
 3. **Pilot run.** Seed and rate at least 5 prompts with 1–2 reviewers before the main study to verify the full pipeline (seeding → allocation → submission → Phoenix annotations → export). Use `make seed SEED_ARGS="--count 5"` against a dedicated test project (e.g. `INTER_RATER_PROJECT=ATLAS-Pilot`) so the live study's data stays clean.
 
@@ -117,12 +119,12 @@ INTER_RATER_SESSIONS_PER_USER=10   # 10 sessions per user
 - Provides good statistical reliability
 - Balanced workload per user
 
-**Current Study (15 paid reviewers × 20 ratings = exactly 3 ratings/prompt):**
+**Current Study (20 paid reviewers × 20 ratings = exactly 4 ratings/prompt):**
 ```bash
-INTER_RATER_MAX_RATINGS=3          # 3 inter-raters per session
+INTER_RATER_MAX_RATINGS=4          # 4 inter-raters per session
 INTER_RATER_SESSIONS_PER_USER=20   # 20 sessions per user (default)
 ```
-- 100 prompts × 3 ratings = 300 = 15 reviewers × 20 ratings — perfectly saturated 1:1
+- 100 prompts × 4 ratings = 400 = 20 reviewers × 20 ratings — perfectly saturated 1:1
 - Count-aware allocation drives every prompt to exactly 3 ratings under staggered arrival; suitable for Fleiss' κ across the full pool
 
 **Large Teams (10+ users):**
@@ -143,9 +145,9 @@ Minimum users needed = (N × INTER_RATER_MAX_RATINGS) / INTER_RATER_SESSIONS_PER
 
 **Example (current study):**
 - 100 sessions to cover
-- MAX_RATINGS=3
+- MAX_RATINGS=4
 - SESSIONS_PER_USER=20
-- Demand = 15 × 20 = **300 ratings**, distributed by the count-aware allocator so each of the 100 sessions receives **exactly 3 ratings** under full attendance
+- Demand = 20 × 20 = **400 ratings**, distributed by the count-aware allocator so each of the 100 sessions receives **exactly 4 ratings** under full attendance
 - Worst-case (one reviewer fully no-shows): 80 prompts triple-rated, 20 double-rated — still cleanly above the ≥2 floor
 
 ### Workload Estimation
@@ -160,7 +162,7 @@ With `SESSIONS_PER_USER=20`: **100-200 minutes per user**
 
 ## Seeding Sessions for Focus Group Testing
 
-For focus-group studies (e.g. 15 raters × 20 ratings each), there is rarely enough organic traffic to provide a pre-populated pool of sessions. The seeding script runs a JSON file of questions through the live RAG pipeline so each question becomes a ratable session in Phoenix — with real LLM answers and real citations, but no baseline feedback (so the only feedback comes from focus-group participants).
+For focus-group studies (e.g. 20 raters × 20 ratings each), there is rarely enough organic traffic to provide a pre-populated pool of sessions. The seeding script runs a JSON file of questions through the live RAG pipeline so each question becomes a ratable session in Phoenix — with real LLM answers and real citations, but no baseline feedback (so the only feedback comes from focus-group participants).
 
 ### Workflow on prod
 
@@ -179,7 +181,7 @@ The seed pool size determines the rating-density per prompt:
 pool_size = (participants × ratings_per_participant) / INTER_RATER_MAX_RATINGS
 ```
 
-For the default focus group target (15 reviewers × 20 ratings = 300 ratings) with `MAX_RATINGS=3`, this gives a saturated 1:1 design at **100 prompts × 3 ratings = 300**. Every prompt receives exactly 3 ratings under full attendance, which is the gold standard for inter-rater reliability (single Fleiss' κ across the pool, no mixed-N caveats).
+For the default focus group target (20 reviewers × 20 ratings = 400 ratings) with `MAX_RATINGS=4`, this gives a saturated 1:1 design at **100 prompts × 4 ratings = 400**. Every prompt receives exactly 4 ratings under full attendance, which is the gold standard for inter-rater reliability (single Fleiss' κ across the pool, no mixed-N caveats).
 
 This design assumes paid reviewers with completion-linked payment so attrition is rare. If you can't assume that, add a buffer of ~20% (pool=120) to protect the ≥2-ratings-per-prompt floor against dropouts — at the cost of mixing 2- and 3-rated prompts in the output. The script prints a sizing check at startup and warns if the pool is undersized.
 
@@ -205,7 +207,7 @@ Safety:
 
 ### Behavior
 
-Seeded sessions have no baseline (`original`) feedback. The inter-rater service surfaces them anyway; the first participant rating on a seeded session is tagged `inter_rater_1` (no `original` annotation is ever created for seeded sessions, so all 15 raters are treated symmetrically).
+Seeded sessions have no baseline (`original`) feedback. The inter-rater service surfaces them anyway; the first participant rating on a seeded session is tagged `inter_rater_1` (no `original` annotation is ever created for seeded sessions, so all 20 raters are treated symmetrically).
 
 ## Architecture
 - Backend
@@ -244,7 +246,47 @@ The per-user cache TTL is **60 seconds** so rankings stay in step with current `
 
 ### Why count-aware ranking
 
-Pure hash-based ranking (the previous behaviour) de-correlates users but does not load-balance ratings across sessions. With 15 users picking top-20 from a 100-session pool, ~16% of sessions end up with fewer than 2 raters under the binomial distribution. Count-aware ranking corrects this by progressively concentrating fresh ratings on the least-rated sessions, so the floor is reliably met under realistic focus-group conditions (simulated dogpile and 15-minute staggered arrival both produce 0 sessions below floor with `pool=120`).
+Pure hash-based ranking (the previous behaviour) de-correlates users but does not load-balance ratings across sessions. With 20 users picking top-20 from a 100-session pool, ~16% of sessions end up with fewer than 2 raters under the binomial distribution. Count-aware ranking corrects this by progressively concentrating fresh ratings on the least-rated sessions.
+
+### Concurrent raters and the submission-time cap
+
+Count-aware ranking only re-applies when a rater **re-fetches** an allocation, and
+`InterRaterDashboard.vue` fetches a rater's list once, working through that snapshot
+and removing each rated item locally rather than re-fetching ("re-fetching risks
+returning it again"). With `SESSIONS_PER_USER=20`, a rater's entire workload is
+allocated from a single snapshot — so when raters work concurrently, which is the
+normal case for a scheduled focus group, every rater allocates from a pool that
+still reads 0 ratings and the counts inform nobody's queue.
+
+`INTER_RATER_MAX_RATINGS` is therefore enforced in two places:
+
+- **At allocation** (`inter_rater_service.py`) — capped spans drop out of
+  `available_sessions` on the next cache refresh.
+- **At submission** (`telemetry/api.py`) — a span already at `max_ratings` is
+  rejected with `session_unavailable`, which the dashboard absorbs by dropping the
+  item and moving on. This is what holds the design together under concurrency.
+
+`tests/backend/services/test_inter_rater_allocation_coverage.py` quantifies both
+against the real allocator (100 prompts, 20 raters, 20 ratings each, cap 4):
+
+| scenario | total | prompts <2 | prompts ==4 | prompts >4 | max |
+|---|---|---|---|---|---|
+| sequential arrival | 400 | 0 | 100 | 0 | 4 |
+| concurrent arrival | 400 | 0 | 100 | 0 | 4 |
+| concurrent, submission cap removed | 400 | **11** | 12 | 43 | **11** |
+
+With the submission cap in place, both arrival patterns give the perfect saturated
+design. Without it, 11 of 100 prompts fall below the 2-rating floor while 43 exceed
+the cap, one reaching 11 ratings — a mixed-N outcome that defeats the
+single-Fleiss'-κ rationale for the 1:1 design.
+
+Note that reducing `INTER_RATER_SESSIONS_PER_USER` is not a substitute: smaller
+snapshots protect the floor but never prevent over-cap ratings.
+
+The submission-time check reads `annotations_cache.get_inter_rater_count()`, which
+refreshes after each submission but can lag briefly under heavy concurrency, and it
+fails open so a cache error never blocks a legitimate rating. It closes the gap
+rather than eliminating it — verify against real annotation counts during the pilot.
 
 ### Progressive Filling
 
@@ -300,18 +342,32 @@ The system self-balances:
 - Phoenix submissions contain only anonymized identifiers and rating metadata
 
 ## Evaluation Fields (Order)
-Both main ratings and inter-ratings use the same field order - **all 9 fields are captured**:
-1. **Factual Accuracy** (1–5 Likert scale)
-2. **Corpus Fidelity** (1–5 Likert scale)
-3. **Analysis Quality** (1–5 Likert scale)
-4. **Relevance** (1–5 Likert scale) 
-5. **Difficulty** (1–5 Likert scale)
-6. **Clarity** (1–5 Likert scale)
-7. **User Type** (Expert / Non-expert) - *Fixed: Now properly stored in Phoenix*
-8. **Comments** (Free text feedback)
-9. **Faults** (hallucination, off_topic, inappropriate, bias checkboxes)
 
-**Recent Fix**: User Type field was previously not being stored in Phoenix annotations - this has been resolved.
+The rubric shipped in `InterRaterPlayback.vue` and `ExtendedFeedback.vue` uses these
+six Likert scales, in this order:
+
+1. **Corpus Fidelity** (1–5) — groundedness in the retrieved corpus
+2. **Citation Quality** (1–5)
+3. **Relevance** (1–5)
+4. **Coherence** (1–5) — well-reasoned and argued response
+5. **Uncertainty** (1–5) — flags contested interpretations, gaps, ambiguity
+6. **Historical Contextualisation** (1–5)
+
+Plus:
+- **Per-scale comments** — one free-text rationale per scale, required when the
+  rating is extreme (1, 2 or 5); see `isCommentRequired`
+- **Faults** — `hallucination`, `harmful_handling` (checkboxes)
+- **Fault rationale** — free text, required when any fault is checked
+- **Comments** — overall free text
+
+> Superseded rubric: earlier versions used Factual Accuracy, Analysis Quality,
+> Difficulty and Clarity. These were replaced by Citation Quality, Coherence,
+> Uncertainty and Historical Contextualisation respectively, and the
+> `inappropriate` fault was renamed `harmful_handling`. The old fields remain on
+> the `UserFeedback` model and the Phoenix write path for backward compatibility
+> with previously collected data, but the inter-rater UI no longer collects them.
+> **Rater briefings must document the six scales above**, not the superseded set —
+> rubric drift between briefing and UI depresses IRR directly.
 
 ## API Endpoints
 - `GET /api/inter-rater/stats`

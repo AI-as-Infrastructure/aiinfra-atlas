@@ -174,6 +174,29 @@ async def submit_feedback(feedback: Union[InterRaterFeedback, UserFeedback] if I
                     message="Authentication required for inter-rater feedback",
                     status="error"
                 )
+
+            # Reject once a span has reached max_ratings. The allocator caps at
+            # allocation time only, so a rater working from a stale snapshot can
+            # otherwise push one span past the cap while others starve — see
+            # tests/backend/services/test_inter_rater_allocation_coverage.py.
+            try:
+                from backend.services.annotations_cache import annotations_cache
+                from backend.services.inter_rater_service import inter_rater_service as cap_ir_service
+                if cap_ir_service and cap_ir_service.is_enabled():
+                    existing = annotations_cache.get_inter_rater_count(feedback.original_span_id)
+                    if existing >= cap_ir_service.max_ratings:
+                        logger.info(
+                            f"Inter-rater submission rejected: span at max_ratings "
+                            f"({existing}/{cap_ir_service.max_ratings})"
+                        )
+                        return FeedbackResponse(
+                            message="This inter-rating session is no longer available.",
+                            status="session_unavailable"
+                        )
+            except Exception as cap_error:
+                # Fail open: a cap-check failure must not block a legitimate rating
+                logger.warning(f"max_ratings cap check failed, allowing submission: {cap_error}")
+
             feedback_data.update({
                 "is_inter_rater": True,
                 "original_span_id": feedback.original_span_id,

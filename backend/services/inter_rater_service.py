@@ -231,9 +231,15 @@ class InterRaterService:
         Invalidate caches after a user submits inter-rater feedback.
 
         Clears only the submitting user's session/stats cache. Other users'
-        caches expire naturally (5-min TTL). If another user hits a span
-        that has since reached max_ratings, session_unavailable handles it
-        gracefully on the frontend without needing eager cache invalidation.
+        caches expire naturally (5-min TTL).
+
+        NOTE: another user holding a stale allocation for a span that has
+        since reached max_ratings will still succeed in rating it. There is
+        no submission-time cap check — session_unavailable
+        (telemetry/api.py) fires only when the annotation write itself
+        fails, not when a span is already at max_ratings. See
+        tests/backend/services/test_inter_rater_allocation_coverage.py for
+        the coverage impact under concurrent raters.
         """
         cache_key = self._get_cache_key(user_id)
         self._session_cache.pop(cache_key, None)
