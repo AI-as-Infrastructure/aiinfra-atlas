@@ -1,0 +1,44 @@
+cff-version: 1.2.0
+title: >-
+  ATLAS: Analysis and Testing of Language Models for Archival Systems
+message: >-
+  If you use this software, please cite the specific release you ran. The
+  version matters: release notes record the study design a given version
+  implements, and those have changed between versions.
+type: software
+authors:
+  - family-names: Smithies
+    given-names: James
+    affiliation: Australian National University
+  - family-names: Berman
+    given-names: Glen
+    affiliation: Australian National University
+repository-code: "https://github.com/AI-as-Infrastructure/aiinfra-atlas"
+url: "https://aiinfra.anu.edu.au"
+abstract: >-
+  A test harness for evaluating Large Language Model Retrieval Augmented
+  Generation (RAG) for Humanities and Social Science research, including an
+  inter-rater reliability workflow for structured expert evaluation of generated
+  responses. A deliverable of the AI as Infrastructure (AIINFRA) project. The
+  default corpus is 1901 parliamentary records from Australia, Aotearoa New
+  Zealand and the United Kingdom, but the vector store is designed to be
+  replaceable.
+keywords:
+  - retrieval augmented generation
+  - large language models
+  - digital humanities
+  - inter-rater reliability
+  - evaluation framework
+license: MIT
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.17204370
+    description: Zenodo archive of the v0.2.0 release
+# TODO before publishing a release intended for citation:
+#   - add `version:` and `date-released:` for that release
+#   - add the release's own Zenodo DOI to `identifiers` (see ReadMe.md,
+#     "Major Releases"; v0.3.0 does not currently record one)
+#   - add ORCID identifiers for both authors
+# Authorship reflects project contribution, not commit counts: the git history
+# has a single committer, so the author list cannot be derived from it. Confirm
+# it is complete before publishing a release intended for citation.
