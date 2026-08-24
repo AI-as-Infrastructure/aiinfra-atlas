@@ -248,12 +248,26 @@ async def test_shrunken_pool_fails_instead_of_silently_unbalancing(wired):
         await service.get_sessions_for_inter_rating("anon_1")
 
 
-async def test_capacity_guard_only_applies_in_study_mode(wired, monkeypatch, tmp_path):
+async def test_capacity_guard_only_applies_in_study_mode(wired, monkeypatch):
     """Without a manifest, ad-hoc inter-rating uses whatever is in the project."""
     service, query = wired
-    monkeypatch.setenv("INTER_RATER_POOL_MANIFEST", str(tmp_path / "absent.json"))
+    monkeypatch.delenv("INTER_RATER_POOL_MANIFEST")
     query.return_value = _pool()[:-1]
 
     sessions = await service.get_sessions_for_inter_rating("anon_1")
 
     assert isinstance(sessions, list)
+
+
+async def test_configured_missing_pool_fails_with_normal_chat_ui(
+    wired, monkeypatch, tmp_path
+):
+    """A configured study remains fail-closed when default_ui is false."""
+    service, query = wired
+    monkeypatch.setenv(
+        "INTER_RATER_POOL_MANIFEST", str(tmp_path / "absent.json")
+    )
+    query.return_value = _pool()[:-1]
+
+    with pytest.raises(ValueError, match="to be readable"):
+        await service.get_sessions_for_inter_rating("anon_1")

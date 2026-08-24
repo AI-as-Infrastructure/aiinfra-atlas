@@ -240,10 +240,10 @@ class InterRaterService:
         inter-rating is expected to use whatever is in the project.
         """
         if fingerprint is None:
-            # Focus-group mode must never fall through to ad-hoc rating. A
-            # configured-but-missing or unreadable manifest yields no
-            # fingerprint, which would otherwise skip every check below and
-            # accept whatever the project happens to contain.
+            # A configured pool must never fall through to ad-hoc rating. The
+            # manifest can define a study even when the normal chat UI remains
+            # available, so data integrity cannot depend on default_ui. Only an
+            # explicitly unset path in non-focus-group mode means ad-hoc use.
             #
             # Checked here rather than at startup on purpose: the manifest is
             # written by `make seed`, which POSTs to the running backend, so
@@ -251,15 +251,16 @@ class InterRaterService:
             # study (no manifest -> no boot -> no seeding -> no manifest). The
             # backend starts, seeding works, and only inter-rating itself
             # refuses until the pool exists.
-            if self.default_ui:
-                from .inter_rater_pool import MANIFEST_PATH_ENV, manifest_path
+            from .inter_rater_pool import MANIFEST_PATH_ENV, manifest_path
 
+            configured_path = manifest_path()
+            if self.default_ui or configured_path is not None:
                 raise ValueError(
-                    f"Focus-group mode (INTER_RATER_DEFAULT_UI=true) requires a readable "
-                    f"study pool manifest, but none loaded from "
-                    f"{MANIFEST_PATH_ENV}={manifest_path()!r}. Run `make seed` to create "
-                    f"it. Until then inter-rating is refused rather than silently "
-                    f"falling back to project-wide ad-hoc rating."
+                    f"Inter-rating requires the configured study pool manifest to be "
+                    f"readable, but none loaded from "
+                    f"{MANIFEST_PATH_ENV}={configured_path!r}. Run `make seed` to create "
+                    f"it, restore the file, or unset {MANIFEST_PATH_ENV} for deliberate "
+                    f"project-wide ad-hoc rating when INTER_RATER_DEFAULT_UI=false."
                 )
             return
 
@@ -405,22 +406,13 @@ class InterRaterService:
 
         try:
             available_sessions = await self.get_sessions_for_inter_rating(user_id, include_citations=False)
-            pool_sessions, pool_fingerprint = await self._get_pool(False)
-            user_pool_sessions = [
-                session for session in pool_sessions
-                if not session.get("original_user_id")
-                or session.get("original_user_id") != user_id
-            ]
-            study_span_ids = (
-                {session["span_id"] for session in user_pool_sessions}
-                if pool_fingerprint is not None
-                else None
-            )
 
             stats = {
                 "enabled": True,
                 "available_sessions": len(available_sessions),
-                "completed_sessions": self.get_completed_sessions(user_id, study_span_ids),
+                "completed_sessions": await self.get_completed_sessions_for_inter_rating(
+                    user_id, include_citations=False
+                ),
                 "max_sessions_per_user": self.sessions_per_user,
                 "project_name": self.project_name,
                 "default_ui": self.default_ui
@@ -451,6 +443,22 @@ class InterRaterService:
             }
 
             return error_stats
+
+    async def get_completed_sessions_for_inter_rating(
+        self, user_id: str, include_citations: bool = True
+    ) -> int:
+        """Count completed work against the active pool used by allocation."""
+        pool_sessions, pool_fingerprint = await self._get_pool(include_citations)
+        if pool_fingerprint is None:
+            return self.get_completed_sessions(user_id)
+
+        study_span_ids = {
+            session["span_id"]
+            for session in pool_sessions
+            if not session.get("original_user_id")
+            or session.get("original_user_id") != user_id
+        }
+        return self.get_completed_sessions(user_id, study_span_ids)
 
     def get_completed_sessions(
         self, user_id: str, span_ids: Optional[set[str]] = None

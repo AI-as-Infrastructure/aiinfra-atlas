@@ -55,7 +55,7 @@ These two flags serve different purposes:
 | Scenario | INTER_RATER_ENABLED | INTER_RATER_DEFAULT_UI | INTER_RATER_POOL_MANIFEST |
 |----------|--------------------|-----------------------|---------------------------|
 | Normal operation (no inter-rating) | `false` | `false` | not required |
-| Inter-rating available alongside chat | `true` | `false` | optional (set it to restrict to a seeded pool) |
+| Inter-rating available alongside chat | `true` | `false` | optional (unset for ad-hoc; set it to require a seeded pool) |
 | Focus group testing (inter-rater only) | `true` | `true` | **required** |
 
 `INTER_RATER_DEFAULT_UI=true` means a study is running, so the study pool must be
@@ -70,9 +70,11 @@ Two checks enforce this:
 - **Unset setting — startup.** The backend refuses to start if
   `INTER_RATER_POOL_MANIFEST` is missing while `INTER_RATER_DEFAULT_UI=true`. A
   blank or whitespace value counts as unset.
-- **Set but unreadable — pool refresh.** A configured path with no readable
-  manifest behind it is rejected when inter-rating builds an allocation, so a
-  deleted or not-yet-written pool cannot degrade into ad-hoc mode either.
+- **Set but unreadable — pool refresh in either UI mode.** A configured path
+  declares that allocation is restricted to that study pool, even when chat
+  remains the default UI. If no readable manifest exists behind the path,
+  inter-rating rejects the allocation rather than treating the entire project
+  as an ad-hoc pool. Deliberate ad-hoc mode requires the setting to be unset.
 
 The second check is deliberately not done at startup: `make seed` writes the
 manifest by POSTing to the running backend, so requiring a readable pool to boot
@@ -492,7 +494,7 @@ environment-specific. Seeding and reset commands fail before making changes if
 the setting is absent; the backend interprets an absent setting as explicit
 ad-hoc mode over all eligible project spans.
 
-This gives three properties the study depends on:
+This gives four properties the study depends on:
 
 - **Purity** — organic traffic in the same Phoenix project cannot enter the pool,
   so reviewers only see prompts they were briefed on.
@@ -508,7 +510,9 @@ This gives three properties the study depends on:
   fingerprint and starts a fresh cohort.
 - **Study-scoped completion** — the per-reviewer quota counts only ratings whose
   span IDs belong to the active manifest. Ratings from an earlier pool in the
-  same Phoenix project cannot shorten a replacement cohort.
+  same Phoenix project cannot shorten a replacement cohort. Allocation, stats,
+  and the sessions API all use this same scoped count, so the frontend cannot
+  declare completion early from ratings belonging to a replaced pool.
 
 `make seed-reset` deletes the manifest along with the project, since a manifest
 naming deleted spans would surface an empty pool. If the manifest is absent the

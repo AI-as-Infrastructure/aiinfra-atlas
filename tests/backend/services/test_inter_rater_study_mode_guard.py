@@ -4,7 +4,8 @@ Startup guard for focus-group mode.
 INTER_RATER_DEFAULT_UI=true means a study is running. Without a study pool the
 allocator silently reverts to project-wide ad-hoc rating: no pool purity, no
 capacity check, and a cohort key that moves when spans do. That combination has
-no legitimate reading, so it must fail at startup rather than at analysis.
+no legitimate reading: an unset focus-group setting fails at startup, and any
+configured-but-unreadable pool fails during allocation.
 """
 
 import json
@@ -106,11 +107,23 @@ def test_missing_manifest_is_rejected_at_pool_refresh(monkeypatch, tmp_path):
     )
     service = service_cls()
 
-    with pytest.raises(ValueError, match="requires a readable"):
+    with pytest.raises(ValueError, match="to be readable"):
         _capacity_check(service, [{"span_id": "s1"}] * 37, None)
 
 
-def test_ad_hoc_mode_still_tolerates_no_manifest_at_refresh(monkeypatch, tmp_path):
+def test_ad_hoc_mode_requires_manifest_setting_to_be_unset(monkeypatch):
+    service_cls = _env(
+        monkeypatch,
+        INTER_RATER_DEFAULT_UI="false",
+        INTER_RATER_POOL_MANIFEST=None,
+    )
+    service = service_cls()
+
+    assert _capacity_check(service, [{"span_id": "s1"}] * 37, None) is None
+
+
+def test_configured_pool_is_required_even_with_normal_chat_ui(monkeypatch, tmp_path):
+    """A seeded study's integrity must not depend on which page is the default."""
     service_cls = _env(
         monkeypatch,
         INTER_RATER_DEFAULT_UI="false",
@@ -118,7 +131,8 @@ def test_ad_hoc_mode_still_tolerates_no_manifest_at_refresh(monkeypatch, tmp_pat
     )
     service = service_cls()
 
-    assert _capacity_check(service, [{"span_id": "s1"}] * 37, None) is None
+    with pytest.raises(ValueError, match="to be readable"):
+        _capacity_check(service, [{"span_id": "s1"}] * 37, None)
 
 
 def test_manifest_removed_mid_study_is_rejected(monkeypatch, tmp_path):
@@ -133,5 +147,5 @@ def test_manifest_removed_mid_study_is_rejected(monkeypatch, tmp_path):
     service = service_cls()
     manifest.unlink()
 
-    with pytest.raises(ValueError, match="requires a readable"):
+    with pytest.raises(ValueError, match="to be readable"):
         _capacity_check(service, [{"span_id": "s1"}] * 37, None)
