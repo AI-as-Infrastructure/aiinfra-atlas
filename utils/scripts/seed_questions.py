@@ -20,6 +20,7 @@ import sys
 import time
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
@@ -243,6 +244,33 @@ def verify_in_phoenix(qa_ids: List[str]) -> dict:
     return out
 
 
+def write_pool_manifest(seeded: List[SeedResult]) -> None:
+    """
+    Record the seeded prompts as the authoritative study pool.
+
+    The allocator restricts itself to these qa_ids, so organic traffic in the
+    same Phoenix project cannot enter the study, every reviewer sees an
+    identical pool, and the cohort fingerprint stays stable for the whole run.
+    Re-seeding overwrites this file and therefore starts a new cohort.
+    """
+    path = os.getenv("INTER_RATER_POOL_MANIFEST", "data/seed_pool.json")
+    manifest = {
+        "project": os.getenv("INTER_RATER_PROJECT") or os.getenv("PHOENIX_PROJECT_NAME"),
+        "created": datetime.now(timezone.utc).isoformat(),
+        "count": len(seeded),
+        "qa_ids": [r.qa_id for r in seeded],
+    }
+    directory = os.path.dirname(path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(manifest, handle, indent=2)
+        handle.write("\n")
+
+    print(f"Wrote study pool manifest: {path} ({len(seeded)} prompts)")
+    print("  The allocator will treat exactly these prompts as the study pool.")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--file", type=Path, default=DEFAULT_FILE, help="Seed questions JSON file")
@@ -313,6 +341,9 @@ def main() -> int:
                 print(f"  Missing LLM span: {missing_llm[:5]}{' …' if len(missing_llm) > 5 else ''}")
             if missing_refs:
                 print(f"  Missing references span: {missing_refs[:5]}{' …' if len(missing_refs) > 5 else ''}")
+
+    if stats.succeeded > 0:
+        write_pool_manifest([r for r in results if r.ok])
 
     return 0 if not stats.failed else 1
 

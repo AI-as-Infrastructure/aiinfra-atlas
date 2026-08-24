@@ -38,6 +38,11 @@ class InterRaterService:
         if self.enabled and not os.getenv("REDIS_URL"):
             raise ValueError("REDIS_URL is required when inter-rating is enabled")
 
+        # Study pool cache. Shared across users — the Phoenix span query is the
+        # expensive part of an allocation and returns the same pool for everyone.
+        self._pool_cache = {}
+        self._pool_cache_timeout = 60  # 1 minute
+
         # Stats cache
         self._stats_cache = {}
         self._stats_cache_timeout = 300  # 5 minutes
@@ -97,6 +102,48 @@ class InterRaterService:
         allocation_limit = self.sessions_per_user if limit is None else limit
         return [s for _, s in scored[:allocation_limit]]
 
+    def _study_assignment(self, span_ids: List[str]) -> List[List[str]]:
+        """
+        Assign every prompt to exactly max_ratings reviewer slots.
+
+        Each prompt is given to the slots with the most quota left, tie-broken
+        by SHA-256(span_id:slot). Filling by remaining quota keeps every
+        reviewer at exactly sessions_per_user, and the hash tiebreak spreads
+        each reviewer's items across the whole pool so reviewer pairs overlap
+        evenly — mean overlap converges on the theoretical
+        pool*cap*(cap-1) / (reviewers*(reviewers-1)).
+
+        Even overlap is what makes cohort-wide analysis possible: it keeps
+        rater severity from being confounded with any block of prompts, and
+        lets any reviewer be compared against the rest of the cohort rather
+        than only against whoever shares their queue.
+
+        Deterministic, so every worker derives the same assignment without
+        coordination.
+        """
+        quota = [self.sessions_per_user] * self.reviewer_count
+        queues: List[List[str]] = [[] for _ in range(self.reviewer_count)]
+
+        for span_id in sorted(span_ids):
+            eligible = [slot for slot in range(self.reviewer_count) if quota[slot] > 0]
+            if len(eligible) < self.max_ratings:
+                raise ValueError(
+                    "Inter-rater study assignment exhausted reviewer quota; check "
+                    "INTER_RATER_REVIEWERS, INTER_RATER_SESSIONS_PER_USER and "
+                    "INTER_RATER_MAX_RATINGS against the study pool size"
+                )
+            eligible.sort(
+                key=lambda slot: (
+                    -quota[slot],
+                    hashlib.sha256(f"{span_id}:{slot}".encode()).hexdigest(),
+                )
+            )
+            for slot in eligible[: self.max_ratings]:
+                queues[slot].append(span_id)
+                quota[slot] -= 1
+
+        return queues
+
     def _balanced_assignment(
         self,
         sessions: List[Dict[str, Any]],
@@ -111,12 +158,47 @@ class InterRaterService:
         if self.sessions_per_user > pool_size:
             raise ValueError("INTER_RATER_SESSIONS_PER_USER cannot exceed the study pool size")
 
-        ordered = sorted(sessions, key=lambda session: session["span_id"])
-        start = reviewer_slot * self.sessions_per_user
-        return [
-            ordered[(start + offset) % pool_size]
-            for offset in range(self.sessions_per_user)
-        ]
+        by_span_id = {session["span_id"]: session for session in sessions}
+        assigned = self._study_assignment(list(by_span_id))[reviewer_slot]
+        return [by_span_id[span_id] for span_id in assigned]
+
+    async def _get_pool(self, include_citations: bool) -> List[Dict[str, Any]]:
+        """
+        Return the study pool, cached briefly across users and workers-in-process.
+
+        The Phoenix span query is the expensive part of an allocation and its
+        result is the same for every reviewer, so it is cached rather than
+        repeated per request. Caching is safe because the queue a reviewer sees
+        no longer depends on live rating counts: cohort assignment is
+        deterministic, and the authoritative cap check happens under a
+        distributed lock in inter_rater_submission_gate at submission time. A
+        count that goes stale within the TTL can only mean a reviewer is shown
+        an item that has since filled, which the gate rejects and the dashboard
+        replaces.
+        """
+        from .phoenix_client import phoenix_client
+        from .inter_rater_pool import inter_rater_pool
+
+        cache_key = f"pool_{self.project_name}_{include_citations}"
+        cached = self._pool_cache.get(cache_key)
+        if cached and (datetime.now().timestamp() - cached['timestamp']) < self._pool_cache_timeout:
+            return cached['sessions']
+
+        # Fetched without exclude_user_id so one pool serves every reviewer;
+        # per-user exclusion is applied by the caller.
+        sessions = await phoenix_client.query_spans_for_inter_rating(
+            exclude_user_id=None,
+            limit=self.sessions_per_user * 10,
+            include_citations=include_citations,
+            keep_author_id=True,
+        )
+        sessions = inter_rater_pool.restrict(sessions)
+
+        self._pool_cache[cache_key] = {
+            'sessions': sessions,
+            'timestamp': datetime.now().timestamp(),
+        }
+        return sessions
 
     async def get_sessions_for_inter_rating(self, user_id: str, include_citations: bool = True) -> List[Dict[str, Any]]:
         """
@@ -127,24 +209,27 @@ class InterRaterService:
 
         Args:
             include_citations: If False, skip REFERENCES span query (faster for counts).
-                               Session allocations are never cached.
         """
         if not self.enabled:
             return []
 
         try:
-            from .phoenix_client import phoenix_client
             from .annotations_cache import annotations_cache
+            from .inter_rater_pool import inter_rater_pool
 
             sanitized_user_id = user_id[:8] + "..." if len(user_id) > 8 else user_id
-            logger.info(f"Querying Phoenix for inter-rater sessions for user {sanitized_user_id}")
+            logger.info(f"Building inter-rater allocation for user {sanitized_user_id}")
 
-            # query_spans_for_inter_rating already uses the annotations cache internally
-            all_sessions = await phoenix_client.query_spans_for_inter_rating(
-                exclude_user_id=user_id,
-                limit=self.sessions_per_user * 10,
-                include_citations=include_citations
-            )
+            pool_sessions = await self._get_pool(include_citations)
+
+            # Exclude sessions this user authored. Applied locally so the pool
+            # stays identical for every reviewer and can be shared from cache;
+            # seeded sessions have no author and always pass through.
+            all_sessions = [
+                session for session in pool_sessions
+                if not session.get("original_user_id")
+                or session.get("original_user_id") != user_id
+            ]
 
             # For an exactly saturated design, assign each reviewer a shared
             # Redis cohort slot and derive a balanced queue before filtering.
@@ -156,9 +241,15 @@ class InterRaterService:
             if balanced_design:
                 from .inter_rater_cohort import inter_rater_cohort_registry
 
+                # Prefer the manifest fingerprint: it is stable for the whole
+                # run, where a fingerprint over query results moves whenever a
+                # span is added, removed, or filtered.
+                cohort_key = inter_rater_pool.fingerprint() or "\n".join(
+                    sorted(session["span_id"] for session in all_sessions)
+                )
                 reviewer_slot = await inter_rater_cohort_registry.get_slot(
                     self.project_name,
-                    [session["span_id"] for session in all_sessions],
+                    [cohort_key],
                     user_id,
                     self.reviewer_count,
                 )
@@ -179,8 +270,12 @@ class InterRaterService:
                 if inter_rater_count >= self.max_ratings:
                     continue
 
-                session['inter_rater_count'] = inter_rater_count
-                available_sessions.append(session)
+                # Copy before mutating: these dicts belong to the shared pool
+                # cache. Drop original_user_id — it is used only for the local
+                # self-authored filter above and must not reach the frontend.
+                candidate = {k: v for k, v in session.items() if k != 'original_user_id'}
+                candidate['inter_rater_count'] = inter_rater_count
+                available_sessions.append(candidate)
 
             # Enforce the per-user quota across reloads and browser sessions.
             completed_sessions = annotations_cache.get_user_inter_rater_count(user_id)

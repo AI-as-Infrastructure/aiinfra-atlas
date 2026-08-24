@@ -134,3 +134,7 @@ load_tests/results/
 load_tests/*.log
 
 
+
+# Study pool manifest written by `make seed` (environment-specific).
+# Back it up with the Phoenix export — it defines the pool for reproducibility.
+data/seed_pool.json

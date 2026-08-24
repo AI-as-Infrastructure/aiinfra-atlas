@@ -26,6 +26,21 @@ import httpx
 PROD_HINTS = ("prod", "production")
 
 
+def remove_pool_manifest() -> None:
+    """
+    Drop the study pool manifest along with the project it describes.
+
+    Left behind it would name qa_ids that no longer exist, so the allocator
+    would surface an empty pool until the next `make seed` rewrites it.
+    """
+    path = os.getenv("INTER_RATER_POOL_MANIFEST", "data/seed_pool.json")
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        return
+    print(f"Removed stale study pool manifest: {path}")
+
+
 def get_endpoint() -> str:
     endpoint = os.getenv("PHOENIX_COLLECTOR_ENDPOINT", "").rstrip("/")
     if not endpoint:
@@ -88,9 +103,11 @@ def main() -> int:
 
     if r.status_code == 204:
         print(f"\nDeleted project '{project}'. Run `make seed` to repopulate the baseline.")
+        remove_pool_manifest()
         return 0
     if r.status_code == 404:
         print(f"\nProject '{project}' does not exist on Phoenix — nothing to reset. Run `make seed` to create it.")
+        remove_pool_manifest()
         return 0
     print(f"\nDELETE {url} → {r.status_code}: {r.text[:300]}")
     return 1

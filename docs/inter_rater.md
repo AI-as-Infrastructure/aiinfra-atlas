@@ -215,6 +215,7 @@ Seeded sessions have no baseline (`original`) feedback. The inter-rater service 
 - Backend
   - `backend/services/inter_rater_service.py`: fresh allocation and per-user quota enforcement
   - `backend/services/inter_rater_submission_gate.py`: Redis-serialized capacity check and Phoenix write
+  - `backend/services/inter_rater_pool.py`: seeded study pool manifest and cohort fingerprint
   - `backend/services/phoenix_client.py`: queries/duplicate checks against Phoenix
   - `backend/telemetry/api.py`: unified feedback endpoint (regular + inter-rater)
   - `backend/telemetry/feedback.py`: Phoenix span annotations (adds "[inter-rating-N]" prefix and per-scale comments)
@@ -243,13 +244,46 @@ When configured demand exactly matches capacity, the allocator uses a balanced
 cohort design:
 
 1. Redis atomically assigns each anonymous reviewer a stable slot from
-   `0..INTER_RATER_REVIEWERS-1`. The key includes a fingerprint of the Phoenix
-   project and pool, so reseeding creates a new cohort automatically.
-2. The pool is sorted by span ID. A reviewer's queue starts at
-   `slot × INTER_RATER_SESSIONS_PER_USER` modulo the pool size.
+   `0..INTER_RATER_REVIEWERS-1`. The key is a fingerprint of the study pool
+   manifest, so reseeding creates a new cohort automatically while span churn
+   during a run does not.
+2. `_study_assignment` walks the pool in span-ID order and gives each prompt to
+   the `max_ratings` slots with the most quota remaining, tie-broken by
+   `SHA-256(span_id:slot)`.
 3. Because `reviewers × sessions_per_user = pool × max_ratings`, every reviewer
    receives the configured number of distinct prompts and every prompt is assigned
    to exactly `max_ratings` reviewers.
+
+### Why assignment spreads rather than blocks
+
+Exact per-prompt counts are not on their own enough for cohort-wide analysis.
+How reviewers overlap *with each other* decides whether rater severity can be
+separated from prompt difficulty.
+
+A simpler construction — handing reviewer `slot` a contiguous block starting at
+`slot × sessions_per_user` modulo the pool size — also gives every prompt exactly
+`max_ratings` ratings. But the modulo wraps, so slots differing by
+`pool ÷ sessions_per_user` receive *identical* queues. At the canonical settings
+that splits 20 reviewers into 5 disjoint groups of 4, each rating the same 20
+prompts: 160 of 190 reviewer pairs then share no prompts at all, and the study
+becomes five unrelated studies of 20 prompts rather than one study of 100.
+Rater severity is confounded with prompt block, no reviewer can be compared
+against the wider cohort, and the four reviewers holding identical queues
+collide on the same spans in the submission gate.
+
+Quota-greedy assignment with a hash tiebreak keeps the same exact saturation
+while spreading each reviewer's prompts across the whole pool. Measured at the
+canonical settings:
+
+| design | ratings/prompt | prompts/reviewer | pairs sharing nothing | mean pair overlap |
+|---|---|---|---|---|
+| contiguous block | all 100 at exactly 4 | 20 | 160 / 190 | 3.16 |
+| quota-greedy (current) | all 100 at exactly 4 | 20 | 11 / 190 | 3.16 |
+
+Note that mean overlap is identical, so it cannot be used as the check on its
+own — the block design reaches the same mean by pairing a few reviewers on
+entire queues and the rest on nothing. `test_reviewer_pair_overlap_is_evenly_spread`
+asserts the spread, not just the mean.
 
 If demand and capacity do not match exactly, the service falls back to count-aware
 ranking: `inter_rater_count ASC`, then `SHA-256(span_id:user_id)` as a stable
@@ -390,10 +424,50 @@ Plus:
   - Debug endpoint to verify user ID extraction from JWT tokens
 
 ## Caching and concurrency
-- Session allocations are not cached; every allocation refreshes Phoenix annotations.
+- The **study pool is cached for 60 seconds and shared across reviewers**. The
+  Phoenix span query is the expensive part of an allocation and returns the same
+  pool for everyone, so it is fetched once rather than per request. It is fetched
+  without per-user exclusion; the self-authored filter is applied locally so one
+  cached pool can serve every reviewer.
+- Caching the pool is only safe because a reviewer's queue no longer depends on
+  live rating counts: cohort assignment is deterministic, and the authoritative
+  cap check happens under a distributed lock at submission. A count that goes
+  stale within the TTL can only mean a reviewer is shown a prompt that has since
+  filled — the gate rejects it and the dashboard fetches replacement work.
 - Per-user navigation statistics have a five-minute cache and are invalidated after submission.
 - Submission count/write operations are serialized by a Redis lock scoped to project and span.
 - The dashboard requests replacement work after `session_unavailable` until its configured quota is complete.
+
+## The study pool
+
+`make seed` writes `data/seed_pool.json` recording the `qa_id` of every prompt it
+created, and the allocator treats exactly those prompts as the study pool.
+Override the path with `INTER_RATER_POOL_MANIFEST`.
+
+This gives three properties the study depends on:
+
+- **Purity** — organic traffic in the same Phoenix project cannot enter the pool,
+  so reviewers only see prompts they were briefed on.
+- **A single shared pool** — derived from a live query the pool is *not* the same
+  for everyone, because `query_spans_for_inter_rating` drops sessions the
+  requesting reviewer authored. Two reviewers with differently-sized pools would
+  land in different cohorts and be handed the same queue.
+- **A stable cohort key** — reviewer slots are keyed on the manifest fingerprint,
+  so adding, deleting, or slow-indexing a span cannot re-slot the cohort
+  mid-study. Re-seeding intentionally changes the fingerprint and starts a fresh
+  cohort.
+
+`make seed-reset` deletes the manifest along with the project, since a manifest
+naming deleted spans would surface an empty pool. If the manifest is absent the
+allocator falls back to every eligible span in the project, which is the right
+behaviour for ad-hoc inter-rating outside a study — a startup log line records
+which mode is active.
+
+Check the manifest matches the intended pool before reviewers arrive:
+
+```bash
+python3 -c "import json; d=json.load(open('data/seed_pool.json')); print(d['count'], d['project'])"
+```
 
 ## Phoenix Notes
 - POST annotations endpoint used: `/v1/span_annotations?sync=true`

@@ -252,3 +252,84 @@ def test_coverage_report(service, capsys):
                 f"{label:<28} {r['total']:>6} {r['below_floor']:>4} {r['at_target']:>5} "
                 f"{r['over_cap']:>4} {r['max']:>4} {min(done.values()):>9}"
             )
+
+
+# --------------------------------------------------------------------------
+# Reviewer-pair overlap
+#
+# Exact per-prompt counts are not sufficient for cohort-wide analysis: how
+# reviewers overlap with each other decides whether rater severity can be
+# separated from prompt difficulty, and whether any reviewer can be compared
+# against the cohort rather than only against whoever shares their queue.
+#
+# A block assignment scores perfectly on counts while splitting the cohort
+# into disjoint groups rating identical prompts, which turns one study of 100
+# prompts into five unrelated studies of 20. These tests pin the property that
+# rules that out.
+# --------------------------------------------------------------------------
+
+
+def _queues(service, pool_size=POOL_SIZE):
+    sessions = [{"span_id": f"span_{i:03d}", "inter_rater_count": 0} for i in range(pool_size)]
+    return {
+        slot: {s["span_id"] for s in service._balanced_assignment(sessions, slot)}
+        for slot in range(N_RATERS)
+    }
+
+
+def test_assignment_saturates_and_fills_every_quota(service):
+    queues = _queues(service)
+    per_prompt = Counter(span for queue in queues.values() for span in queue)
+
+    assert set(per_prompt.values()) == {MAX_RATINGS}
+    assert len(per_prompt) == POOL_SIZE
+    assert {len(q) for q in queues.values()} == {RATINGS_PER_RATER}
+
+
+def test_no_two_reviewers_share_an_identical_queue(service):
+    queues = _queues(service)
+    distinct = {frozenset(queue) for queue in queues.values()}
+
+    assert len(distinct) == N_RATERS
+
+
+def test_reviewer_pair_overlap_is_evenly_spread(service):
+    """
+    Every reviewer must share prompts with most of the cohort, close to the
+    theoretical mean pool*cap*(cap-1) / (raters*(raters-1)).
+    """
+    from itertools import combinations
+
+    queues = _queues(service)
+    overlaps = [len(queues[a] & queues[b]) for a, b in combinations(range(N_RATERS), 2)]
+    expected = POOL_SIZE * MAX_RATINGS * (MAX_RATINGS - 1) / (N_RATERS * (N_RATERS - 1))
+
+    # The mean alone does not discriminate: a block assignment hits the same
+    # mean by pairing a few reviewers on entire queues and the rest on nothing.
+    # The spread assertions below are what rule that out.
+    assert sum(overlaps) / len(overlaps) == pytest.approx(expected, abs=0.01)
+    # No reviewer may duplicate another's whole queue, and few may be walled
+    # off from the cohort — both break cohort-wide comparison.
+    assert max(overlaps) < RATINGS_PER_RATER
+    assert sum(1 for o in overlaps if o == 0) < len(overlaps) * 0.1
+
+
+def test_assignment_is_deterministic_across_workers(service):
+    """Every worker must derive the same assignment without coordination."""
+    assert _queues(service) == _queues(service)
+
+
+def test_padding_reviewer_count_disables_balanced_allocation(service):
+    """
+    INTER_RATER_REVIEWERS is part of the capacity equation, not spare capacity.
+    Padding it for head-space silently drops the study back to unbalanced
+    ranking, so the trap is pinned here rather than discovered mid-study.
+    """
+    sessions = [{"span_id": f"span_{i:03d}", "inter_rater_count": 0} for i in range(POOL_SIZE)]
+
+    assert service._balanced_assignment(sessions, 0) is not None
+
+    service.reviewer_count = N_RATERS + 2
+    assert service._balanced_assignment(sessions, 0) is None, (
+        "padded reviewer_count must be detected, not silently balanced"
+    )

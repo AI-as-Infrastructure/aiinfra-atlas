@@ -52,7 +52,8 @@ class PhoenixAPIClient:
         exclude_user_id: str = None,
         limit: int = 10,
         days_back: int = 30,
-        include_citations: bool = True
+        include_citations: bool = True,
+        keep_author_id: bool = False
     ) -> List[Dict[str, Any]]:
         """
         Query Phoenix for generation response spans eligible for inter-rating.
@@ -65,6 +66,8 @@ class PhoenixAPIClient:
             limit: Maximum number of sessions to return
             days_back: How many days back to look for sessions
             include_citations: If False, skip REFERENCES span query (faster for counts)
+            keep_author_id: Retain original_user_id so a shared pool can be
+                            filtered per user by the caller
 
         Returns:
             List of session data suitable for inter-rating
@@ -80,7 +83,9 @@ class PhoenixAPIClient:
             )
 
         try:
-            real_sessions = await self._query_phoenix_with_client(exclude_user_id, limit, days_back, include_citations)
+            real_sessions = await self._query_phoenix_with_client(
+                exclude_user_id, limit, days_back, include_citations, keep_author_id
+            )
             if real_sessions:
                 logger.info(f"Retrieved {len(real_sessions)} sessions from Phoenix project '{self.project_name}'")
                 return real_sessions
@@ -100,7 +105,8 @@ class PhoenixAPIClient:
         exclude_user_id: str = None,
         limit: int = 10,
         days_back: int = 30,
-        include_citations: bool = True
+        include_citations: bool = True,
+        keep_author_id: bool = False
     ) -> List[Dict[str, Any]]:
         """
         Query Phoenix for generation response spans, then match against
@@ -229,9 +235,11 @@ class PhoenixAPIClient:
             feedback_spans.sort(key=lambda x: x['timestamp'], reverse=True)
             result = feedback_spans[:limit]
 
-            # Remove original_user_id before sending to frontend (privacy - used only for filtering)
-            for session in result:
-                session.pop('original_user_id', None)
+            # Remove original_user_id before sending to frontend (privacy - used
+            # only for filtering). Retained when the caller filters a shared pool.
+            if not keep_author_id:
+                for session in result:
+                    session.pop('original_user_id', None)
 
             logger.info(f"Returning {len(result)} spans for inter-rating")
             return result
