@@ -1,7 +1,7 @@
 # Inter-rater Ratings
 
 ## Overview
-The inter-rater feature enables authenticated users to provide secondary (inter-rater) ratings on sessions that already have initial feedback. All inter-rater activity is anonymous by design and clearly delineated in Phoenix.
+The inter-rater feature enables authenticated users to provide secondary ratings on organic or seeded sessions. Baseline feedback is optional. All inter-rater activity is anonymous by design and clearly delineated in Phoenix.
 
 ## Key Guarantees
 - **Authentication required** (Cognito JWT tokens)
@@ -21,8 +21,9 @@ INTER_RATER_ENABLED=true
 INTER_RATER_PROJECT=YourPhoenixProject
 
 # Allocation limits
-INTER_RATER_MAX_RATINGS=4          # Max inter-rater ratings per session (code default: 3)
-INTER_RATER_SESSIONS_PER_USER=20   # Sessions offered per user (default: 20)
+INTER_RATER_MAX_RATINGS=4          # Max inter-rater ratings per session (required)
+INTER_RATER_REVIEWERS=20           # Expected reviewers; used by seed sizing checks
+INTER_RATER_SESSIONS_PER_USER=20   # Sessions each reviewer must complete
 
 # Default UI mode for focus group testing
 INTER_RATER_DEFAULT_UI=false       # Set to true for focus groups (see below)
@@ -61,6 +62,7 @@ The canonical configuration for inter-rater reliability studies in ATLAS:
 ```bash
 INTER_RATER_ENABLED=true            # required
 INTER_RATER_MAX_RATINGS=4           # 4 independent ratings per prompt
+INTER_RATER_REVIEWERS=20            # expected study cohort
 INTER_RATER_SESSIONS_PER_USER=20    # each reviewer rates 20 prompts
 INTER_RATER_DEFAULT_UI=true         # reviewers see only the inter-rater page
 INTER_RATER_PROJECT=<must match PHOENIX_PROJECT_NAME>
@@ -68,9 +70,9 @@ INTER_RATER_PROJECT=<must match PHOENIX_PROJECT_NAME>
 
 Paired with a seed pool of **100 prompts** and **20 paid reviewers**, this gives a perfectly saturated 1:1 design — `100 × 4 = 400 = 20 × 20`. Under full attendance every prompt receives exactly 4 independent ratings, suitable for academic IRR analysis (Fleiss' κ across the whole pool with no mixed-N caveats) and for fine-tuning labels.
 
-`MAX_RATINGS` must be set so that `pool × MAX_RATINGS = reviewers × SESSIONS_PER_USER`. Leaving it at 3 with 20 reviewers caps capacity at 300 against 400 ratings demanded, and reviewers run out of work before completing their 20 — see `test_undersized_pool_starves_raters`.
+`MAX_RATINGS` must be set so that `pool × MAX_RATINGS = reviewers × SESSIONS_PER_USER`. Leaving it at 3 with 20 reviewers caps capacity at 300 against 400 ratings demanded, and reviewers run out of work before completing their 20 — see `test_undersized_pool_starves_raters`. These settings are required when inter-rating is enabled; the application does not embed study-design defaults.
 
-These values are the default in `config/.env.production` and `config/.env.staging`. The development template (`config/.env.template`) carries the same `MAX_RATINGS=4` so a fresh install matches the canonical study design; if you're iterating locally as a solo developer, override `INTER_RATER_MAX_RATINGS=1` in your `.env.development` so a single rating is enough to saturate a session for visual testing.
+Configure these values in production and staging environment files. The tracked development template (`config/.env.template`) carries the canonical study values; if you're iterating locally as a solo developer, override `INTER_RATER_MAX_RATINGS=1` and `INTER_RATER_REVIEWERS=1` so a single rating saturates a session for visual testing.
 
 ### Issues Researchers Must Address
 
@@ -92,7 +94,7 @@ The harness enforces the rating-allocation math, but a good study outcome depend
 
 8. **Outlier handling protocol.** Decide in advance what to do if one reviewer's ratings are systematically distant from the others (e.g. always 5/5, or consistently low). Pre-registering the outlier-exclusion rule (on OSF or similar) avoids post-hoc bias accusations in peer review.
 
-9. **Schedule and fatigue.** At 5–10 minutes per prompt, 20 prompts is 100–200 minutes per reviewer. Encourage reviewers to split this across two sittings rather than rush through in one — rating quality degrades with fatigue. The 60-second allocation cache expires between sittings so reviewers can resume without seeing stale queues.
+9. **Schedule and fatigue.** At 5–10 minutes per prompt, 20 prompts is 100–200 minutes per reviewer. Encourage reviewers to split this across two sittings rather than rush through in one — rating quality degrades with fatigue. The per-user quota is derived from Phoenix annotations, so reviewers can resume without receiving extra work.
 
 10. **Reproducibility for the paper.** Record at study launch: the exact commit SHA, the active test target (LLM provider, model name, temperature), the vector store version, and the Phoenix project name. Replication requires the same code, the same RAG configuration, and the same prompt pool.
 
@@ -125,7 +127,7 @@ INTER_RATER_MAX_RATINGS=4          # 4 inter-raters per session
 INTER_RATER_SESSIONS_PER_USER=20   # 20 sessions per user (default)
 ```
 - 100 prompts × 4 ratings = 400 = 20 reviewers × 20 ratings — perfectly saturated 1:1
-- Count-aware allocation drives every prompt to exactly 3 ratings under staggered arrival; suitable for Fleiss' κ across the full pool
+- Balanced cohort allocation assigns every prompt to exactly 4 reviewers; suitable for Fleiss' κ across the full pool
 
 **Large Teams (10+ users):**
 ```bash
@@ -147,14 +149,14 @@ Minimum users needed = (N × INTER_RATER_MAX_RATINGS) / INTER_RATER_SESSIONS_PER
 - 100 sessions to cover
 - MAX_RATINGS=4
 - SESSIONS_PER_USER=20
-- Demand = 20 × 20 = **400 ratings**, distributed by the count-aware allocator so each of the 100 sessions receives **exactly 4 ratings** under full attendance
-- Worst-case (one reviewer fully no-shows): 80 prompts triple-rated, 20 double-rated — still cleanly above the ≥2 floor
+- Demand = 20 × 20 = **400 ratings**, distributed by the balanced allocator so each of the 100 sessions receives **exactly 4 ratings** under full attendance
+- Ideal balanced outcome with one full no-show: 80 prompts receive 4 ratings and 20 receive 3 — still cleanly above the ≥2 floor
 
 ### Workload Estimation
 
 Per-user time commitment:
 ```
-Time per session: ~5-10 minutes (all 9 fields)
+Time per session: ~5-10 minutes (six scales plus comments and fault fields)
 Total time = SESSIONS_PER_USER × 5-10 minutes
 ```
 
@@ -183,7 +185,7 @@ pool_size = (participants × ratings_per_participant) / INTER_RATER_MAX_RATINGS
 
 For the default focus group target (20 reviewers × 20 ratings = 400 ratings) with `MAX_RATINGS=4`, this gives a saturated 1:1 design at **100 prompts × 4 ratings = 400**. Every prompt receives exactly 4 ratings under full attendance, which is the gold standard for inter-rater reliability (single Fleiss' κ across the pool, no mixed-N caveats).
 
-This design assumes paid reviewers with completion-linked payment so attrition is rare. If you can't assume that, add a buffer of ~20% (pool=120) to protect the ≥2-ratings-per-prompt floor against dropouts — at the cost of mixing 2- and 3-rated prompts in the output. The script prints a sizing check at startup and warns if the pool is undersized.
+This design assumes paid reviewers with completion-linked payment so attrition is rare. If you cannot assume that, add a buffer of ~20% (pool=120) to protect the ≥2-ratings-per-prompt floor against dropouts — at the cost of mixing 3- and 4-rated prompts in the output. The script derives its demand warning from `INTER_RATER_REVIEWERS` and `INTER_RATER_SESSIONS_PER_USER`.
 
 ### Files
 
@@ -211,7 +213,8 @@ Seeded sessions have no baseline (`original`) feedback. The inter-rater service 
 
 ## Architecture
 - Backend
-  - `backend/services/inter_rater_service.py`: allocation, per-user cache, limits
+  - `backend/services/inter_rater_service.py`: fresh allocation and per-user quota enforcement
+  - `backend/services/inter_rater_submission_gate.py`: Redis-serialized capacity check and Phoenix write
   - `backend/services/phoenix_client.py`: queries/duplicate checks against Phoenix
   - `backend/telemetry/api.py`: unified feedback endpoint (regular + inter-rater)
   - `backend/telemetry/feedback.py`: Phoenix span annotations (adds "[inter-rating-N]" prefix and per-scale comments)
@@ -229,42 +232,46 @@ Seeded sessions have no baseline (`original`) feedback. The inter-rater service 
    - **Include all generation-response spans** (sessions without baseline feedback are eligible — see Seeding section)
    - **Exclude sessions authored by this anonymous user** (prevents self-rating; seeded sessions have no `original_user_id` and pass through)
    - **Exclude sessions already inter-rated by this user** (prevents duplicate rating)
-   - **Enforce `INTER_RATER_MAX_RATINGS`** limit (default: 3 per session)
-   - **Apply deterministic user-specific allocation** (same user always gets same sessions)
-   - **Limit to `INTER_RATER_SESSIONS_PER_USER`** (default: 20 per user)
-5. Counts cached per user (short TTL). Cache invalidated when the user submits inter-rater feedback.
+   - **Enforce `INTER_RATER_MAX_RATINGS`** limit from the active environment
+   - **Assign a stable Redis-backed cohort slot** and derive a balanced queue
+   - **Limit to `INTER_RATER_SESSIONS_PER_USER`** from the active environment
+5. Current annotations are refreshed from Phoenix before allocation; the per-user quota is enforced across reloads.
 
 ## Allocation Algorithm Details
 
-The allocator (`_allocate_sessions_to_user` in `backend/services/inter_rater_service.py`) ranks eligible sessions for each user using a **count-aware** sort that fills the pool bottom-up:
+When configured demand exactly matches capacity, the allocator uses a balanced
+cohort design:
 
-1. Primary key — `inter_rater_count ASC`. Sessions with fewer existing ratings surface first, so the pool fills evenly and every session is more likely to clear the ≥2-ratings floor before any session is saturated.
-2. Tiebreaker — `SHA-256(span_id:user_id)`. Within a count bucket (e.g. all sessions still at 0 ratings) each user gets a deterministic, de-correlated ordering so two users at the same count don't dogpile the same session.
-3. Top-N selected — first `INTER_RATER_SESSIONS_PER_USER` sessions returned.
+1. Redis atomically assigns each anonymous reviewer a stable slot from
+   `0..INTER_RATER_REVIEWERS-1`. The key includes a fingerprint of the Phoenix
+   project and pool, so reseeding creates a new cohort automatically.
+2. The pool is sorted by span ID. A reviewer's queue starts at
+   `slot × INTER_RATER_SESSIONS_PER_USER` modulo the pool size.
+3. Because `reviewers × sessions_per_user = pool × max_ratings`, every reviewer
+   receives the configured number of distinct prompts and every prompt is assigned
+   to exactly `max_ratings` reviewers.
 
-The per-user cache TTL is **60 seconds** so rankings stay in step with current `inter_rater_count` as ratings come in during the focus group. The `INTER_RATER_MAX_RATINGS` cap is enforced upstream of the ranker via the `inter_rater_count` pre-filter — capped sessions drop out of `available_sessions` on the next cache refresh.
-
-### Why count-aware ranking
-
-Pure hash-based ranking (the previous behaviour) de-correlates users but does not load-balance ratings across sessions. With 20 users picking top-20 from a 100-session pool, ~16% of sessions end up with fewer than 2 raters under the binomial distribution. Count-aware ranking corrects this by progressively concentrating fresh ratings on the least-rated sessions.
+If demand and capacity do not match exactly, the service falls back to count-aware
+ranking: `inter_rater_count ASC`, then `SHA-256(span_id:user_id)` as a stable
+tiebreaker. Each allocation refreshes annotations from Phoenix before applying
+either strategy.
 
 ### Concurrent raters and the submission-time cap
 
-Count-aware ranking only re-applies when a rater **re-fetches** an allocation, and
-`InterRaterDashboard.vue` fetches a rater's list once, working through that snapshot
-and removing each rated item locally rather than re-fetching ("re-fetching risks
-returning it again"). With `SESSIONS_PER_USER=20`, a rater's entire workload is
-allocated from a single snapshot — so when raters work concurrently, which is the
-normal case for a scheduled focus group, every rater allocates from a pool that
-still reads 0 ratings and the counts inform nobody's queue.
+The balanced design deliberately assigns each prompt to the configured number of
+reviewers, so normal concurrent work does not create over-cap conflicts. The
+dashboard can still encounter stale work after manual project changes or legacy
+allocations; it drops those spans and fetches replacements. The backend enforces
+the total per-user quota across reloads.
 
 `INTER_RATER_MAX_RATINGS` is therefore enforced in two places:
 
-- **At allocation** (`inter_rater_service.py`) — capped spans drop out of
-  `available_sessions` on the next cache refresh.
-- **At submission** (`telemetry/api.py`) — a span already at `max_ratings` is
-  rejected with `session_unavailable`, which the dashboard absorbs by dropping the
-  item and moving on. This is what holds the design together under concurrency.
+- **At allocation** (`inter_rater_service.py`) — a fresh Phoenix annotation query
+  removes capped spans from `available_sessions`.
+- **At submission** (`inter_rater_submission_gate.py`) — a Redis per-span lock is
+  acquired across all application workers, the span is refreshed from Phoenix, and
+  the lock is held through the synchronous annotation write. A capped span returns
+  `session_unavailable`; the dashboard fetches replacement work.
 
 `tests/backend/services/test_inter_rater_allocation_coverage.py` quantifies both
 against the real allocator (100 prompts, 20 raters, 20 ratings each, cap 4):
@@ -273,20 +280,20 @@ against the real allocator (100 prompts, 20 raters, 20 ratings each, cap 4):
 |---|---|---|---|---|---|
 | sequential arrival | 400 | 0 | 100 | 0 | 4 |
 | concurrent arrival | 400 | 0 | 100 | 0 | 4 |
-| concurrent, submission cap removed | 400 | **11** | 12 | 43 | **11** |
+| unbalanced snapshot, no submission cap | 400 | **9** | 12 | 45 | **10** |
 
-With the submission cap in place, both arrival patterns give the perfect saturated
-design. Without it, 11 of 100 prompts fall below the 2-rating floor while 43 exceed
-the cap, one reaching 11 ratings — a mixed-N outcome that defeats the
-single-Fleiss'-κ rationale for the 1:1 design.
+The balanced allocator gives the perfect saturated design for both arrival
+patterns. The final row documents the former hash-snapshot failure mode: without
+balanced assignments or a submission cap, 9 prompts fall below the 2-rating floor
+and 45 exceed the cap, one reaching 10 ratings.
 
 Note that reducing `INTER_RATER_SESSIONS_PER_USER` is not a substitute: smaller
 snapshots protect the floor but never prevent over-cap ratings.
 
-The submission-time check reads `annotations_cache.get_inter_rater_count()`, which
-refreshes after each submission but can lag briefly under heavy concurrency, and it
-fails open so a cache error never blocks a legitimate rating. It closes the gap
-rather than eliminating it — verify against real annotation counts during the pilot.
+The guard fails closed: if Redis or the Phoenix refresh is unavailable, no
+annotation is written and the reviewer is asked to retry. This protects the study
+from silent over-cap writes. Production and staging deployments already require
+Redis; `REDIS_URL` is therefore required for inter-rater submissions.
 
 ### Progressive Filling
 
@@ -294,24 +301,24 @@ As users complete ratings, sessions fill up:
 
 ```
 Initial State:
-- Session 001: 0/3 ratings
-- Session 002: 0/3 ratings
-- Session 003: 0/3 ratings
+- Session 001: 0/4 ratings
+- Session 002: 0/4 ratings
+- Session 003: 0/4 ratings
 
 After User A rates:
-- Session 001: 1/3 ratings ✓
-- Session 002: 1/3 ratings ✓
-- Session 003: 1/3 ratings ✓
+- Session 001: 1/4 ratings ✓
+- Session 002: 1/4 ratings ✓
+- Session 003: 1/4 ratings ✓
 
 After User B rates:
-- Session 001: 2/3 ratings ✓
-- Session 002: 2/3 ratings ✓
-- Session 003: 2/3 ratings ✓
+- Session 001: 2/4 ratings ✓
+- Session 002: 2/4 ratings ✓
+- Session 003: 2/4 ratings ✓
 
-After User C rates:
-- Session 001: 3/3 ratings [FULL - removed from allocation]
-- Session 002: 3/3 ratings [FULL - removed from allocation]
-- Session 003: 3/3 ratings [FULL - removed from allocation]
+After Users C and D rate:
+- Session 001: 4/4 ratings [FULL - removed from allocation]
+- Session 002: 4/4 ratings [FULL - removed from allocation]
+- Session 003: 4/4 ratings [FULL - removed from allocation]
 ```
 
 Once a session reaches `INTER_RATER_MAX_RATINGS`, it's automatically excluded from future allocations.
@@ -326,14 +333,14 @@ The system self-balances:
 ## Data Flow (Submission)
 1. Dashboard posts inter-rater feedback to `POST /api/feedback`
 2. Backend verifies JWT, derives anonymous ID
-3. Backend queries Phoenix to count existing inter-raters for this span (async, non-blocking)
-4. Inter-rater number calculated: `existing_count + 1`
-5. Feedback is attached to the original QA span in Phoenix as span annotations via `feedback.submit_span_annotation()`
+3. Backend acquires the Redis lock for the Phoenix project/span
+4. While holding the lock, backend refreshes the span's annotations and rejects capped or duplicate work
+5. Inter-rater number is calculated as `existing_count + 1`, and feedback is written before the lock is released
 6. Inter-rater entries:
-   - Annotation names are prefixed with numbered format: `[inter-rating-1]`, `[inter-rating-2]`, `[inter-rating-3]`
+   - Annotation names are prefixed with numbered format: `[inter-rating-1]` through `[inter-rating-4]`
    - Annotation IDs include the number for uniqueness: `inter_rater_{rater_id}_{number}_{qa_id}_{timestamp}`
    - Metadata includes `is_inter_rater=true`, `rater_id=<anon_id>`, `inter_rater_number=<N>`, `original_span_id=<phoenix_span>`
-7. On success, the user's inter-rater cache is invalidated so counts update immediately
+7. On success, local state and the user's cached statistics are updated immediately
 
 ## Anonymity & Privacy
 - Anonymous IDs: `anonymous_id_service` hashes the Cognito `sub` with an environment-specific salt, producing `anon_<16-hex>` IDs
@@ -382,12 +389,11 @@ Plus:
 - `GET /api/debug/user-id` *(Development only)*
   - Debug endpoint to verify user ID extraction from JWT tokens
 
-## Caching
-- **Session cache:** Per-user key `inter_rater_sessions_{anon_user_id}` with 60-second TTL
-- **Stats cache:** Per-user key `stats_{anon_user_id}` with 10-second TTL
-- Both caches invalidated immediately when user submits inter-rater feedback
-- Cache validation: Cached sessions are validated against Phoenix to filter out deleted sessions
-- Global cache clear available for significant Phoenix data changes
+## Caching and concurrency
+- Session allocations are not cached; every allocation refreshes Phoenix annotations.
+- Per-user navigation statistics have a five-minute cache and are invalidated after submission.
+- Submission count/write operations are serialized by a Redis lock scoped to project and span.
+- The dashboard requests replacement work after `session_unavailable` until its configured quota is complete.
 
 ## Phoenix Notes
 - POST annotations endpoint used: `/v1/span_annotations?sync=true`
@@ -408,10 +414,10 @@ Plus:
 - **User sees own ratings**: 
   - Fixed: Frontend now sends Authorization headers with all feedback submissions
   - Ensure user_id is properly captured during original feedback submission
-- **Missing evaluation fields**: 
-  - Fixed: All 9 fields including User Type are now stored in Phoenix
+- **Missing evaluation fields**:
+  - Confirm the six current Likert scales and any required rationales appear in Phoenix
 - **Duplicate rating prevented**: Backend checks if the same rater already rated the same original span
-- **Count not updating immediately**: Cache invalidation happens after submission (handled in backend)
+- **Submission asks reviewer to retry**: verify Redis and Phoenix availability; the cap guard fails closed
 
 ## Recent Fixes
 
@@ -426,5 +432,3 @@ Plus:
 - ✅ **Session Filtering**: Only sessions with existing feedback annotations are allocated for inter-rating
 - ✅ **Anonymous ID Logging**: Enhanced logging for debugging while maintaining privacy
 - ✅ **Filter Loading**: Fixed New Session button to properly reload dynamic filters
-
-

@@ -48,7 +48,11 @@ async def get_inter_rater_sessions(request: Request):
             return {"sessions": []}
 
         sessions = await inter_rater_service.get_sessions_for_inter_rating(user_id)
-        return {"sessions": sessions}
+        return {
+            "sessions": sessions,
+            "max_sessions_per_user": inter_rater_service.sessions_per_user,
+            "completed_sessions": inter_rater_service.get_completed_sessions(user_id),
+        }
 
     except HTTPException:
         raise

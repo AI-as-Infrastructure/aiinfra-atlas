@@ -9,22 +9,21 @@ Study design: 20 raters x 20 ratings = 400 ratings, over a pool of 100
 seeded prompts at INTER_RATER_MAX_RATINGS=4 — a saturated 1:1 design where
 every prompt receives exactly 4 independent ratings.
 
-Coverage depends on two behaviours of the shipped system:
+Coverage depends on three behaviours of the shipped system:
 
-1. InterRaterDashboard.vue fetches a rater's session list once and works
-   through that snapshot without re-fetching (its submitFeedback handler
-   removes the rated item locally: "re-fetching risks returning it again").
-   So count-aware ranking only re-applies when a rater exhausts their batch,
-   and with SESSIONS_PER_USER=20 that is once per rater.
+1. Redis assigns each reviewer a stable cohort slot. The saturated design
+   derives a balanced queue from that slot, so every prompt is assigned to
+   exactly four reviewers before submissions begin.
 
 2. INTER_RATER_MAX_RATINGS is enforced both at allocation
-   (inter_rater_service.py) and at submission (telemetry/api.py). The
-   submission-time check is what keeps concurrent raters from pushing one
-   span past the cap while others starve; test_without_submit_cap_coverage_degrades
-   documents what happens without it.
+   (inter_rater_service.py) and under a distributed lock at submission
+   (inter_rater_submission_gate.py).
 
-The allocator is deterministic (SHA-256 of span_id:user_id), so results are
-reproducible without seeding.
+3. The dashboard fetches replacement work when a legacy or stale assignment
+   returns session_unavailable, while the backend enforces each user's quota.
+
+The final negative test retains the former unbalanced hash snapshot to make
+the regression visible.
 """
 
 from collections import Counter
@@ -44,14 +43,25 @@ assert N_RATERS * RATINGS_PER_RATER == POOL_SIZE * MAX_RATINGS
 @pytest.fixture
 def service(monkeypatch):
     monkeypatch.setenv("INTER_RATER_ENABLED", "true")
+    monkeypatch.setenv("INTER_RATER_PROJECT", "test-project")
+    monkeypatch.setenv("PHOENIX_PROJECT_NAME", "test-project")
+    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/1")
     monkeypatch.setenv("INTER_RATER_MAX_RATINGS", str(MAX_RATINGS))
+    monkeypatch.setenv("INTER_RATER_REVIEWERS", str(N_RATERS))
     monkeypatch.setenv("INTER_RATER_SESSIONS_PER_USER", str(RATINGS_PER_RATER))
     from backend.services.inter_rater_service import InterRaterService
 
     return InterRaterService()
 
 
-def _simulate(service, batch_size, interleaved, enforce_cap_on_submit=True, pool_size=POOL_SIZE):
+def _simulate(
+    service,
+    batch_size,
+    interleaved,
+    enforce_cap_on_submit=True,
+    pool_size=POOL_SIZE,
+    use_balanced_assignment=True,
+):
     """
     Run a focus group. Returns ({span_id: rating_count}, {rater: ratings_done}).
 
@@ -65,46 +75,70 @@ def _simulate(service, batch_size, interleaved, enforce_cap_on_submit=True, pool
 
     spans = [f"span_{i:03d}" for i in range(pool_size)]
     raters = [f"anon_{i:016x}" for i in range(N_RATERS)]
+    reviewer_slots = {user: slot for slot, user in enumerate(raters)}
 
     counts = {s: 0 for s in spans}
     rated_by = {s: set() for s in spans}
-    queue = {u: [] for u in raters}
     done = {u: 0 for u in raters}
 
-    def allocate(user):
+    def allocate(user, observed_counts=None):
+        visible_counts = observed_counts or counts
+        candidates = [{"span_id": s, "inter_rater_count": visible_counts[s]} for s in spans]
+        if use_balanced_assignment:
+            balanced = service._balanced_assignment(candidates, reviewer_slots[user])
+            if balanced is not None:
+                candidates = balanced
         available = [
-            {"span_id": s, "inter_rater_count": counts[s]}
-            for s in spans
-            if counts[s] < max_ratings and user not in rated_by[s]
+            {"span_id": s, "inter_rater_count": visible_counts[s]}
+            for s in [candidate["span_id"] for candidate in candidates]
+            if visible_counts[s] < max_ratings and user not in rated_by[s]
         ]
+        if use_balanced_assignment and balanced is not None:
+            return [session["span_id"] for session in available[:batch_size]]
         return [s["span_id"] for s in service._allocate_sessions_to_user(available, user)]
 
-    def submit(user):
-        """One rating. Returns False when this rater can make no further progress."""
-        if not queue[user]:
-            queue[user] = allocate(user)
-            if not queue[user]:
-                return False
-        span = queue[user].pop(0)
+    def submit(user, span):
+        """Submit one assigned rating. Returns True when Phoenix accepts it."""
         if user in rated_by[span]:
-            return True  # duplicate prevention (check_user_already_rated)
+            return False  # duplicate prevention (check_user_already_rated)
         if enforce_cap_on_submit and counts[span] >= max_ratings:
-            return True  # session_unavailable; rater moves to the next item
+            return False  # session_unavailable; dashboard requests a replacement
         counts[span] += 1
         rated_by[span].add(user)
         done[user] += 1
         return True
 
     if interleaved:
-        active = list(raters)
-        while active:
-            for user in list(active):
-                if done[user] >= RATINGS_PER_RATER or not submit(user):
-                    active.remove(user)
+        # Every active reviewer fetches from the same count snapshot, matching
+        # a scheduled focus group. When a stale assignment is rejected, the
+        # dashboard fetches another wave after exhausting its current list.
+        for _wave in range(POOL_SIZE):
+            active = [u for u in raters if done[u] < RATINGS_PER_RATER]
+            if not active:
+                break
+
+            snapshot = counts.copy()
+            queues = {user: allocate(user, snapshot) for user in active}
+            progress = False
+            max_queue = max((len(queue) for queue in queues.values()), default=0)
+            for index in range(max_queue):
+                for user in active:
+                    if done[user] >= RATINGS_PER_RATER or index >= len(queues[user]):
+                        continue
+                    progress = submit(user, queues[user][index]) or progress
+
+            if not progress:
+                break
     else:
         for user in raters:
-            while done[user] < RATINGS_PER_RATER and submit(user):
-                pass
+            while done[user] < RATINGS_PER_RATER:
+                queue = allocate(user)
+                if not queue:
+                    break
+                for span in queue:
+                    if done[user] >= RATINGS_PER_RATER:
+                        break
+                    submit(user, span)
 
     return counts, done
 
@@ -136,7 +170,7 @@ def test_sequential_arrival_saturates_pool(service):
 def test_concurrent_arrival_saturates_pool(service):
     """
     All 20 raters working concurrently — the realistic scheduled-session
-    pattern. The submission-time cap keeps the design saturated.
+    pattern. Balanced cohort assignments keep the design saturated.
     """
     counts, done = _simulate(service, RATINGS_PER_RATER, interleaved=True)
     result = _summary(counts)
@@ -144,7 +178,8 @@ def test_concurrent_arrival_saturates_pool(service):
     assert result["below_floor"] == 0
     assert result["over_cap"] == 0
     assert result["max"] <= MAX_RATINGS
-    assert result["at_target"] >= POOL_SIZE - 1  # at most one prompt short
+    assert result["at_target"] == POOL_SIZE
+    assert sum(done.values()) == N_RATERS * RATINGS_PER_RATER
 
 
 def test_every_rater_completes_their_workload(service):
@@ -154,7 +189,7 @@ def test_every_rater_completes_their_workload(service):
     """
     _, done = _simulate(service, RATINGS_PER_RATER, interleaved=True)
 
-    assert min(done.values()) >= RATINGS_PER_RATER - 1
+    assert min(done.values()) == RATINGS_PER_RATER
 
 
 def test_undersized_pool_starves_raters(service):
@@ -170,13 +205,17 @@ def test_undersized_pool_starves_raters(service):
     assert min(done.values()) < RATINGS_PER_RATER
 
 
-def test_without_submit_cap_coverage_degrades(service):
+def test_unbalanced_snapshot_without_submit_cap_degrades(service):
     """
     Documents why the submission-time cap check exists. Without it, raters
     working from stale snapshots overshoot some prompts and starve others.
     """
     counts, _ = _simulate(
-        service, RATINGS_PER_RATER, interleaved=True, enforce_cap_on_submit=False
+        service,
+        RATINGS_PER_RATER,
+        interleaved=True,
+        enforce_cap_on_submit=False,
+        use_balanced_assignment=False,
     )
     result = _summary(counts)
 
@@ -185,22 +224,19 @@ def test_without_submit_cap_coverage_degrades(service):
     assert result["max"] > MAX_RATINGS
 
 
-@pytest.mark.parametrize("batch_size", [3, 5, 10, RATINGS_PER_RATER])
-def test_saturation_holds_at_any_batch_size(service, batch_size):
-    """Coverage must not depend on INTER_RATER_SESSIONS_PER_USER tuning."""
-    counts, _ = _simulate(service, batch_size, interleaved=True)
-    result = _summary(counts)
-
-    assert result["below_floor"] == 0
-    assert result["over_cap"] == 0
-
-
 def test_coverage_report(service, capsys):
     """Print the coverage table. Run with -s to read it."""
     rows = [
         ("sequential", dict(interleaved=False)),
         ("concurrent", dict(interleaved=True)),
-        ("concurrent, no submit cap", dict(interleaved=True, enforce_cap_on_submit=False)),
+        (
+            "unbalanced, no submit cap",
+            dict(
+                interleaved=True,
+                enforce_cap_on_submit=False,
+                use_balanced_assignment=False,
+            ),
+        ),
     ]
 
     with capsys.disabled():

@@ -175,28 +175,6 @@ async def submit_feedback(feedback: Union[InterRaterFeedback, UserFeedback] if I
                     status="error"
                 )
 
-            # Reject once a span has reached max_ratings. The allocator caps at
-            # allocation time only, so a rater working from a stale snapshot can
-            # otherwise push one span past the cap while others starve — see
-            # tests/backend/services/test_inter_rater_allocation_coverage.py.
-            try:
-                from backend.services.annotations_cache import annotations_cache
-                from backend.services.inter_rater_service import inter_rater_service as cap_ir_service
-                if cap_ir_service and cap_ir_service.is_enabled():
-                    existing = annotations_cache.get_inter_rater_count(feedback.original_span_id)
-                    if existing >= cap_ir_service.max_ratings:
-                        logger.info(
-                            f"Inter-rater submission rejected: span at max_ratings "
-                            f"({existing}/{cap_ir_service.max_ratings})"
-                        )
-                        return FeedbackResponse(
-                            message="This inter-rating session is no longer available.",
-                            status="session_unavailable"
-                        )
-            except Exception as cap_error:
-                # Fail open: a cap-check failure must not block a legitimate rating
-                logger.warning(f"max_ratings cap check failed, allowing submission: {cap_error}")
-
             feedback_data.update({
                 "is_inter_rater": True,
                 "original_span_id": feedback.original_span_id,
@@ -205,10 +183,31 @@ async def submit_feedback(feedback: Union[InterRaterFeedback, UserFeedback] if I
         
         # Route to feedback processing
         if is_inter_rater:
-            # Inter-rater: use original_span_id directly — the span registry
-            # only has entries for the current process, not other users' sessions
-            from .feedback import submit_span_annotation
-            success = await submit_span_annotation(feedback.original_span_id, feedback_data, qa_id)
+            from backend.services.inter_rater_service import inter_rater_service as allocation_ir_service
+            from backend.services.inter_rater_submission_gate import (
+                SubmissionStatus,
+                inter_rater_submission_gate,
+            )
+
+            submission_status = await inter_rater_submission_gate.submit(
+                feedback.original_span_id,
+                anon_user_id,
+                feedback_data,
+                qa_id,
+                allocation_ir_service.max_ratings,
+            )
+            if submission_status == SubmissionStatus.UNAVAILABLE:
+                allocation_ir_service.invalidate_user_cache(anon_user_id)
+                return FeedbackResponse(
+                    message="This inter-rating session is no longer available.",
+                    status="session_unavailable",
+                )
+            if submission_status == SubmissionStatus.ERROR:
+                return FeedbackResponse(
+                    message="Unable to verify or record this inter-rating. Please retry.",
+                    status="error",
+                )
+            success = True
         else:
             success = await associate_feedback_with_spans(session_id, qa_id, feedback_data)
         
@@ -228,8 +227,7 @@ async def submit_feedback(feedback: Union[InterRaterFeedback, UserFeedback] if I
                 except Exception as cache_error:
                     logger.warning(f"Failed to clear inter-rater cache after regular feedback: {cache_error}")
             else:
-                # For inter-rater feedback, record the rating locally so check_user_already_rated()
-                # sees it instantly (before Phoenix propagation), then invalidate user's cache
+                # Keep immediate read-your-write state and invalidate user stats.
                 try:
                     if anon_user_id and feedback.original_span_id:
                         from backend.services.annotations_cache import annotations_cache as ac
@@ -277,5 +275,3 @@ def register_telemetry_api(app):
     """Register the telemetry API endpoints with the FastAPI app"""
     app.include_router(router)
     logger.debug("Registered telemetry API endpoints")
-
-

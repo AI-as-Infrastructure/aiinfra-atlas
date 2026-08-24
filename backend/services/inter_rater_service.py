@@ -9,7 +9,6 @@ import logging
 import os
 from typing import List, Dict, Any, Optional
 from datetime import datetime
-import json
 import hashlib
 
 logger = logging.getLogger(__name__)
@@ -19,38 +18,55 @@ class InterRaterService:
 
     def __init__(self):
         self.enabled = os.getenv("INTER_RATER_ENABLED", "false").lower() == "true"
-        self.project_name = os.getenv("INTER_RATER_PROJECT", "atlas-hansard")
-        self.max_ratings = int(os.getenv("INTER_RATER_MAX_RATINGS", "3"))
-        self.sessions_per_user = int(os.getenv("INTER_RATER_SESSIONS_PER_USER", "5"))
+        self.project_name = os.getenv("INTER_RATER_PROJECT") or os.getenv("PHOENIX_PROJECT_NAME")
+        self.max_ratings = self._positive_int_setting("INTER_RATER_MAX_RATINGS")
+        self.reviewer_count = self._positive_int_setting("INTER_RATER_REVIEWERS")
+        self.sessions_per_user = self._positive_int_setting("INTER_RATER_SESSIONS_PER_USER")
         self.default_ui = os.getenv("INTER_RATER_DEFAULT_UI", "false").lower() == "true"
 
-        # In-memory cache for per-user session allocations.
-        # Short window so count-aware ranking stays in step with current
-        # inter_rater_count as the focus group progresses.
-        self._session_cache = {}
-        self._cache_timeout = 60  # 1 minute
+        if self.enabled and not self.project_name:
+            raise ValueError(
+                "INTER_RATER_PROJECT or PHOENIX_PROJECT_NAME is required when inter-rating is enabled"
+            )
+        telemetry_project = os.getenv("PHOENIX_PROJECT_NAME")
+        inter_rater_project = os.getenv("INTER_RATER_PROJECT")
+        if self.enabled and telemetry_project and inter_rater_project:
+            if telemetry_project != inter_rater_project:
+                raise ValueError(
+                    "INTER_RATER_PROJECT must exactly match PHOENIX_PROJECT_NAME"
+                )
+        if self.enabled and not os.getenv("REDIS_URL"):
+            raise ValueError("REDIS_URL is required when inter-rating is enabled")
 
         # Stats cache
         self._stats_cache = {}
         self._stats_cache_timeout = 300  # 5 minutes
 
+    def _positive_int_setting(self, name: str) -> Optional[int]:
+        """Read a positive integer setting without embedding study-design defaults."""
+        raw_value = os.getenv(name)
+        if raw_value is None:
+            if self.enabled:
+                raise ValueError(f"{name} is required when inter-rating is enabled")
+            return None
+        try:
+            value = int(raw_value)
+        except ValueError as error:
+            raise ValueError(f"{name} must be a positive integer") from error
+        if value <= 0:
+            raise ValueError(f"{name} must be a positive integer")
+        return value
+
     def is_enabled(self) -> bool:
         """Check if inter-rater functionality is enabled."""
         return self.enabled
 
-    def _get_cache_key(self, user_id: str) -> str:
-        """Generate cache key for user sessions."""
-        return f"inter_rater_sessions_{user_id}"
-
-    def _is_cache_valid(self, cache_entry: Dict) -> bool:
-        """Check if cache entry is still valid."""
-        if not cache_entry:
-            return False
-        cache_time = cache_entry.get('timestamp', 0)
-        current_time = datetime.now().timestamp()
-        return (current_time - cache_time) < self._cache_timeout
-
-    def _allocate_sessions_to_user(self, available_sessions: List[Dict[str, Any]], user_id: str) -> List[Dict[str, Any]]:
+    def _allocate_sessions_to_user(
+        self,
+        available_sessions: List[Dict[str, Any]],
+        user_id: str,
+        limit: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
         """
         Rank sessions for a user, prioritising under-rated sessions.
 
@@ -63,7 +79,7 @@ class InterRaterService:
 
         The max_ratings cap is enforced upstream by the inter_rater_count
         pre-filter — once a session reaches max_ratings it drops out of
-        available_sessions for all users on the next cache refresh.
+        available_sessions on the next allocation refresh.
         """
         if not available_sessions:
             return []
@@ -78,50 +94,43 @@ class InterRaterService:
 
         scored.sort(key=lambda x: x[0])
 
-        return [s for _, s in scored[:self.sessions_per_user]]
+        allocation_limit = self.sessions_per_user if limit is None else limit
+        return [s for _, s in scored[:allocation_limit]]
 
-    async def _get_cached_sessions(self, user_id: str) -> Optional[List[Dict[str, Any]]]:
-        """Get sessions from cache if valid."""
-        cache_key = self._get_cache_key(user_id)
-        cache_entry = self._session_cache.get(cache_key)
+    def _balanced_assignment(
+        self,
+        sessions: List[Dict[str, Any]],
+        reviewer_slot: int,
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Return a balanced queue when configured demand exactly matches capacity."""
+        pool_size = len(sessions)
+        if not pool_size:
+            return []
+        if self.reviewer_count * self.sessions_per_user != pool_size * self.max_ratings:
+            return None
+        if self.sessions_per_user > pool_size:
+            raise ValueError("INTER_RATER_SESSIONS_PER_USER cannot exceed the study pool size")
 
-        if self._is_cache_valid(cache_entry):
-            sanitized_user_id = user_id[:8] + "..." if len(user_id) > 8 else user_id
-            logger.debug(f"Returning cached sessions for user {sanitized_user_id}")
-            return cache_entry['sessions']
-
-        return None
-
-    def _cache_sessions(self, user_id: str, sessions: List[Dict[str, Any]]):
-        """Cache sessions for user."""
-        cache_key = self._get_cache_key(user_id)
-        self._session_cache[cache_key] = {
-            'sessions': sessions,
-            'timestamp': datetime.now().timestamp()
-        }
-        sanitized_user_id = user_id[:8] + "..." if len(user_id) > 8 else user_id
-        logger.debug(f"Cached {len(sessions)} sessions for user {sanitized_user_id}")
+        ordered = sorted(sessions, key=lambda session: session["span_id"])
+        start = reviewer_slot * self.sessions_per_user
+        return [
+            ordered[(start + offset) % pool_size]
+            for offset in range(self.sessions_per_user)
+        ]
 
     async def get_sessions_for_inter_rating(self, user_id: str, include_citations: bool = True) -> List[Dict[str, Any]]:
         """
         Get sessions available for inter-rating by a specific user.
 
-        Annotations are resolved from the local AnnotationsCache (no per-span
-        HTTP calls). The only remote call is get_spans_dataframe() for the span
-        data itself.
+        Span data and current annotations are refreshed from Phoenix before
+        eligibility, quota, and allocation rules are applied.
 
         Args:
             include_citations: If False, skip REFERENCES span query (faster for counts).
-                               Results without citations are not cached.
+                               Session allocations are never cached.
         """
         if not self.enabled:
             return []
-
-        # Only use cache for full queries (with citations)
-        if include_citations:
-            cached_sessions = await self._get_cached_sessions(user_id)
-            if cached_sessions is not None:
-                return cached_sessions
 
         try:
             from .phoenix_client import phoenix_client
@@ -137,10 +146,29 @@ class InterRaterService:
                 include_citations=include_citations
             )
 
+            # For an exactly saturated design, assign each reviewer a shared
+            # Redis cohort slot and derive a balanced queue before filtering.
+            balanced_design = (
+                self.reviewer_count * self.sessions_per_user
+                == len(all_sessions) * self.max_ratings
+            )
+            assigned_sessions = None
+            if balanced_design:
+                from .inter_rater_cohort import inter_rater_cohort_registry
+
+                reviewer_slot = await inter_rater_cohort_registry.get_slot(
+                    self.project_name,
+                    [session["span_id"] for session in all_sessions],
+                    user_id,
+                    self.reviewer_count,
+                )
+                assigned_sessions = self._balanced_assignment(all_sessions, reviewer_slot)
+            candidate_sessions = assigned_sessions if assigned_sessions is not None else all_sessions
+
             # Filter: user hasn't already rated, and span hasn't reached max ratings
             # All lookups are local dict reads from the annotations cache
             available_sessions = []
-            for session in all_sessions:
+            for session in candidate_sessions:
                 span_id = session['span_id']
 
                 already_rated = annotations_cache.check_user_already_rated(span_id, user_id)
@@ -154,13 +182,19 @@ class InterRaterService:
                 session['inter_rater_count'] = inter_rater_count
                 available_sessions.append(session)
 
-            # Allocate sessions to this specific user
-            final_sessions = self._allocate_sessions_to_user(available_sessions, user_id)
+            # Enforce the per-user quota across reloads and browser sessions.
+            completed_sessions = annotations_cache.get_user_inter_rater_count(user_id)
+            remaining_slots = max(self.sessions_per_user - completed_sessions, 0)
 
-            # Only cache full results (with citations) to avoid serving
-            # incomplete data from the sessions endpoint
-            if include_citations:
-                self._cache_sessions(user_id, final_sessions)
+            # Allocate sessions to this specific user
+            if assigned_sessions is not None:
+                final_sessions = available_sessions[:remaining_slots]
+            else:
+                final_sessions = self._allocate_sessions_to_user(
+                    available_sessions,
+                    user_id,
+                    limit=remaining_slots,
+                )
 
             logger.info(f"Found {len(final_sessions)} available sessions for user {sanitized_user_id}")
             return final_sessions
@@ -194,7 +228,7 @@ class InterRaterService:
             stats = {
                 "enabled": True,
                 "available_sessions": len(available_sessions),
-                "completed_sessions": 0,
+                "completed_sessions": self.get_completed_sessions(user_id),
                 "max_sessions_per_user": self.sessions_per_user,
                 "project_name": self.project_name,
                 "default_ui": self.default_ui
@@ -226,42 +260,30 @@ class InterRaterService:
 
             return error_stats
 
+    def get_completed_sessions(self, user_id: str) -> int:
+        """Return the current cached count of distinct spans rated by a user."""
+        from .annotations_cache import annotations_cache
+
+        return annotations_cache.get_user_inter_rater_count(user_id)
+
     def invalidate_user_cache(self, user_id: str):
         """
         Invalidate caches after a user submits inter-rater feedback.
 
-        Clears only the submitting user's session/stats cache. Other users'
-        caches expire naturally (5-min TTL).
-
-        NOTE: another user holding a stale allocation for a span that has
-        since reached max_ratings will still succeed in rating it. There is
-        no submission-time cap check — session_unavailable
-        (telemetry/api.py) fires only when the annotation write itself
-        fails, not when a span is already at max_ratings. See
-        tests/backend/services/test_inter_rater_allocation_coverage.py for
-        the coverage impact under concurrent raters.
+        Clears the submitting user's stats cache. Session retrieval
+        refreshes annotation counts from Phoenix, while submission uses a
+        distributed per-span lock to enforce max_ratings across workers.
         """
-        cache_key = self._get_cache_key(user_id)
-        self._session_cache.pop(cache_key, None)
         stats_key = f"stats_{user_id}"
         self._stats_cache.pop(stats_key, None)
-
-        # Refresh the annotations cache so the submitting user's next
-        # session load sees the updated already_rated and inter_rater_count
-        try:
-            from .annotations_cache import annotations_cache
-            annotations_cache.refresh()
-        except Exception as e:
-            logger.warning(f"Failed to refresh annotations cache: {e}")
 
         sanitized_user_id = user_id[:8] + "..." if len(user_id) > 8 else user_id
         logger.info(f"Invalidated cache for user {sanitized_user_id} after feedback submission")
 
     def clear_all_cache(self):
-        """Clear all cached sessions."""
-        self._session_cache.clear()
+        """Clear cached inter-rater statistics."""
         self._stats_cache.clear()
-        logger.info("Cleared all inter-rater session and stats cache")
+        logger.info("Cleared inter-rater stats cache")
 
 # Global instance
 inter_rater_service = InterRaterService()

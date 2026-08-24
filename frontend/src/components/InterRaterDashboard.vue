@@ -68,7 +68,7 @@
             <div class="column">
               <div class="stat-item">
                 <span class="stat-number">{{ completedSessions }}</span>
-                <span class="stat-label">Completed This Visit</span>
+                <span class="stat-label">Completed</span>
               </div>
             </div>
           </div>
@@ -120,8 +120,10 @@ export default {
     const error = ref(null)
     const showSuccessMessage = ref(false)
     const successMessage = ref('')
-    const completedSessions = ref(0)  // Track completed in this visit
+    const completedSessions = ref(0)  // Server-backed total for this reviewer
     const hasCompletedAllSessions = ref(false)  // Track if user has no remaining sessions
+    const targetSessions = ref(0)
+    const handledSpanIds = new Set()
 
     const currentSession = computed(() => {
       return sessions.value[currentSessionIndex.value] || null
@@ -133,11 +135,16 @@ export default {
 
       try {
         const data = await get('/inter-rater/sessions')
-        sessions.value = data.sessions || []
+        sessions.value = (data.sessions || []).filter(session => !handledSpanIds.has(session.span_id))
+        targetSessions.value = data.max_sessions_per_user || sessions.value.length
+        completedSessions.value = data.completed_sessions || 0
 
         // Reset session index if we have sessions
         if (sessions.value.length > 0) {
           currentSessionIndex.value = 0
+          hasCompletedAllSessions.value = false
+        } else if (targetSessions.value > 0 && completedSessions.value >= targetSessions.value) {
+          hasCompletedAllSessions.value = true
         }
 
       } catch (err) {
@@ -161,6 +168,33 @@ export default {
       }
     }
 
+    const refillSessions = async () => {
+      const remainingNeeded = Math.max(targetSessions.value - completedSessions.value, 0)
+      if (remainingNeeded === 0) {
+        showCompletionMessage()
+        return
+      }
+
+      loading.value = true
+      error.value = null
+      try {
+        const data = await get('/inter-rater/sessions')
+        completedSessions.value = data.completed_sessions ?? completedSessions.value
+        sessions.value = (data.sessions || [])
+          .filter(session => !handledSpanIds.has(session.span_id))
+          .slice(0, remainingNeeded)
+        currentSessionIndex.value = 0
+
+        if (sessions.value.length === 0) {
+          error.value = 'No replacement sessions are currently available. Please try again in a moment.'
+        }
+      } catch (err) {
+        error.value = err.message || 'Failed to load replacement sessions. Please try again.'
+      } finally {
+        loading.value = false
+      }
+    }
+
     const handleFeedbackSubmission = async (feedbackData) => {
       try {
         console.log('Submitting inter-rater feedback:', feedbackData)
@@ -169,18 +203,23 @@ export default {
         console.log('API Response:', result)
 
         if (result.status === 'success') {
+          handledSpanIds.add(feedbackData.original_span_id)
           // Remove submitted session locally — re-fetching risks returning it again
           // before Phoenix propagates the new annotation to the cache
           sessions.value.splice(currentSessionIndex.value, 1)
           completedSessions.value++
 
           if (sessions.value.length === 0) {
-            successMessage.value = 'All inter-ratings complete!'
-            showSuccessMessage.value = true
-            setTimeout(() => {
-              showSuccessMessage.value = false
-              showCompletionMessage()
-            }, 2000)
+            if (completedSessions.value >= targetSessions.value) {
+              successMessage.value = 'All inter-ratings complete!'
+              showSuccessMessage.value = true
+              setTimeout(() => {
+                showSuccessMessage.value = false
+                showCompletionMessage()
+              }, 2000)
+            } else {
+              await refillSessions()
+            }
           } else {
             currentSessionIndex.value = 0
             successMessage.value = 'Inter-rating submitted! Loading next session...'
@@ -192,7 +231,9 @@ export default {
           }
 
         } else if (result.status === 'session_unavailable') {
-          // Session deleted from Phoenix after allocation - remove locally, don't re-fetch
+          // A concurrent reviewer filled this span. Drop it and fetch a
+          // replacement once the current allocation is exhausted.
+          handledSpanIds.add(feedbackData.original_span_id)
           sessions.value.splice(currentSessionIndex.value, 1)
           if (sessions.value.length > 0) {
             currentSessionIndex.value = 0
@@ -200,8 +241,7 @@ export default {
             showSuccessMessage.value = true
             setTimeout(() => { showSuccessMessage.value = false }, 2000)
           } else {
-            // No sessions remain — dispatch event so nav button updates
-            window.dispatchEvent(new CustomEvent('inter-rater-completed'))
+            await refillSessions()
           }
 
         } else {
@@ -233,7 +273,7 @@ export default {
     const showCompletionMessage = () => {
       // Show completion notification and set completion flag
       hasCompletedAllSessions.value = true
-      successMessage.value = `All sessions completed! You've successfully rated ${completedSessions.value} sessions this visit.`
+      successMessage.value = `All sessions completed! You've successfully rated ${completedSessions.value} sessions.`
       showSuccessMessage.value = true
 
       // Clear sessions to prevent showing old content
@@ -270,6 +310,7 @@ export default {
       completedSessions,
       hasCompletedAllSessions,
       loadSessions,
+      refillSessions,
       handleFeedbackSubmission
     }
   }

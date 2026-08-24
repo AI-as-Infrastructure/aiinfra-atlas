@@ -27,7 +27,6 @@ import requests
 
 DEFAULT_FILE = Path("data/seed_questions.json")
 DEFAULT_API = "http://localhost:8000"
-DEFAULT_MAX_RATINGS = 1  # matches .env.development; overridden by INTER_RATER_MAX_RATINGS
 SSE_TIMEOUT_SECS = 300
 MAX_RETRIES = 2
 
@@ -72,12 +71,22 @@ def load_questions(path: Path) -> List[dict]:
 
 
 def print_sizing_check(n: int) -> int:
-    max_ratings = int(os.getenv("INTER_RATER_MAX_RATINGS", DEFAULT_MAX_RATINGS))
+    max_ratings_raw = os.getenv("INTER_RATER_MAX_RATINGS")
+    if not max_ratings_raw:
+        raise SystemExit("INTER_RATER_MAX_RATINGS must be set in the selected environment file")
+    max_ratings = int(max_ratings_raw)
     capacity = n * max_ratings
     print(f"Seed pool: {n} questions × INTER_RATER_MAX_RATINGS={max_ratings} → up to {capacity} total ratings")
-    print(f"  Focus group target: 15 raters × 20 ratings = 300 rating slots")
-    if capacity < 300:
-        print(f"  WARNING: capacity ({capacity}) is below the 300-slot focus group target")
+    reviewers = os.getenv("INTER_RATER_REVIEWERS")
+    sessions_per_user = os.getenv("INTER_RATER_SESSIONS_PER_USER")
+    if reviewers and sessions_per_user:
+        demand = int(reviewers) * int(sessions_per_user)
+        print(
+            f"  Focus group target: {reviewers} reviewers × {sessions_per_user} ratings "
+            f"= {demand} rating slots"
+        )
+        if capacity < demand:
+            print(f"  WARNING: capacity ({capacity}) is below the {demand}-slot focus group target")
     return max_ratings
 
 
