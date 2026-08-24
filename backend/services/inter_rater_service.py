@@ -38,6 +38,24 @@ class InterRaterService:
         if self.enabled and not os.getenv("REDIS_URL"):
             raise ValueError("REDIS_URL is required when inter-rating is enabled")
 
+        # Focus-group mode without a study pool has no legitimate reading, and
+        # it is the one remaining way to lose every study guarantee silently:
+        # no pool purity, no capacity check, and the cohort key falls back to a
+        # fingerprint over query results that moves whenever a span does. A
+        # single organic session in the project would then switch balanced
+        # allocation off and under-rate part of the pool. Ad-hoc inter-rating
+        # runs with INTER_RATER_DEFAULT_UI=false and is unaffected.
+        if self.enabled and self.default_ui:
+            from .inter_rater_pool import MANIFEST_PATH_ENV, manifest_path
+
+            if manifest_path() is None:
+                raise ValueError(
+                    f"{MANIFEST_PATH_ENV} is required when INTER_RATER_DEFAULT_UI=true. "
+                    f"Focus-group mode runs a study, so the study pool must be explicit; "
+                    f"without it the allocator falls back to project-wide ad-hoc rating "
+                    f"and the pool, capacity and cohort guarantees do not apply."
+                )
+
         # Study pool cache. Shared across users — the Phoenix span query is the
         # expensive part of an allocation and returns the same pool for everyone.
         self._pool_cache = {}

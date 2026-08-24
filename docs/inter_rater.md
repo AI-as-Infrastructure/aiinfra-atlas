@@ -52,11 +52,19 @@ These two flags serve different purposes:
 
 **Typical configurations:**
 
-| Scenario | INTER_RATER_ENABLED | INTER_RATER_DEFAULT_UI |
-|----------|--------------------|-----------------------|
-| Normal operation (no inter-rating) | `false` | `false` |
-| Inter-rating available alongside chat | `true` | `false` |
-| Focus group testing (inter-rater only) | `true` | `true` |
+| Scenario | INTER_RATER_ENABLED | INTER_RATER_DEFAULT_UI | INTER_RATER_POOL_MANIFEST |
+|----------|--------------------|-----------------------|---------------------------|
+| Normal operation (no inter-rating) | `false` | `false` | not required |
+| Inter-rating available alongside chat | `true` | `false` | optional (set it to restrict to a seeded pool) |
+| Focus group testing (inter-rater only) | `true` | `true` | **required** |
+
+`INTER_RATER_DEFAULT_UI=true` means a study is running, so the study pool must be
+explicit: the backend refuses to start without `INTER_RATER_POOL_MANIFEST`. Left
+unset, allocation reverts to project-wide ad-hoc rating and every study guarantee
+quietly stops applying — no pool purity, no capacity check, and a cohort key
+derived from query results rather than the manifest. One organic session in the
+project is then enough to switch balanced allocation off and under-rate part of
+the pool. A blank or whitespace value counts as unset.
 
 ## Default Focus-Group Study Configuration
 
