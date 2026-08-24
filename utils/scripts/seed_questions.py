@@ -26,6 +26,9 @@ from typing import List, Optional
 
 import requests
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from backend.services.inter_rater_pool import manifest_path  # noqa: E402
+
 DEFAULT_FILE = Path("data/seed_questions.json")
 DEFAULT_API = "http://localhost:8000"
 SSE_TIMEOUT_SECS = 300
@@ -244,16 +247,47 @@ def verify_in_phoenix(qa_ids: List[str]) -> dict:
     return out
 
 
-def write_pool_manifest(seeded: List[SeedResult]) -> None:
+def write_pool_manifest(seeded: List[SeedResult], total: int, force: bool) -> None:
     """
     Record the seeded prompts as the authoritative study pool.
 
     The allocator restricts itself to these qa_ids, so organic traffic in the
     same Phoenix project cannot enter the study, every reviewer sees an
     identical pool, and the cohort fingerprint stays stable for the whole run.
-    Re-seeding overwrites this file and therefore starts a new cohort.
+
+    Two guards, because a wrong manifest silently changes the study design:
+
+    - A partial run is never written. A manifest listing only the prompts that
+      happened to succeed shrinks the pool, which breaks the capacity equation
+      and drops allocation back to unbalanced ranking.
+    - An existing manifest is never overwritten without --force-manifest, so a
+      pilot run (`--count 5`) cannot quietly replace a full study pool. The
+      documented reset workflow removes it first, so this does not get in the
+      way.
     """
-    path = os.getenv("INTER_RATER_POOL_MANIFEST", "data/seed_pool.json")
+    path = manifest_path()
+
+    if len(seeded) != total and not force:
+        print(
+            f"NOT writing study pool manifest: only {len(seeded)}/{total} prompts seeded.\n"
+            f"  A partial pool would break the capacity equation and disable balanced\n"
+            f"  allocation. Fix the failures and re-run, or pass --force-manifest to\n"
+            f"  accept a {len(seeded)}-prompt pool and size the study to it."
+        )
+        return
+
+    if os.path.exists(path) and not force:
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                existing = len(json.load(handle).get("qa_ids", []))
+        except (OSError, ValueError):
+            existing = "unreadable"
+        print(
+            f"NOT overwriting existing study pool manifest at {path} ({existing} prompts).\n"
+            f"  Run `make seed-reset` first, or pass --force-manifest to replace it."
+        )
+        return
+
     manifest = {
         "project": os.getenv("INTER_RATER_PROJECT") or os.getenv("PHOENIX_PROJECT_NAME"),
         "created": datetime.now(timezone.utc).isoformat(),
@@ -280,6 +314,11 @@ def main() -> int:
     parser.add_argument("--retries", type=int, default=MAX_RETRIES, help="Max retries per failed question")
     parser.add_argument("--no-verify", action="store_true", help="Skip Phoenix span verification at end")
     parser.add_argument("--verify-wait", type=int, default=15, help="Seconds to wait for spans to flush before verification")
+    parser.add_argument(
+        "--force-manifest",
+        action="store_true",
+        help="Write the study pool manifest even if it exists or the run was partial",
+    )
     args = parser.parse_args()
 
     questions = load_questions(args.file)
@@ -343,7 +382,9 @@ def main() -> int:
                 print(f"  Missing references span: {missing_refs[:5]}{' …' if len(missing_refs) > 5 else ''}")
 
     if stats.succeeded > 0:
-        write_pool_manifest([r for r in results if r.ok])
+        write_pool_manifest(
+            [r for r in results if r.ok], len(questions), args.force_manifest
+        )
 
     return 0 if not stats.failed else 1
 

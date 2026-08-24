@@ -98,3 +98,53 @@ def test_duplicate_qa_ids_rejected(pool, tmp_path, monkeypatch):
 
     with pytest.raises(ValueError):
         InterRaterPool().load()
+
+
+# --------------------------------------------------------------------------
+# Failure paths. A wrong manifest changes the study design silently, so each
+# of these must fail loudly rather than degrade.
+# --------------------------------------------------------------------------
+
+
+def test_manifest_from_another_project_is_rejected(tmp_path, monkeypatch):
+    """A cross-environment manifest names qa_ids absent here, emptying the pool."""
+    path = tmp_path / "seed_pool.json"
+    path.write_text(json.dumps({"project": "Hansard-Staging", "qa_ids": ["seed-1"]}))
+    monkeypatch.setenv("INTER_RATER_POOL_MANIFEST", str(path))
+    monkeypatch.setenv("INTER_RATER_PROJECT", "Hansard-Interrating")
+
+    with pytest.raises(ValueError, match="Hansard-Staging"):
+        InterRaterPool().load()
+
+
+def test_manifest_matching_active_project_is_accepted(tmp_path, monkeypatch):
+    path = tmp_path / "seed_pool.json"
+    path.write_text(json.dumps({"project": "Hansard-Interrating", "qa_ids": ["seed-1"]}))
+    monkeypatch.setenv("INTER_RATER_POOL_MANIFEST", str(path))
+    monkeypatch.setenv("INTER_RATER_PROJECT", "Hansard-Interrating")
+
+    assert InterRaterPool().load()["qa_ids"] == ["seed-1"]
+
+
+def test_manifest_falls_back_to_phoenix_project_name(tmp_path, monkeypatch):
+    path = tmp_path / "seed_pool.json"
+    path.write_text(json.dumps({"project": "Hansard-Dev", "qa_ids": ["seed-1"]}))
+    monkeypatch.setenv("INTER_RATER_POOL_MANIFEST", str(path))
+    monkeypatch.delenv("INTER_RATER_PROJECT", raising=False)
+    monkeypatch.setenv("PHOENIX_PROJECT_NAME", "Hansard-Dev")
+
+    assert InterRaterPool().load() is not None
+
+
+def test_manifest_path_is_resolved_from_one_place(monkeypatch, tmp_path):
+    """
+    The seeder, the reset script and the reader must never disagree about which
+    file is the study pool.
+    """
+    from backend.services.inter_rater_pool import manifest_path
+
+    target = str(tmp_path / "elsewhere.json")
+    monkeypatch.setenv("INTER_RATER_POOL_MANIFEST", target)
+
+    assert manifest_path() == target
+    assert InterRaterPool().manifest_path == target

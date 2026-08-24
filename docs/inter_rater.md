@@ -197,6 +197,9 @@ This design assumes paid reviewers with completion-linked payment so attrition i
 - `make seed-dry` — validate JSON and print the sizing check without submitting
 - `make seed SEED_ARGS="--count 5"` — seed only the first 5 questions (testing)
 - `make seed SEED_ARGS="--no-verify"` — skip the post-seed Phoenix verification pass
+- `make seed SEED_ARGS="--force-manifest"` — write the study pool manifest even if one
+  exists or the run was partial. Needed only when deliberately replacing a pool without
+  a reset, or accepting a short pool and re-sizing the study to match.
 - `ENV_FILE=config/.env.production make seed` — explicitly use the prod env file (only needed when both env files exist on the same box; otherwise the Makefile auto-falls-back to `.env.production` when `.env.development` is absent)
 
 ### Resetting between test runs
@@ -462,6 +465,32 @@ naming deleted spans would surface an empty pool. If the manifest is absent the
 allocator falls back to every eligible span in the project, which is the right
 behaviour for ad-hoc inter-rating outside a study — a startup log line records
 which mode is active.
+
+### Guards
+
+A wrong manifest changes the study design without changing anything visible, so
+each of these fails loudly rather than degrading:
+
+- **Partial seeding is never recorded.** If any prompt fails, `make seed` writes
+  no manifest and says so. A manifest listing only the prompts that happened to
+  succeed shrinks the pool, breaks the capacity equation, and drops allocation
+  back to unbalanced ranking.
+- **An existing manifest is never overwritten.** `make seed` refuses and reports
+  the existing prompt count, so a pilot run (`--count 5`) cannot quietly replace
+  a full study pool. `make seed-reset` removes it first, so the documented
+  workflow is unaffected. `SEED_ARGS="--force-manifest"` overrides both guards.
+- **Cross-environment manifests are rejected.** The manifest records the project
+  it was seeded for; loading it against a different `INTER_RATER_PROJECT` raises
+  rather than silently matching no spans.
+- **A pool that no longer fits the configuration raises.** If the eligible span
+  count means `reviewers × sessions_per_user ≠ pool × max_ratings`, allocation
+  fails with the actual numbers instead of falling back to unbalanced ranking.
+  Reviewers see an error, which is recoverable; silently under-rating part of an
+  unrepeatable session is not. Only enforced in study mode.
+
+Because the last guard raises before the pool is cached, a persistent mismatch
+means every request re-queries Phoenix until it is fixed. It is meant to be a
+stop, not a steady state.
 
 Check the manifest matches the intended pool before reviewers arrive:
 

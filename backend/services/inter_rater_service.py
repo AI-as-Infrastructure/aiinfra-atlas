@@ -162,9 +162,11 @@ class InterRaterService:
         assigned = self._study_assignment(list(by_span_id))[reviewer_slot]
         return [by_span_id[span_id] for span_id in assigned]
 
-    async def _get_pool(self, include_citations: bool) -> List[Dict[str, Any]]:
+    async def _get_pool(
+        self, include_citations: bool
+    ) -> tuple[List[Dict[str, Any]], Optional[str]]:
         """
-        Return the study pool, cached briefly across users and workers-in-process.
+        Return (study pool, pool fingerprint), cached briefly and shared across users.
 
         The Phoenix span query is the expensive part of an allocation and its
         result is the same for every reviewer, so it is cached rather than
@@ -182,7 +184,7 @@ class InterRaterService:
         cache_key = f"pool_{self.project_name}_{include_citations}"
         cached = self._pool_cache.get(cache_key)
         if cached and (datetime.now().timestamp() - cached['timestamp']) < self._pool_cache_timeout:
-            return cached['sessions']
+            return cached['sessions'], cached['fingerprint']
 
         # Fetched without exclude_user_id so one pool serves every reviewer;
         # per-user exclusion is applied by the caller.
@@ -194,11 +196,50 @@ class InterRaterService:
         )
         sessions = inter_rater_pool.restrict(sessions)
 
+        # Read the fingerprint from the same manifest load that produced these
+        # sessions and cache the pair. Read separately at allocation time it
+        # could advance after a re-seed while the cached sessions were still the
+        # previous pool, handing reviewers a new cohort's slot over an old
+        # cohort's prompts until the cache expired.
+        fingerprint = inter_rater_pool.fingerprint()
+        self._validate_study_capacity(sessions, fingerprint)
+
         self._pool_cache[cache_key] = {
             'sessions': sessions,
+            'fingerprint': fingerprint,
             'timestamp': datetime.now().timestamp(),
         }
-        return sessions
+        return sessions, fingerprint
+
+    def _validate_study_capacity(self, sessions: List[Dict[str, Any]], fingerprint: Optional[str]) -> None:
+        """
+        Refuse to run a study whose pool no longer matches the configuration.
+
+        Balanced allocation is active only while
+        reviewers x sessions_per_user == pool x max_ratings. If the pool has
+        shrunk — prompts that failed to seed, a deleted span, a partially
+        written manifest — allocation would quietly fall back to unbalanced
+        ranking and under-rate part of the pool. That is invisible until the
+        data is analysed and the session cannot be repeated, so it fails here
+        instead. Only enforced in study mode: without a manifest, ad-hoc
+        inter-rating is expected to use whatever is in the project.
+        """
+        if fingerprint is None:
+            return
+
+        demand = self.reviewer_count * self.sessions_per_user
+        capacity = len(sessions) * self.max_ratings
+        if demand == capacity:
+            return
+
+        raise ValueError(
+            f"Inter-rater study pool does not match the configured design: "
+            f"{len(sessions)} prompts x INTER_RATER_MAX_RATINGS={self.max_ratings} "
+            f"= {capacity} ratings, but INTER_RATER_REVIEWERS={self.reviewer_count} "
+            f"x INTER_RATER_SESSIONS_PER_USER={self.sessions_per_user} = {demand}. "
+            f"Re-seed the missing prompts, or align the settings with the pool "
+            f"(pool must be demand / max_ratings = {demand / self.max_ratings:g} prompts)."
+        )
 
     async def get_sessions_for_inter_rating(self, user_id: str, include_citations: bool = True) -> List[Dict[str, Any]]:
         """
@@ -220,7 +261,7 @@ class InterRaterService:
             sanitized_user_id = user_id[:8] + "..." if len(user_id) > 8 else user_id
             logger.info(f"Building inter-rater allocation for user {sanitized_user_id}")
 
-            pool_sessions = await self._get_pool(include_citations)
+            pool_sessions, pool_fingerprint = await self._get_pool(include_citations)
 
             # Exclude sessions this user authored. Applied locally so the pool
             # stays identical for every reviewer and can be shared from cache;
@@ -244,7 +285,7 @@ class InterRaterService:
                 # Prefer the manifest fingerprint: it is stable for the whole
                 # run, where a fingerprint over query results moves whenever a
                 # span is added, removed, or filtered.
-                cohort_key = inter_rater_pool.fingerprint() or "\n".join(
+                cohort_key = pool_fingerprint or "\n".join(
                     sorted(session["span_id"] for session in all_sessions)
                 )
                 reviewer_slot = await inter_rater_cohort_registry.get_slot(

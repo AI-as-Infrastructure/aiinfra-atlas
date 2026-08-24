@@ -161,3 +161,54 @@ async def test_saturated_design_covers_every_prompt_exactly(wired):
 
     assert len(covered) == POOL_SIZE
     assert set(covered.values()) == {MAX_RATINGS}
+
+
+# --------------------------------------------------------------------------
+# Failure paths for the cached pool.
+# --------------------------------------------------------------------------
+
+
+async def test_cached_pool_and_fingerprint_stay_paired_across_a_reseed(wired, tmp_path, monkeypatch):
+    """
+    A re-seed must not hand reviewers a new cohort's slot over the old cohort's
+    prompts. The fingerprint is read with the pool, so while the cached pool is
+    the old one the cohort key must be the old one too.
+    """
+    service, query = wired
+    from backend.services import inter_rater_pool as pool_module
+
+    before_sessions, before_fp = await service._get_pool(True)
+
+    # Re-seed: same path, new qa_ids, new mtime.
+    manifest = tmp_path / "seed_pool.json"
+    manifest.write_text(json.dumps({"qa_ids": [f"reseeded-{i}" for i in range(POOL_SIZE)]}))
+
+    cached_sessions, cached_fp = await service._get_pool(True)
+
+    assert cached_sessions is before_sessions
+    assert cached_fp == before_fp, "fingerprint advanced while the pool was still cached"
+    # The manifest itself has moved on, proving the pairing is what protects us.
+    assert pool_module.inter_rater_pool.fingerprint() != before_fp
+
+
+async def test_shrunken_pool_fails_instead_of_silently_unbalancing(wired):
+    """
+    A pool that no longer satisfies the capacity equation must raise. Falling
+    back to unbalanced ranking would under-rate part of the pool invisibly.
+    """
+    service, query = wired
+    query.return_value = _pool()[:-1]  # one prompt failed to seed
+
+    with pytest.raises(ValueError, match="does not match the configured design"):
+        await service.get_sessions_for_inter_rating("anon_1")
+
+
+async def test_capacity_guard_only_applies_in_study_mode(wired, monkeypatch, tmp_path):
+    """Without a manifest, ad-hoc inter-rating uses whatever is in the project."""
+    service, query = wired
+    monkeypatch.setenv("INTER_RATER_POOL_MANIFEST", str(tmp_path / "absent.json"))
+    query.return_value = _pool()[:-1]
+
+    sessions = await service.get_sessions_for_inter_rating("anon_1")
+
+    assert isinstance(sessions, list)

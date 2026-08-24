@@ -26,7 +26,22 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+MANIFEST_PATH_ENV = "INTER_RATER_POOL_MANIFEST"
 DEFAULT_MANIFEST_PATH = "data/seed_pool.json"
+
+
+def manifest_path() -> str:
+    """
+    Single resolution point for the manifest location.
+
+    Imported by the seed and reset scripts so the writer, the remover and the
+    reader can never disagree about which file is the study pool.
+    """
+    return os.getenv(MANIFEST_PATH_ENV, DEFAULT_MANIFEST_PATH)
+
+
+def active_project() -> Optional[str]:
+    return os.getenv("INTER_RATER_PROJECT") or os.getenv("PHOENIX_PROJECT_NAME")
 
 
 class InterRaterPool:
@@ -38,7 +53,7 @@ class InterRaterPool:
 
     @property
     def manifest_path(self) -> str:
-        return os.getenv("INTER_RATER_POOL_MANIFEST", DEFAULT_MANIFEST_PATH)
+        return manifest_path()
 
     def load(self) -> Optional[Dict[str, Any]]:
         """
@@ -67,6 +82,18 @@ class InterRaterPool:
             raise ValueError(f"Inter-rater pool manifest {path} has no qa_ids")
         if len(set(qa_ids)) != len(qa_ids):
             raise ValueError(f"Inter-rater pool manifest {path} contains duplicate qa_ids")
+
+        # A manifest from another environment names qa_ids that do not exist
+        # here, which would empty the pool rather than fail visibly.
+        manifest_project = manifest.get("project")
+        current_project = active_project()
+        if manifest_project and current_project and manifest_project != current_project:
+            raise ValueError(
+                f"Inter-rater pool manifest {path} was seeded for project "
+                f"'{manifest_project}' but the active project is '{current_project}'. "
+                f"Re-seed for this project, or point INTER_RATER_POOL_MANIFEST at the "
+                f"manifest belonging to it."
+            )
 
         self._cache = manifest
         self._cache_mtime = mtime

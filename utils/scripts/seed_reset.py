@@ -20,8 +20,12 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from pathlib import Path
 
 import httpx
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from backend.services.inter_rater_pool import manifest_path  # noqa: E402
 
 PROD_HINTS = ("prod", "production")
 
@@ -33,7 +37,7 @@ def remove_pool_manifest() -> None:
     Left behind it would name qa_ids that no longer exist, so the allocator
     would surface an empty pool until the next `make seed` rewrites it.
     """
-    path = os.getenv("INTER_RATER_POOL_MANIFEST", "data/seed_pool.json")
+    path = manifest_path()
     try:
         os.remove(path)
     except FileNotFoundError:
