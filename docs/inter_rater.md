@@ -109,6 +109,34 @@ The harness enforces the rating-allocation math, but a good study outcome depend
 
 2. **Reviewer briefing and rubric.** The 6 Likert scales (corpus fidelity, citation quality, relevance, coherence, uncertainty, historical contextualisation — see Evaluation Fields below) need consistent interpretation across raters, or IRR will be artificially depressed. Provide written rubrics with concrete examples for each scale point and run a short calibration session — ideally rating 2–3 sample prompts together — before launch.
 
+   Also tell reviewers what the two non-success messages mean, because they look
+   similar and call for opposite responses:
+
+   - **"Unable to verify or record this inter-rating. Please retry."** — the
+     rating was **not** saved. Submit it again. The submission path deliberately
+     fails closed: it will not write a rating it cannot first verify against the
+     cap, so a momentary Redis or Phoenix interruption rejects the submission
+     rather than risking a miscounted one. Re-submitting is safe and is the
+     correct response; the work is only lost if they navigate away instead.
+   - **"This inter-rating session is no longer available."** — expected, not an
+     error. The prompt reached its rating cap, or they had already rated it. It
+     is removed from their queue and replaced automatically. Nothing to redo.
+
+   Because the rating path fails closed, Redis and Phoenix availability are hard
+   dependencies during a session, not soft ones. Check both before reviewers
+   start and keep an eye on them while the session runs; a reviewer losing 5–10
+   minutes of work to a retry is recoverable, but only if they retry rather than
+   assume the tool is broken. Worth saying explicitly in the briefing that
+   occasional retries are normal.
+
+   Retrying cannot corrupt anything. The gate checks `check_user_already_rated`
+   before the cap, so if a first attempt did reach Phoenix but the reply was
+   lost, the retry returns "no longer available" instead of writing twice. The
+   progress count is derived from the distinct prompts a reviewer has rated in
+   the active pool, not from submission attempts, so it cannot be inflated by a
+   retry either — the counter shown mid-session is incremented locally on each
+   success and re-read from Phoenix whenever the queue reloads.
+
 3. **Pilot run.** Rate a handful of prompts with 1–2 reviewers before the main study to verify the full pipeline (seeding → allocation → submission → Phoenix annotations → export). Note that a short pilot pool must still satisfy `pool × MAX_RATINGS = REVIEWERS × SESSIONS_PER_USER`, so `--count 5` under the study settings will be rejected (`5 × 4 = 20` vs `20 × 20 = 400`). Either pilot against the full pool — seed all 100, have 1–2 people rate a few, then `make seed-reset` and re-seed for the clean run — or set matching pilot values temporarily (e.g. `MAX_RATINGS=4`, `REVIEWERS=4`, `SESSIONS_PER_USER=5` for a 5-prompt pool). A dedicated pilot project (`INTER_RATER_PROJECT`/`PHOENIX_PROJECT_NAME` both pointed elsewhere) keeps the live study's data clean.
 
 4. **Question pool curation.** `data/seed_questions.json` should be reviewed by domain experts before seeding. Once a study has begun, the pool is locked — replacing a question mid-study invalidates the IRR analysis. Edit-then-seed is the workflow; never edit during a live study.
