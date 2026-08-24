@@ -240,6 +240,27 @@ class InterRaterService:
         inter-rating is expected to use whatever is in the project.
         """
         if fingerprint is None:
+            # Focus-group mode must never fall through to ad-hoc rating. A
+            # configured-but-missing or unreadable manifest yields no
+            # fingerprint, which would otherwise skip every check below and
+            # accept whatever the project happens to contain.
+            #
+            # Checked here rather than at startup on purpose: the manifest is
+            # written by `make seed`, which POSTs to the running backend, so
+            # requiring a loadable manifest to boot would deadlock a first-time
+            # study (no manifest -> no boot -> no seeding -> no manifest). The
+            # backend starts, seeding works, and only inter-rating itself
+            # refuses until the pool exists.
+            if self.default_ui:
+                from .inter_rater_pool import MANIFEST_PATH_ENV, manifest_path
+
+                raise ValueError(
+                    f"Focus-group mode (INTER_RATER_DEFAULT_UI=true) requires a readable "
+                    f"study pool manifest, but none loaded from "
+                    f"{MANIFEST_PATH_ENV}={manifest_path()!r}. Run `make seed` to create "
+                    f"it. Until then inter-rating is refused rather than silently "
+                    f"falling back to project-wide ad-hoc rating."
+                )
             return
 
         demand = self.reviewer_count * self.sessions_per_user

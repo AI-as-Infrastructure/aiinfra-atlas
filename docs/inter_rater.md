@@ -59,12 +59,25 @@ These two flags serve different purposes:
 | Focus group testing (inter-rater only) | `true` | `true` | **required** |
 
 `INTER_RATER_DEFAULT_UI=true` means a study is running, so the study pool must be
-explicit: the backend refuses to start without `INTER_RATER_POOL_MANIFEST`. Left
-unset, allocation reverts to project-wide ad-hoc rating and every study guarantee
-quietly stops applying — no pool purity, no capacity check, and a cohort key
-derived from query results rather than the manifest. One organic session in the
-project is then enough to switch balanced allocation off and under-rate part of
-the pool. A blank or whitespace value counts as unset.
+explicit. Without it, allocation would revert to project-wide ad-hoc rating and
+every study guarantee would quietly stop applying — no pool purity, no capacity
+check, and a cohort key derived from query results rather than the manifest. One
+organic session in the project is then enough to switch balanced allocation off
+and under-rate part of the pool.
+
+Two checks enforce this:
+
+- **Unset setting — startup.** The backend refuses to start if
+  `INTER_RATER_POOL_MANIFEST` is missing while `INTER_RATER_DEFAULT_UI=true`. A
+  blank or whitespace value counts as unset.
+- **Set but unreadable — pool refresh.** A configured path with no readable
+  manifest behind it is rejected when inter-rating builds an allocation, so a
+  deleted or not-yet-written pool cannot degrade into ad-hoc mode either.
+
+The second check is deliberately not done at startup: `make seed` writes the
+manifest by POSTing to the running backend, so requiring a readable pool to boot
+would deadlock a first-time study. The app starts and serves normally; only
+inter-rating refuses until the pool exists.
 
 ## Default Focus-Group Study Configuration
 
@@ -77,6 +90,7 @@ INTER_RATER_REVIEWERS=20            # expected study cohort
 INTER_RATER_SESSIONS_PER_USER=20    # each reviewer rates 20 prompts
 INTER_RATER_DEFAULT_UI=true         # reviewers see only the inter-rater page
 INTER_RATER_PROJECT=<must match PHOENIX_PROJECT_NAME>
+INTER_RATER_POOL_MANIFEST=data/seed_pool.json   # required in focus-group mode
 ```
 
 Paired with a seed pool of **100 prompts** and **20 paid reviewers**, this gives a perfectly saturated 1:1 design — `100 × 4 = 400 = 20 × 20`. Under full attendance every prompt receives exactly 4 independent ratings, suitable for academic IRR analysis (Fleiss' κ across the whole pool with no mixed-N caveats) and for fine-tuning labels.
@@ -93,7 +107,7 @@ The harness enforces the rating-allocation math, but a good study outcome depend
 
 2. **Reviewer briefing and rubric.** The 6 Likert scales (corpus fidelity, citation quality, relevance, coherence, uncertainty, historical contextualisation — see Evaluation Fields below) need consistent interpretation across raters, or IRR will be artificially depressed. Provide written rubrics with concrete examples for each scale point and run a short calibration session — ideally rating 2–3 sample prompts together — before launch.
 
-3. **Pilot run.** Seed and rate at least 5 prompts with 1–2 reviewers before the main study to verify the full pipeline (seeding → allocation → submission → Phoenix annotations → export). Use `make seed SEED_ARGS="--count 5"` against a dedicated test project (e.g. `INTER_RATER_PROJECT=ATLAS-Pilot`) so the live study's data stays clean.
+3. **Pilot run.** Rate a handful of prompts with 1–2 reviewers before the main study to verify the full pipeline (seeding → allocation → submission → Phoenix annotations → export). Note that a short pilot pool must still satisfy `pool × MAX_RATINGS = REVIEWERS × SESSIONS_PER_USER`, so `--count 5` under the study settings will be rejected (`5 × 4 = 20` vs `20 × 20 = 400`). Either pilot against the full pool — seed all 100, have 1–2 people rate a few, then `make seed-reset` and re-seed for the clean run — or set matching pilot values temporarily (e.g. `MAX_RATINGS=4`, `REVIEWERS=4`, `SESSIONS_PER_USER=5` for a 5-prompt pool). A dedicated pilot project (`INTER_RATER_PROJECT`/`PHOENIX_PROJECT_NAME` both pointed elsewhere) keeps the live study's data clean.
 
 4. **Question pool curation.** `data/seed_questions.json` should be reviewed by domain experts before seeding. Once a study has begun, the pool is locked — replacing a question mid-study invalidates the IRR analysis. Edit-then-seed is the workflow; never edit during a live study.
 
@@ -183,6 +197,21 @@ For focus-group studies (e.g. 20 raters × 20 ratings each), there is rarely eno
 git pull
 make seed   # uses config/.env.development by default; override with ENV_FILE
 ```
+
+**Order matters when `INTER_RATER_DEFAULT_UI=true`.** The manifest is written by
+`make seed`, which POSTs to the running backend, so the backend must start before
+a pool exists. It does: the missing-manifest check runs when inter-rating builds
+an allocation, not at startup, precisely so a first-time study cannot deadlock
+(no manifest → no boot → no seeding → no manifest). Between deploying and
+seeding, the app runs normally and only the inter-rater page refuses.
+
+Note also that a pilot seed smaller than the study pool will not satisfy the
+capacity equation under the study settings — `5 prompts × 4 = 20` against
+`20 reviewers × 20 = 400` — so the inter-rater page raises. Either pilot against
+the full pool (seed all 100, have 1–2 people rate a few, then `make seed-reset`
+and re-seed for the clean run), or set matching pilot values temporarily, e.g.
+`INTER_RATER_MAX_RATINGS=4`, `INTER_RATER_REVIEWERS=4`,
+`INTER_RATER_SESSIONS_PER_USER=5` for a 5-prompt pool.
 
 The script targets `localhost:8000` directly, so `AUTH_METHOD=cloudflare` stays on for public traffic the entire time — no maintenance window is required.
 
