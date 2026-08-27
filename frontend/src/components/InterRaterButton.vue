@@ -75,7 +75,7 @@ export default {
   right: 5px;
   width: 6px;
   height: 6px;
-  background-color: #ff3860;
+  background-color: #000;
   border-radius: 50%;
 }
 

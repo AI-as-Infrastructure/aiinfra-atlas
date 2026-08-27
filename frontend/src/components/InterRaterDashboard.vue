@@ -8,11 +8,11 @@
     </div>
 
     <div v-else-if="error" class="error-state">
-      <div class="notification is-danger">
+      <div class="notification error-notice">
         <h4 class="title is-4">Error Loading Sessions</h4>
         <p>{{ error }}</p>
         <div class="buttons mt-3">
-          <button @click="loadSessions" class="button is-danger is-outlined">
+          <button @click="loadSessions" class="button is-link">
             Try Again
           </button>
         </div>
@@ -324,6 +324,26 @@ export default {
 }
 
 .loading-state,
+/* Error treatment matches .error-message in UserInput.vue rather than Bulma's
+   is-danger, whose pink is off-palette for this monochrome UI. */
+.error-notice {
+  max-width: 40rem;
+  background-color: #fdedec;
+  color: #e74c3c;
+  border: 1px solid #f6d5d2;
+  border-radius: 4px;
+}
+
+.error-notice .title {
+  color: #000;
+  margin-bottom: 0.75rem;
+}
+
+.error-notice p {
+  color: #000;
+  font-size: 0.95rem;
+}
+
 .error-state,
 .empty-state {
   display: flex;

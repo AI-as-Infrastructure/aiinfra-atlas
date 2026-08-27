@@ -399,7 +399,7 @@
           
           <!-- Progress Indicator -->
           <div class="has-text-centered mt-4">
-            <div v-if="!isFormValid" class="has-text-danger">
+            <div v-if="!isFormValid" class="form-invalid-note">
             </div>
           </div>
         </div>
@@ -1277,6 +1277,7 @@ export default {
 .scale-comment .help.is-danger {
   font-size: 12px;
   margin-top: 0.25rem;
+  color: #e74c3c;
 }
 
 /* Action Buttons (matching ExtendedFeedback.vue) */
@@ -1404,6 +1405,12 @@ export default {
 .fault-rationale .help.is-danger {
   font-size: 12px;
   margin-top: 0.25rem;
+  color: #e74c3c;
+}
+
+.form-invalid-note {
+  color: #e74c3c;
+  font-size: 0.9rem;
 }
 
 @media (max-width: 768px) {
