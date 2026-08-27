@@ -10,9 +10,11 @@ authors:
   - family-names: Smithies
     given-names: James
     affiliation: Australian National University
+    orcid: "https://orcid.org/0000-0003-4801-0366"
   - family-names: Berman
     given-names: Glen
     affiliation: Australian National University
+    orcid: "https://orcid.org/0000-0003-3249-0190"
 repository-code: "https://github.com/AI-as-Infrastructure/aiinfra-atlas"
 url: "https://aiinfra.anu.edu.au"
 abstract: >-
@@ -30,15 +32,16 @@ keywords:
   - inter-rater reliability
   - evaluation framework
 license: MIT
+version: 0.4.0
+date-released: "2026-08-27"
 identifiers:
   - type: doi
     value: 10.5281/zenodo.17204370
     description: Zenodo archive of the v0.2.0 release
 # TODO before publishing a release intended for citation:
-#   - add `version:` and `date-released:` for that release
 #   - add the release's own Zenodo DOI to `identifiers` (see ReadMe.md,
 #     "Major Releases"; v0.3.0 does not currently record one)
-#   - add ORCID identifiers for both authors
+#   - confirm `date-released:` matches the date the tag is actually published
 # Authorship reflects project contribution, not commit counts: the git history
 # has a single committer, so the author list cannot be derived from it. Confirm
 # it is complete before publishing a release intended for citation.
