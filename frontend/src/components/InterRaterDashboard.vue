@@ -324,14 +324,25 @@ export default {
 }
 
 .loading-state,
-/* Error treatment matches .error-message in UserInput.vue rather than Bulma's
-   is-danger, whose pink is off-palette for this monochrome UI. */
+.error-state,
+.empty-state {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 60vh;
+}
+
+/* Monochrome error panel, matching global.css (#fff / #eee / #888 / #000).
+   Bulma's is-danger pink is off-palette for this UI. */
 .error-notice {
   max-width: 40rem;
-  background-color: #fdedec;
-  color: #e74c3c;
-  border: 1px solid #f6d5d2;
+  background-color: #fff;
+  color: #000;
+  border: 1px solid #eee;
+  border-left: 3px solid #000;
   border-radius: 4px;
+  padding: 1.5rem;
+  text-align: left;
 }
 
 .error-notice .title {
@@ -342,21 +353,14 @@ export default {
 .error-notice p {
   color: #000;
   font-size: 0.95rem;
-}
-
-.error-state,
-.empty-state {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 60vh;
+  word-break: break-word;
 }
 
 .loading-spinner {
   width: 40px;
   height: 40px;
-  border: 4px solid #f3f3f3;
-  border-top: 4px solid #6c757d;
+  border: 4px solid #eee;
+  border-top: 4px solid #000;
   border-radius: 50%;
   margin: 0 auto 1rem auto;
   animation: spin 1s linear infinite;

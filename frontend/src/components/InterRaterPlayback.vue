@@ -1274,6 +1274,12 @@ export default {
   font-size: 13px;
 }
 
+/* Bulma's is-danger help text is #f14668; use the project's error red so no
+   pink appears in the rating form regardless of which parent wraps the hint. */
+.help.is-danger {
+  color: #e74c3c;
+}
+
 .scale-comment .help.is-danger {
   font-size: 12px;
   margin-top: 0.25rem;
