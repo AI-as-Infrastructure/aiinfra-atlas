@@ -217,6 +217,13 @@ Total time = SESSIONS_PER_USER × 5-10 minutes
 
 With `SESSIONS_PER_USER=20`: **100-200 minutes per user**
 
+## Manual testing
+
+Before a focus-group session, run the manual acceptance protocol in
+[inter_rater_manual_testing.md](inter_rater_manual_testing.md). Part 1 is developer
+checks against a deployment; Part 2 is a self-contained walkthrough that can be sent
+to a non-technical reviewer.
+
 ## Seeding Sessions for Focus Group Testing
 
 For focus-group studies (e.g. 20 raters × 20 ratings each), there is rarely enough organic traffic to provide a pre-populated pool of sessions. The seeding script runs a JSON file of questions through the live RAG pipeline so each question becomes a ratable session in Phoenix — with real LLM answers and real citations, but no baseline feedback (so the only feedback comes from focus-group participants).

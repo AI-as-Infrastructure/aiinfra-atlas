@@ -2,6 +2,12 @@
 
 Test suite for the ATLAS AI Infrastructure Research Platform.
 
+## Manual testing
+
+This document covers the automated suite. For manual acceptance testing of the
+inter-rater workflow against a deployment, see
+[inter_rater_manual_testing.md](inter_rater_manual_testing.md).
+
 ## Setup
 
 Install test dependencies:
