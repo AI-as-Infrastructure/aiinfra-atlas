@@ -6,7 +6,10 @@ citable artifact.
 
 ## 1. Production configuration
 
-- [ ] **Task 1.1**: Confirm `config/.env.production` on the prod server has:
+- [ ] **Task 1.1**: Confirm `config/.env.production` **on the prod server** has
+      the values below. The local dev-machine copies of `.env.production`,
+      `.env.staging` and `.env.development` were updated on 2026-08-27; the
+      server's copy is separate and must be edited there:
       `INTER_RATER_ENABLED=true`, `INTER_RATER_PROJECT=Hansard-Interrating`,
       `PHOENIX_PROJECT_NAME=Hansard-Interrating`,
       `PHOENIX_PROJECT_BACKUPS=Hansard-Prod,Hansard-Interrating`,
@@ -25,8 +28,12 @@ citable artifact.
 
 ## 2. Deploy and verify startup
 
-- [ ] **Task 2.1**: `git pull` on the prod server, then restart the backend. No
-      frontend rebuild is needed: `INTER_RATER_DEFAULT_UI` is served at runtime
+- [ ] **Task 2.1**: `git pull` on the prod server, then run the full deploy
+      (`make cf` — prod runs behind the Cloudflare tunnel, `AUTH_METHOD=cloudflare`).
+      A frontend rebuild *is* required: `INTER_RATER_DEFAULT_UI` is served at
+      runtime, but `InterRaterPlayback.vue`, `InterRaterDashboard.vue` and
+      `ExtendedFeedback.vue` all changed since v0.3.0, so a bare backend restart
+      would leave reviewers on the old rubric UI
 - [ ] **Task 2.2**: Confirm the backend starts. It should, with no study pool yet
       present — the missing-manifest check runs at allocation, not startup
 - [ ] **Task 2.3**: Load `/inter-rater` as an authenticated user and confirm it
@@ -77,7 +84,7 @@ Pick one approach. The first needs no settings churn and is preferred.
 
 ## 5. Tag and release
 
-- [ ] **Task 5.1**: Push `main` to origin
+- [x] **Task 5.1**: Push `main` to origin — done, `origin/main` == `main` at `7c0bcb5`
 - [ ] **Task 5.2**: If a DOI is wanted, confirm the GitHub–Zenodo integration is
       active *before* publishing. Zenodo only archives releases created after its
       webhook exists; v0.3.0 has no recorded DOI, so verify rather than assume
