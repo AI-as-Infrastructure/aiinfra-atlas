@@ -102,7 +102,7 @@ ltp: ## Run unified load test against production (30 users, 20 min) with warmup/
 		exit 1; \
 	fi
 	$(call setup_load_test)
-	@bash -c "cd load_tests && source ../config/.env.production && LOAD_TEST_CONFIG=production ../.venv/bin/locust -f locustfile.py --host=https://atlas-hansard.org --users=30 --spawn-rate=2.5 --run-time=20m --headless"
+	@bash -c "cd load_tests && source ../config/.env.production && if [ -z \"\$$VITE_API_URL\" ]; then echo '❌ ERROR: VITE_API_URL not set in config/.env.production'; exit 1; fi && LOAD_TEST_CONFIG=production ../.venv/bin/locust -f locustfile.py --host=\"\$$VITE_API_URL\" --users=30 --spawn-rate=2.5 --run-time=20m --headless"
 
 clean-tests: ## Clean load test artifacts and old reports
 	@echo "🧹 Cleaning load test artifacts..."

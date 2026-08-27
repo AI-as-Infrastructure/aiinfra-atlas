@@ -3,7 +3,7 @@
 # Environment Settings
 environment:
   name: "production"
-  host: "https://atlas-hansard.org"  # Production URL
+  host: "${VITE_API_URL}"  # Uses VITE_API_URL from .env.production
   api_version: "v1"
 
 # Authentication Configuration
