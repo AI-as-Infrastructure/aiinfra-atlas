@@ -91,7 +91,17 @@ Pick one approach. The first needs no settings churn and is preferred.
 - [ ] **Task 5.3**: Add `version: 0.4.0` and `date-released:` to `CITATION.cff`,
       plus ORCIDs for both authors, and confirm the author list is complete
 - [ ] **Task 5.4**: Tag `v0.4.0` on the exact commit deployed to prod and verified
-      in the pilot
+      in the pilot. Candidate as of 2026-08-27: **`f12b322`** (tip of `main`,
+      pushed). Prod was last deployed at `93b582d`; `08ab229` and `f12b322` on top
+      of it are docs-only. Pull on prod before testing so the verified tree and the
+      tagged commit are the same, then tag the SHA that `git log --oneline -1`
+      reports on the server. If further commits land during testing, the candidate
+      moves — tag what was actually deployed and verified, not the branch tip:
+
+      ```bash
+      git tag -a v0.4.0 <verified-sha> -m "v0.4.0 - inter-rater study integrity"
+      git push origin v0.4.0
+      ```
 - [ ] **Task 5.5**: Publish the GitHub release using `docs/releases/v0.4.0.md`,
       removing its DRAFT banner
 - [ ] **Task 5.6**: Add v0.4.0 to the "Major Releases" list in `ReadMe.md`, with
