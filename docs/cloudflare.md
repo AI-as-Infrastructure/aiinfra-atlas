@@ -457,4 +457,4 @@ The deploy script assumes the following are configured in the Cloudflare dashboa
 - UFW denies all incoming connections by default; deploy script verifies port 8000 is not exposed
 - Redis is authenticated via password extracted from `REDIS_URL`
 - The tunnel token is the primary credential -- treat it like a private key
-- Redeploying (`make cf`) restarts cloudflared, briefly disconnecting the tunnel (including SSH sessions)
+- Redeploying (`make cf`) restarts Nginx, gunicorn and llm-worker, so the application is briefly unavailable. It does **not** restart cloudflared, so the tunnel and any SSH session through it stay up (the script checks cloudflared is active and aborts if it is not, but never stops or restarts it)
