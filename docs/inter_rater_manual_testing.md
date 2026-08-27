@@ -1,352 +1,217 @@
 # Inter-Rater Manual Test Protocol
 
-Manual acceptance testing for the inter-rater reliability workflow, to be run
-against a deployed environment before a focus-group session begins.
+Manual acceptance testing for the inter-rater workflow against a deployment.
+Automated suite: [testing.md](testing.md). Architecture: [inter_rater.md](inter_rater.md).
 
-This is not the automated suite (see [testing.md](testing.md)) and not the
-architecture reference (see [inter_rater.md](inter_rater.md)). It covers what only
-a person can verify: that a real reviewer, logging in with real credentials,
-receives a correct queue and that their ratings land intact.
+Part 1 needs server access. Part 2 needs only a browser and can be sent to a
+non-technical reviewer on its own. Run Part 1 first.
 
-It has two parts, run in order:
-
-- **[Part 1 — Developer checks](#part-1--developer-checks)** requires server access
-  and knowledge of the deployment. Run this first and fix anything it finds. A
-  reviewer cannot diagnose these faults, and several of them make a reviewer's
-  results useless without being visible in the interface.
-- **[Part 2 — Reviewer walkthrough](#part-2--reviewer-walkthrough)** requires only a
-  browser and a login. It is written to be sent to a non-technical tester on its
-  own — copy that section into an email or share this page and point them at it.
+Placeholders: `<APP_URL>` = `VITE_API_URL`. `CAPITALS` = environment variables.
 
 ---
 
 # Part 1 — Developer checks
 
-Run every check here before involving a reviewer. Record results in the
-[Part 1 results table](#part-1-results).
-
-## Conventions
-
-- `<APP_URL>` — the deployed application address (`VITE_API_URL`)
-- Settings in `CAPITALS` are environment variables in the deployment's env file
-- "the study project" — the telemetry project named by `INTER_RATER_PROJECT`
-- "the pool" — the prompts listed in the manifest at `INTER_RATER_POOL_MANIFEST`
-
-Expected values come from the deployment's own configuration, not from this
-document. Read them first:
+Read the deployment's configured values first:
 
 ```bash
 grep -E "^(ATLAS_VERSION|INTER_RATER_[A-Z_]+)=" config/.env.production
 ```
 
-## 1. Preconditions
+Stop and resolve before Part 2 if D1–D5 or D12 fail.
 
-Each failure here invalidates everything downstream. Do not continue past a
-failure.
-
-### D1 — The study design is arithmetically sound
+## D1 — Capacity arithmetic
 
 ```bash
 make seed-dry
 ```
 
-**Expect:** the capacity line and the target line show the **same** number, with no
-`WARNING: capacity ... is below ...` line.
+Expect the capacity line and target line to show the same number, and no
+`WARNING: capacity ... is below ...`.
 
-```
-Seed pool: <N> questions × INTER_RATER_MAX_RATINGS=<C> → up to <N×C> total ratings
-  Focus group target: <R> reviewers × <S> ratings = <R×S> rating slots
-```
-
-Balanced allocation is active only while `N × C = R × S`. If the numbers differ the
-study is not saturated: some prompts receive fewer ratings than intended, or
-reviewers run out of work before completing their quota. Note that `--count` on a
-seed run only *warns* at seed time — the rejection happens later, at allocation.
-
-### D2 — The application is genuinely up
-
-```bash
-systemctl is-active gunicorn llm-worker
-```
-
-`is-active` reports `active` while workers are still booting, and boot takes around
-20 seconds. It is not proof. Confirm properly by reproducing the import in a single
-process:
+## D2 — Application imports cleanly
 
 ```bash
 set -a; . config/.env.production; set +a
 .venv/bin/python -c "import backend.app"
 ```
 
-**Expect:** silence. Any traceback is a configuration fault, and this is the fastest
-way to see it — service logs may show only `Worker failed to boot`, with the real
-exception written to the error log file instead.
+Expect silence. (`systemctl is-active` reports `active` during the ~20s boot, so it
+is not proof.)
 
-### D3 — Version stamping is correct, before any seeding
+## D3 — Version stamp set before seeding
 
-`ATLAS_VERSION` is written to every telemetry span, so it stamps collected data with
-the code version. **Set it before seeding.** Set afterwards, the already-seeded
-spans carry the old value permanently and cannot be corrected.
+Confirm `ATLAS_VERSION` is the version under test. Must be set before `make seed`.
 
-### D4 — Reviewer identities can authenticate
+## D4 — Identities authenticate
 
-Confirm each identity that will be used — including the reviewer's in Part 2 — is
-permitted by the access policy.
+Log in at `<APP_URL>` with each identity to be used, including the Part 2
+reviewer's.
 
-If your provider emails a one-time code, an address that is not permitted commonly
-still shows the code-entry screen and simply never receives mail. "No email
-arrived" and "not authorised" are indistinguishable from the outside, so verify the
-policy rather than retrying.
+## D5 — Unseeded study reports an error
 
-## 2. The pool guard
+Run before seeding. With `INTER_RATER_DEFAULT_UI=true` and no readable
+`INTER_RATER_POOL_MANIFEST`, load `/inter-rater`.
 
-### D5 — An unseeded study reports an error, not an empty queue
+Expect an error naming the study pool. An empty queue is a failure.
 
-Run **before** the pool is seeded. Do not delete an existing pool to test this.
-
-With `INTER_RATER_DEFAULT_UI=true` and no readable manifest at
-`INTER_RATER_POOL_MANIFEST`, load `/inter-rater` as an authenticated user.
-
-**Expect:** an error naming the study pool.
-
-**A queue of zero prompts is a failure, not a pass.** It means allocation fell back
-to rating whatever happens to be in the project, which removes every study
-guarantee — pool purity, the capacity check, and a stable cohort key. Ratings
-collected in that state cannot be used for the intended analysis, and nothing in
-the interface indicates a problem.
-
-## 3. Allocation
-
-### D6 — The manifest describes the intended pool
+## D6 — Manifest matches the intended pool
 
 ```bash
 python3 -c "import json,os;d=json.load(open(os.environ['INTER_RATER_POOL_MANIFEST']));print(d['count'], d['project'], len(d['qa_ids']))"
 ```
 
-**Expect:** count equals the intended pool size, `project` equals
-`INTER_RATER_PROJECT`, and `qa_ids` has the same length as the count. A short count
-means a partial seed — do not test on a partial pool.
+Expect count = intended pool size, `project` = `INTER_RATER_PROJECT`, `qa_ids`
+length = count. Back the file up alongside the telemetry export.
 
-Back this file up alongside the telemetry export. It defines the pool for
-reproducibility and is normally gitignored.
+## D7 — Queues are full length and differ
 
-### D7 — Allocation spreads across the cohort
+Log in as two identities. Expect `INTER_RATER_SESSIONS_PER_USER` prompts each, and
+the two sets not identical. Record the first few prompt IDs from each.
 
-Log in as two distinct identities and compare their queues.
+## D8 — Queue stable across reloads
 
-**Expect:** each receives exactly `INTER_RATER_SESSIONS_PER_USER` prompts, and the
-two sets are **not identical**.
+Reload twice as one identity. Expect the same prompts in the same order.
 
-Identical queues mean allocation is not spreading. The consequence is statistical
-rather than visible: rater severity becomes inseparable from which prompts a
-reviewer saw. Record the first few prompt identifiers from each queue as evidence.
+## D9 — Rating stored complete, once only
 
-### D8 — A queue is stable for its reviewer
+Submit one full rating (six scales, per-scale rationales, faults, fault rationale).
+Then attempt the same prompt again from the same identity.
 
-Reload twice as one identity. **Expect:** same prompts, same order. A queue that
-changes between reloads means the assignment is not stable and quota cannot be
-tracked.
+Expect all fields stored; second attempt refused as unavailable.
 
-## 4. Submission
+## D10 — Annotations on the original span
 
-### D9 — Ratings are stored complete and once only
+In the telemetry backend, open the study project and find a rated prompt's span.
+Expect annotations on that span, prefixed `[inter-rating-N]`, with all rubric
+fields.
 
-Submit one full rating, then attempt to rate the same prompt again from the same
-identity.
+## D11 — Version stamp correct
 
-**Expect:** the first submission stores every field; the second is refused as
-unavailable. A second stored rating from one reviewer on one prompt breaks the
-independence assumption the analysis relies on.
+Expect `atlas_version` on seeded spans to match D3.
 
-## 5. Telemetry and privacy
+## D12 — Reviewers anonymised
 
-### D10 — Annotations attach to the original span
+Expect identity to appear only as `anon_<hash>`. No email, name, or provider
+subject identifier anywhere in the telemetry.
 
-In the telemetry backend, open the study project and find the span for a prompt you
-rated.
+## D13 — Backup includes the study project
 
-**Expect:** the rating attached to that span as annotations, prefixed to
-distinguish each reviewer's submission (`[inter-rating-N]`), with all rubric fields
-present.
-
-### D11 — The version stamp is correct
-
-**Expect:** `atlas_version` on seeded spans matches the value confirmed in D3. An
-older value means it was set after seeding, and the provenance record must say so.
-
-### D12 — Reviewers are not identifiable
-
-**Expect:** reviewer identity appears only as an anonymised identifier
-(`anon_<hash>`). No email address, name, or provider subject identifier anywhere in
-the telemetry.
-
-This is a privacy requirement, not a preference. Any leak stops testing.
-
-## 6. The data survives
-
-### D13 — Backups include the study project
-
-Run the deployment's backup command; confirm the study project appears in its
+Run the deployment's backup command. Confirm the study project appears in the
 output.
 
-### D14 — Exported ratings are analysable
+## D14 — Export is analysable
 
-Export the annotations and confirm the rubric fields survive in a form usable for
-inter-rater reliability analysis — one record per reviewer per prompt, each scale
-distinguishable.
-
-Do this **before** any reset. A reset deletes the project, and annotations are
-usually the only record of a rating.
+Export annotations before any reset. Confirm one record per reviewer per prompt,
+each scale distinguishable.
 
 ## Not testable by hand
 
-**The per-prompt rating cap.** Proving no prompt exceeds `INTER_RATER_MAX_RATINGS`
-requires that many reviewers rating one prompt plus one more being refused.
-Enforcement is an atomic lock in the submission path, covered by the automated
-suite. Its absence from manual testing is not a gap.
+Per-prompt rating cap (`INTER_RATER_MAX_RATINGS`) — enforced by an atomic lock,
+covered by the automated suite.
 
-## Troubleshooting
+## Reference
 
-| Symptom | Likely cause |
+| Symptom | Cause |
 |---|---|
-| No one-time-code email arrives | Address not permitted by the access policy. The code screen appears anyway, so it looks like a mail delay. |
-| `/inter-rater` shows an empty queue | Pool guard inactive. This is a failure — see D5. |
-| `/inter-rater` shows a study-pool error | Correct before seeding; a fault after it. |
-| `is-active` says `active` but nothing serves | Workers still booting, or booted and died. Wait 20s, then use the D2 import check. |
-| Every page errors | A configuration fault taking the whole application down. Config validation runs when modules are imported, so any bad setting presents as total failure regardless of which setting is wrong. Use the D2 import check. |
-| Refuses to start after an env change | A deliberate fail-fast check: required study settings have no defaults, a project-name mismatch is rejected, and a default anonymisation salt is refused in production. |
-
-A general rule: **an error is usually the system working.** The guards refuse rather
-than degrade quietly, because quiet degradation produces data that looks valid and
-is not.
+| No sign-in code email | Address not permitted by the access policy; the code screen still appears |
+| Empty queue at `/inter-rater` | Pool guard inactive — failure |
+| Study-pool error at `/inter-rater` | Correct before seeding; fault after |
+| `is-active` active but nothing serves | Still booting, or booted and died — use D2 |
+| Every page errors | Config fault; validation runs at import so any bad setting downs the app — use D2 |
+| Refuses to start after env change | Fail-fast check: missing required study setting, project-name mismatch, or default anonymisation salt in production |
 
 ## Part 1 results
 
 Environment: ______________  Version: ______________  Date: ______________
 
-| Check | Pass | Notes / evidence |
+| Check | Pass | Notes |
 |---|---|---|
 | D1 capacity arithmetic | | |
-| D2 application imports cleanly | | |
+| D2 imports cleanly | | |
 | D3 version set before seeding | | |
 | D4 identities authenticate | | |
-| D5 unseeded reports error, not empty queue | | |
-| D6 manifest matches intended pool | | |
-| D7 queues full length and differ | | |
-| D8 queue stable across reloads | | |
-| D9 rating stored complete, double rating refused | | |
-| D10 annotations on original span | | |
+| D5 unseeded reports error | | |
+| D6 manifest matches pool | | |
+| D7 queues full and differ | | |
+| D8 queue stable | | |
+| D9 stored complete, double refused | | |
+| D10 annotations on span | | |
 | D11 version stamp correct | | |
 | D12 reviewers anonymised | | |
 | D13 backup includes project | | |
 | D14 export analysable | | |
 
-Stop and resolve before Part 2 if D1–D5 or D12 fail.
-
 ---
 
 # Part 2 — Reviewer walkthrough
 
-*This section is self-contained. It can be sent to a tester on its own — it assumes
-no technical knowledge and requires nothing but a browser.*
+*Self-contained — can be sent to a tester on its own.*
 
-Thank you for helping test this. You are not being asked to judge the historical
-answers themselves — you are checking that the **tool works properly** before a
-group of reviewers uses it for real.
+You are checking that the tool works, not judging the historical answers. About
+20–30 minutes.
 
-Please work through the steps below and note what happens. It should take about
-20–30 minutes. There are no wrong answers, and finding a problem is a useful
-result, not a failure.
+Two notes before you start: an error message may be the correct result, so write
+down its exact wording and continue rather than trying to fix anything; and please
+do not copy the questions or answers anywhere else.
 
-**What you will need:** the web address, and the email address that has been
-authorised for you.
+You need the web address and your authorised email address.
 
-## Before you start
+## 1. Sign in
 
-Two things worth knowing, so nothing surprises you:
-
-- **An error message may be the correct result.** The system is built to stop and
-  say so when something is not right, rather than carry on quietly. If you see an
-  error, write down exactly what it says — word for word if you can — and carry on
-  to the next step. Do not try to fix anything.
-- **Please do not copy the questions or answers anywhere else.** They are research
-  material.
-
-## 1. Signing in
-
-1. Open the web address in your browser.
+1. Open the web address.
 2. Enter your authorised email address.
-3. If a code is emailed to you, enter it.
+3. Enter the emailed code, if one is sent.
 
-**If no email arrives after a few minutes, stop and tell the organiser.** It almost
-certainly means your address has not been added yet, not that the email is slow.
-Trying again will not help.
+If no email arrives after a few minutes, stop and tell the organiser — retrying
+will not help.
 
 - Did you get in? ______
-- Anything confusing about the sign-in? ______
+- Anything confusing about signing in? ______
 
-## 2. Your list of tasks
-
-Once signed in you should land on a page of rating tasks.
+## 2. Your task list
 
 - How many items are you offered? ______
-- Was there a delay before the list appeared? Did anything look broken or badly
-  positioned while it loaded? ______
-- Did you see an error instead of a list? If so, write it down exactly: ______
+- Any delay before the list appeared? Anything broken or badly positioned while it
+  loaded? ______
+- An error instead of a list? Exact wording: ______
 
-## 3. Rating one item
+## 3. Rate one item
 
-Open the first item. You should see a question, an answer, and the sources the
-answer drew on.
+Open the first item — question, answer, and sources.
 
-Work through the rating form and note as you go:
-
-- Are there **six** rating scales? ______
-- Is it clear what each scale is asking? Note any wording that made you hesitate:
+- Are there six rating scales? ______
+- Is it clear what each is asking? Note any wording you hesitated over: ______
+- Give one scale a very high or very low score. Are you asked to explain it? ______
+- Try to submit without that explanation. Does it stop you, with a clear message?
   ______
-- Give one scale a very high or very low score. Does the form ask you to explain
-  that score? ______
-- Try to submit **without** writing that explanation. Does it stop you, and is the
-  message clear? ______
-- Now complete everything — all six scales, the explanations, and the fault section
-  with its explanation — and submit.
-
-- Did it submit successfully? ______
-- Roughly how long did the whole item take? ______
+- Complete everything — six scales, explanations, faults and fault explanation —
+  and submit. Did it succeed? ______
+- Roughly how long did the item take? ______
 
 ## 4. After submitting
 
-- Did the item disappear from your list? ______
-- Did the number of remaining items go down by one? ______
-- Go back and try to rate the **same** item again. What happens? ______
+- Did the item leave your list? ______
+- Did the remaining count drop by one? ______
+- Try to rate the same item again. What happens? ______ (Refusal is correct.)
 
-*(It should refuse. That is correct behaviour, not a bug.)*
+## 5. Rate a second item
 
-## 5. A second item
-
-Rate one more item, more quickly this time.
-
-- Anything different or unexpected the second time? ______
-- Did anything feel slow, confusing, or easy to get wrong by accident? ______
+- Anything different or unexpected? ______
+- Anything slow, confusing, or easy to get wrong by accident? ______
 
 ## 6. Overall
 
-- Anything that looked visually wrong — misaligned, off-centre, odd colours, text
-  cut off, hard to read? ______
-- Anything you expected to be able to do and couldn't? ______
-- If you were rating 20 of these in a sitting, what would irritate you most?
-  ______
+- Anything visually wrong — misaligned, off-centre, odd colours, text cut off, hard
+  to read? ______
+- Anything you expected to do and couldn't? ______
+- Rating 20 in a sitting, what would irritate you most? ______
 - Anything else? ______
 
-## What to send back
+## Send back
 
-Your answers above, plus:
-
-- Which browser and device you used: ______
-- The date and roughly what time you tested: ______
-- **Exact wording** of any error messages you saw
-
-If something went badly wrong, note what you were doing immediately beforehand —
-that is usually the most useful detail.
-
-Thank you.
+- Your answers above
+- Browser and device: ______
+- Date and approximate time: ______
+- Exact wording of any error messages
+- For anything that went wrong, what you were doing immediately beforehand
