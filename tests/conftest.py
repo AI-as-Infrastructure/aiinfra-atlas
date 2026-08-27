@@ -26,7 +26,7 @@ def mock_phoenix_env(monkeypatch):
 def mock_inter_rater_env(monkeypatch):
     """Fixture to set up inter-rater environment variables"""
     monkeypatch.setenv('INTER_RATER_ENABLED', 'true')
-    monkeypatch.setenv('INTER_RATER_PROJECT', 'atlas-hansard')
+    monkeypatch.setenv('INTER_RATER_PROJECT', 'test-project')
     monkeypatch.setenv('INTER_RATER_MAX_RATINGS', '3')
     monkeypatch.setenv('INTER_RATER_SESSIONS_PER_USER', '5')
 

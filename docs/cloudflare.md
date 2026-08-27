@@ -110,8 +110,8 @@ The cloudflared tunnel is **operator-managed** -- the deploy script (`make cf`) 
 
 | Route | Subdomain | Domain | Path | Service | Description |
 |-------|-----------|--------|------|---------|-------------|
-| ATLAS app | `atlas-hansard` | `yourdomain.org` | *(empty)* | `http://localhost:80` | Main application (via Nginx) |
-| SSH | `ssh-web` | `yourdomain.org` | *(empty)* | `ssh://localhost:22` | SSH to the host. Backs native clients via `cloudflared access tcp`; also browser-based SSH, but only if **Browser rendering** is enabled on the Access application |
+| ATLAS app | `atlas` | `yourdomain.org` | *(empty)* | `http://localhost:80` | Main application (via Nginx) |
+| SSH | `ssh` | `yourdomain.org` | *(empty)* | `ssh://localhost:22` | SSH to the host. Backs native clients via `cloudflared access tcp`; also browser-based SSH, but only if **Browser rendering** is enabled on the Access application |
 
 For each route, go to the tunnel's **Public Hostname** tab and click **Add a public hostname**. Set the subdomain, domain, and service URL as above.
 
@@ -327,7 +327,7 @@ Cloudflare Access puts an authentication layer in front of the ATLAS application
 |---------|-------|
 | Application name | `ATLAS Hansard` (or your preferred name) |
 | Session duration | `24 hours` (adjust for your use case) |
-| Application domain | `atlas-hansard.yourdomain.org` |
+| Application domain | `atlas.yourdomain.org` |
 
 3. Under **Policies**, create an **Allow** policy:
    - **Policy name**: e.g. `Allow research team`
@@ -347,7 +347,7 @@ Cloudflare Access puts an authentication layer in front of the ATLAS application
 |---------|-------|
 | Application name | `SSH Web Access` |
 | Session duration | `1 hour` (shorter for SSH) |
-| Application domain | `ssh-web.yourdomain.org` |
+| Application domain | `ssh.yourdomain.org` |
 | Application type | Self-hosted |
 
 5. Under **Policies**, create a policy restricting access (e.g. specific admin emails only, or
@@ -366,7 +366,7 @@ Browser rendering serves a terminal in the browser. For a native client (OpenSSH
 run a local forward instead and point the client at it:
 
 ```bash
-cloudflared access tcp --hostname ssh-web.yourdomain.org --url localhost:2222
+cloudflared access tcp --hostname ssh.yourdomain.org --url localhost:2222
 # then: ssh -p 2222 user@127.0.0.1
 ```
 
@@ -381,7 +381,7 @@ out of the process command line:
 ```bash
 export TUNNEL_SERVICE_TOKEN_ID=<client id>
 export TUNNEL_SERVICE_TOKEN_SECRET=<client secret>
-cloudflared access tcp --hostname ssh-web.yourdomain.org --url localhost:2222
+cloudflared access tcp --hostname ssh.yourdomain.org --url localhost:2222
 ```
 
 The equivalent flags are `--service-token-id` and `--service-token-secret`.
@@ -400,14 +400,14 @@ Applications**), and a route works with or without an application.
 ```bash
 # Protected: 302 to https://<team>.cloudflareaccess.com/cdn-cgi/access/login/...
 # Unprotected: no redirect (an ssh:// route answers an HTTP request with an empty 200)
-curl -sS -o /dev/null -D - https://ssh-web.yourdomain.org
+curl -sS -o /dev/null -D - https://ssh.yourdomain.org
 
 # Protected: 200. Unprotected: 404
 curl -sS -o /dev/null -w '%{http_code}\n' \
-  https://ssh-web.yourdomain.org/.well-known/cloudflare-access-protected-resource/
+  https://ssh.yourdomain.org/.well-known/cloudflare-access-protected-resource/
 
 # Unprotected: "failed to find Access application"
-cloudflared access login https://ssh-web.yourdomain.org
+cloudflared access login https://ssh.yourdomain.org
 ```
 
 ### Configuring JWT validation (defence-in-depth)

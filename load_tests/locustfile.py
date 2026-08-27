@@ -10,13 +10,13 @@ Usage:
     locust -f locustfile.py --host=http://localhost:5173
 
     # Staging environment
-    locust -f locustfile.py --host=https://192.168.20.17 --users=30 --spawn-rate=2 --run-time=15m
+    locust -f locustfile.py --host=https://192.0.2.10 --users=30 --spawn-rate=2 --run-time=15m
 
     # Specific scenario
-    locust -f locustfile.py --host=https://192.168.20.17 --tags=streaming --users=20 --run-time=10m
+    locust -f locustfile.py --host=https://192.0.2.10 --tags=streaming --users=20 --run-time=10m
 
     # With custom configuration
-    LOAD_TEST_CONFIG=staging locust -f locustfile.py --host=https://192.168.20.17
+    LOAD_TEST_CONFIG=staging locust -f locustfile.py --host=https://192.0.2.10
 """
 
 import os
