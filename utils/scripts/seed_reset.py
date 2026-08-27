@@ -10,9 +10,11 @@ Usage:
     .venv/bin/python utils/scripts/seed_reset.py [--yes] [--force]
 
 Safety:
-- Refuses by default if the project name looks like a production project
-  (contains 'prod' or 'production'). Pass --force to override.
-- Prompts for confirmation unless --yes is passed.
+- Refuses by default when the loaded environment file is a production
+  deployment (ENVIRONMENT=production), or when the project name looks like a
+  production project. Pass --force to override.
+- Prompts for confirmation unless --yes is passed. A protected target always
+  prompts, so --yes --force cannot delete a live study unattended.
 """
 
 from __future__ import annotations
@@ -75,6 +77,23 @@ def looks_like_prod(name: str) -> bool:
     return any(hint in lowered for hint in PROD_HINTS)
 
 
+def protection_reason(project: str) -> str | None:
+    """
+    Name why this target is protected, or None if it is not.
+
+    ENVIRONMENT is set by the environment file the caller sourced, so it
+    identifies the deployment whatever the study project happens to be called
+    — the name heuristic alone misses any production project not named for
+    one. The heuristic stays as a second net for a production-looking project
+    reached through some other environment file.
+    """
+    if (os.getenv("ENVIRONMENT") or "").strip().lower() == "production":
+        return "ENVIRONMENT=production in the loaded environment file"
+    if looks_like_prod(project):
+        return f"the project name '{project}' looks like a production project"
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--yes", action="store_true", help="Skip the confirmation prompt")
@@ -95,16 +114,24 @@ def main() -> int:
     print(f"Phoenix endpoint: {endpoint}")
     print(f"Project to delete: {project}")
 
-    if looks_like_prod(project) and not args.force:
+    reason = protection_reason(project)
+    if reason and not args.force:
         print(
-            f"\nRefusing to delete '{project}': the name looks like a production project.\n"
+            f"\nRefusing to delete '{project}': {reason}.\n"
             "Pass --force if you really mean it (and you should not — use a dedicated\n"
             "INTER_RATER_PROJECT for seed testing, e.g. ATLAS-SeedTest)."
         )
         return 2
 
-    if not args.yes:
-        resp = input(f"\nDelete project '{project}' and ALL its spans/annotations? Type the project name to confirm: ").strip()
+    # --force lifts the refusal above but never the confirmation: deleting a
+    # protected study is always a deliberate keystroke, so an automated or
+    # mistyped --yes --force cannot destroy reviewer data.
+    if not args.yes or reason:
+        try:
+            resp = input(f"\nDelete project '{project}' and ALL its spans/annotations? Type the project name to confirm: ").strip()
+        except EOFError:
+            print("\nNo input available to confirm a protected deletion — aborting.")
+            return 1
         if resp != project:
             print("Confirmation did not match — aborting.")
             return 1
