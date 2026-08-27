@@ -121,8 +121,9 @@ venv.bk/
 .venv.vs-gpu/
 .venv.vs-cpu/
 
-# VS Code
-.vscode/
+# Editor / IDE (no trailing slash: matches both files and directories)
+.vscode
+.idea
 
 # Generated files
 frontend/public/logout.html
@@ -138,3 +139,15 @@ load_tests/*.log
 # Study pool manifest written by `make seed` (environment-specific).
 # Back it up with the Phoenix export — it defines the pool for reproducibility.
 data/seed_pool.json
+
+# Claude Code local state (keep CLAUDE.md, commands/ and settings.json tracked)
+.claude/settings.local.json
+.claude/launch.json
+.claude/loop.md
+.claude/scheduled_tasks.json
+.claude/agents
+.claude/hooks
+.claude/skills
+.claude/workflows
+.claude/routines
+.claude/output-styles
