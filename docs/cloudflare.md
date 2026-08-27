@@ -16,7 +16,7 @@ End-to-end sequence for a fresh deployment. Each step references the detailed se
 - [ ] Create a Cloudflare Access application for the app domain -- see [Cloudflare Access](#cloudflare-access-authentication)
 - [ ] Create an Allow policy with your identity rules (emails, domain, IdP)
 - [ ] Note the **Application Audience (AUD) tag** and **Team domain** for JWT validation
-- [ ] Optionally create a separate Access application for SSH with tighter policies
+- [ ] Create a separate Access application for **each** SSH route, with tighter policies -- required, not optional: an SSH route with no Access application is reachable by anyone who knows the hostname (see [SSH application policy](#ssh-application-policy))
 
 ### 2. Server prerequisites
 
@@ -111,7 +111,7 @@ The cloudflared tunnel is **operator-managed** -- the deploy script (`make cf`) 
 | Route | Subdomain | Domain | Path | Service | Description |
 |-------|-----------|--------|------|---------|-------------|
 | ATLAS app | `atlas-hansard` | `yourdomain.org` | *(empty)* | `http://localhost:80` | Main application (via Nginx) |
-| SSH web | `ssh-web` | `yourdomain.org` | *(empty)* | `ssh://localhost:22` | Browser-based SSH (Cloudflare renders terminal) |
+| SSH | `ssh-web` | `yourdomain.org` | *(empty)* | `ssh://localhost:22` | SSH to the host. Backs native clients via `cloudflared access tcp`; also browser-based SSH, but only if **Browser rendering** is enabled on the Access application |
 
 For each route, go to the tunnel's **Public Hostname** tab and click **Add a public hostname**. Set the subdomain, domain, and service URL as above.
 
@@ -350,8 +350,65 @@ Cloudflare Access puts an authentication layer in front of the ATLAS application
 | Application domain | `ssh-web.yourdomain.org` |
 | Application type | Self-hosted |
 
-5. Under **Policies**, create an **Allow** policy with more restrictive access (e.g. specific admin emails only)
-6. Under **Settings**, enable **Browser rendering** for SSH (this renders the terminal in the browser)
+5. Under **Policies**, create a policy restricting access (e.g. specific admin emails only, or
+   **Service Auth** with a service token for native clients -- see below)
+6. Under **Settings**, enable **Browser rendering** only if you want browser-based SSH. It is not
+   needed for native clients using `cloudflared access tcp`, and leaving it off keeps the hostname
+   from serving anything in a browser
+
+**One application, one policy, one token per SSH route.** Do not share an Access application,
+policy or service token between two SSH routes. Each route should be independently revocable, so
+that rotating or misconfiguring one host's credentials cannot affect access to another.
+
+#### Native SSH clients through an Access-protected route
+
+Browser rendering serves a terminal in the browser. For a native client (OpenSSH, Termius, etc.),
+run a local forward instead and point the client at it:
+
+```bash
+cloudflared access tcp --hostname ssh-web.yourdomain.org --url localhost:2222
+# then: ssh -p 2222 user@127.0.0.1
+```
+
+Against a protected route, the forward must authenticate. Use an Access **service token**, not an
+interactive `cloudflared access login`: an interactive token expires with the application's session
+duration, and a forward running in the background or at login cannot prompt for re-authentication.
+
+Create the token under **Access > Service Auth**, add a **Service Auth** policy to the application
+accepting that token, and supply it to the forward via environment variables so the secret stays
+out of the process command line:
+
+```bash
+export TUNNEL_SERVICE_TOKEN_ID=<client id>
+export TUNNEL_SERVICE_TOKEN_SECRET=<client secret>
+cloudflared access tcp --hostname ssh-web.yourdomain.org --url localhost:2222
+```
+
+The equivalent flags are `--service-token-id` and `--service-token-secret`.
+
+Introduce the Access application and the forward's service token **together**. Creating the
+application first breaks every forward that does not yet present a token, and the failure surfaces
+at the SSH client only as `connection refused` -- so make sure the forward logs cloudflared's
+output somewhere you can read it.
+
+#### Verifying a hostname is actually protected
+
+Do not assume coverage from the dashboard alone -- a tunnel route and an Access application are
+configured in different places (**Networks > Tunnels > Public Hostname** vs **Access >
+Applications**), and a route works with or without an application.
+
+```bash
+# Protected: 302 to https://<team>.cloudflareaccess.com/cdn-cgi/access/login/...
+# Unprotected: no redirect (an ssh:// route answers an HTTP request with an empty 200)
+curl -sS -o /dev/null -D - https://ssh-web.yourdomain.org
+
+# Protected: 200. Unprotected: 404
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  https://ssh-web.yourdomain.org/.well-known/cloudflare-access-protected-resource/
+
+# Unprotected: "failed to find Access application"
+cloudflared access login https://ssh-web.yourdomain.org
+```
 
 ### Configuring JWT validation (defence-in-depth)
 
@@ -387,7 +444,7 @@ The deploy script assumes the following are configured in the Cloudflare dashboa
 
 ## Security Notes
 
-- No ports are exposed to the internet; all traffic flows through Cloudflare's edge
+- No inbound ports are exposed to the internet; all traffic flows through Cloudflare's edge. This is not the same as being authenticated at the edge: Zero Trust policies apply only to hostnames covered by an Access application. A tunnel route with no Access application is reachable by anyone who knows the hostname, and the tunnel's outbound-only connection and UFW's deny-all policy do not restrict it -- `cloudflared` reaches the local service from inside the host. This matters most for SSH routes (see [SSH application policy](#ssh-application-policy))
 - Nginx binds to `127.0.0.1:80` only -- not accessible from public network interfaces
 - Nginx origin verification rejects requests without `Cf-Ray` header (blocks direct localhost access)
 - Cloudflare Access JWT validation available as defence-in-depth (see above and [Authentication](authentication.md))
