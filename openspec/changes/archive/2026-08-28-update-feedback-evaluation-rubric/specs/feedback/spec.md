@@ -1,6 +1,6 @@
 # feedback Specification Delta
 
-## Change: update-feedback-evaluation-rubric
+## ADDED Requirements
 
 ### Requirement: Feedback Form Evaluation Rubric
 **MODIFIED** — replaces the legacy general-purpose Likert categories with a domain-specific HASS historical research evaluation rubric.

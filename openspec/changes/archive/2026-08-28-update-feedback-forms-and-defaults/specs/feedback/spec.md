@@ -1,6 +1,6 @@
 # feedback (delta)
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Feedback Form Field Scope
 The feedback form (standard and inter-rater variants) SHALL collect only the fields required by the current evaluation protocol. User-type classification and the Off-topic and Bias fault categories are excluded.

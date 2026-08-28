@@ -4,9 +4,40 @@ All steps are manual. Order matters — see the constraints in `proposal.md`.
 Everything up to task 5.1 is reversible; from 5.1 onward you are publishing a
 citable artifact.
 
+## Verified 2026-08-28
+
+Ticked above from direct evidence, not inspection:
+
+- Config and Redis confirmed by `utils/scripts/inter_rater_preflight.py` run on
+  the prod server: 100-prompt manifest, `20 x 20 = 100 x 4` balanced, 100 of 100
+  spans indexed, cohort slots readable from Redis.
+- Two reviewers each offered 20 prompts with non-identical queues (overlap 4,
+  design predicts ~3.2). A shared *first* prompt is expected: the lowest-sorted
+  span goes to `max_ratings` slots and leads each of their queues.
+- Both reviewers' ratings confirmed in the Phoenix export as
+  `[inter-rating-1]` / `[inter-rating-2]` on the original span, carrying all six
+  scales, per-scale rationales, faults and fault rationale. Rationales appear
+  only against extreme scores, as the form requires.
+- `atlas_version = "Hansard 0.4.0"` on all 100 seeded spans.
+- Anonymisation: the whole export contains no email addresses and exactly two
+  `anon_` identifiers.
+- `PHOENIX_PROJECT_BACKUPS` includes `Hansard-Interrating`; nightly export runs
+  01:20, USB copy 02:30.
+
+Still open in sections 2-3, for the manual tester: **Task 2.4** (`make seed-dry`),
+**Task 3.5** (per-prompt cap under real use) and **Task 3.6** (double submission
+refused). **Task 2.1** stays open pending the full rebuild before the focus group.
+
+Two reviewer cohort slots are already spent by pilot logins. Section 4's re-seed
+clears them — new `qa_ids` give a new pool fingerprint and a fresh cohort of 20.
+
+Post-deployment sequence for section 5 now lives in
+`openspec/specs/post-deployment/spec.md` (`add-post-deployment-spec`, archived
+2026-08-28).
+
 ## 1. Production configuration
 
-- [ ] **Task 1.1**: Confirm `config/.env.production` **on the prod server** has
+- [x] **Task 1.1**: Confirm `config/.env.production` **on the prod server** has
       the values below. The local dev-machine copies of `.env.production`,
       `.env.staging` and `.env.development` were updated on 2026-08-27; the
       server's copy is separate and must be edited there:
@@ -16,14 +47,14 @@ citable artifact.
       `INTER_RATER_MAX_RATINGS=4`, `INTER_RATER_REVIEWERS=20`,
       `INTER_RATER_SESSIONS_PER_USER=20`, `INTER_RATER_DEFAULT_UI=true`,
       `INTER_RATER_POOL_MANIFEST=data/seed_pool.json`
-- [ ] **Task 1.2**: Set `ATLAS_VERSION="Hansard 0.4.0"` in
+- [x] **Task 1.2**: Set `ATLAS_VERSION="Hansard 0.4.0"` in
       `config/.env.production` (and staging). Must happen before seeding — it is
       written to every Phoenix span, so it stamps the study data with the code
       version
-- [ ] **Task 1.3**: Confirm `REDIS_URL` is set and Redis is reachable. The
+- [x] **Task 1.3**: Confirm `REDIS_URL` is set and Redis is reachable. The
       submission gate and cohort registry both require it and fail closed
       without it
-- [ ] **Task 1.4**: Confirm `AUTH_METHOD=cloudflare` (or `cognito`) — inter-rating
+- [x] **Task 1.4**: Confirm `AUTH_METHOD=cloudflare` (or `cognito`) — inter-rating
       returns an empty session list under `AUTH_METHOD=none`
 
 ## 2. Deploy and verify startup
@@ -46,17 +77,17 @@ citable artifact.
 
 Pick one approach. The first needs no settings churn and is preferred.
 
-- [ ] **Task 3.1a**: *Full-pool pilot.* `make seed` (all 100 questions). Confirm
+- [x] **Task 3.1a**: *Full-pool pilot.* `make seed` (all 100 questions). Confirm
       `data/seed_pool.json` is written with `count: 100` and
       `project: Hansard-Interrating`
 - [ ] **Task 3.1b**: *Or short pilot.* Temporarily set `INTER_RATER_MAX_RATINGS=4`,
       `INTER_RATER_REVIEWERS=4`, `INTER_RATER_SESSIONS_PER_USER=5`, restart, then
       `make seed SEED_ARGS="--count 5"`. Restore study values afterwards
-- [ ] **Task 3.2**: Log in as two distinct reviewers and confirm each is offered a
+- [x] **Task 3.2**: Log in as two distinct reviewers and confirm each is offered a
       queue, and that the two queues are not identical
-- [ ] **Task 3.3**: Submit a full rating from each account. Confirm all six scales,
+- [x] **Task 3.3**: Submit a full rating from each account. Confirm all six scales,
       the per-scale rationales, faults and fault rationale are all captured
-- [ ] **Task 3.4**: In Phoenix, confirm annotations land on the original span
+- [x] **Task 3.4**: In Phoenix, confirm annotations land on the original span
       under `Hansard-Interrating` with `[inter-rating-N]` prefixes, and that
       `atlas_version` on the spans reads `Hansard 0.4.0`
 - [ ] **Task 3.5**: Confirm no prompt exceeds `INTER_RATER_MAX_RATINGS` ratings.
@@ -64,9 +95,9 @@ Pick one approach. The first needs no settings churn and is preferred.
       this is the check the simulation cannot make for you
 - [ ] **Task 3.6**: Rate the same prompt twice from one account and confirm the
       second attempt is refused as unavailable rather than written twice
-- [ ] **Task 3.7**: `make backup-prod` and confirm `Hansard-Interrating` appears
+- [x] **Task 3.7**: `make backup-prod` and confirm `Hansard-Interrating` appears
       in the backup output
-- [ ] **Task 3.8**: Export or note the pilot annotations, then confirm the
+- [x] **Task 3.8**: Export or note the pilot annotations, then confirm the
       rubric fields survive export in a form usable for IRR analysis
 
 ## 4. Seed the study pool
