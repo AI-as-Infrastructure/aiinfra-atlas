@@ -72,6 +72,14 @@
       bounded live query would preserve spans the server no longer considers
       current. Study mode is protected because its manifest defines the run and
       the capacity validation raises when that pool is incomplete.
+- [ ] 3.2a Reject submissions for spans outside the current pool. The gate
+      (`inter_rater_submission_gate.py:88-97`) checks already-rated and
+      max_ratings but never manifest membership, so a stale span rehydrated
+      from client state is currently accepted. Validate the submitted `span_id`
+      against an authoritative server-side pool snapshot; do not trust the
+      client's `qa_id` or `allocation_snapshot_id`, and fail closed when current
+      membership cannot be verified. Client-side snapshot checks are not
+      sufficient on their own.
 - [ ] 3.2b Split `handledSpanIds` by outcome and lifetime. Add a span to
       reviewer-scoped `recentlyRatedSpanIds` only after submission success or a
       distinct duplicate refusal confirming that this reviewer already rated
@@ -92,14 +100,6 @@
       recorded rating, then prune it after an authoritative history response
       confirms the rating. Do not use arbitrary size eviction or expiry that can
       remove the mask before server propagation completes.
-- [ ] 3.2a Reject submissions for spans outside the current pool. The gate
-      (`inter_rater_submission_gate.py:88-97`) checks already-rated and
-      max_ratings but never manifest membership, so a stale span rehydrated
-      from client state is currently accepted. Validate the submitted `span_id`
-      against an authoritative server-side pool snapshot; do not trust the
-      client's `qa_id` or `allocation_snapshot_id`, and fail closed when current
-      membership cannot be verified. Client-side snapshot checks are not
-      sufficient on their own.
 - [ ] 3.3 Add a read endpoint returning the requesting reviewer's own recorded
       ratings for the current pool, scoped server-side by `rater_id`. History is
       derived from this, not from client storage, so it survives a closed tab.
