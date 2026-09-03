@@ -63,8 +63,10 @@
       annotation names the current rubric writes: `Corpus Fidelity`,
       `Citation Quality`, `Relevance Rating`, `Coherence`, `Uncertainty`,
       `Historical Contextualisation`, plus the per-criterion rationales and
-      `Fault:` tags. Note `get_annotation_name` suffixes inter-rater
-      annotations with `[inter-rating-N]`, so match accordingly.
+      `Fault:` tags. Note `get_annotation_name` (`feedback.py:365-372`)
+      *prefixes* inter-rater annotations — `"[inter-rating-N] Corpus Fidelity"`
+      — and falls back to the `"[Inter-rater] "` prefix when the number is
+      missing. Match on the prefix, and handle the numberless fallback.
       Do NOT extend `_USER_FEEDBACK_NAMES` for this — that frozenset gates the
       baseline-feedback path, not this one.
 - [ ] 3.4a Filtering on `rater_id` alone loses data and is unsafe. Verified:
@@ -78,10 +80,10 @@
       or colliding group number cannot attach another reviewer's fault tags or
       comments to this reviewer's history. Prefer omitting an unjoinable
       annotation over guessing its author.
-- [ ] 3.4b Raise separately: those same two annotation types lack
-      `is_inter_rater`, so `annotations_cache.get_user_feedback` does not skip
-      them (line 107) and an inter-rater's fault tags read as baseline
-      feedback. Out of scope here; note it as its own issue.
+- [ ] 3.4b Raise separately (#76): those same two annotation types lack
+      `is_inter_rater`, so metadata alone cannot tell an inter-rater's fault
+      tags from a baseline reviewer's. Recoverable from the name prefix, no
+      live consumer today — out of scope here.
 - [ ] 3.5 Fail loudly when the history read fails — say so, rather than
       rendering an empty history that reads as authoritative.
 - [ ] 3.6 Rehydrate on mount instead of refetching when valid state exists.
