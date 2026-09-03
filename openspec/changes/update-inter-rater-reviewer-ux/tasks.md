@@ -55,6 +55,15 @@
       the id is non-empty in ad-hoc mode, changes when pool span membership
       changes, and does not change merely because ratings are submitted or a span
       reaches its rating cap.
+      Caveat for ad-hoc mode: the pool query truncates to
+      `limit=sessions_per_user * 10` after sorting by timestamp descending
+      (`phoenix_client.py:235-236`) within a `days_back` window, and
+      `_validate_study_capacity` returns early without a manifest
+      (`inter_rater_service.py:242-256`). So in ad-hoc mode ordinary organic
+      traffic can change pool membership with no reseed and no loud failure,
+      spuriously invalidating retained state. Study mode is protected because
+      that same validation raises. Decide deliberately whether ad-hoc
+      invalidation should be this sensitive, and record the choice.
 - [ ] 3.2a Reject submissions for spans outside the current pool. The gate
       (`inter_rater_submission_gate.py:88-97`) checks already-rated and
       max_ratings but never manifest membership, so a stale span rehydrated
@@ -95,8 +104,8 @@
       any comment or rationale to this reviewer's history. Cover every
       metadata-poor annotation type in the tests, and prefer omitting an
       unjoinable annotation over guessing its author.
-- [ ] 3.4b Update #76 to include all metadata-poor types: fault tags, Additional
-      Comments and per-scale comment annotations. Each lacks `is_inter_rater`,
+- [ ] 3.4b (#76 updated 2026-09-03 to cover all three.) Metadata-poor types are
+      fault tags, Additional Comments and the ten per-scale comment annotations. Each lacks `is_inter_rater`,
       so metadata alone cannot distinguish an inter-rater annotation from a
       baseline reviewer's. Recoverable from the name prefix, with no live
       consumer before this history reader — the writer-format cleanup remains

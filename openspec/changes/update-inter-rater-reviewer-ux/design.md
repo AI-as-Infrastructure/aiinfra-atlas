@@ -179,11 +179,31 @@ My "fails safe" argument was that recovering an id can only ever *exclude* a
 session. That is true and it is precisely the mechanism of the harm: excluding
 a session is what changes the count.
 
-Note the fail-closed behaviour I relied on is specified in
-`release-inter-rater-v0-4-0` ("allocation SHALL fail with the actual and
-required counts... SHALL NOT fall back to unbalanced ranking") but that change
-is unarchived at 11/37 tasks. I read the requirement and assumed the code. The
-requirement is not built yet.
+**Correction to the above, from a later pass.** The fail-closed behaviour *is*
+built — `_validate_study_capacity` (`inter_rater_service.py:229-275`) raises in
+study mode when `reviewers x sessions_per_user != len(sessions) x max_ratings`,
+with the actual and required counts, exactly as the requirement specifies. My
+claim that it was unimplemented was wrong.
+
+What is actually true is narrower and more specific, and it still condemns #75.
+The validation runs on `sessions` — the **shared pool**, after manifest
+restriction and *before* author exclusion. The `balanced_design` test at line
+310 runs on `all_sessions` — the **per-reviewer** list, after author exclusion.
+The two are equal only while no reviewer authored a pool session.
+
+So:
+
+- In a seeded study, seeded sessions carry no `original_user_id`, author
+  exclusion removes nothing, `all_sessions == sessions`, and the validation
+  covers the balanced-design test. Safe.
+- The moment a reviewer is recognised as the author of a pool session,
+  `len(all_sessions) < len(sessions)` for that reviewer alone. Validation has
+  already passed on the shared pool, and the per-reviewer fallback at line 313
+  then fires silently, for that reviewer only.
+
+Recovering more `original_user_id` values is precisely what moves a study from
+the first case into the second. #75 does not defeat a missing guard; it steps
+around an existing one, per reviewer, downstream of where it runs.
 
 **Decision.** #75 comes out of this change entirely. Not deferred within it, not
 gated behind a diff check — removed. Two reasons:
