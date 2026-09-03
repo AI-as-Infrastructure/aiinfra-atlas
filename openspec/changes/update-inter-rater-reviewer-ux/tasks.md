@@ -49,8 +49,10 @@
       `qa_id` pairs in the exact shared pool snapshot, before per-reviewer rating
       and capacity filtering, so it exists in every mode and changes whenever
       the actual pool spans change. Return it from `/api/inter-rater/sessions`.
-      After a reload, compare the server value before restoring saved position or
-      `handledSpanIds`; on mismatch use the fresh allocation and replace storage.
+      After a reload, compare the server value before restoring saved position;
+      on mismatch use the fresh allocation and replace the stored position.
+      Persist `handledSpanIds` under a **reviewer-only** key, not the snapshot
+      key — see 3.2b.
       An in-app KeepAlive return still performs no allocation request. Test that
       the id is non-empty in ad-hoc mode, changes when pool span membership
       changes, and does not change merely because ratings are submitted or a span
@@ -66,6 +68,20 @@
       bounded live query would preserve spans the server no longer considers
       current. Study mode is protected because its manifest defines the run and
       the capacity validation raises when that pool is incomplete.
+- [ ] 3.2b Do not discard `handledSpanIds` when the allocation snapshot changes.
+      "Spans I have already rated" is reviewer-scoped truth and does not stop
+      being true because the pool changed; only *position* is snapshot-scoped.
+      Discarding it removes the mask that currently hides a real server-side
+      race: `check_user_already_rated` consults the process-local
+      `_local_ratings` set (`annotations_cache.py:60, 167`), production runs
+      gunicorn with 8-16 workers (`deploy/production/production.sh:387`,
+      `deploy/cloudflare/cloudflare.sh:296`), so a worker that did not receive
+      the submission must wait for Phoenix propagation before
+      `get_sessions_for_inter_rating` filters the span. That window is exactly
+      why `InterRaterDashboard.vue` removes the rated session locally rather
+      than refetching. Merge the persisted set into the fresh allocation's
+      filter instead of clearing it, and cap or expire it per run so it cannot
+      grow unbounded.
 - [ ] 3.2a Reject submissions for spans outside the current pool. The gate
       (`inter_rater_submission_gate.py:88-97`) checks already-rated and
       max_ratings but never manifest membership, so a stale span rehydrated
@@ -117,9 +133,11 @@
 - [ ] 3.6 Use the live Pinia state without refetching when `<KeepAlive>`
       reactivates the route during an in-app return. After a reload or genuine
       remount, fetch the current sessions response first and rehydrate persisted
-      position and `handledSpanIds` only when its `allocation_snapshot_id`
-      matches; otherwise discard the saved state and use the fresh allocation.
-      Never render a persisted allocation before that server validation.
+      position only when its `allocation_snapshot_id` matches; otherwise discard
+      the saved position and use the fresh allocation. Never render a persisted
+      allocation before that server validation. `handledSpanIds` survives a
+      snapshot mismatch and is applied to the fresh allocation regardless — see
+      3.2b.
 
 ## 4. Navigation and history (#72, #73) — depends on 3
 - [ ] 4.1 Wrap the `/inter-rater` route view in `<KeepAlive>` so an in-app

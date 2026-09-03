@@ -246,6 +246,15 @@ alters `original_user_id` values is unsafe.
   reviewer alone or by the cohort fingerprint. Tasks 3.2 and 3.2a address both
   halves with a distinct allocation snapshot identifier and a server-side
   membership check.
+- **Over-broad invalidation**, the converse hazard. Persisted state is two
+  different things with two different scopes: *position* belongs to one
+  allocation snapshot, while *which prompts I have rated* belongs to the
+  reviewer and stays true across any pool change. Discarding both on a snapshot
+  mismatch would remove the client-side filter that currently masks a real
+  server race — `check_user_already_rated` consults a process-local
+  `_local_ratings` set while production runs 8-16 gunicorn workers, so a worker
+  that did not receive the submission depends on Phoenix propagation. Task 3.2b
+  keeps the rated-prompt record across snapshot changes for that reason.
 - **Ad-hoc state invalidation from organic traffic.** Accepted deliberately.
   Ad-hoc mode has no manifest-backed run boundary and defines its current pool
   from the bounded live Phoenix query, so a changed query result is a changed

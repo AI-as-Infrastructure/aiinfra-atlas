@@ -132,6 +132,11 @@ After a reload or remount, persisted position SHALL NOT be rendered until the
 server has confirmed that its allocation snapshot identifier is current. An
 in-app return using live retained state SHALL NOT require that allocation fetch.
 
+The record of which prompts the reviewer has already rated SHALL NOT be
+discarded when the allocation snapshot changes. That record is scoped to the
+reviewer rather than to a pool, and SHALL continue to be applied to whatever
+allocation is current; only the reviewer's *position* is snapshot-scoped.
+
 A submission for a prompt outside the current pool SHALL be refused server-side;
 client-supplied pool identifiers or `qa_id` values SHALL NOT be treated as proof
 of membership. Failure to verify current membership SHALL fail closed.
@@ -151,6 +156,14 @@ the refusal reason to survive the trip to the client.
 - **GIVEN** a reviewer who has rated several prompts in the current run
 - **WHEN** they reload the page
 - **THEN** none of the prompts they have rated SHALL be presented as ratable items
+
+#### Scenario: Rated prompts stay filtered across a snapshot change
+- **GIVEN** a reviewer who has rated several prompts and whose allocation
+  snapshot then changes
+- **WHEN** the fresh allocation is fetched and it still contains one of those
+  prompts
+- **THEN** that prompt SHALL NOT be presented as ratable
+- **AND** the rated-prompt record SHALL survive the discarding of saved position
 
 #### Scenario: Reseeded pool does not resurrect an old allocation
 - **GIVEN** a reviewer with retained state from a previous pool
