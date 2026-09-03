@@ -8,9 +8,6 @@ each degrades the conditions under which ratings are produced, and the rubric
 tooltips in particular are a construct-validity risk: a reviewer who cannot read
 the definition of "Corpus Fidelity" is rating against a two-word label.
 
-A sixth item, #75, came out of tracing those five rather than from testing. It
-is included because it is adjacent to the same code and demonstrably cannot
-reach the allocator — not because it was reported.
 
 | # | Finding | Capability |
 |---|---------|-----------|
@@ -19,7 +16,6 @@ reach the allocator — not because it was reported.
 | [#72](https://github.com/AI-as-Infrastructure/aiinfra-atlas/issues/72) | Browser Back re-presents a rated session; no way to review own ratings | inter-rater |
 | [#73](https://github.com/AI-as-Infrastructure/aiinfra-atlas/issues/73) | Returning to the task via the site title reloads the whole allocation | inter-rater |
 | [#67](https://github.com/AI-as-Infrastructure/aiinfra-atlas/issues/67) | Header `Inter-rate (N)` count lags up to 5 minutes behind a submission | inter-rater |
-| [#75](https://github.com/AI-as-Infrastructure/aiinfra-atlas/issues/75) | `_USER_FEEDBACK_NAMES` stale since the v0.4.0 rubric; reviewer identity depends on it | — |
 
 #70 is not a gap in the specs — it is a violation of one. `feedback` already
 requires "Each category SHALL display the tooltip definition above as a hoverable
@@ -56,15 +52,21 @@ Fixing them together avoids three overlapping patches to the same component.
   in-app detour to FAQ or About instead of refetching it.
 - **Header count** — refresh the count after every submission, not only on
   quota completion.
-- **Stale baseline-feedback plumbing**
-  ([#75](https://github.com/AI-as-Infrastructure/aiinfra-atlas/issues/75)) —
-  decouple reviewer identity from rubric category names, and delete the
-  `_USER_FEEDBACK_NAMES` frozenset and the two uncalled functions it gates.
-  Included because none of it can reach the allocator: see `design.md`,
-  Decision 4. Task 6.2 verifies that empirically rather than on argument.
 
-Out of scope: the allocation algorithm, the submission gate, and the rubric
-itself. Ratings already recorded are untouched.
+Out of scope: the allocation algorithm and the rubric itself. Ratings already
+recorded are untouched. The submission gate gains a refusal *reason* so the
+client can distinguish a duplicate from a full prompt, but its accept/refuse
+logic is unchanged.
+
+**Also out of scope, deliberately:**
+[#75](https://github.com/AI-as-Infrastructure/aiinfra-atlas/issues/75) — the
+stale `_USER_FEEDBACK_NAMES` plumbing. An earlier draft folded it in on the
+argument that it could not reach the allocator. External review showed
+otherwise: recovering more `original_user_id` values shrinks the per-reviewer
+pool, and `inter_rater_service.py:313` falls back from balanced to unbalanced
+allocation **silently** when the capacity equation breaks. See `design.md`,
+Decision 4. Nothing that can quietly alter study allocation belongs in a change
+shipping near a live focus group.
 
 **Deferred to a later cycle:**
 [#74](https://github.com/AI-as-Infrastructure/aiinfra-atlas/issues/74) — a
@@ -79,18 +81,19 @@ matrix can later become a second view over.
 ## Impact
 
 - Affected specs: `feedback` (tooltip rendering), `inter-rater` (#71, #72, #73,
-  #67). #75 is internal cleanup behind existing requirements and adds none.
+  #67)
 - Affected code: `frontend/src/components/InterRaterPlayback.vue`,
   `InterRaterDashboard.vue`, `InterRaterButton.vue`, `ExtendedFeedback.vue`,
   `CitationList.vue`, `frontend/src/stores/interRater.js`,
   `frontend/src/App.vue`, `backend/routers/inter_rater.py`,
-  `backend/services/annotations_cache.py`, `backend/services/phoenix_client.py`
-- Mostly frontend. Two backend pieces: a read endpoint returning the requesting
-  reviewer's own recorded ratings, scoped server-side by `rater_id`, so history
-  survives a closed tab and "own ratings only" is enforced rather than filtered
-  client-side; and the #75 cleanup in `annotations_cache.py` and
-  `phoenix_client.py`. Both read through the existing Phoenix annotation path —
-  no schema or annotation-format change, and no stored data is rewritten.
+  `backend/services/annotations_cache.py` (read path only),
+  `backend/services/inter_rater_submission_gate.py`, `backend/telemetry/api.py`
+- Mostly frontend. Three backend pieces: a read endpoint returning the
+  requesting reviewer's own recorded ratings, scoped server-side; a pool
+  membership check on submission, so a stale client allocation cannot be rated;
+  and a refusal reason carried out of the submission gate. All read through the
+  existing Phoenix annotation path — no schema or annotation-format change, and
+  no stored data is rewritten.
 - **Sequencing**: the `inter-rater` capability spec does not exist in
   `openspec/specs/` yet — it arrives when `release-inter-rater-v0-4-0` is
   archived. Archive that change before this one.

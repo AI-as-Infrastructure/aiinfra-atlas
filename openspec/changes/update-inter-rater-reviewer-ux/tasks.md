@@ -41,8 +41,16 @@
 - [ ] 3.1 Move the dashboard's run state out of `setup()` locals and into the
       Pinia store: allocation, current index, completed count, and
       `handledSpanIds` (`InterRaterDashboard.vue:128`).
-- [ ] 3.2 Persist run *position* to session storage, keyed per reviewer — where
-      the reviewer is in the allocation, not the ratings themselves.
+- [ ] 3.2 Persist run *position* to session storage, keyed per reviewer AND by
+      the pool fingerprint (`_get_pool` returns one alongside the sessions,
+      `inter_rater_service.py:299`). Keying by reviewer alone lets a stale
+      allocation rehydrate after a reseed. Discard persisted state whose
+      fingerprint does not match the current pool.
+- [ ] 3.2a Reject submissions for spans outside the current pool. The gate
+      (`inter_rater_submission_gate.py:88-97`) checks already-rated and
+      max_ratings but never manifest membership, so a stale span rehydrated
+      from client state is currently accepted. Client-side fingerprint checks
+      are not sufficient on their own.
 - [ ] 3.3 Add a read endpoint returning the requesting reviewer's own recorded
       ratings for the current pool, scoped server-side by `rater_id`. History is
       derived from this, not from client storage, so it survives a closed tab.
@@ -58,7 +66,22 @@
       `Fault:` tags. Note `get_annotation_name` suffixes inter-rater
       annotations with `[inter-rating-N]`, so match accordingly.
       Do NOT extend `_USER_FEEDBACK_NAMES` for this — that frozenset gates the
-      baseline-feedback path, not this one, and section 6 deletes it.
+      baseline-feedback path, not this one.
+- [ ] 3.4a Filtering on `rater_id` alone loses data and is unsafe. Verified:
+      score and Fault Rationale annotations carry `rater_id` via
+      `get_annotation_metadata()`, but **fault tags** (`feedback.py:657`) and
+      **Additional Comments** (`feedback.py:672`) hardcode their metadata and
+      carry neither `rater_id` nor `is_inter_rater`. The extractor must join
+      them to their author through the `[inter-rating-N]` group.
+      Because that join is the only link, it is also the disclosure risk for
+      the "own ratings only" SHALL: test explicitly that a malformed, missing,
+      or colliding group number cannot attach another reviewer's fault tags or
+      comments to this reviewer's history. Prefer omitting an unjoinable
+      annotation over guessing its author.
+- [ ] 3.4b Raise separately: those same two annotation types lack
+      `is_inter_rater`, so `annotations_cache.get_user_feedback` does not skip
+      them (line 107) and an inter-rater's fault tags read as baseline
+      feedback. Out of scope here; note it as its own issue.
 - [ ] 3.5 Fail loudly when the history read fails — say so, rather than
       rendering an empty history that reads as authoritative.
 - [ ] 3.6 Rehydrate on mount instead of refetching when valid state exists.
@@ -79,9 +102,13 @@
       rating with any in-progress scores intact.
 - [ ] 4.7 Scope history to the current run — verify a reviewer who rated in an
       earlier cohort sees only this allocation.
-- [ ] 4.8 Correct the `session_unavailable` handling at
-      `InterRaterDashboard.vue:230-240` so a refused duplicate reads as "you have
-      already rated this prompt", distinct from genuine unavailability.
+- [ ] 4.8 Distinguish a refused duplicate from a full prompt. This needs a
+      **backend** change first: the gate returns `SubmissionStatus.UNAVAILABLE`
+      for both "already rated" (`inter_rater_submission_gate.py:88`) and "at
+      max_ratings" (line 92), and `api.py:199-204` collapses both into one
+      `session_unavailable` message. Add a distinct status or a reason field,
+      then map it in `InterRaterDashboard.vue:230-240`. A frontend-only change
+      cannot tell the two cases apart.
 - [ ] 4.9 Measure `GET /api/inter-rater/sessions` warm and cold; if it is slow
       warm, raise that separately rather than absorbing it here.
 
@@ -94,49 +121,13 @@
       immediately after a submission.
 - [ ] 5.4 Keep the 5-minute poll in `InterRaterButton.vue:31` as a backstop.
 
-## 6. Resolve #75 — all of it; nothing here reaches the allocator
-Rationale in `design.md`, Decision 4. Neither `has_user_feedback` nor
-`span_ids_with_feedback` has a caller anywhere in the repo, so the frozenset
-cannot move inter-rater eligibility. Do 6.1 and 6.2 before the rest.
-
-- [ ] 6.1 Decouple reviewer identity from rubric category names: move the
-      `user_id` capture at `annotations_cache.py:136-137` out from under the
-      `if name not in _USER_FEEDBACK_NAMES: continue` guard (line 111), so it is
-      taken from any non-inter-rater annotation carrying it.
-      Fails safe — it can only ever add a `user_id`, never remove one, and an
-      added one can only exclude a reviewer's own session
-      (`inter_rater_service.py:306-307` keeps sessions whose
-      `original_user_id` is absent, so today a capture miss offers a reviewer
-      their own session).
-- [ ] 6.2 Confirm the decoupling changes nothing for the current pool: capture
-      `original_user_id` for every span in the study pool before and after 6.1
-      and diff. A non-empty diff means eligibility moved — stop and reassess
-      against the capacity equation rather than proceeding.
-- [ ] 6.3 Stop sending the dead `original_feedback` payload
-      (`phoenix_client.py:184, 193`): confirm nothing in `frontend/src/` reads
-      it, then remove it. `original_user_id` is a separate key stripped at
-      line 242 and is unaffected.
-- [ ] 6.4 With 6.1 and 6.3 done, `_USER_FEEDBACK_NAMES` and the score mapping in
-      `get_user_feedback` (lines 111, 118-131) gate nothing. Collapse
-      `get_user_feedback` to the original-user-id lookup its one caller
-      (`phoenix_client.py:170`) actually needs, and delete the frozenset.
-      Delete rather than refresh — refreshing re-synchronises something that
-      drifts again at the next rubric change.
-- [ ] 6.5 Delete the uncalled `has_user_feedback` (line 141) and
-      `span_ids_with_feedback` (line 151). Both are stale and obsoleted by the
-      `feedback` requirement "Inter-Rater Eligibility Without Baseline
-      Feedback". If either is wanted for planned work, keep it and correct its
-      name set instead — but do not leave it uncalled *and* stale.
-- [ ] 6.6 Close #75, noting that the shared-declaration refactor it suggested is
-      moot once there is no name set to share.
-
-## 7. Validation
-- [ ] 7.1 Full reviewer run in Chrome, Firefox and Safari: rate several items,
+## 6. Validation
+- [ ] 6.1 Full reviewer run in Chrome, Firefox and Safari: rate several items,
       detour to FAQ and About, use Back and Forward, reload mid-run, open
       history, and confirm no rated prompt is re-presented.
-- [ ] 7.2 Confirm no duplicate annotations reached Phoenix and that
+- [ ] 6.2 Confirm no duplicate annotations reached Phoenix and that
       `[inter-rating-N]` numbering is unbroken.
-- [ ] 7.3 Confirm inter-rater eligibility and allocation are unchanged: same
+- [ ] 6.3 Confirm inter-rater eligibility and allocation are unchanged: same
       pool size, same per-reviewer quota, capacity equation still satisfied.
-- [ ] 7.4 `openspec validate update-inter-rater-reviewer-ux --strict`
-- [ ] 7.5 Close #67, #70, #71, #72, #73 with the verifying evidence.
+- [ ] 6.4 `openspec validate update-inter-rater-reviewer-ux --strict`
+- [ ] 6.5 Close #67, #70, #71, #72, #73 with the verifying evidence.

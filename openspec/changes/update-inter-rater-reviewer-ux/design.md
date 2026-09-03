@@ -104,63 +104,78 @@ themeable to match the form, and lets the hover target grow past 12px.
 No tooltip library is introduced. The project is a research prototype and this is
 a `::after` rule.
 
-## Decision 4: Which of #75's housekeeping comes forward
+## Decision 4: #75 is out of scope — it does reach the allocator
 
-#75 records that `_USER_FEEDBACK_NAMES` went stale when the v0.4.0 rubric
-landed. Nothing there is broken today, so the question is only which parts are
-cheap enough to fold into this change rather than schedule separately.
+This decision was wrong twice. Recording both errors, because the second one is
+the kind that ships.
 
-The test applied was **whether the item can move inter-rater eligibility**.
-Eligibility feeds the allocator, and the v0.4.0 allocator holds a strict capacity
-equation — `reviewers × sessions_per_user = pool × max_ratings` — that fails
-closed, so anything that can shift which spans qualify is not worth taking on
-the way past.
+**First draft:** kept #75 out on the grounds that `_USER_FEEDBACK_NAMES` gates
+`has_user_feedback` and `span_ids_with_feedback`, which feed eligibility. False
+— neither function has a caller anywhere in the repository.
 
-**On inspection, nothing in #75 can move eligibility, so all of it comes
-forward.** The first draft of this decision split the work on the assumption
-that `_USER_FEEDBACK_NAMES` gates the allocator through `has_user_feedback` and
-`span_ids_with_feedback`. It does not: neither function has a caller anywhere in
-the repository — not in `backend/`, `tests/`, `analysis/`, `utils/` or
-`create/`. They are dead code, and the `feedback` requirement "Inter-Rater
-Eligibility Without Baseline Feedback" is why. Eligibility deliberately stopped
-depending on baseline feedback; these two were left behind.
+**Second draft:** took all of #75 on the grounds that, with those two functions
+dead, nothing in #75 could reach the allocator, and that the allocator fails
+closed anyway. Also false, and this is the one that mattered. External review
+caught it.
 
-The frozenset therefore has exactly one live path — `get_user_feedback`, called
-once at `phoenix_client.py:170` — producing two things:
+**What the allocator actually does** (`inter_rater_service.py:302-313`):
 
-- `original_feedback`, sent to the client at line 193 and read by nothing in
-  `frontend/src/`.
-- `original_user_id`, backend-only, stripped at line 242, used for own-session
-  filtering at `inter_rater_service.py:306-307`.
+```python
+all_sessions = [s for s in pool_sessions
+                if not s.get("original_user_id")
+                or s.get("original_user_id") != user_id]
 
-Neither reaches the allocator.
+balanced_design = (self.reviewer_count * self.sessions_per_user
+                   == len(all_sessions) * self.max_ratings)
+assigned_sessions = None
+if balanced_design:
+    ...
+    assigned_sessions = self._balanced_assignment(all_sessions, reviewer_slot)
+candidate_sessions = assigned_sessions if assigned_sessions is not None else all_sessions
+```
 
-**What that implies for the fix.** Refreshing the frozenset is the wrong move,
-because tasks 6.1 and 6.4 between them make it dead:
+`all_sessions` is the pool minus the sessions this reviewer authored, so its
+length is a direct function of how many `original_user_id` values were
+recovered. `balanced_design` is computed from that length. And when it is False
+the code does not raise — it falls through to `all_sessions` and allocates
+**unbalanced, silently**.
 
-- 6.1 lifts the `user_id` capture out from under the name-match guard, so
-  identity no longer depends on it.
-- 6.4 stops sending `original_feedback`, so the score mapping it gates has no
-  consumer.
+So task 6.1, which recovers `user_id` from annotations that currently miss it,
+can shrink `all_sessions`, break the capacity equation, and silently drop the
+study from a balanced design to a ranked one. Rater severity would then be
+confounded with the subset of prompts each reviewer saw — the exact failure the
+"Saturated Allocation Design" requirement exists to prevent, arriving with no
+error and no log line.
 
-After both, `_USER_FEEDBACK_NAMES` and the score mapping in `get_user_feedback`
-gate nothing, and the only thing that caller still needs is the original user's
-id. So the work is deletion, not refreshing: collapse `get_user_feedback` to the
-id lookup its one caller actually uses, and remove the frozenset along with the
-two uncalled functions.
+My "fails safe" argument was that recovering an id can only ever *exclude* a
+session. That is true and it is precisely the mechanism of the harm: excluding
+a session is what changes the count.
 
-This is a smaller diff than the refresh #75 originally proposed, and it removes
-the desynchronisation permanently rather than re-synchronising something that
-will drift again at the next rubric change. It also makes #75's remaining
-suggestion — deriving the name set from a declaration shared with the writer in
-`feedback.py` — unnecessary, since there is no longer a name set to share.
+Note the fail-closed behaviour I relied on is specified in
+`release-inter-rater-v0-4-0` ("allocation SHALL fail with the actual and
+required counts... SHALL NOT fall back to unbalanced ranking") but that change
+is unarchived at 11/37 tasks. I read the requirement and assumed the code. The
+requirement is not built yet.
 
-**The one judgement call** is deleting `has_user_feedback` and
-`span_ids_with_feedback` rather than leaving them. They are uncalled, stale, and
-obsoleted by a requirement, and the project's stated preference is a lean
-codebase without unnecessary machinery. Deleting them is consistent with that.
-If they are wanted for planned work, leave them and fix their name set instead —
-but they should not be left uncalled *and* stale.
+**Decision.** #75 comes out of this change entirely. Not deferred within it, not
+gated behind a diff check — removed. Two reasons:
+
+1. It touches allocation, and this repository is weeks from a live focus group
+   followed by archiving. Nothing that can silently alter study allocation
+   should move before then.
+2. Every remaining item in this change is interface work. Keeping one
+   allocation-adjacent task alongside them means the whole change inherits a
+   risk profile it otherwise does not have.
+
+`_USER_FEEDBACK_NAMES` stays stale. That is the correct outcome: it is
+unreachable in any live path, and the cost of touching it right now exceeds the
+cost of leaving it. #75 records the analysis for whoever picks it up after the
+archive, including the finding that the fix is deletion rather than refreshing.
+
+**Prerequisite for anyone who does pick it up:** implement the fail-closed
+behaviour first. While `inter_rater_service.py:313` silently falls back, *any*
+change to pool membership is unsafe in a way that cannot be caught by testing
+the change itself.
 
 ## Risks
 
@@ -171,8 +186,14 @@ but they should not be left uncalled *and* stale.
 - **Hover-card repositioning** touches shared citation rendering; the standard
   chat view uses the same pattern and must be checked alongside the inter-rater
   view.
-- **Eligibility drift** from the Decision 4 housekeeping. Argued to be nil and
-  checked empirically by task 6.2, but it is the one risk in this change that
-  reaches the allocator rather than the interface. If the 6.2 diff is non-empty,
-  drop tasks 6.1-6.4 back into #75 rather than reasoning past it — none of them
-  is worth delaying the UX fixes for.
+- **Allocation** is deliberately untouched, per Decision 4. Every task in this
+  change is interface or read-path work. If implementation finds itself editing
+  anything that changes pool membership, stop — that is out of scope and unsafe
+  while `inter_rater_service.py:313` falls back silently.
+- **Stale allocation after a reseed**, if persisted run state is keyed by
+  reviewer alone. Tasks 3.2 and 3.2a address both halves: fingerprint the client
+  state, and reject out-of-pool spans server-side rather than trusting it.
+- **Cross-rater disclosure in history**, because fault tags and Additional
+  Comments carry no `rater_id` and can only be joined to their author by
+  `[inter-rating-N]`. Task 3.4a requires the join be tested against malformed
+  and colliding group numbers, omitting rather than guessing.

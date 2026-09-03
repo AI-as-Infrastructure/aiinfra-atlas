@@ -78,6 +78,14 @@ a reviewer resumes a part-finished run in a later sitting.
 - **THEN** all three completed items SHALL be listed
 - **AND** each SHALL show the prompt, the rated answer, and the scores and fault tags recorded
 
+#### Scenario: Annotations that cannot be attributed are omitted
+- **GIVEN** a rating whose fault tags or comments carry no rater identity and
+  can be linked to their author only by rating-group number
+- **WHEN** that group number is missing, malformed, or shared with another
+  reviewer's annotations
+- **THEN** the unattributable annotation SHALL be omitted from the history
+- **AND** it SHALL NOT be attributed to the requesting reviewer by inference
+
 #### Scenario: Other reviewers' ratings are never shown
 - **GIVEN** a prompt that has been rated by more than one reviewer
 - **WHEN** a reviewer opens their rating history for that prompt
@@ -108,9 +116,16 @@ presented to them again as a ratable item for the remainder of the run.
 This SHALL hold across browser history navigation, in-app navigation, and page
 reload — not only for as long as the rating component remains mounted.
 
+Retained client state SHALL be scoped to the pool it was derived from, so that
+a pool which has been reseeded or otherwise changed cannot resurrect an earlier
+allocation. A submission for a prompt outside the current pool SHALL be refused
+server-side; client-side scoping alone SHALL NOT be relied on.
+
 Where a duplicate submission nevertheless reaches the submission gate and is
 refused, the reviewer SHALL be told that they have already rated that prompt.
-It SHALL NOT be reported as the prompt being unavailable.
+It SHALL NOT be reported as the prompt being unavailable, and it SHALL be
+distinguishable from a prompt that has reached its rating cap — which requires
+the refusal reason to survive the trip to the client.
 
 #### Scenario: Browser Back does not return a rated prompt
 - **GIVEN** a reviewer who has just submitted a rating
@@ -121,6 +136,20 @@ It SHALL NOT be reported as the prompt being unavailable.
 - **GIVEN** a reviewer who has rated several prompts in the current run
 - **WHEN** they reload the page
 - **THEN** none of the prompts they have rated SHALL be presented as ratable items
+
+#### Scenario: Reseeded pool does not resurrect an old allocation
+- **GIVEN** a reviewer with retained state from a previous pool
+- **WHEN** the pool is reseeded and they return to the task
+- **THEN** the stale allocation SHALL NOT be presented
+- **AND** a submission for a prompt outside the current pool SHALL be refused
+
+#### Scenario: Duplicate and capacity refusals are distinguishable
+- **GIVEN** two refused submissions, one because the reviewer already rated the
+  prompt and one because the prompt reached its rating cap
+- **WHEN** each refusal reaches the reviewer
+- **THEN** the two SHALL produce different messages
+- **AND** the reason SHALL be carried from the point of refusal rather than
+  inferred by the client
 
 #### Scenario: Refused duplicate is reported accurately
 - **GIVEN** a submission for a prompt the reviewer has already rated
