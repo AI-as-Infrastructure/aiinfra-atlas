@@ -114,7 +114,12 @@
       out of scope here.
 - [ ] 3.5 Fail loudly when the history read fails — say so, rather than
       rendering an empty history that reads as authoritative.
-- [ ] 3.6 Rehydrate on mount instead of refetching when valid state exists.
+- [ ] 3.6 Use the live Pinia state without refetching when `<KeepAlive>`
+      reactivates the route during an in-app return. After a reload or genuine
+      remount, fetch the current sessions response first and rehydrate persisted
+      position and `handledSpanIds` only when its `allocation_snapshot_id`
+      matches; otherwise discard the saved state and use the fresh allocation.
+      Never render a persisted allocation before that server validation.
 
 ## 4. Navigation and history (#72, #73) — depends on 3
 - [ ] 4.1 Wrap the `/inter-rater` route view in `<KeepAlive>` so an in-app
