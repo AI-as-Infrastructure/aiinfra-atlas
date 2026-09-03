@@ -168,7 +168,7 @@ recovered. `balanced_design` is computed from that length. And when it is False
 the code does not raise — it falls through to `all_sessions` and allocates
 **unbalanced, silently**.
 
-So task 6.1, which recovers `user_id` from annotations that currently miss it,
+So the #75 change that recovers `user_id` from annotations currently missing it
 can shrink `all_sessions`, break the capacity equation, and silently drop the
 study from a balanced design to a ranked one. Rater severity would then be
 confounded with the subset of prompts each reviewer saw — the exact failure the
