@@ -49,14 +49,17 @@ Fixing them together avoids three overlapping patches to the same component.
   never re-presented as ratable. A duplicate submission that still reaches the
   gate is reported as such rather than as unavailability.
 - **Task state across navigation** — retain the reviewer's allocation across an
-  in-app detour to FAQ or About instead of refetching it.
+  in-app detour to FAQ or About instead of refetching it. Persisted state used
+  after a reload is accepted only after the server confirms that it belongs to
+  the current allocation snapshot.
 - **Header count** — refresh the count after every submission, not only on
   quota completion.
 
 Out of scope: the allocation algorithm and the rubric itself. Ratings already
-recorded are untouched. The submission gate gains a refusal *reason* so the
-client can distinguish a duplicate from a full prompt, but its accept/refuse
-logic is unchanged.
+recorded are untouched. The submission gate changes in two bounded ways: it
+rejects a span that is not in the current server-side pool, and it carries a
+refusal *reason* so the client can distinguish a duplicate from a full prompt.
+The existing duplicate and rating-cap decisions are unchanged.
 
 **Also out of scope, deliberately:**
 [#75](https://github.com/AI-as-Infrastructure/aiinfra-atlas/issues/75) — the
@@ -87,13 +90,15 @@ matrix can later become a second view over.
   `CitationList.vue`, `frontend/src/stores/interRater.js`,
   `frontend/src/App.vue`, `backend/routers/inter_rater.py`,
   `backend/services/annotations_cache.py` (read path only),
+  `backend/services/inter_rater_service.py`,
   `backend/services/inter_rater_submission_gate.py`, `backend/telemetry/api.py`
-- Mostly frontend. Three backend pieces: a read endpoint returning the
+- Mostly frontend. Four backend pieces: a read endpoint returning the
   requesting reviewer's own recorded ratings, scoped server-side; a pool
-  membership check on submission, so a stale client allocation cannot be rated;
-  and a refusal reason carried out of the submission gate. All read through the
-  existing Phoenix annotation path — no schema or annotation-format change, and
-  no stored data is rewritten.
+  snapshot identifier returned with session allocations in study and ad-hoc
+  modes; a fail-closed pool-membership check on submission, so a stale client
+  allocation cannot be rated; and a refusal reason carried out of the submission
+  gate. The history reader uses the existing Phoenix annotation path. No schema
+  or format change is made to stored annotations, and no stored data is rewritten.
 - **Sequencing**: the `inter-rater` capability spec does not exist in
   `openspec/specs/` yet — it arrives when `release-inter-rater-v0-4-0` is
   archived. Archive that change before this one.

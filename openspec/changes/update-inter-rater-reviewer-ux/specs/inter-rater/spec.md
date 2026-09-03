@@ -33,7 +33,8 @@ submitted during the current run, so that they can check their own consistency
 across items.
 
 The history SHALL show, for each completed item, the prompt, the answer that was
-rated, and the scores and fault tags the reviewer recorded.
+rated, and the scores, per-criterion rationales and fault tags the reviewer
+recorded.
 
 The history SHALL be strictly limited to the requesting reviewer's own ratings.
 A reviewer SHALL NOT be shown any other reviewer's ratings, scores, or identity.
@@ -76,11 +77,13 @@ a reviewer resumes a part-finished run in a later sitting.
 - **GIVEN** a reviewer who has submitted three ratings in the current run
 - **WHEN** they open the rating history
 - **THEN** all three completed items SHALL be listed
-- **AND** each SHALL show the prompt, the rated answer, and the scores and fault tags recorded
+- **AND** each SHALL show the prompt, the rated answer, and the scores,
+  per-criterion rationales and fault tags recorded
 
 #### Scenario: Annotations that cannot be attributed are omitted
-- **GIVEN** a rating whose fault tags or comments carry no rater identity and
-  can be linked to their author only by rating-group number
+- **GIVEN** a rating whose fault tags, Additional Comments or per-criterion
+  rationales carry no rater identity and can be linked to their author only by
+  rating-group number
 - **WHEN** that group number is missing, malformed, or shared with another
   reviewer's annotations
 - **THEN** the unattributable annotation SHALL be omitted from the history
@@ -116,10 +119,22 @@ presented to them again as a ratable item for the remainder of the run.
 This SHALL hold across browser history navigation, in-app navigation, and page
 reload — not only for as long as the rating component remains mounted.
 
-Retained client state SHALL be scoped to the pool it was derived from, so that
-a pool which has been reseeded or otherwise changed cannot resurrect an earlier
-allocation. A submission for a prompt outside the current pool SHALL be refused
-server-side; client-side scoping alone SHALL NOT be relied on.
+Retained client state SHALL be scoped by a server-issued allocation snapshot
+identifier derived from the actual pool spans it was derived from, so that a
+pool which has been reseeded or otherwise changed cannot resurrect an earlier
+allocation. This identifier SHALL exist for both manifest-backed studies and
+ad-hoc inter-rating, SHALL change when the authoritative pool's span membership
+changes, and SHALL be distinct from any cohort fingerprint that is intentionally
+stable across span churn. It SHALL NOT change solely because ratings are
+submitted, a reviewer completes an item, or a prompt reaches its rating cap.
+
+After a reload or remount, persisted position SHALL NOT be rendered until the
+server has confirmed that its allocation snapshot identifier is current. An
+in-app return using live retained state SHALL NOT require that allocation fetch.
+
+A submission for a prompt outside the current pool SHALL be refused server-side;
+client-supplied pool identifiers or `qa_id` values SHALL NOT be treated as proof
+of membership. Failure to verify current membership SHALL fail closed.
 
 Where a duplicate submission nevertheless reaches the submission gate and is
 refused, the reviewer SHALL be told that they have already rated that prompt.
@@ -142,6 +157,34 @@ the refusal reason to survive the trip to the client.
 - **WHEN** the pool is reseeded and they return to the task
 - **THEN** the stale allocation SHALL NOT be presented
 - **AND** a submission for a prompt outside the current pool SHALL be refused
+
+#### Scenario: Span churn invalidates retained state without changing the cohort
+- **GIVEN** retained state whose cohort manifest still names the same `qa_id`
+  values but whose underlying pool span membership has changed
+- **WHEN** the reviewer reloads the task
+- **THEN** the retained allocation SHALL be rejected as stale
+- **AND** the cohort fingerprint MAY remain unchanged
+
+#### Scenario: Ad-hoc allocations have a snapshot identity
+- **GIVEN** inter-rating running without a study pool manifest
+- **WHEN** the server returns an allocation
+- **THEN** it SHALL return a non-empty allocation snapshot identifier
+- **AND** retained state SHALL be invalidated when that ad-hoc pool's span
+  membership changes
+
+#### Scenario: Rating progress does not replace the allocation snapshot
+- **GIVEN** an unchanged pool with retained state for its allocation snapshot
+- **WHEN** ratings are submitted or a prompt reaches its rating cap
+- **THEN** the allocation snapshot identifier SHALL remain unchanged
+- **AND** persisted run position SHALL NOT be rejected solely because rating
+  availability changed
+
+#### Scenario: Pool membership verification fails closed
+- **GIVEN** a submission whose span membership in the current server-side pool
+  cannot be verified
+- **WHEN** the submission gate evaluates it
+- **THEN** the rating SHALL NOT be recorded
+- **AND** client-supplied identifiers SHALL NOT override that refusal
 
 #### Scenario: Duplicate and capacity refusals are distinguishable
 - **GIVEN** two refused submissions, one because the reviewer already rated the

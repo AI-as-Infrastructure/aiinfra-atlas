@@ -41,16 +41,28 @@
 - [ ] 3.1 Move the dashboard's run state out of `setup()` locals and into the
       Pinia store: allocation, current index, completed count, and
       `handledSpanIds` (`InterRaterDashboard.vue:128`).
-- [ ] 3.2 Persist run *position* to session storage, keyed per reviewer AND by
-      the pool fingerprint (`_get_pool` returns one alongside the sessions,
-      `inter_rater_service.py:299`). Keying by reviewer alone lets a stale
-      allocation rehydrate after a reseed. Discard persisted state whose
-      fingerprint does not match the current pool.
+- [ ] 3.2 Add an `allocation_snapshot_id` to the sessions response and persist
+      run *position* to session storage keyed per reviewer and by that id. This
+      is **not** the cohort/manifest fingerprint: `inter_rater_pool.py:132-155`
+      shows that fingerprint is `None` in ad-hoc mode and intentionally stable
+      across span churn. Derive the new id from the authoritative `span_id` and
+      `qa_id` pairs in the exact shared pool snapshot, before per-reviewer rating
+      and capacity filtering, so it exists in every mode and changes whenever
+      the actual pool spans change. Return it from `/api/inter-rater/sessions`.
+      After a reload, compare the server value before restoring saved position or
+      `handledSpanIds`; on mismatch use the fresh allocation and replace storage.
+      An in-app KeepAlive return still performs no allocation request. Test that
+      the id is non-empty in ad-hoc mode, changes when pool span membership
+      changes, and does not change merely because ratings are submitted or a span
+      reaches its rating cap.
 - [ ] 3.2a Reject submissions for spans outside the current pool. The gate
       (`inter_rater_submission_gate.py:88-97`) checks already-rated and
       max_ratings but never manifest membership, so a stale span rehydrated
-      from client state is currently accepted. Client-side fingerprint checks
-      are not sufficient on their own.
+      from client state is currently accepted. Validate the submitted `span_id`
+      against an authoritative server-side pool snapshot; do not trust the
+      client's `qa_id` or `allocation_snapshot_id`, and fail closed when current
+      membership cannot be verified. Client-side snapshot checks are not
+      sufficient on their own.
 - [ ] 3.3 Add a read endpoint returning the requesting reviewer's own recorded
       ratings for the current pool, scoped server-side by `rater_id`. History is
       derived from this, not from client storage, so it survives a closed tab.
@@ -71,19 +83,24 @@
       baseline-feedback path, not this one.
 - [ ] 3.4a Filtering on `rater_id` alone loses data and is unsafe. Verified:
       score and Fault Rationale annotations carry `rater_id` via
-      `get_annotation_metadata()`, but **fault tags** (`feedback.py:657`) and
-      **Additional Comments** (`feedback.py:672`) hardcode their metadata and
-      carry neither `rater_id` nor `is_inter_rater`. The extractor must join
-      them to their author through the `[inter-rating-N]` group.
+      `get_annotation_metadata()`, but **fault tags** (`feedback.py:657`),
+      **Additional Comments** (`feedback.py:672`) and the **per-scale comment
+      annotations** actually submitted by `InterRaterPlayback.vue:686-690`
+      (`feedback.py:690-715`) hardcode metadata without `rater_id` or
+      `is_inter_rater`. The extractor must join all of them to their author
+      through the `[inter-rating-N]` group.
       Because that join is the only link, it is also the disclosure risk for
       the "own ratings only" SHALL: test explicitly that a malformed, missing,
       or colliding group number cannot attach another reviewer's fault tags or
-      comments to this reviewer's history. Prefer omitting an unjoinable
-      annotation over guessing its author.
-- [ ] 3.4b Raise separately (#76): those same two annotation types lack
-      `is_inter_rater`, so metadata alone cannot tell an inter-rater's fault
-      tags from a baseline reviewer's. Recoverable from the name prefix, no
-      live consumer today — out of scope here.
+      any comment or rationale to this reviewer's history. Cover every
+      metadata-poor annotation type in the tests, and prefer omitting an
+      unjoinable annotation over guessing its author.
+- [ ] 3.4b Update #76 to include all metadata-poor types: fault tags, Additional
+      Comments and per-scale comment annotations. Each lacks `is_inter_rater`,
+      so metadata alone cannot distinguish an inter-rater annotation from a
+      baseline reviewer's. Recoverable from the name prefix, with no live
+      consumer before this history reader — the writer-format cleanup remains
+      out of scope here.
 - [ ] 3.5 Fail loudly when the history read fails — say so, rather than
       rendering an empty history that reads as authoritative.
 - [ ] 3.6 Rehydrate on mount instead of refetching when valid state exists.
@@ -131,5 +148,9 @@
       `[inter-rating-N]` numbering is unbroken.
 - [ ] 6.3 Confirm inter-rater eligibility and allocation are unchanged: same
       pool size, same per-reviewer quota, capacity equation still satisfied.
-- [ ] 6.4 `openspec validate update-inter-rater-reviewer-ux --strict`
-- [ ] 6.5 Close #67, #70, #71, #72, #73 with the verifying evidence.
+- [ ] 6.4 Exercise allocation-snapshot invalidation in manifest-backed and ad-hoc
+      modes: unchanged pool with new ratings retains state; changed span
+      membership discards it; spoofed client identifiers do not bypass the
+      submission membership check; an unavailable membership source fails closed.
+- [ ] 6.5 `openspec validate update-inter-rater-reviewer-ux --strict`
+- [ ] 6.6 Close #67, #70, #71, #72, #73 with the verifying evidence.

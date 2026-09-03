@@ -69,6 +69,34 @@ work, and session storage brings its own failure mode when it is unavailable.
 **Decision.** Store-backed, with `<KeepAlive>` as a cheap addition on top.
 `<KeepAlive>` then avoids paying the rehydration cost on the common path.
 
+Persisted state needs an identity, but the existing **cohort fingerprint is not
+that identity**. The cohort fingerprint is derived from manifest `qa_ids`, is
+`None` in ad-hoc mode, and is deliberately stable when the Phoenix span set
+changes. Those are correct properties for keeping reviewer slots stable and the
+wrong properties for deciding whether a saved client allocation is still real.
+
+The sessions API will therefore return a separate server-issued
+`allocation_snapshot_id`, derived from the exact shared pool snapshot before
+per-reviewer completion and capacity filtering. It hashes the pool's authoritative
+`span_id` and `qa_id` pairs, exists in both manifest-backed and ad-hoc modes, and
+changes when the actual pool spans change even if the manifest `qa_ids` do not.
+It is not used for cohort assignment.
+
+The two navigation paths then behave differently on purpose:
+
+- **In-app detour** — `<KeepAlive>` and the live Pinia store resume immediately;
+  no allocation request is made.
+- **Reload or remount** — request the current sessions response, compare its
+  `allocation_snapshot_id` with session storage, and restore only the saved
+  position and handled-span set when they match. On mismatch, use the fresh
+  server allocation and replace the saved state.
+
+The submission gate is the second line of defence. It validates `span_id`
+against the current server-side pool snapshot, without trusting a client-supplied
+`qa_id` or snapshot identifier, and fails closed if membership cannot be
+verified. This is a bounded change to submission acceptance, not a change to how
+the allocator constructs reviewer queues.
+
 **But client storage is the wrong home for the rating history**, which is a
 distinction worth stating because the first draft of this design got it wrong.
 Session storage dies with the tab. A reviewer who rates ten items today and ten
@@ -186,14 +214,17 @@ the change itself.
 - **Hover-card repositioning** touches shared citation rendering; the standard
   chat view uses the same pattern and must be checked alongside the inter-rater
   view.
-- **Allocation** is deliberately untouched, per Decision 4. Every task in this
-  change is interface or read-path work. If implementation finds itself editing
-  anything that changes pool membership, stop — that is out of scope and unsafe
-  while `inter_rater_service.py:313` falls back silently.
+- **Allocation construction** is deliberately untouched, per Decision 4. This
+  change does add submission-time validation against the pool already constructed
+  by the server; it must not add, remove, rank or reassign pool members. If
+  implementation finds itself changing those allocation rules, stop — that is
+  out of scope and unsafe while `inter_rater_service.py:313` falls back silently.
 - **Stale allocation after a reseed**, if persisted run state is keyed by
-  reviewer alone. Tasks 3.2 and 3.2a address both halves: fingerprint the client
-  state, and reject out-of-pool spans server-side rather than trusting it.
-- **Cross-rater disclosure in history**, because fault tags and Additional
-  Comments carry no `rater_id` and can only be joined to their author by
-  `[inter-rating-N]`. Task 3.4a requires the join be tested against malformed
-  and colliding group numbers, omitting rather than guessing.
+  reviewer alone or by the cohort fingerprint. Tasks 3.2 and 3.2a address both
+  halves with a distinct allocation snapshot identifier and a server-side
+  membership check.
+- **Cross-rater disclosure in history**, because fault tags, Additional Comments
+  and per-scale comment annotations carry no `rater_id` and can only be joined
+  to their author by `[inter-rating-N]`. Task 3.4a requires every such annotation
+  type to be tested against malformed and colliding group numbers, omitting
+  rather than guessing.
