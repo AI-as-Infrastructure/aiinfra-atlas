@@ -61,9 +61,11 @@
       `_validate_study_capacity` returns early without a manifest
       (`inter_rater_service.py:242-256`). So in ad-hoc mode ordinary organic
       traffic can change pool membership with no reseed and no loud failure,
-      spuriously invalidating retained state. Study mode is protected because
-      that same validation raises. Decide deliberately whether ad-hoc
-      invalidation should be this sensitive, and record the choice.
+      invalidating retained state. This sensitivity is accepted: ad-hoc mode has
+      no stable run boundary, and retaining a snapshot that differs from the
+      bounded live query would preserve spans the server no longer considers
+      current. Study mode is protected because its manifest defines the run and
+      the capacity validation raises when that pool is incomplete.
 - [ ] 3.2a Reject submissions for spans outside the current pool. The gate
       (`inter_rater_submission_gate.py:88-97`) checks already-rated and
       max_ratings but never manifest membership, so a stale span rehydrated

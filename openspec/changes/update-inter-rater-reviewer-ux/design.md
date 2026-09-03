@@ -211,19 +211,22 @@ gated behind a diff check — removed. Two reasons:
 1. It touches allocation, and this repository is weeks from a live focus group
    followed by archiving. Nothing that can silently alter study allocation
    should move before then.
-2. Every remaining item in this change is interface work. Keeping one
-   allocation-adjacent task alongside them means the whole change inherits a
-   risk profile it otherwise does not have.
+2. The remaining work is interface, read-path and bounded submission-validation
+   work; none changes how reviewer queues are constructed. Keeping an
+   allocation-construction change alongside it means the whole change inherits
+   a risk profile it otherwise does not have.
 
 `_USER_FEEDBACK_NAMES` stays stale. That is the correct outcome: it is
 unreachable in any live path, and the cost of touching it right now exceeds the
 cost of leaving it. #75 records the analysis for whoever picks it up after the
 archive, including the finding that the fix is deletion rather than refreshing.
 
-**Prerequisite for anyone who does pick it up:** implement the fail-closed
-behaviour first. While `inter_rater_service.py:313` silently falls back, *any*
-change to pool membership is unsafe in a way that cannot be caught by testing
-the change itself.
+**Prerequisite for anyone who does pick it up:** extend the existing fail-closed
+validation to the per-reviewer pool *after* author exclusion, or otherwise make
+a mismatch at `inter_rater_service.py:313` raise instead of falling through to
+ranked allocation. The shared-pool check at lines 229-275 is not sufficient for
+that case. Until the downstream path fails closed, any change that recovers or
+alters `original_user_id` values is unsafe.
 
 ## Risks
 
@@ -243,6 +246,13 @@ the change itself.
   reviewer alone or by the cohort fingerprint. Tasks 3.2 and 3.2a address both
   halves with a distinct allocation snapshot identifier and a server-side
   membership check.
+- **Ad-hoc state invalidation from organic traffic.** Accepted deliberately.
+  Ad-hoc mode has no manifest-backed run boundary and defines its current pool
+  from the bounded live Phoenix query, so a changed query result is a changed
+  allocation snapshot. Retaining an older snapshot would preserve sessions the
+  server no longer recognises as current and would only defer the failure to the
+  submission gate. Study mode remains stable because its manifest defines the
+  run and capacity validation fails closed.
 - **Cross-rater disclosure in history**, because fault tags, Additional Comments
   and per-scale comment annotations carry no `rater_id` and can only be joined
   to their author by `[inter-rating-N]`. Task 3.4a requires every such annotation
