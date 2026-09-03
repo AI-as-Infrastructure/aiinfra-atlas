@@ -54,8 +54,9 @@ scenario. Loosening any one of them reopens Decision 1 and needs a new proposal.
 ## Decision 2: KeepAlive vs. store-backed state
 
 #72, #73 and #67 all reduce to the same fault: inter-rater task state lives in
-`InterRaterDashboard.vue`'s `setup()` closure — `handledSpanIds` is a bare `Set`
-— and is destroyed by any remount. Two ways out.
+`InterRaterDashboard.vue`'s `setup()` closure — including a bare
+`handledSpanIds` set that currently mixes successful ratings with capacity
+refusals — and is destroyed by any remount. Two ways out.
 
 **`<KeepAlive>` around the route.** Smallest change, no state migration, fixes
 the FAQ/About round trip completely. But it only covers in-app navigation: a
@@ -88,8 +89,24 @@ The two navigation paths then behave differently on purpose:
   no allocation request is made.
 - **Reload or remount** — request the current sessions response, compare its
   `allocation_snapshot_id` with session storage, and restore only the saved
-  position and handled-span set when they match. On mismatch, use the fresh
-  server allocation and replace the saved state.
+  position and snapshot-scoped unavailable set when they match. On mismatch,
+  use the fresh server allocation and replace those snapshot-scoped values.
+
+The current `handledSpanIds` cannot be persisted as one unit. It contains two
+facts with different meanings and lifetimes:
+
+- **Recently rated spans** — added only after a successful submission or a
+  duplicate refusal that confirms this reviewer already rated the prompt. This
+  is a reviewer-scoped propagation-race mask and survives a snapshot change.
+- **Unavailable spans** — prompts refused because they reached capacity or are
+  outside the current pool. These are not ratings by this reviewer. They are
+  snapshot-scoped and are discarded when the snapshot changes.
+
+The recently-rated set is temporary rather than a permanent client ledger. The
+history read provides the reconciliation point: retain a local entry while the
+server has not yet exposed the corresponding recorded rating, and prune it only
+after an authoritative history response confirms the rating. Do not bound the
+set by arbitrary eviction, which could re-open the propagation race.
 
 The submission gate is the second line of defence. It validates `span_id`
 against the current server-side pool snapshot, without trusting a client-supplied
@@ -246,15 +263,12 @@ alters `original_user_id` values is unsafe.
   reviewer alone or by the cohort fingerprint. Tasks 3.2 and 3.2a address both
   halves with a distinct allocation snapshot identifier and a server-side
   membership check.
-- **Over-broad invalidation**, the converse hazard. Persisted state is two
-  different things with two different scopes: *position* belongs to one
-  allocation snapshot, while *which prompts I have rated* belongs to the
-  reviewer and stays true across any pool change. Discarding both on a snapshot
-  mismatch would remove the client-side filter that currently masks a real
-  server race — `check_user_already_rated` consults a process-local
-  `_local_ratings` set while production runs 8-16 gunicorn workers, so a worker
-  that did not receive the submission depends on Phoenix propagation. Task 3.2b
-  keeps the rated-prompt record across snapshot changes for that reason.
+- **Conflating ratings with unavailability.** The current `handledSpanIds` set
+  contains both successful ratings and capacity refusals. Persisting it whole
+  would suppress prompts the reviewer never rated after a snapshot change;
+  discarding it whole would reopen the propagation race. Task 3.2b splits it
+  into a reviewer-scoped recently-rated mask and snapshot-scoped unavailable
+  state. The former is pruned only after the server history confirms the rating.
 - **Ad-hoc state invalidation from organic traffic.** Accepted deliberately.
   Ad-hoc mode has no manifest-backed run boundary and defines its current pool
   from the bounded live Phoenix query, so a changed query result is a changed

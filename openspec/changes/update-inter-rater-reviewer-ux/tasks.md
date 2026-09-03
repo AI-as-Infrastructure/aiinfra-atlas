@@ -40,7 +40,10 @@
 ## 3. Run state and history source — prerequisite for 4 and 5
 - [ ] 3.1 Move the dashboard's run state out of `setup()` locals and into the
       Pinia store: allocation, current index, completed count, and
-      `handledSpanIds` (`InterRaterDashboard.vue:128`).
+      separate `recentlyRatedSpanIds` and `unavailableSpanIds` sets. The current
+      `handledSpanIds` (`InterRaterDashboard.vue:126`) mixes successful ratings
+      with `session_unavailable` refusals (lines 205-206 and 233-236) and cannot
+      be persisted with one lifetime.
 - [ ] 3.2 Add an `allocation_snapshot_id` to the sessions response and persist
       run *position* to session storage keyed per reviewer and by that id. This
       is **not** the cohort/manifest fingerprint: `inter_rater_pool.py:132-155`
@@ -51,8 +54,9 @@
       the actual pool spans change. Return it from `/api/inter-rater/sessions`.
       After a reload, compare the server value before restoring saved position;
       on mismatch use the fresh allocation and replace the stored position.
-      Persist `handledSpanIds` under a **reviewer-only** key, not the snapshot
-      key — see 3.2b.
+      Persist `recentlyRatedSpanIds` under a **reviewer-only** key, not the
+      snapshot key; keep `unavailableSpanIds` with snapshot-scoped position —
+      see 3.2b.
       An in-app KeepAlive return still performs no allocation request. Test that
       the id is non-empty in ad-hoc mode, changes when pool span membership
       changes, and does not change merely because ratings are submitted or a span
@@ -68,20 +72,26 @@
       bounded live query would preserve spans the server no longer considers
       current. Study mode is protected because its manifest defines the run and
       the capacity validation raises when that pool is incomplete.
-- [ ] 3.2b Do not discard `handledSpanIds` when the allocation snapshot changes.
-      "Spans I have already rated" is reviewer-scoped truth and does not stop
-      being true because the pool changed; only *position* is snapshot-scoped.
-      Discarding it removes the mask that currently hides a real server-side
-      race: `check_user_already_rated` consults the process-local
+- [ ] 3.2b Split `handledSpanIds` by outcome and lifetime. Add a span to
+      reviewer-scoped `recentlyRatedSpanIds` only after submission success or a
+      distinct duplicate refusal confirming that this reviewer already rated
+      it. A capacity or out-of-pool refusal SHALL NOT enter that set; if local
+      suppression is needed, add it to snapshot-scoped `unavailableSpanIds`,
+      which is discarded when the snapshot changes.
+      The recently-rated set masks a real server-side race:
+      `check_user_already_rated` consults the process-local
       `_local_ratings` set (`annotations_cache.py:60, 167`), production runs
       gunicorn with 8-16 workers (`deploy/production/production.sh:387`,
       `deploy/cloudflare/cloudflare.sh:296`), so a worker that did not receive
       the submission must wait for Phoenix propagation before
       `get_sessions_for_inter_rating` filters the span. That window is exactly
       why `InterRaterDashboard.vue` removes the rated session locally rather
-      than refetching. Merge the persisted set into the fresh allocation's
-      filter instead of clearing it, and cap or expire it per run so it cannot
-      grow unbounded.
+      than refetching. Apply `recentlyRatedSpanIds` to every fresh allocation,
+      including after a snapshot change. Reconcile it through the reviewer
+      history endpoint: keep an entry while the server has not exposed that
+      recorded rating, then prune it after an authoritative history response
+      confirms the rating. Do not use arbitrary size eviction or expiry that can
+      remove the mask before server propagation completes.
 - [ ] 3.2a Reject submissions for spans outside the current pool. The gate
       (`inter_rater_submission_gate.py:88-97`) checks already-rated and
       max_ratings but never manifest membership, so a stale span rehydrated
@@ -135,9 +145,9 @@
       remount, fetch the current sessions response first and rehydrate persisted
       position only when its `allocation_snapshot_id` matches; otherwise discard
       the saved position and use the fresh allocation. Never render a persisted
-      allocation before that server validation. `handledSpanIds` survives a
-      snapshot mismatch and is applied to the fresh allocation regardless — see
-      3.2b.
+      allocation before that server validation. `recentlyRatedSpanIds` survives
+      a snapshot mismatch and is applied to the fresh allocation; the
+      snapshot-scoped `unavailableSpanIds` set does not — see 3.2b.
 
 ## 4. Navigation and history (#72, #73) — depends on 3
 - [ ] 4.1 Wrap the `/inter-rater` route view in `<KeepAlive>` so an in-app
@@ -145,7 +155,9 @@
 - [ ] 4.2 Suppress the full-page loading state
       (`InterRaterDashboard.vue:3-8`) when the allocation is already known.
 - [ ] 4.3 Filter rated spans from the presented allocation using the persisted
-      `handledSpanIds`, so Back and reload cannot re-present them.
+      `recentlyRatedSpanIds`, so Back and reload cannot re-present them. Filter
+      snapshot-local capacity refusals with `unavailableSpanIds`, without
+      treating them as ratings by this reviewer.
 - [ ] 4.4 Build the read-only rating history view: prompt, rated answer, own
       scores and fault tags. No editable control, no path back into a rating form.
 - [ ] 4.5 Gate history strictly to the requesting reviewer — verify no other
@@ -186,5 +198,10 @@
       modes: unchanged pool with new ratings retains state; changed span
       membership discards it; spoofed client identifiers do not bypass the
       submission membership check; an unavailable membership source fails closed.
-- [ ] 6.5 `openspec validate update-inter-rater-reviewer-ux --strict`
-- [ ] 6.6 Close #67, #70, #71, #72, #73 with the verifying evidence.
+- [ ] 6.5 Exercise the state split by outcome: success and confirmed duplicate
+      enter `recentlyRatedSpanIds`; capacity and out-of-pool refusals enter only
+      snapshot-scoped unavailable state; a snapshot change clears the latter but
+      not the former; authoritative history confirmation prunes the former
+      without allowing the prompt to reappear.
+- [ ] 6.6 `openspec validate update-inter-rater-reviewer-ux --strict`
+- [ ] 6.7 Close #67, #70, #71, #72, #73 with the verifying evidence.

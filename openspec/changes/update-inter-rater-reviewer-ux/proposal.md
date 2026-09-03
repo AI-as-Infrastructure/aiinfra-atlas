@@ -45,7 +45,8 @@ Fixing them together avoids three overlapping patches to the same component.
 - **Citation hover card** — position the card so it stays within the viewport
   and its container regardless of where its citation sits in the list.
 - **Rating history** — add a read-only view of the reviewer's own completed
-  ratings for the current run, and persist handled spans so a rated session is
+  ratings for the current run, and retain a short-lived reviewer-scoped record
+  of successful ratings until the server can confirm them, so a rated session is
   never re-presented as ratable. A duplicate submission that still reaches the
   gate is reported as such rather than as unavailability.
 - **Task state across navigation** — retain the reviewer's allocation across an

@@ -132,10 +132,21 @@ After a reload or remount, persisted position SHALL NOT be rendered until the
 server has confirmed that its allocation snapshot identifier is current. An
 in-app return using live retained state SHALL NOT require that allocation fetch.
 
-The record of which prompts the reviewer has already rated SHALL NOT be
-discarded when the allocation snapshot changes. That record is scoped to the
-reviewer rather than to a pool, and SHALL continue to be applied to whatever
-allocation is current; only the reviewer's *position* is snapshot-scoped.
+A client-side record of recently submitted ratings SHALL NOT be discarded when
+the allocation snapshot changes. It SHALL contain only prompts successfully
+rated by the reviewer, or prompts for which a duplicate refusal confirms an
+existing rating by that reviewer. Capacity, unavailability and out-of-pool
+refusals SHALL NOT be recorded as reviewer ratings.
+
+The recently-rated record is a reviewer-scoped propagation-race mask rather
+than a permanent source of truth. It SHALL continue to filter fresh allocations
+until an authoritative history response confirms the recorded rating, after
+which the corresponding local entry MAY be pruned. It SHALL NOT be removed by
+arbitrary size limits or expiry before that confirmation.
+
+Any client-side record of prompts suppressed only because they were unavailable
+SHALL be scoped to the allocation snapshot and discarded when that snapshot
+changes; only confirmed ratings survive the change.
 
 A submission for a prompt outside the current pool SHALL be refused server-side;
 client-supplied pool identifiers or `qa_id` values SHALL NOT be treated as proof
@@ -164,6 +175,21 @@ the refusal reason to survive the trip to the client.
   prompts
 - **THEN** that prompt SHALL NOT be presented as ratable
 - **AND** the rated-prompt record SHALL survive the discarding of saved position
+
+#### Scenario: Capacity refusal is not persisted as a reviewer rating
+- **GIVEN** a prompt refused because it has reached its rating cap
+- **WHEN** the allocation snapshot later changes
+- **THEN** that refusal SHALL NOT remain in the reviewer-scoped recently-rated
+  record
+- **AND** it SHALL NOT suppress the prompt on the false claim that the reviewer
+  rated it
+
+#### Scenario: Recent rating is pruned only after server confirmation
+- **GIVEN** a successful submission retained locally while Phoenix propagation
+  is incomplete
+- **WHEN** a later authoritative history response includes that rating
+- **THEN** the local recently-rated entry MAY be removed
+- **AND** it SHALL NOT be removed earlier by an arbitrary cap or timeout
 
 #### Scenario: Reseeded pool does not resurrect an old allocation
 - **GIVEN** a reviewer with retained state from a previous pool
