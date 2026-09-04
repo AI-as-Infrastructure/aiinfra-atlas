@@ -84,6 +84,29 @@ def test_guard_does_not_apply_when_feature_is_disabled(monkeypatch):
     assert service_cls().is_enabled() is False
 
 
+def test_invalid_pool_refresh_wait_fails_at_startup(monkeypatch):
+    service_cls = _env(
+        monkeypatch,
+        INTER_RATER_POOL_REFRESH_LOCK_WAIT_SECONDS="not-a-number",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="INTER_RATER_POOL_REFRESH_LOCK_WAIT_SECONDS must be a positive number",
+    ):
+        service_cls()
+
+
+def test_pool_refresh_wait_is_ignored_when_feature_is_disabled(monkeypatch):
+    service_cls = _env(
+        monkeypatch,
+        INTER_RATER_ENABLED="false",
+        INTER_RATER_POOL_REFRESH_LOCK_WAIT_SECONDS="not-a-number",
+    )
+
+    assert service_cls().is_enabled() is False
+
+
 # --------------------------------------------------------------------------
 # The startup guard only proves the setting is present. A configured path with
 # no readable file behind it yields no fingerprint, which would skip every

@@ -37,6 +37,10 @@ class InterRaterService:
                 )
         if self.enabled and not os.getenv("REDIS_URL"):
             raise ValueError("REDIS_URL is required when inter-rating is enabled")
+        if self.enabled:
+            from .inter_rater_pool_snapshot import inter_rater_pool_snapshot_registry
+
+            inter_rater_pool_snapshot_registry.lock_wait_seconds()
 
         # Focus-group mode without a study pool has no legitimate reading, and
         # it is the one remaining way to lose every study guarantee silently:

@@ -50,6 +50,9 @@ class _PoolSnapshotRegistry:
         self.snapshot = None
         self.publish_count = 0
 
+    def lock_wait_seconds(self):
+        return 30
+
     async def get(self, _project_name):
         return self.snapshot
 

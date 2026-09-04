@@ -17,6 +17,13 @@
           <button @click="loadSessions" class="button is-link">
             Try Again
           </button>
+          <button
+            v-if="completedSessions > 0"
+            class="button is-light history-button"
+            @click="showHistory = true"
+          >
+            Review my ratings ({{ completedSessions }})
+          </button>
         </div>
       </div>
     </div>
