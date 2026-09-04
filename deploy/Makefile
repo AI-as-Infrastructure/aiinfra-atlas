@@ -197,5 +197,5 @@ rater-load: ## Run the inter-rater concurrency test on a scratch Redis DB (defau
 	@$(resolve_seed_env); \
 		SCRATCH=$$(.venv/bin/python utils/scripts/scratch_redis_url.py) || exit 1; \
 		echo "Scratch Redis: $${SCRATCH%%//*}//…/$${SCRATCH##*/}  (app keyspace untouched)"; \
-		REDIS_URL="$$SCRATCH" .venv/bin/python -m pytest \
+		RATER_LOAD=1 REDIS_URL="$$SCRATCH" .venv/bin/python -m pytest \
 			tests/backend/services/test_inter_rater_concurrency.py -v

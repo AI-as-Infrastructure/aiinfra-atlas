@@ -105,10 +105,18 @@ class _WorkerAnnotationsCache:
 @pytest.fixture
 async def study(monkeypatch):
     """Eight worker caches coordinated by real Redis over delayed Phoenix."""
-    if not os.getenv("REDIS_URL"):
-        pytest.skip("REDIS_URL is not set")
+    # `make rater-load` sets RATER_LOAD=1 to say the run was deliberate. Do not
+    # infer that from REDIS_URL alone: tests under tests/backend/modules leak it
+    # into the environment, which would turn a clean skip into a hard failure on
+    # any machine without Redis.
+    deliberate = os.getenv("RATER_LOAD") == "1"
     if not _redis_reachable():
-        pytest.fail("REDIS_URL is set but Redis is unreachable")
+        if deliberate:
+            pytest.fail(
+                f"RATER_LOAD=1 but Redis is unreachable at "
+                f"{os.getenv('REDIS_URL', '<unset>')}"
+            )
+        pytest.skip("Redis unreachable — run `make rater-load`")
 
     project_name = f"concurrency-test-{uuid.uuid4().hex}"
     span_ids = [f"span-{index:03d}" for index in range(POOL_SIZE)]
