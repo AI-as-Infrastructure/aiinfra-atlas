@@ -8,7 +8,7 @@ STACK_NAME ?= atlas-prod
 DOMAIN_NAME ?= atlas.aiinfra.org
 
 # Development Targets
-.PHONY: b f d
+.PHONY: b f d rater-check rater-load
 b: ## Start backend development server
 	@./deploy/dev/scripts/start_backend.sh
 
@@ -179,4 +179,24 @@ seed-reset: ## Delete INTER_RATER_PROJECT from Phoenix to reset to baseline (the
 	@if [ ! -d ".venv" ]; then echo "ERROR: .venv not found — run setup first"; exit 1; fi
 	@$(resolve_seed_env); \
 		.venv/bin/python utils/scripts/seed_reset.py $(SEED_ARGS)
+
+rater-check: ## Read-only pre-flight for inter-rating: pool saturation, cohort slots, annotation shapes, latest ratings
+	@if [ ! -d ".venv" ]; then echo "ERROR: .venv not found — run setup first"; exit 1; fi
+	@$(resolve_seed_env); \
+		echo "" && echo "=== pool and cohort pre-flight ===" && \
+		.venv/bin/python utils/scripts/inter_rater_preflight.py; \
+		echo "" && echo "=== annotation shapes and recent ratings ===" && \
+		.venv/bin/python utils/scripts/inter_rater_annotation_check.py
+
+rater-load: ## Run the inter-rater concurrency test (REQUIRES an explicit scratch REDIS_URL)
+	@if [ -z "$$REDIS_URL" ]; then \
+		echo "ERROR: set REDIS_URL to a scratch Redis DB, not the one the app is using."; \
+		echo "  e.g. REDIS_URL=redis://localhost:6379/15 make rater-load"; \
+		exit 1; \
+	fi
+	@if ! .venv/bin/python -c "import pytest" 2>/dev/null; then \
+		echo "ERROR: pytest not installed. pip install -r config/requirements-test.txt"; \
+		exit 1; \
+	fi
+	@.venv/bin/python -m pytest tests/backend/services/test_inter_rater_concurrency.py -v
 
