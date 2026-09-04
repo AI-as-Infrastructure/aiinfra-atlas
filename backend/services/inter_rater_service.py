@@ -313,9 +313,15 @@ class InterRaterService:
         _, _, snapshot_id = await self._get_pool(include_citations)
         return snapshot_id
 
-    async def span_ids_in_current_pool(self, include_citations: bool = False) -> set:
+    async def span_ids_in_current_pool(self, include_citations: bool = True) -> set:
         """
         Authoritative span ids for the current pool.
+
+        Defaults to the same `include_citations` variant that serves reviewer
+        allocations. _get_pool keys its cache by that flag, so the two variants
+        are independent 60s caches that can hold different pool snapshots after
+        a reseed. Checking membership against the other one would reject a span
+        the reviewer was legitimately just served.
 
         Raises rather than returning an empty set when the pool cannot be
         established, so callers can fail closed instead of treating an

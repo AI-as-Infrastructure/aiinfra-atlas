@@ -22,7 +22,16 @@ export default {
     const store = useInterRaterStore()
 
     const isEnabled = computed(() => store.isEnabled)
-    const availableSessions = computed(() => store.availableSessions)
+    // Server stats are computed per worker: invalidate_user_cache and
+    // record_user_rating only reach the worker that took the submission, so a
+    // refresh landing elsewhere can still count a span the reviewer just
+    // rated. While the task has validated run state, the client's allocation is
+    // already filtered and is the more accurate number. No subtraction here —
+    // allocation is filtered at source, so it cannot double-count after the
+    // history read prunes the local mask.
+    const availableSessions = computed(() =>
+      store.validated ? store.allocation.length : store.availableSessions
+    )
     const isLoading = computed(() => !store.loaded)
 
     onMounted(() => {

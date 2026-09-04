@@ -635,8 +635,13 @@ export default {
 
       // Prefer above, as before; drop below when there is no room, so the card
       // never covers the answer text the reviewer is rating.
+      // Prefer above, drop below when there is no room — then clamp, because
+      // "below" can still run off the bottom with a long citation or a short
+      // viewport. The card carries its own max-height so it scrolls internally
+      // rather than being cut off.
       const above = a.top - c.height - margin
-      const top = above < margin ? a.bottom + margin : above
+      let top = above >= margin ? above : a.bottom + margin
+      top = Math.max(margin, Math.min(top, window.innerHeight - c.height - margin))
 
       citationCardStyle.value = { left: `${Math.round(left)}px`, top: `${Math.round(top)}px` }
       citationCardReady.value = true
@@ -1014,6 +1019,8 @@ export default {
   z-index: 1000;
   min-width: 300px;
   max-width: min(400px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
   /* Hidden until measured so it never paints at the wrong place first. */
   opacity: 0;
   pointer-events: none;

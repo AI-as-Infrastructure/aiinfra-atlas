@@ -23,11 +23,22 @@
         <button class="button is-small mt-3" @click="load">Try again</button>
       </div>
 
-      <div v-else-if="ratings.length === 0" class="history-state">
+      <div v-else-if="ratings.length === 0 && !syncing" class="history-state">
         <p>You have not completed any ratings in this run yet.</p>
       </div>
 
+      <div v-else-if="ratings.length === 0 && syncing" class="history-state">
+        <p><strong>Your most recent ratings are still syncing.</strong></p>
+        <p>They are recorded — they are not visible here yet.</p>
+        <button class="button is-small mt-3" @click="load">Retry</button>
+      </div>
+
       <div v-else class="history-list">
+        <div v-if="syncing" class="notification sync-notice">
+          Some of your most recent ratings are still syncing and are not shown
+          below yet. This list is incomplete.
+          <button class="button is-small ml-2" @click="load">Retry</button>
+        </div>
         <article v-for="entry in ratings" :key="entry.span_id" class="history-entry">
           <h4 class="history-question">{{ entry.question }}</h4>
 
@@ -85,6 +96,7 @@ const store = useInterRaterStore()
 const ratings = ref([])
 const loading = ref(true)
 const error = ref(null)
+const syncing = ref(false)
 
 const display = (score) => (score === null || score === undefined ? '—' : score)
 
@@ -97,9 +109,15 @@ async function load() {
   try {
     const data = await get('/inter-rater/history')
     ratings.value = data.ratings || []
-    // The server has now exposed these ratings, so the local propagation-race
-    // mask is no longer needed for them. Only an authoritative response prunes.
-    store.pruneConfirmed(ratings.value.map((r) => r.span_id))
+    const returned = new Set(ratings.value.map((r) => r.span_id))
+
+    // A 200 is not proof of completeness. Phoenix propagation lags submission,
+    // and the store still holds the spans the server has not exposed yet, so
+    // say the list is incomplete rather than letting it read as authoritative.
+    syncing.value = [...store.recentlyRated].some((id) => !returned.has(id))
+
+    // Only ratings the server actually returned may prune the local mask.
+    store.pruneConfirmed([...returned])
   } catch (e) {
     console.error('Failed to load inter-rater history:', e)
     error.value = e.message || 'Please try again in a moment.'
@@ -226,6 +244,15 @@ onMounted(load)
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+.sync-notice {
+  margin: 1rem 0;
+  padding: 0.75rem 1rem;
+  background-color: #f8f9fa;
+  border: 1px solid #dee2e6;
+  color: #363636;
+  font-size: 0.875rem;
 }
 
 .error-notice {

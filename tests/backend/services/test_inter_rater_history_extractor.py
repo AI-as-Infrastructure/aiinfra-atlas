@@ -38,6 +38,15 @@ def _scale_comment(group: str, label: str = "Corpus Fidelity Comment") -> dict:
     }
 
 
+def _additional_comments(group: str, text: str = "overall note") -> dict:
+    """Metadata-poor: no rater_id, no is_inter_rater."""
+    return {
+        "name": f"[inter-rating-{group}] Additional Comments",
+        "metadata": {"qa_id": "qa-1", "feedback_type": "extended"},
+        "result": {"explanation": text},
+    }
+
+
 def _cache(monkeypatch) -> AnnotationsCache:
     monkeypatch.setenv("INTER_RATER_PROJECT", "test-project")
     return AnnotationsCache()
@@ -50,6 +59,7 @@ def test_returns_own_scores_rationales_and_faults(monkeypatch):
         _score("1", "reviewer-a", name="Coherence", score=2),
         _scale_comment("1"),
         _fault("1"),
+        _additional_comments("1"),
     ]
 
     rating = cache.get_user_inter_rater_rating("span-1", "reviewer-a")
@@ -58,6 +68,7 @@ def test_returns_own_scores_rationales_and_faults(monkeypatch):
     assert rating["scores"] == {"corpus_fidelity": 4, "coherence": 2}
     assert rating["rationales"] == {"corpus_fidelity": "rationale text"}
     assert rating["faults"] == ["Hallucination"]
+    assert rating["additional_comments"] == "overall note"
     assert rating["inter_rater_number"] == 1
 
 
@@ -66,15 +77,19 @@ def test_another_reviewers_rating_is_never_returned(monkeypatch):
     cache._by_span["span-1"] = [
         _score("1", "reviewer-a"),
         _fault("1"),
+        _additional_comments("1", "a-note"),
         _score("2", "reviewer-b"),
         _fault("2", "Harmful Handling"),
+        _additional_comments("2", "b-note"),
     ]
 
     own = cache.get_user_inter_rater_rating("span-1", "reviewer-a")
     assert own["faults"] == ["Hallucination"]
+    assert own["additional_comments"] == "a-note"
 
     other = cache.get_user_inter_rater_rating("span-1", "reviewer-b")
     assert other["faults"] == ["Harmful Handling"]
+    assert other["additional_comments"] == "b-note"
 
     assert cache.get_user_inter_rater_rating("span-1", "reviewer-c") is None
 
@@ -82,7 +97,11 @@ def test_another_reviewers_rating_is_never_returned(monkeypatch):
 def test_group_with_no_rater_identity_is_omitted(monkeypatch):
     """A group of only metadata-poor annotations cannot be attributed."""
     cache = _cache(monkeypatch)
-    cache._by_span["span-1"] = [_fault("1"), _scale_comment("1")]
+    cache._by_span["span-1"] = [
+        _fault("1"),
+        _scale_comment("1"),
+        _additional_comments("1"),
+    ]
 
     assert cache.get_user_inter_rater_rating("span-1", "reviewer-a") is None
 
@@ -97,6 +116,8 @@ def test_colliding_group_number_is_omitted_not_guessed(monkeypatch):
         _score("1", "reviewer-a"),
         _score("1", "reviewer-b"),
         _fault("1"),
+        _scale_comment("1"),
+        _additional_comments("1"),
     ]
 
     assert cache.get_user_inter_rater_rating("span-1", "reviewer-a") is None

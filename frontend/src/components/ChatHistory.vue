@@ -282,8 +282,13 @@ const showCitationCard = async (citation, event) => {
 	let left = a.left + a.width / 2 - c.width / 2
 	left = Math.max(margin, Math.min(left, window.innerWidth - c.width - margin))
 
+	// Prefer above, drop below when there is no room — then clamp, because
+	// "below" can still run off the bottom with a long citation or a short
+	// viewport. The card carries its own max-height so it scrolls internally
+	// rather than being cut off.
 	const above = a.top - c.height - margin
-	const top = above < margin ? a.bottom + margin : above
+	let top = above >= margin ? above : a.bottom + margin
+	top = Math.max(margin, Math.min(top, window.innerHeight - c.height - margin))
 
 	citationCardStyle.value = { left: `${Math.round(left)}px`, top: `${Math.round(top)}px` }
 	citationCardReady.value = true
@@ -639,6 +644,8 @@ function onFeedbackWorkflowComplete(messageId) {
 .citation-tooltip {
 	position: fixed;
 	width: min(320px, calc(100vw - 16px));
+	max-height: calc(100vh - 16px);
+	overflow-y: auto;
 	opacity: 0;
 	background-color: white;
 	box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);

@@ -57,12 +57,20 @@ export const useInterRaterStore = defineStore('interRater', () => {
   let _fetchPromise = null
   let _key = 'anon'
 
+  // Auth initialises asynchronously, so the first call usually arrives with a
+  // null identity. Callers must keep calling as the identity resolves — until
+  // it does, state lives under the shared "anon" key, and a second reviewer on
+  // the same browser must not inherit it.
   function setReviewer(identity) {
     const next = reviewerKey(identity)
     if (next !== _key) {
       _key = next
       restore()
     }
+  }
+
+  function reviewerResolved() {
+    return _key !== 'anon'
   }
 
   // --- persistence -------------------------------------------------------
@@ -72,12 +80,12 @@ export const useInterRaterStore = defineStore('interRater', () => {
       const rated = readJson(`${RATED_KEY}:${_key}`)
       recentlyRated.value = new Set(Array.isArray(rated) ? rated : [])
 
+      // Always reset position fields, so switching reviewers cannot leave the
+      // previous one's snapshot, index or unavailable set in place.
       const position = readJson(`${POSITION_KEY}:${_key}`)
-      if (position) {
-        snapshotId.value = position.snapshotId ?? null
-        currentIndex.value = position.currentIndex ?? 0
-        unavailable.value = new Set(position.unavailable || [])
-      }
+      snapshotId.value = position?.snapshotId ?? null
+      currentIndex.value = position?.currentIndex ?? 0
+      unavailable.value = new Set(position?.unavailable || [])
       storageAvailable.value = true
     } catch (e) {
       // Private windows and blocked site data throw on access. Say so rather
@@ -86,6 +94,8 @@ export const useInterRaterStore = defineStore('interRater', () => {
       storageAvailable.value = false
       recentlyRated.value = new Set()
       unavailable.value = new Set()
+      snapshotId.value = null
+      currentIndex.value = 0
     }
   }
 
@@ -216,6 +226,7 @@ export const useInterRaterStore = defineStore('interRater', () => {
     validated,
     storageAvailable,
     setReviewer,
+    reviewerResolved,
     applyAllocation,
     markRated,
     markUnavailable,

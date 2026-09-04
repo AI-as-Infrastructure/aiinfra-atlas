@@ -121,7 +121,7 @@
 </template>
 
 <script>
-import { computed, onMounted, onActivated, ref } from 'vue'
+import { computed, onMounted, onActivated, ref, watch } from 'vue'
 import InterRaterPlayback from './InterRaterPlayback.vue'
 import InterRaterHistory from './InterRaterHistory.vue'
 import { useInterRaterStore } from '../stores/interRater'
@@ -144,9 +144,9 @@ export default {
     const hasCompletedAllSessions = ref(false)
     const showHistory = ref(false)
 
+    let auth = null
     try {
-      const auth = useAuthStore()
-      store.setReviewer(auth.username)
+      auth = useAuthStore()
     } catch (e) {
       // Auth store is absent in ad-hoc/no-auth modes; state stays per-browser.
     }
@@ -222,17 +222,32 @@ export default {
       }, 3000)
     }
 
+    const quotaMet = () =>
+      store.targetSessions > 0 && store.completedCount >= store.targetSessions
+
     const afterQueueChange = async () => {
       if (sessions.value.length > 0) {
         window.scrollTo({ top: 0, behavior: 'smooth' })
         return
       }
-      if (store.completedCount >= store.targetSessions) {
+      if (quotaMet()) {
         showCompletionMessage()
         return
       }
+
       await loadSessions()
-      if (sessions.value.length === 0) showCompletionMessage()
+      if (sessions.value.length > 0 || quotaMet()) {
+        if (quotaMet() && sessions.value.length === 0) showCompletionMessage()
+        return
+      }
+
+      // Quota is NOT met and no replacement came back. Do not congratulate a
+      // reviewer who is at 19/20 — a capacity or out-of-pool refusal on the
+      // last local item lands here. Stay incomplete and recoverable.
+      hasCompletedAllSessions.value = false
+      error.value =
+        'No replacement prompt is available right now. Your progress is saved — ' +
+        'use Try Again in a moment.'
     }
 
     const handleFeedbackSubmission = async (feedbackData) => {
@@ -278,6 +293,26 @@ export default {
         error.value = errorMsg
         setTimeout(() => { error.value = null }, 10000)
       }
+    }
+
+    // Auth initialises asynchronously; at setup `username` is still null, so
+    // state would otherwise be restored under the shared "anon" key and a
+    // second reviewer on this browser could inherit it.
+    if (auth) {
+      watch(
+        () => auth.username,
+        (name) => {
+          const wasResolved = store.reviewerResolved()
+          store.setReviewer(name)
+          if (!wasResolved && store.reviewerResolved()) {
+            // Identity arrived after mount: re-validate against this
+            // reviewer's own persisted state rather than the anon key's.
+            store.resetRun()
+            loadSessions()
+          }
+        },
+        { immediate: true }
+      )
     }
 
     onMounted(() => {
