@@ -188,14 +188,25 @@ rater-check: ## Read-only pre-flight for inter-rating: pool saturation, cohort s
 		echo "" && echo "=== annotation shapes and recent ratings ===" && \
 		.venv/bin/python utils/scripts/inter_rater_annotation_check.py
 
-rater-load: ## Run the inter-rater concurrency test on a scratch Redis DB (default 15)
+rater-load: ## Run the inter-rater load test (production env and isolated pytest deps by default)
 	@if [ ! -d ".venv" ]; then echo "ERROR: .venv not found — run setup first"; exit 1; fi
-	@if ! .venv/bin/python -c "import pytest" 2>/dev/null; then \
-		echo "ERROR: pytest not installed. pip install -r config/requirements-test.txt"; \
-		exit 1; \
-	fi
-	@$(resolve_seed_env); \
+	@DEPS_DIR="$${RATER_LOAD_DEPS_DIR:-/tmp/atlas-rater-load-deps}"; \
+		PYTHONPATH="$$DEPS_DIR$${PYTHONPATH:+:$$PYTHONPATH}"; \
+		if [ ! -d "$$DEPS_DIR/pytest" ] || [ ! -d "$$DEPS_DIR/pytest_asyncio" ]; then \
+			echo "Installing isolated rater-load test dependencies in $$DEPS_DIR"; \
+			mkdir -p "$$DEPS_DIR"; \
+			.venv/bin/python -m pip install --disable-pip-version-check --upgrade \
+				--target "$$DEPS_DIR" pytest==8.3.5 pytest-asyncio==0.25.2 || exit 1; \
+		fi; \
+		ENV_FILE="$${ENV_FILE:-config/.env.production}"; \
+		if [ ! -f "$$ENV_FILE" ]; then \
+			echo "ERROR: ENV_FILE=$$ENV_FILE not found"; \
+			exit 1; \
+		fi; \
+		echo "Using $$ENV_FILE"; \
+		set -a; . "$$ENV_FILE" || { STATUS=$$?; set +a; exit $$STATUS; }; set +a; \
 		SCRATCH=$$(.venv/bin/python utils/scripts/scratch_redis_url.py) || exit 1; \
 		echo "Scratch Redis: $${SCRATCH%%//*}//…/$${SCRATCH##*/}  (app keyspace untouched)"; \
-		RATER_LOAD=1 REDIS_URL="$$SCRATCH" .venv/bin/python -m pytest \
+		PYTHONPATH="$$PYTHONPATH" RATER_LOAD=1 REDIS_URL="$$SCRATCH" \
+			.venv/bin/python -m pytest \
 			tests/backend/services/test_inter_rater_concurrency.py -v

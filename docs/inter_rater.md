@@ -261,8 +261,13 @@ stubbed: Redis holds the coordination, and writing to Phoenix would put
 hundreds of junk annotations into a real project. Nothing is written to any
 Phoenix project and no project name is needed.
 
-Requires `pytest` (`pip install -r config/requirements-test.txt`); the target
-says so rather than failing obscurely.
+The target uses `config/.env.production` by default; set `ENV_FILE` only when
+running deliberately against another deployed environment. If the production
+virtualenv does not include test tooling, the target installs only `pytest` and
+`pytest-asyncio` into `/tmp/atlas-rater-load-deps` and adds that directory to the
+test process's `PYTHONPATH`. It does not modify the application's virtualenv or
+replace its runtime dependencies. Override the temporary location with
+`RATER_LOAD_DEPS_DIR` if required.
 
 ## Analysing the annotations
 
