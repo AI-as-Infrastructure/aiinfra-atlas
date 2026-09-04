@@ -264,10 +264,12 @@ Phoenix project and no project name is needed.
 The target uses `config/.env.production` by default; set `ENV_FILE` only when
 running deliberately against another deployed environment. If the production
 virtualenv does not include test tooling, the target installs only `pytest` and
-`pytest-asyncio` into `/tmp/atlas-rater-load-deps` and adds that directory to the
-test process's `PYTHONPATH`. It does not modify the application's virtualenv or
-replace its runtime dependencies. Override the temporary location with
-`RATER_LOAD_DEPS_DIR` if required.
+`pytest-asyncio` into `.rater-load-deps` inside the deploy-user-owned application
+directory and adds it to the test process's `PYTHONPATH`. It does not modify the
+application's virtualenv or replace its runtime dependencies. The cache is
+accepted only when it is owned by the current user, is not group/world writable,
+and its pinned imports resolve from that directory; incomplete installations are
+repaired before use. Override the location with `RATER_LOAD_DEPS_DIR` if required.
 
 ## Analysing the annotations
 

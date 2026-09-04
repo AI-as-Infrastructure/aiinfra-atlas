@@ -195,12 +195,27 @@ rater-check: ## Read-only pre-flight for inter-rating: pool saturation, cohort s
 rater-load: ## Run the inter-rater load test (production env and isolated pytest deps by default)
 	@if [ ! -d ".venv" ]; then echo "ERROR: .venv not found — run setup first"; exit 1; fi
 	@DEPS_DIR="$${RATER_LOAD_DEPS_DIR:-.rater-load-deps}"; \
+		DEPS_MARKER="$$DEPS_DIR/.complete-pytest-8.3.5-pytest-asyncio-0.25.2"; \
 		PYTHONPATH="$$DEPS_DIR$${PYTHONPATH:+:$$PYTHONPATH}"; \
-		if [ ! -d "$$DEPS_DIR/pytest" ] || [ ! -d "$$DEPS_DIR/pytest_asyncio" ]; then \
+		umask 077; \
+		mkdir -p "$$DEPS_DIR"; \
+		if [ "$$(stat -c %u "$$DEPS_DIR")" -ne "$$(id -u)" ] || \
+			[ -n "$$(find "$$DEPS_DIR" -maxdepth 0 -perm /022 -print -quit)" ]; then \
+			echo "ERROR: unsafe rater-load dependency directory: $$DEPS_DIR"; \
+			echo "It must be owned by the current user and not group/world writable."; \
+			exit 1; \
+		fi; \
+		if [ ! -f "$$DEPS_MARKER" ] || ! \
+			RATER_LOAD_DEPS_DIR_RESOLVED="$$DEPS_DIR" PYTHONPATH="$$PYTHONPATH" \
+			.venv/bin/python -c 'import os; from pathlib import Path; import pytest, pytest_asyncio; root = Path(os.environ["RATER_LOAD_DEPS_DIR_RESOLVED"]).resolve(); assert pytest.__version__ == "8.3.5"; assert pytest_asyncio.__version__ == "0.25.2"; assert Path(pytest.__file__).resolve().is_relative_to(root); assert Path(pytest_asyncio.__file__).resolve().is_relative_to(root)' \
+			2>/dev/null; then \
 			echo "Installing isolated rater-load test dependencies in $$DEPS_DIR"; \
-			mkdir -p "$$DEPS_DIR"; \
 			.venv/bin/python -m pip install --disable-pip-version-check --upgrade \
 				--target "$$DEPS_DIR" pytest==8.3.5 pytest-asyncio==0.25.2 || exit 1; \
+			RATER_LOAD_DEPS_DIR_RESOLVED="$$DEPS_DIR" PYTHONPATH="$$PYTHONPATH" \
+				.venv/bin/python -c 'import os; from pathlib import Path; import pytest, pytest_asyncio; root = Path(os.environ["RATER_LOAD_DEPS_DIR_RESOLVED"]).resolve(); assert pytest.__version__ == "8.3.5"; assert pytest_asyncio.__version__ == "0.25.2"; assert Path(pytest.__file__).resolve().is_relative_to(root); assert Path(pytest_asyncio.__file__).resolve().is_relative_to(root)' || \
+				{ echo "ERROR: isolated rater-load dependencies failed verification"; exit 1; }; \
+			touch "$$DEPS_MARKER"; \
 		fi; \
 		ENV_FILE="$${ENV_FILE:-config/.env.production}"; \
 		if [ ! -f "$$ENV_FILE" ]; then \
