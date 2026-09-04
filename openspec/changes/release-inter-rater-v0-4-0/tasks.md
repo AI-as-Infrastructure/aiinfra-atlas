@@ -91,10 +91,25 @@ Pick one approach. The first needs no settings churn and is preferred.
       under `Hansard-Interrating` with `[inter-rating-N]` prefixes, and that
       `atlas_version` on the spans reads `Hansard 0.4.0`
 - [ ] **Task 3.5**: Confirm no prompt exceeds `INTER_RATER_MAX_RATINGS` ratings.
-      The submission cap reads a cache that can lag briefly under concurrency, so
-      this is the check the simulation cannot make for you
+      `make rater-load` now covers the coordination for this — 400 submissions
+      racing on real Redis with 8 independent worker views — but it stubs
+      Phoenix, so it proves the gate never *decides* to overfill, not that the
+      write path agrees. This remains the end-to-end check
+- [ ] **Task 3.5a**: `make rater-load` on the server. Expect 5 passed. Re-run
+      after any change to the submission gate or the pool snapshot
 - [ ] **Task 3.6**: Rate the same prompt twice from one account and confirm the
-      second attempt is refused as unavailable rather than written twice
+      second attempt is refused as **already rated**, distinct from a prompt
+      someone else filled, and is not written twice
+- [ ] **Task 3.6a**: With a second reviewer, rate a prompt the first reviewer
+      already rated. This is the only way to reach the multi-rater paths — a
+      single tester cannot, because the allocator will not re-offer a rated
+      prompt. Then `make rater-check` and confirm attribution stays clean:
+      every group resolving to exactly one rater, zero collisions
+- [ ] **Task 3.6b**: Reviewer-facing checks from `update-inter-rater-reviewer-ux`
+      §6 — tooltips visible on hover in Chrome, Firefox and Safari; citation
+      cards not clipped; Back, reload and an FAQ detour do not re-present a
+      rated prompt; rating history opens mid-run and shows only own ratings;
+      header count agrees with the task view after a submission
 - [x] **Task 3.7**: `make backup-prod` and confirm `Hansard-Interrating` appears
       in the backup output
 - [x] **Task 3.8**: Export or note the pilot annotations, then confirm the
@@ -110,6 +125,10 @@ Pick one approach. The first needs no settings churn and is preferred.
       and is gitignored
 - [ ] **Task 4.4**: Log in as one reviewer and confirm a 20-prompt queue is
       offered with no errors
+- [ ] **Task 4.4a**: `make rater-check`. The pre-flight must report the design
+      saturated — the capacity equation is exact, and a pool that misses it now
+      blocks submissions as well as allocation. The annotation check must report
+      every name recognised. Do this before reviewers arrive, not after
 - [ ] **Task 4.5**: Do not seed again after this point. Re-seeding changes the
       cohort fingerprint and reassigns every reviewer slot
 
@@ -160,5 +179,21 @@ reviewers begin, because some of it changes afterwards.
 - [ ] **Task 7.1**: Export and back up the Phoenix project immediately, before
       any reset. Annotations are the only source of truth for ratings
 - [ ] **Task 7.2**: Confirm every prompt received the expected number of ratings,
-      and record any that did not along with the reason
+      and record any that did not along with the reason. `make rater-check`
+      reports rated spans and per-span rating counts; the export is the record
+- [ ] **Task 7.2a**: Confirm `make rater-check` still exits clean on the final
+      data — zero groups with no rater identity, zero with colliding
+      identities. A collision would mean some rationales cannot be attributed,
+      which matters for the IRR analysis and is easier to find now than later
 - [ ] **Task 7.3**: Archive this change (`openspec archive release-inter-rater-v0-4-0`)
+- [ ] **Task 7.4**: Archive `update-inter-rater-reviewer-ux` once its §6
+      validation tasks are ticked. It must archive *after* this one, since its
+      deltas add to the `inter-rater` capability this change creates
+- [ ] **Task 7.5**: Close the issues the reviewer UX change fixes — #67, #70,
+      #71, #72, #73 — with the verifying evidence
+- [ ] **Task 7.6**: Deferred work now unblocked by the archive, in priority
+      order: #78 (httpx/authlib conflict — a dependency bump, safe only once the
+      tree is unfrozen), #75 (`_USER_FEEDBACK_NAMES`, which needs the
+      fail-closed guard extended past author exclusion first), #77 (test env
+      leakage), #76 (missing `is_inter_rater` on metadata-poor annotations),
+      #74 (reviewer score matrix)
