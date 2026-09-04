@@ -217,6 +217,71 @@ Total time = SESSIONS_PER_USER × 5-10 minutes
 
 With `SESSIONS_PER_USER=20`: **100-200 minutes per user**
 
+## Operational checks
+
+Two make targets. Both resolve the env file the same way `make seed` does
+(`ENV_FILE` > `.env.development` > `.env.production`).
+
+```bash
+ENV_FILE=config/.env.production make rater-check
+```
+
+Read-only; writes nothing. Runs the pool/cohort pre-flight and the
+annotation-shape check together, answering three questions in one command:
+
+- **Is the design still saturated?** The capacity equation
+  (`reviewers × sessions_per_user = pool × max_ratings`) is exact, and a pool
+  that no longer satisfies it fails closed — blocking submissions as well as
+  allocation. Worth running before every session.
+- **Do recorded annotations still match what the history reader expects?**
+  The reader joins a reviewer's fault tags, Additional Comments and per-scale
+  comments to their author by the `[inter-rating-N]` name prefix, because those
+  annotations carry no `rater_id` of their own (see *Analysing the annotations*).
+  An unrecognised name is silently omitted from history, so this fails loudly
+  instead. It imports the extractor's own parser, so it cannot drift from it.
+- **Which spans were rated, and when?** Listed newest-first by rating time.
+  Paste a span id into Phoenix search to open it directly.
+
+```bash
+make rater-load
+```
+
+Runs the concurrency test: 20 reviewers, 100 prompts, 4 ratings each, 400
+submissions racing. It asserts the cap holds under contention, the pool
+saturates exactly, every reviewer finishes their quota, `AT_CAPACITY` and
+`ALREADY_RATED` stay distinct, concurrent duplicates consume one slot, and an
+out-of-pool span is refused under load.
+
+It takes **real Redis locks**, so it runs against a scratch database on the same
+server — DB 15 by default, overridable with `RATER_TEST_REDIS_DB`, and it
+refuses to run if the application is already using that index. Phoenix is
+stubbed: Redis holds the coordination, and writing to Phoenix would put
+hundreds of junk annotations into a real project. Nothing is written to any
+Phoenix project and no project name is needed.
+
+Requires `pytest` (`pip install -r config/requirements-test.txt`); the target
+says so rather than failing obscurely.
+
+## Analysing the annotations
+
+Not every annotation in a rating carries `rater_id`. Scores and `Fault Rationale`
+do, via `get_annotation_metadata`. **Fault tags, Additional Comments and the ten
+per-scale comments do not** — they hardcode `{"qa_id": ...}` and also lack
+`is_inter_rater` (GitHub issue #76).
+
+Consequences for anyone reading the data:
+
+- Filtering on `metadata.is_inter_rater` silently misses fault tags and comments,
+  and can read an inter-rater's fault tag as baseline user feedback.
+- The only link from those annotations to their author is the shared
+  `[inter-rating-N]` name prefix.
+
+The history reader therefore joins by that prefix and attributes a group **only
+when exactly one `rater_id` appears in it**. A group with no identity, or with
+colliding identities, is omitted rather than guessed at — the alternative would
+be disclosing one reviewer's rationales as another's. `make rater-check` reports
+both counts.
+
 ## Manual testing
 
 Before a focus-group session, run the manual acceptance protocol in
@@ -458,6 +523,28 @@ The system self-balances:
    - Metadata includes `is_inter_rater=true`, `rater_id=<anon_id>`, `inter_rater_number=<N>`, `original_span_id=<phoenix_span>`
 7. On success, local state and the user's cached statistics are updated immediately
 
+## Reviewer navigation and rating history
+
+- **Rating history.** A reviewer can review their own completed ratings during a
+  run, from a button on the task, the completion state, or the error state.
+  Read-only, own ratings only, current run only — see `openspec` change
+  `update-inter-rater-reviewer-ux`, design decision 1, for the anchoring-versus-
+  drift trade-off behind allowing it mid-run.
+- **In-app navigation.** The task is kept alive across a detour to FAQ or About,
+  so returning issues no allocation request and shows no loading state.
+- **Retained state has two scopes.** *Position* belongs to one
+  `allocation_snapshot_id` and is discarded when the pool changes. *Which prompts
+  the reviewer has already rated* belongs to the reviewer and survives any pool
+  change — it masks the window in which a worker that did not take the submission
+  is still waiting on Phoenix propagation. Conflating the two is what previously
+  let a capacity refusal suppress a prompt the reviewer never rated.
+- **Refusals are distinguishable.** `ALREADY_RATED`, `AT_CAPACITY` and
+  `OUT_OF_POOL` are separate statuses. A reviewer's own duplicate is reported as
+  such, not as a concurrency loss.
+- Only an authoritative history response prunes the local rated-prompt record —
+  never a size cap or timeout, which could lift the mask before propagation
+  completes.
+
 ## Anonymity & Privacy
 - Anonymous IDs: `anonymous_id_service` hashes the Cognito `sub` with an environment-specific salt, producing `anon_<16-hex>` IDs
 - No client IP collection/logging/export
@@ -498,6 +585,17 @@ Plus:
   - **Requires Authentication**: Cognito JWT token in Authorization header
 - `GET /api/inter-rater/sessions`
   - Returns the list of sessions available to the current user
+  - Also returns `allocation_snapshot_id`, identifying the exact pool snapshot the
+    allocation came from. The client keys its saved position on this, so a reseed
+    cannot resurrect a stale allocation. Distinct from the cohort fingerprint,
+    which is derived from manifest `qa_id`s, is `None` in ad-hoc mode, and is
+    deliberately stable across span churn.
+  - **Requires Authentication**: Cognito JWT token in Authorization header
+- `GET /api/inter-rater/history`
+  - Returns the requesting reviewer's **own** recorded ratings for the current
+    pool: prompt, rated answer, scores, per-criterion rationales, fault tags.
+  - Read-only. Scoping is server-side by `rater_id` taken from the request — a
+    reviewer cannot ask for anyone else's ratings, and there is no write counterpart.
   - **Requires Authentication**: Cognito JWT token in Authorization header
 - `POST /api/feedback`
   - Submits both regular and inter-rater feedback; inter-rater metadata is set server-side
@@ -518,6 +616,19 @@ Plus:
   filled — the gate rejects it and the dashboard fetches replacement work.
 - Per-user navigation statistics have a five-minute cache and are invalidated after submission.
 - Submission count/write operations are serialized by a Redis lock scoped to project and span.
+- **Pool membership is checked before that lock is taken.** Membership does not
+  race with other submissions, and the check can be a cold Phoenix query — the
+  pool cache expires in 60s while reviewers take minutes to rate. Holding the
+  span lock across it would starve the other reviewers of the same prompt, who
+  give up after `LOCK_WAIT_SECONDS`.
+- **Membership comes from a Redis-shared pool snapshot**, not a per-worker cache.
+  Production runs 8-16 Gunicorn workers, each of which would otherwise hold its
+  own 60s pool cache and could reject a span another worker had just served.
+  Refresh is guarded by a lock whose wait is
+  `INTER_RATER_POOL_REFRESH_LOCK_WAIT_SECONDS` (default 30s, validated at startup).
+- A submission for a span outside the current pool is refused server-side and
+  fails closed if membership cannot be established. Client-supplied `qa_id` or
+  snapshot identifiers are never treated as proof of membership.
 - The dashboard requests replacement work after `session_unavailable` until its configured quota is complete.
 
 ## The study pool
@@ -612,6 +723,18 @@ python3 -c "import json,os; d=json.load(open(os.environ['INTER_RATER_POOL_MANIFE
   - Confirm the six current Likert scales and any required rationales appear in Phoenix
 - **Duplicate rating prevented**: Backend checks if the same rater already rated the same original span
 - **Submission asks reviewer to retry**: verify Redis and Phoenix availability; the cap guard fails closed
+- **Phoenix shows the project as empty (0 traces, 0 spans) after ratings**:
+  - Inter-rating writes **span annotations onto existing spans**. It creates no
+    new spans or traces, so the counts never move when a rating is recorded.
+  - The Phoenix project view filters by span age. Seeded spans keep their
+    original timestamps, so a pool seeded more than the filter window ago
+    disappears from the UI entirely. Widen the time range to 30 days or all time.
+  - `make rater-check` lists rated spans newest-first by rating time; paste a
+    span id into Phoenix search to open it directly.
+- **A prompt is refused as out of pool**: the pool changed (reseed, span churn)
+  after the reviewer was served it. Expected; the dashboard fetches replacement
+  work. If it happens to every submission, the shared snapshot is stale or
+  Redis is unreachable — check the backend log for "Cannot establish current pool".
 
 ## Recent Fixes
 

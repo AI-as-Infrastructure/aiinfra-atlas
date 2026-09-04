@@ -188,15 +188,15 @@ rater-check: ## Read-only pre-flight for inter-rating: pool saturation, cohort s
 		echo "" && echo "=== annotation shapes and recent ratings ===" && \
 		.venv/bin/python utils/scripts/inter_rater_annotation_check.py
 
-rater-load: ## Run the inter-rater concurrency test (REQUIRES an explicit scratch REDIS_URL)
-	@if [ -z "$$REDIS_URL" ]; then \
-		echo "ERROR: set REDIS_URL to a scratch Redis DB, not the one the app is using."; \
-		echo "  e.g. REDIS_URL=redis://localhost:6379/15 make rater-load"; \
-		exit 1; \
-	fi
+rater-load: ## Run the inter-rater concurrency test on a scratch Redis DB (default 15)
+	@if [ ! -d ".venv" ]; then echo "ERROR: .venv not found — run setup first"; exit 1; fi
 	@if ! .venv/bin/python -c "import pytest" 2>/dev/null; then \
 		echo "ERROR: pytest not installed. pip install -r config/requirements-test.txt"; \
 		exit 1; \
 	fi
-	@.venv/bin/python -m pytest tests/backend/services/test_inter_rater_concurrency.py -v
+	@$(resolve_seed_env); \
+		SCRATCH=$$(.venv/bin/python utils/scripts/scratch_redis_url.py) || exit 1; \
+		echo "Scratch Redis: $${SCRATCH%%//*}//…/$${SCRATCH##*/}  (app keyspace untouched)"; \
+		REDIS_URL="$$SCRATCH" .venv/bin/python -m pytest \
+			tests/backend/services/test_inter_rater_concurrency.py -v
 
