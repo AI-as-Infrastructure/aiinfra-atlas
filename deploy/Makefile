@@ -194,7 +194,7 @@ rater-check: ## Read-only pre-flight for inter-rating: pool saturation, cohort s
 
 rater-load: ## Run the inter-rater load test (production env and isolated pytest deps by default)
 	@if [ ! -d ".venv" ]; then echo "ERROR: .venv not found — run setup first"; exit 1; fi
-	@DEPS_DIR="$${RATER_LOAD_DEPS_DIR:-/tmp/atlas-rater-load-deps}"; \
+	@DEPS_DIR="$${RATER_LOAD_DEPS_DIR:-.rater-load-deps}"; \
 		PYTHONPATH="$$DEPS_DIR$${PYTHONPATH:+:$$PYTHONPATH}"; \
 		if [ ! -d "$$DEPS_DIR/pytest" ] || [ ! -d "$$DEPS_DIR/pytest_asyncio" ]; then \
 			echo "Installing isolated rater-load test dependencies in $$DEPS_DIR"; \

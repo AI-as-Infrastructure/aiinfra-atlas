@@ -151,3 +151,6 @@ data/seed_pool.json
 .claude/workflows
 .claude/routines
 .claude/output-styles
+
+# Isolated pytest deps for `make rater-load` (never installed into .venv)
+.rater-load-deps/
