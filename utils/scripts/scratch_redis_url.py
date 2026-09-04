@@ -33,7 +33,12 @@ def main() -> int:
 
     parsed = urlparse(url)
     if not parsed.hostname:
-        print(f"REDIS_URL has no host: {url!r}", file=sys.stderr)
+        # Never echo the URL: REDIS_URL carries the password in production, and
+        # this message reaches terminals, CI logs and pasted output.
+        print(
+            "REDIS_URL has no host — expected redis://[:password@]host:port/db",
+            file=sys.stderr,
+        )
         return 1
 
     query_items = parse_qsl(parsed.query, keep_blank_values=True)

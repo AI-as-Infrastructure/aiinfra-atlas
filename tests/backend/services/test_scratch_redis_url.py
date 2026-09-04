@@ -39,3 +39,15 @@ def test_rejects_invalid_scratch_database(monkeypatch, capsys):
 
     assert scratch_redis_url.main() == 1
     assert "must be a non-negative integer" in capsys.readouterr().err
+
+
+def test_malformed_url_error_does_not_echo_credentials(monkeypatch, capsys):
+    """REDIS_URL carries the password in production; errors must not print it."""
+    monkeypatch.setenv("REDIS_URL", "redis://:SUPERSECRET@/1")
+
+    assert scratch_redis_url.main() == 1
+
+    captured = capsys.readouterr()
+    assert "SUPERSECRET" not in captured.err
+    assert "SUPERSECRET" not in captured.out
+    assert "REDIS_URL has no host" in captured.err
