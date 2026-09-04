@@ -212,8 +212,9 @@ Open the first item — question, answer, and sources.
   (Refusal is correct. We need to know whether it says you *already rated it*,
   or that it is *no longer available* — those mean different things.)
 
-If the organiser has asked you to rate a specific item someone else has already
-rated, do that one now and note anything unusual: ______
+If the organiser has named a specific question for you to rate — one another
+reviewer has already rated — find it in your list and do that one now. Note
+anything unusual, and whether it looked any different from the others: ______
 
 ## 5. Moving around mid-task
 

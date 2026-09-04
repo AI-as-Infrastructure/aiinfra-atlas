@@ -104,15 +104,34 @@ async def main() -> int:
         print(f"  first three span_ids: {first}")
 
     ids = {u: {s["span_id"] for s in q} for u, q in queues.items()}
+    questions = {
+        session["span_id"]: session.get("question", "")
+        for queue in queues.values()
+        for session in queue
+    }
     users = sorted(ids)
     for i, a in enumerate(users):
         for b in users[i + 1:]:
-            shared = len(ids[a] & ids[b])
-            print(f"\nOverlap {a[:12]} / {b[:12]}: {shared} shared of {per_user}")
+            shared = ids[a] & ids[b]
+            print(f"\nOverlap {a[:12]} / {b[:12]}: {len(shared)} shared of {per_user}")
             if ids[a] == ids[b]:
                 print("  *** identical queues — balanced allocation is not active ***")
             expected = len(sessions) * max_ratings * (max_ratings - 1) / (reviewers * (reviewers - 1))
             print(f"  expected ~{expected:.1f} for this design")
+
+            # Naming the shared prompts is what makes multi-rater testing
+            # possible: overlap for any one pair is small (and ~4% of pairs in
+            # a 20-reviewer design share nothing), so it cannot be left to luck.
+            if shared:
+                print("  both reviewers are served these — ask the second to rate one:")
+                for span_id in sorted(shared):
+                    question = " ".join(questions.get(span_id, "").split())
+                    if len(question) > 80:
+                        question = question[:77] + "..."
+                    print(f"    {span_id}  {question}")
+            else:
+                print("  *** no shared prompts — this pair cannot exercise "
+                      "multi-rater attribution ***")
 
     return 0
 

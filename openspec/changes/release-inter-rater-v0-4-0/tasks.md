@@ -115,9 +115,21 @@ Pick one approach. The first needs no settings churn and is preferred.
       button within it, are unreachable at 19. Allow about an hour. Tell them
       the ratings are test data and will be deleted by `make seed-reset`, so
       they need not hold back
-- [ ] **Task 3.6c**: Nominate one prompt the first reviewer already rated and
-      ask the second tester to rate that specific one, so §4 of the walkthrough
-      exercises the multi-rater path
+- [ ] **Task 3.6c**: Exercise the multi-rater path. It cannot be left to luck:
+      a reviewer pair shares only ~3 prompts of 20 on this design, the first two
+      slots share as few as 1, and about 4% of pairs share none at all.
+      Sequence:
+      1. Have **both** testers sign in before either starts rating. Signing in
+         claims a cohort slot; queues are fixed from that point.
+      2. `make rater-check`. The pre-flight now lists, for each pair of
+         allocated reviewers, the prompts they both hold — span id and the
+         opening of the question.
+      3. If it reports no shared prompts for the pair, say so and stop: this
+         pair cannot exercise attribution, and a third tester is needed.
+      4. Otherwise quote one shared question to the second tester and ask them
+         to rate that one, as §4 of the walkthrough prompts.
+      5. Afterwards `make rater-check` again: that span should show 2 rating
+         groups, both attributable, zero collisions
 - [x] **Task 3.7**: `make backup-prod` and confirm `Hansard-Interrating` appears
       in the backup output
 - [x] **Task 3.8**: Export or note the pilot annotations, then confirm the
