@@ -8,11 +8,29 @@ from typing import AsyncIterator, Dict, Optional
 
 
 class InterRaterPoolSnapshotRegistry:
-    """Share one short-lived pool snapshot across all Gunicorn workers."""
+    """Share one canonical span-membership snapshot across all workers."""
 
     TTL_SECONDS = 60
     LOCK_TIMEOUT_SECONDS = 120
-    LOCK_WAIT_SECONDS = 60
+    LOCK_WAIT_SECONDS_ENV = "INTER_RATER_POOL_REFRESH_LOCK_WAIT_SECONDS"
+    DEFAULT_LOCK_WAIT_SECONDS = 30
+
+    @classmethod
+    def lock_wait_seconds(cls) -> float:
+        raw_value = os.getenv(
+            cls.LOCK_WAIT_SECONDS_ENV, str(cls.DEFAULT_LOCK_WAIT_SECONDS)
+        )
+        try:
+            value = float(raw_value)
+        except ValueError as error:
+            raise ValueError(
+                f"{cls.LOCK_WAIT_SECONDS_ENV} must be a positive number"
+            ) from error
+        if value <= 0:
+            raise ValueError(
+                f"{cls.LOCK_WAIT_SECONDS_ENV} must be a positive number"
+            )
+        return value
 
     def _key(self, project_name: str) -> str:
         digest = hashlib.sha256(project_name.encode("utf-8")).hexdigest()
@@ -77,7 +95,7 @@ class InterRaterPoolSnapshotRegistry:
         lock = client.lock(
             self._lock_key(project_name),
             timeout=self.LOCK_TIMEOUT_SECONDS,
-            blocking_timeout=self.LOCK_WAIT_SECONDS,
+            blocking_timeout=self.lock_wait_seconds(),
         )
         acquired = False
         try:

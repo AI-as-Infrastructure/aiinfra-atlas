@@ -179,7 +179,14 @@ export const useInterRaterStore = defineStore('interRater', () => {
     persist()
   }
 
-  function resetRun(preservePosition = false) {
+  function completeRun() {
+    allocation.value = []
+    currentIndex.value = 0
+    validated.value = true
+    persist()
+  }
+
+  function resetReviewerState(preservePosition = false) {
     allocation.value = []
     if (!preservePosition) currentIndex.value = 0
     completedCount.value = 0
@@ -235,7 +242,8 @@ export const useInterRaterStore = defineStore('interRater', () => {
     markRated,
     markUnavailable,
     pruneConfirmed,
-    resetRun,
+    completeRun,
+    resetReviewerState,
     fetchConfig,
     refresh,
   }

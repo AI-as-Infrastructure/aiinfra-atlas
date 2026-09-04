@@ -48,11 +48,13 @@ def _stub(monkeypatch, name, **attrs):
 class _PoolSnapshotRegistry:
     def __init__(self):
         self.snapshot = None
+        self.publish_count = 0
 
     async def get(self, _project_name):
         return self.snapshot
 
     async def publish(self, _project_name, snapshot_id, span_ids):
+        self.publish_count += 1
         self.snapshot = {
             "snapshot_id": snapshot_id,
             "span_ids": list(span_ids),
@@ -149,6 +151,7 @@ async def test_missing_shared_snapshot_refreshes_without_citations(wired):
         "backend.services.inter_rater_pool_snapshot"
     ].inter_rater_pool_snapshot_registry
     registry.snapshot = None
+    registry.publish_count = 0
     query.reset_mock()
 
     span_ids = await service.span_ids_in_current_pool()
@@ -156,6 +159,25 @@ async def test_missing_shared_snapshot_refreshes_without_citations(wired):
     assert span_ids == {session["span_id"] for session in _pool(author="anon_0")}
     assert query.await_args.kwargs["include_citations"] is False
     assert registry.snapshot["span_ids"] == sorted(span_ids)
+    assert registry.publish_count == 1
+
+
+async def test_citation_variants_share_one_membership_snapshot(wired):
+    service, _ = wired
+
+    with_citations, _, with_snapshot = await service._get_pool(
+        include_citations=True,
+        force_refresh=True,
+    )
+    without_citations, _, without_snapshot = await service._get_pool(
+        include_citations=False,
+        force_refresh=True,
+    )
+
+    assert with_snapshot == without_snapshot
+    assert {session["span_id"] for session in with_citations} == {
+        session["span_id"] for session in without_citations
+    }
 
 
 async def test_author_id_never_reaches_the_caller(wired):

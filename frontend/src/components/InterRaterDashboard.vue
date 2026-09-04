@@ -36,6 +36,13 @@
         <p v-else class="subtitle is-6">
           No sessions are currently available for inter-rating.
         </p>
+        <button
+          v-if="hasCompletedAllSessions && completedSessions > 0"
+          class="button is-small history-button mt-3"
+          @click="showHistory = true"
+        >
+          Review my ratings ({{ completedSessions }})
+        </button>
       </div>
     </div>
 
@@ -228,8 +235,7 @@ export default {
       hasCompletedAllSessions.value = true
       successMessage.value = `All sessions completed! You've successfully rated ${store.completedCount} sessions.`
       showSuccessMessage.value = true
-      store.resetRun()
-      store.validated = true
+      store.completeRun()
 
       setTimeout(() => {
         showSuccessMessage.value = false
@@ -319,7 +325,7 @@ export default {
         (name) => {
           if (!store.setReviewer(name)) return
 
-          store.resetRun(store.reviewerResolved())
+          store.resetReviewerState(store.reviewerResolved())
           hasCompletedAllSessions.value = false
           if (store.reviewerResolved()) {
             requestSessions(true)

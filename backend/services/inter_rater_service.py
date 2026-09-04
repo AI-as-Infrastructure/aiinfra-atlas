@@ -205,7 +205,10 @@ class InterRaterService:
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     async def _get_pool(
-        self, include_citations: bool, force_refresh: bool = False
+        self,
+        include_citations: bool,
+        force_refresh: bool = False,
+        publish_shared: bool = True,
     ) -> tuple[List[Dict[str, Any]], Optional[str], str]:
         """
         Return (study pool, cohort fingerprint, allocation snapshot id), cached
@@ -255,19 +258,20 @@ class InterRaterService:
             'snapshot_id': snapshot_id,
             'timestamp': datetime.now().timestamp(),
         }
-        try:
-            from .inter_rater_pool_snapshot import inter_rater_pool_snapshot_registry
+        if publish_shared:
+            try:
+                from .inter_rater_pool_snapshot import inter_rater_pool_snapshot_registry
 
-            await inter_rater_pool_snapshot_registry.publish(
-                self.project_name,
-                snapshot_id,
-                [session["span_id"] for session in sessions if session.get("span_id")],
-            )
-        except Exception as error:
-            logger.warning(
-                "Could not publish shared inter-rater pool snapshot: "
-                f"{type(error).__name__}"
-            )
+                await inter_rater_pool_snapshot_registry.publish(
+                    self.project_name,
+                    snapshot_id,
+                    [session["span_id"] for session in sessions if session.get("span_id")],
+                )
+            except Exception as error:
+                logger.warning(
+                    "Could not publish shared inter-rater pool snapshot: "
+                    f"{type(error).__name__}"
+                )
         return sessions, fingerprint, snapshot_id
 
     def _validate_study_capacity(self, sessions: List[Dict[str, Any]], fingerprint: Optional[str]) -> None:
@@ -352,6 +356,7 @@ class InterRaterService:
             pool_sessions, _, snapshot_id = await self._get_pool(
                 include_citations=False,
                 force_refresh=True,
+                publish_shared=False,
             )
             span_ids = [
                 session["span_id"]
