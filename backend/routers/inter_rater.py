@@ -95,8 +95,13 @@ async def get_inter_rater_history(request: Request):
                 "pool_span_ids": [],
             }
 
+        # Citations are not rendered by the history view, and fetching them
+        # costs a second Phoenix spans query for the REFERENCES spans
+        # (phoenix_client._fetch_citations_by_qa_id). Skipping them also shares
+        # the pool cache with the stats endpoint and the membership refresh,
+        # so this call is far more often warm.
         pool_sessions, _, snapshot_id = await inter_rater_service._get_pool(
-            include_citations=True
+            include_citations=False
         )
         span_ids = [s["span_id"] for s in pool_sessions if s.get("span_id")]
         if not await annotations_cache.refresh_spans(span_ids):
@@ -118,7 +123,6 @@ async def get_inter_rater_history(request: Request):
                 "qa_id": session.get("qa_id"),
                 "question": session.get("question"),
                 "answer": session.get("answer"),
-                "citations": session.get("citations", []),
                 **rating,
             })
 

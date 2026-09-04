@@ -39,32 +39,51 @@
           below yet. This list is incomplete.
           <button class="button is-small ml-2" @click="load">Retry</button>
         </div>
-        <article v-for="entry in ratings" :key="entry.span_id" class="history-entry">
+        <article v-for="(entry, index) in ratings" :key="entry.span_id" class="history-entry">
+          <p class="history-index">{{ index + 1 }} of {{ ratings.length }}</p>
           <h4 class="history-question">{{ entry.question }}</h4>
 
-          <div class="history-answer content" v-html="renderAnswer(entry.answer)"></div>
+          <!-- The material being rated: recessive, scrollable, clearly quoted. -->
+          <section class="history-source">
+            <p class="history-label">Answer you rated</p>
+            <div class="history-answer content" v-html="renderAnswer(entry.answer)"></div>
+          </section>
 
-          <table class="history-scores">
-            <tbody>
-              <tr v-for="criterion in CRITERIA" :key="criterion.key">
-                <th>{{ criterion.label }}</th>
-                <td class="history-score">{{ display(entry.scores[criterion.key]) }}</td>
-                <td class="history-rationale">{{ entry.rationales[criterion.key] || '—' }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <!-- The reviewer's own judgement: the thing they came to compare. -->
+          <section class="history-rating">
+            <p class="history-label">Your rating</p>
+            <table class="history-scores">
+              <tbody>
+                <tr v-for="criterion in CRITERIA" :key="criterion.key">
+                  <th>{{ criterion.label }}</th>
+                  <td class="history-score">
+                    <span
+                      v-for="n in 5"
+                      :key="n"
+                      class="score-pip"
+                      :class="{ filled: entry.scores[criterion.key] >= n }"
+                    ></span>
+                    <span class="score-value">{{ display(entry.scores[criterion.key]) }}</span>
+                  </td>
+                  <td class="history-rationale">{{ entry.rationales[criterion.key] || '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
 
-          <p class="history-faults">
-            <strong>Faults:</strong>
-            <span v-if="entry.faults.length">{{ entry.faults.join(', ') }}</span>
-            <span v-else>none recorded</span>
-          </p>
-          <p v-if="entry.faults_rationale" class="history-note">
-            <strong>Fault rationale:</strong> {{ entry.faults_rationale }}
-          </p>
-          <p v-if="entry.additional_comments" class="history-note">
-            <strong>Additional comments:</strong> {{ entry.additional_comments }}
-          </p>
+            <p class="history-faults">
+              <span class="history-faults-label">Faults</span>
+              <span v-if="entry.faults.length" class="history-fault-tags">
+                <span v-for="fault in entry.faults" :key="fault" class="fault-tag">{{ fault }}</span>
+              </span>
+              <span v-else class="history-none">none recorded</span>
+            </p>
+            <p v-if="entry.faults_rationale" class="history-note">
+              <span class="history-faults-label">Fault rationale</span> {{ entry.faults_rationale }}
+            </p>
+            <p v-if="entry.additional_comments" class="history-note">
+              <span class="history-faults-label">Additional comments</span> {{ entry.additional_comments }}
+            </p>
+          </section>
         </article>
       </div>
     </div>
@@ -183,7 +202,7 @@ onMounted(load)
 }
 
 .history-entry {
-  padding: 1.25rem 0;
+  padding: 1.5rem 0 1.75rem;
   border-bottom: 1px solid #e9ecef;
 }
 
@@ -191,50 +210,140 @@ onMounted(load)
   border-bottom: none;
 }
 
+.history-index {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #adb5bd;
+  margin-bottom: 0.35rem;
+}
+
 .history-question {
   font-size: 1rem;
   font-weight: 600;
   color: #111;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.9rem;
+}
+
+/* Small caps label so the two halves of an entry announce themselves without
+   adding colour to a deliberately monochrome palette. */
+.history-label {
+  font-size: 0.68rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #adb5bd;
+  margin-bottom: 0.4rem;
+}
+
+/* The rated material: recessive, quoted, and obviously not the reviewer's. */
+.history-source {
+  padding-left: 0.85rem;
+  border-left: 2px solid #dee2e6;
+  margin-bottom: 1.1rem;
 }
 
 .history-answer {
-  max-height: 12rem;
+  max-height: 11rem;
   overflow-y: auto;
-  padding: 0.75rem;
-  margin-bottom: 0.75rem;
+  padding: 0.7rem 0.85rem;
   background: #f8f9fa;
+  border-radius: 3px;
+  font-size: 0.86rem;
+  color: #495057;
+}
+
+/* The reviewer's own judgement: foreground, on white, framed. */
+.history-rating {
+  padding: 0.9rem 1rem 0.75rem;
+  border: 1px solid #dee2e6;
   border-radius: 4px;
-  font-size: 0.9rem;
+  background: #fff;
 }
 
 .history-scores {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.875rem;
+  font-size: 0.85rem;
+}
+
+.history-scores tr + tr th,
+.history-scores tr + tr td {
+  border-top: 1px solid #f1f3f5;
 }
 
 .history-scores th {
-  width: 14rem;
-  padding: 0.25rem 0.5rem 0.25rem 0;
+  width: 13rem;
+  padding: 0.4rem 0.5rem 0.4rem 0;
   text-align: left;
-  font-weight: 600;
+  font-weight: 500;
   color: #495057;
 }
 
 .history-score {
-  width: 3rem;
+  width: 6.5rem;
+  white-space: nowrap;
+  padding: 0.4rem 0.75rem 0.4rem 0;
+}
+
+/* Five pips make a run of scores scannable down the column, which is the
+   whole point of looking back at your own ratings. */
+.score-pip {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 3px;
+  border-radius: 50%;
+  border: 1px solid #ced4da;
+  vertical-align: middle;
+}
+
+.score-pip.filled {
+  background: #363636;
+  border-color: #363636;
+}
+
+.score-value {
+  margin-left: 0.4rem;
   font-variant-numeric: tabular-nums;
+  color: #363636;
+  font-weight: 600;
 }
 
 .history-rationale {
   color: #6c757d;
+  padding: 0.4rem 0;
 }
 
 .history-faults,
 .history-note {
-  margin-top: 0.5rem;
-  font-size: 0.875rem;
+  margin-top: 0.7rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid #f1f3f5;
+  font-size: 0.85rem;
+  color: #495057;
+}
+
+.history-faults-label {
+  display: inline-block;
+  min-width: 9.5rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #adb5bd;
+}
+
+.fault-tag {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  margin-right: 0.35rem;
+  border: 1px solid #ced4da;
+  border-radius: 3px;
+  font-size: 0.78rem;
+  color: #363636;
+}
+
+.history-none {
+  color: #adb5bd;
 }
 
 .loading-spinner {
