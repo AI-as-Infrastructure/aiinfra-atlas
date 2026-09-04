@@ -11,10 +11,19 @@ logger = logging.getLogger(__name__)
 
 
 class SubmissionStatus(str, Enum):
-    """Outcome of an inter-rater submission attempt."""
+    """
+    Outcome of an inter-rater submission attempt.
+
+    The refusals are distinct because the client cannot tell them apart
+    otherwise: "you already rated this" and "someone else filled it" are
+    different facts for the reviewer, and collapsing them reported a reviewer's
+    own duplicate as a concurrency loss (#72).
+    """
 
     SUCCESS = "success"
-    UNAVAILABLE = "session_unavailable"
+    ALREADY_RATED = "already_rated"
+    AT_CAPACITY = "at_capacity"
+    OUT_OF_POOL = "out_of_pool"
     ERROR = "error"
 
 
@@ -80,6 +89,24 @@ class InterRaterSubmissionGate:
 
         try:
             async with self._span_lock(annotations_cache.project_name, span_id):
+                # Pool membership first: a span rehydrated from stale client
+                # state must not be rated just because it still has capacity.
+                # Never trust a client-supplied qa_id or snapshot id for this.
+                try:
+                    from backend.services.inter_rater_service import inter_rater_service
+
+                    pool_span_ids = await inter_rater_service.span_ids_in_current_pool()
+                except Exception as error:
+                    logger.error(
+                        "Cannot establish current pool; submission not attempted: "
+                        f"{type(error).__name__}"
+                    )
+                    return SubmissionStatus.ERROR
+
+                if span_id not in pool_span_ids:
+                    logger.info("Inter-rater submission rejected: span not in current pool")
+                    return SubmissionStatus.OUT_OF_POOL
+
                 refreshed = await annotations_cache.refresh_span(span_id)
                 if not refreshed:
                     logger.error("Cannot verify inter-rater capacity; submission not attempted")
@@ -87,7 +114,7 @@ class InterRaterSubmissionGate:
 
                 if annotations_cache.check_user_already_rated(span_id, user_id):
                     logger.info("Inter-rater submission rejected: user already rated span")
-                    return SubmissionStatus.UNAVAILABLE
+                    return SubmissionStatus.ALREADY_RATED
 
                 existing = annotations_cache.get_inter_rater_count(span_id)
                 if existing >= max_ratings:
@@ -95,7 +122,7 @@ class InterRaterSubmissionGate:
                         "Inter-rater submission rejected: span at max_ratings "
                         f"({existing}/{max_ratings})"
                     )
-                    return SubmissionStatus.UNAVAILABLE
+                    return SubmissionStatus.AT_CAPACITY
 
                 success = await self._submit_annotation(span_id, feedback_data, qa_id)
                 if not success:

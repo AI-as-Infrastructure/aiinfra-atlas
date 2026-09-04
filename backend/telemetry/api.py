@@ -196,12 +196,26 @@ async def submit_feedback(feedback: Union[InterRaterFeedback, UserFeedback] if I
                 qa_id,
                 allocation_ir_service.max_ratings,
             )
-            if submission_status == SubmissionStatus.UNAVAILABLE:
+            # Distinct refusal reasons: the reviewer needs to know whether they
+            # already rated this prompt or whether someone else filled it.
+            refusals = {
+                SubmissionStatus.ALREADY_RATED: (
+                    "already_rated",
+                    "You have already rated this prompt.",
+                ),
+                SubmissionStatus.AT_CAPACITY: (
+                    "session_unavailable",
+                    "This prompt has already received all the ratings it needs.",
+                ),
+                SubmissionStatus.OUT_OF_POOL: (
+                    "out_of_pool",
+                    "This prompt is no longer part of the current rating set.",
+                ),
+            }
+            if submission_status in refusals:
                 allocation_ir_service.invalidate_user_cache(anon_user_id)
-                return FeedbackResponse(
-                    message="This inter-rating session is no longer available.",
-                    status="session_unavailable",
-                )
+                status_value, message = refusals[submission_status]
+                return FeedbackResponse(message=message, status=status_value)
             if submission_status == SubmissionStatus.ERROR:
                 return FeedbackResponse(
                     message="Unable to verify or record this inter-rating. Please retry.",

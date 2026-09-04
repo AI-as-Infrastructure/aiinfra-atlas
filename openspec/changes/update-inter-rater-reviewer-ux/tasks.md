@@ -11,40 +11,40 @@
 ## 1. Tooltip rendering (#70) — independent of 2-5
 - [ ] 1.1 Reproduce in Chrome and record the actual cause: hover-target size,
       `<label>` hit-testing, or both. Note it on #70.
-- [ ] 1.2 Replace the native `title` mechanism in
+- [x] 1.2 Replace the native `title` mechanism in
       `frontend/src/components/InterRaterPlayback.vue` (rubric tooltips at lines
       104, 144, 184, 224, 264, 304; fault tooltips at 355, 366) with an
       application-rendered tooltip driven by a data attribute.
-- [ ] 1.3 Apply the same treatment to the standard extended feedback form so both
+- [x] 1.3 Apply the same treatment to the standard extended feedback form so both
       form variants share one mechanism.
-- [ ] 1.4 Enlarge the ⓘ hover target to at least 16×16 CSS pixels.
-- [ ] 1.5 Add viewport-edge handling so no tooltip is clipped.
-- [ ] 1.6 Resolve `frontend/src/components/CitationList.vue:7-8`, where
+- [x] 1.4 Enlarge the ⓘ hover target to at least 16×16 CSS pixels.
+- [x] 1.5 Add viewport-edge handling so no tooltip is clipped.
+- [x] 1.6 Resolve `frontend/src/components/CitationList.vue:7-8`, where
       `has-tooltip-arrow` names a Bulma extension the project does not load:
       back it with real behaviour or remove the class.
 - [ ] 1.7 Verify every rubric and fault definition renders on hover in Chrome,
       Firefox and Safari, and that the text matches the `feedback` spec.
 
 ## 2. Citation hover card (#71) — independent of 1, 3-5
-- [ ] 2.1 Replace the fixed `left: 50%; transform: translateX(-50%)` placement at
+- [x] 2.1 Replace the fixed `left: 50%; transform: translateX(-50%)` placement at
       `InterRaterPlayback.vue:972-981` with collision-aware positioning.
-- [ ] 2.2 Resolve the clipping from `overflow: hidden` on
+- [x] 2.2 Resolve the clipping from `overflow: hidden` on
       `.message-style-container` (line 793) — relax it or render the card outside
       the container.
-- [ ] 2.3 Check upward vs downward opening so the card does not conceal the
+- [x] 2.3 Check upward vs downward opening so the card does not conceal the
       answer text being rated.
 - [ ] 2.4 Verify the leftmost, rightmost and wrapped-row citations all show a
       fully visible card.
-- [ ] 2.5 Check the same pattern in the standard chat view, which shares it.
+- [x] 2.5 Check the same pattern in the standard chat view, which shares it.
 
 ## 3. Run state and history source — prerequisite for 4 and 5
-- [ ] 3.1 Move the dashboard's run state out of `setup()` locals and into the
+- [x] 3.1 Move the dashboard's run state out of `setup()` locals and into the
       Pinia store: allocation, current index, completed count, and
       separate `recentlyRatedSpanIds` and `unavailableSpanIds` sets. The current
       `handledSpanIds` (`InterRaterDashboard.vue:126`) mixes successful ratings
       with `session_unavailable` refusals (lines 205-206 and 233-236) and cannot
       be persisted with one lifetime.
-- [ ] 3.2 Add an `allocation_snapshot_id` to the sessions response and persist
+- [x] 3.2 Add an `allocation_snapshot_id` to the sessions response and persist
       run *position* to session storage keyed per reviewer and by that id. This
       is **not** the cohort/manifest fingerprint: `inter_rater_pool.py:132-155`
       shows that fingerprint is `None` in ad-hoc mode and intentionally stable
@@ -72,7 +72,7 @@
       bounded live query would preserve spans the server no longer considers
       current. Study mode is protected because its manifest defines the run and
       the capacity validation raises when that pool is incomplete.
-- [ ] 3.2a Reject submissions for spans outside the current pool. The gate
+- [x] 3.2a Reject submissions for spans outside the current pool. The gate
       (`inter_rater_submission_gate.py:88-97`) checks already-rated and
       max_ratings but never manifest membership, so a stale span rehydrated
       from client state is currently accepted. Validate the submitted `span_id`
@@ -80,7 +80,7 @@
       client's `qa_id` or `allocation_snapshot_id`, and fail closed when current
       membership cannot be verified. Client-side snapshot checks are not
       sufficient on their own.
-- [ ] 3.2b Split `handledSpanIds` by outcome and lifetime. Add a span to
+- [x] 3.2b Split `handledSpanIds` by outcome and lifetime. Add a span to
       reviewer-scoped `recentlyRatedSpanIds` only after submission success or a
       distinct duplicate refusal confirming that this reviewer already rated
       it. A capacity or out-of-pool refusal SHALL NOT enter that set; if local
@@ -100,12 +100,12 @@
       recorded rating, then prune it after an authoritative history response
       confirms the rating. Do not use arbitrary size eviction or expiry that can
       remove the mask before server propagation completes.
-- [ ] 3.3 Add a read endpoint returning the requesting reviewer's own recorded
+- [x] 3.3 Add a read endpoint returning the requesting reviewer's own recorded
       ratings for the current pool, scoped server-side by `rater_id`. History is
       derived from this, not from client storage, so it survives a closed tab.
       Reuse the existing annotation path
       (`backend/services/annotations_cache.py:169-204`).
-- [ ] 3.4 Write an inter-rater score extractor in `annotations_cache.py`. None
+- [x] 3.4 Write an inter-rater score extractor in `annotations_cache.py`. None
       exists — every inter-rater function there returns counts or identities,
       never scores, and `get_user_feedback` is not reusable because it
       deliberately skips inter-rater annotations (line 107). Key it on the six
@@ -118,7 +118,7 @@
       missing. Match on the prefix, and handle the numberless fallback.
       Do NOT extend `_USER_FEEDBACK_NAMES` for this — that frozenset gates the
       baseline-feedback path, not this one.
-- [ ] 3.4a Filtering on `rater_id` alone loses data and is unsafe. Verified:
+- [x] 3.4a Filtering on `rater_id` alone loses data and is unsafe. Verified:
       score and Fault Rationale annotations carry `rater_id` via
       `get_annotation_metadata()`, but **fault tags** (`feedback.py:657`),
       **Additional Comments** (`feedback.py:672`) and the **per-scale comment
@@ -132,15 +132,15 @@
       any comment or rationale to this reviewer's history. Cover every
       metadata-poor annotation type in the tests, and prefer omitting an
       unjoinable annotation over guessing its author.
-- [ ] 3.4b (#76 updated 2026-09-03 to cover all three.) Metadata-poor types are
+- [x] 3.4b (#76 updated 2026-09-03 to cover all three.) Metadata-poor types are
       fault tags, Additional Comments and the ten per-scale comment annotations. Each lacks `is_inter_rater`,
       so metadata alone cannot distinguish an inter-rater annotation from a
       baseline reviewer's. Recoverable from the name prefix, with no live
       consumer before this history reader — the writer-format cleanup remains
       out of scope here.
-- [ ] 3.5 Fail loudly when the history read fails — say so, rather than
+- [x] 3.5 Fail loudly when the history read fails — say so, rather than
       rendering an empty history that reads as authoritative.
-- [ ] 3.6 Use the live Pinia state without refetching when `<KeepAlive>`
+- [x] 3.6 Use the live Pinia state without refetching when `<KeepAlive>`
       reactivates the route during an in-app return. After a reload or genuine
       remount, fetch the current sessions response first and rehydrate persisted
       position only when its `allocation_snapshot_id` matches; otherwise discard
@@ -150,24 +150,24 @@
       snapshot-scoped `unavailableSpanIds` set does not — see 3.2b.
 
 ## 4. Navigation and history (#72, #73) — depends on 3
-- [ ] 4.1 Wrap the `/inter-rater` route view in `<KeepAlive>` so an in-app
+- [x] 4.1 Wrap the `/inter-rater` route view in `<KeepAlive>` so an in-app
       detour does not unmount the dashboard.
-- [ ] 4.2 Suppress the full-page loading state
+- [x] 4.2 Suppress the full-page loading state
       (`InterRaterDashboard.vue:3-8`) when the allocation is already known.
-- [ ] 4.3 Filter rated spans from the presented allocation using the persisted
+- [x] 4.3 Filter rated spans from the presented allocation using the persisted
       `recentlyRatedSpanIds`, so Back and reload cannot re-present them. Filter
       snapshot-local capacity refusals with `unavailableSpanIds`, without
       treating them as ratings by this reviewer.
-- [ ] 4.4 Build the read-only rating history view: prompt, rated answer, own
+- [x] 4.4 Build the read-only rating history view: prompt, rated answer, own
       scores and fault tags. No editable control, no path back into a rating form.
-- [ ] 4.5 Gate history strictly to the requesting reviewer — verify no other
+- [x] 4.5 Gate history strictly to the requesting reviewer — verify no other
       reviewer's scores or identity can be reached from it.
-- [ ] 4.6 Make history reachable mid-run, and confirm opening it consumes,
+- [x] 4.6 Make history reachable mid-run, and confirm opening it consumes,
       forfeits and reorders nothing: the reviewer returns to the item they were
       rating with any in-progress scores intact.
-- [ ] 4.7 Scope history to the current run — verify a reviewer who rated in an
+- [x] 4.7 Scope history to the current run — verify a reviewer who rated in an
       earlier cohort sees only this allocation.
-- [ ] 4.8 Distinguish a refused duplicate from a full prompt. This needs a
+- [x] 4.8 Distinguish a refused duplicate from a full prompt. This needs a
       **backend** change first: the gate returns `SubmissionStatus.UNAVAILABLE`
       for both "already rated" (`inter_rater_submission_gate.py:88`) and "at
       max_ratings" (line 92), and `api.py:199-204` collapses both into one
@@ -178,15 +178,20 @@
       warm, raise that separately rather than absorbing it here.
 
 ## 5. Header count (#67) — depends on 3
-- [ ] 5.1 Dispatch `inter-rater-completed` after every successful submission in
+- [x] 5.1 Dispatch `inter-rater-completed` after every successful submission in
       `handleFeedbackSubmission`, not only from `showCompletionMessage`
       (`InterRaterDashboard.vue:293`).
-- [ ] 5.2 Remove the 3-second `setTimeout` from the refresh path.
+- [x] 5.2 Remove the 3-second `setTimeout` from the refresh path.
 - [ ] 5.3 Confirm the header count and the task view's completed count agree
       immediately after a submission.
-- [ ] 5.4 Keep the 5-minute poll in `InterRaterButton.vue:31` as a backstop.
+- [x] 5.4 Keep the 5-minute poll in `InterRaterButton.vue:31` as a backstop.
 
 ## 6. Validation
+> Remaining items need a running stack (browser, Redis, live Phoenix) and are
+> left unchecked deliberately. Everything above was implemented and verified by
+> build and unit test; nothing here has been ticked on the strength of code
+> reading alone.
+
 - [ ] 6.1 Full reviewer run in Chrome, Firefox and Safari: rate several items,
       detour to FAQ and About, use Back and Forward, reload mid-run, open
       history, and confirm no rated prompt is re-presented.
@@ -203,5 +208,5 @@
       snapshot-scoped unavailable state; a snapshot change clears the latter but
       not the former; authoritative history confirmation prunes the former
       without allowing the prompt to reappear.
-- [ ] 6.6 `openspec validate update-inter-rater-reviewer-ux --strict`
+- [x] 6.6 `openspec validate update-inter-rater-reviewer-ux --strict`
 - [ ] 6.7 Close #67, #70, #71, #72, #73 with the verifying evidence.

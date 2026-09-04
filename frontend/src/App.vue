@@ -40,7 +40,13 @@
     </header>
     <main>
       <div class="container">
-        <router-view />
+        <!-- #73: keep the inter-rating task mounted across an in-app detour
+             to FAQ or About, so returning does not refetch the allocation. -->
+        <router-view v-slot="{ Component }">
+          <KeepAlive :include="['InterRaterPage']">
+            <component :is="Component" />
+          </KeepAlive>
+        </router-view>
       </div>
     </main>
     <footer>

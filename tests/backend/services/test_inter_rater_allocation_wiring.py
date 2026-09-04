@@ -10,6 +10,7 @@ these run without the Phoenix package installed.
 """
 
 import json
+import os
 import sys
 import types
 from unittest.mock import AsyncMock
@@ -222,13 +223,19 @@ async def test_cached_pool_and_fingerprint_stay_paired_across_a_reseed(wired, tm
     service, query = wired
     from backend.services import inter_rater_pool as pool_module
 
-    before_sessions, before_fp = await service._get_pool(True)
+    before_sessions, before_fp, _ = await service._get_pool(True)
 
     # Re-seed: same path, new qa_ids, new mtime.
     manifest = tmp_path / "seed_pool.json"
     manifest.write_text(json.dumps({"qa_ids": [f"reseeded-{i}" for i in range(POOL_SIZE)]}))
+    # InterRaterPool.load invalidates on st_mtime_ns. Two writes inside the
+    # filesystem's mtime resolution can share a timestamp, which would leave the
+    # manifest cache warm and make the control assertion below vacuous. A real
+    # re-seed lands later than the first write, so say so explicitly.
+    stamp = os.stat(manifest).st_mtime_ns + 1_000_000_000
+    os.utime(manifest, ns=(stamp, stamp))
 
-    cached_sessions, cached_fp = await service._get_pool(True)
+    cached_sessions, cached_fp, _ = await service._get_pool(True)
 
     assert cached_sessions is before_sessions
     assert cached_fp == before_fp, "fingerprint advanced while the pool was still cached"

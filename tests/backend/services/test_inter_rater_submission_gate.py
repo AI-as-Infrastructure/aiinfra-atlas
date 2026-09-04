@@ -34,6 +34,21 @@ def gate_and_cache(monkeypatch):
         yield
 
     monkeypatch.setattr(gate, "_span_lock", unlocked)
+
+    # The gate now checks pool membership before capacity. These tests are
+    # about capacity, so default every span into the pool; the membership
+    # cases override this explicitly.
+    from backend.services import inter_rater_service as service_module
+
+    class _AnyPool:
+        def __contains__(self, _span_id):
+            return True
+
+    monkeypatch.setattr(
+        service_module.inter_rater_service,
+        "span_ids_in_current_pool",
+        AsyncMock(return_value=_AnyPool()),
+    )
     return gate, cache
 
 
@@ -49,7 +64,7 @@ async def test_rejects_span_at_capacity(gate_and_cache, monkeypatch):
 
     result = await gate.submit(span_id, "new-rater", {}, "qa-1", max_ratings=4)
 
-    assert result == SubmissionStatus.UNAVAILABLE
+    assert result == SubmissionStatus.AT_CAPACITY
     submit.assert_not_awaited()
 
 
@@ -88,5 +103,72 @@ async def test_concurrent_submissions_never_exceed_cap(gate_and_cache, monkeypat
     ])
 
     assert results.count(SubmissionStatus.SUCCESS) == 4
-    assert results.count(SubmissionStatus.UNAVAILABLE) == 4
+    assert results.count(SubmissionStatus.AT_CAPACITY) == 4
     assert cache.get_inter_rater_count(span_id) == 4
+
+
+@pytest.mark.asyncio
+async def test_rejects_span_outside_the_current_pool(gate_and_cache, monkeypatch):
+    """
+    A span rehydrated from stale client state must not be rated just because it
+    still has capacity. Membership is checked server-side, never from a
+    client-supplied qa_id or snapshot id.
+    """
+    gate, cache = gate_and_cache
+    from backend.services import inter_rater_service as service_module
+
+    monkeypatch.setattr(
+        service_module.inter_rater_service,
+        "span_ids_in_current_pool",
+        AsyncMock(return_value={"some-other-span"}),
+    )
+    refresh = AsyncMock(return_value=True)
+    monkeypatch.setattr(cache, "refresh_span", refresh)
+    submit = AsyncMock(return_value=True)
+    monkeypatch.setattr(gate, "_submit_annotation", submit)
+
+    result = await gate.submit("stale-span", "rater-1", {}, "qa-1", max_ratings=4)
+
+    assert result == SubmissionStatus.OUT_OF_POOL
+    submit.assert_not_awaited()
+    refresh.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_fails_closed_when_pool_cannot_be_established(gate_and_cache, monkeypatch):
+    """An unverifiable pool must refuse, not fall through to accepting."""
+    gate, cache = gate_and_cache
+    from backend.services import inter_rater_service as service_module
+
+    monkeypatch.setattr(
+        service_module.inter_rater_service,
+        "span_ids_in_current_pool",
+        AsyncMock(side_effect=RuntimeError("phoenix unreachable")),
+    )
+    submit = AsyncMock(return_value=True)
+    monkeypatch.setattr(gate, "_submit_annotation", submit)
+
+    result = await gate.submit("span-1", "rater-1", {}, "qa-1", max_ratings=4)
+
+    assert result == SubmissionStatus.ERROR
+    submit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_duplicate_is_distinct_from_capacity(gate_and_cache, monkeypatch):
+    """
+    The reviewer's own duplicate and a prompt filled by others are different
+    facts. Collapsing them reported a re-rating as a concurrency loss (#72).
+    """
+    gate, cache = gate_and_cache
+    span_id = "span-dup"
+    cache._by_span[span_id] = [_annotation(span_id, "rater-1")]
+    monkeypatch.setattr(cache, "refresh_span", AsyncMock(return_value=True))
+    submit = AsyncMock(return_value=True)
+    monkeypatch.setattr(gate, "_submit_annotation", submit)
+
+    result = await gate.submit(span_id, "rater-1", {}, "qa-1", max_ratings=4)
+
+    assert result == SubmissionStatus.ALREADY_RATED
+    assert result != SubmissionStatus.AT_CAPACITY
+    submit.assert_not_awaited()

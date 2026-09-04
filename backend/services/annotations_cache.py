@@ -12,6 +12,7 @@ loaded, all annotation lookups are local dict reads (<1ms).
 
 import logging
 import os
+import re
 import time
 import threading
 from collections import defaultdict
@@ -29,6 +30,47 @@ _USER_FEEDBACK_NAMES = frozenset([
 
 # Max span_ids per request (URL length safety — ~20 chars per ID)
 _BATCH_SIZE = 100
+
+# Inter-rater annotations are name-prefixed by feedback.get_annotation_name:
+# "[inter-rating-2] Corpus Fidelity", or "[Inter-rater] ..." when the rating
+# number was unavailable. The prefix is the only link between a rating's
+# metadata-poor annotations and their author.
+_INTER_RATER_NUMBERED = re.compile(r"^\[inter-rating-(\d+)\]\s+(.+)$")
+_INTER_RATER_UNNUMBERED = "[Inter-rater] "
+
+# Annotation base names written by the current (v0.4.0) rubric.
+_RUBRIC_SCORES = {
+    "Corpus Fidelity": "corpus_fidelity",
+    "Citation Quality": "citation_quality",
+    "Relevance Rating": "relevance",
+    "Coherence": "coherence",
+    "Uncertainty": "uncertainty",
+    "Historical Contextualisation": "historical_contextualisation",
+}
+_RUBRIC_RATIONALES = {
+    "Corpus Fidelity Comment": "corpus_fidelity",
+    "Citation Quality Comment": "citation_quality",
+    "Relevance Comment": "relevance",
+    "Coherence Comment": "coherence",
+    "Uncertainty Comment": "uncertainty",
+    "Historical Contextualisation Comment": "historical_contextualisation",
+}
+_FAULT_PREFIX = "Fault: "
+
+
+def _parse_inter_rater_name(name: str):
+    """
+    Split an inter-rater annotation name into (group_key, base_name).
+
+    Returns None for annotations that are not inter-rater prefixed. The group
+    key is the rating number, or "unnumbered" for the fallback prefix.
+    """
+    match = _INTER_RATER_NUMBERED.match(name)
+    if match:
+        return match.group(1), match.group(2)
+    if name.startswith(_INTER_RATER_UNNUMBERED):
+        return "unnumbered", name[len(_INTER_RATER_UNNUMBERED):]
+    return None
 
 
 class AnnotationsCache:
@@ -224,6 +266,88 @@ class AnnotationsCache:
             1 for span_id in relevant_span_ids
             if user_id in self.get_inter_rater_raters(span_id)
         )
+
+    def get_user_inter_rater_rating(
+        self, span_id: str, user_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Return one reviewer's own recorded rating for a span, or None.
+
+        Scores and the fault rationale carry `rater_id` in metadata, but fault
+        tags, Additional Comments and the per-scale comments do not
+        (backend/telemetry/feedback.py:657, 672, 690-715). They can only be
+        joined to their author through the shared `[inter-rating-N]` name
+        prefix, so that join is the disclosure risk for "own ratings only".
+
+        A group is attributed only when exactly one `rater_id` appears in it.
+        A group with no identity, or with colliding identities, is omitted
+        rather than guessed at.
+        """
+        with self._lock:
+            annotations = list(self._by_span.get(span_id, []))
+
+        groups: Dict[str, List[tuple]] = defaultdict(list)
+        for ann in annotations:
+            parsed = _parse_inter_rater_name(ann.get("name", "") or "")
+            if parsed is None:
+                continue
+            group_key, base_name = parsed
+            groups[group_key].append((base_name, ann))
+
+        for group_key, items in groups.items():
+            raters = {
+                ann.get("metadata", {}).get("rater_id")
+                for _, ann in items
+                if ann.get("metadata", {}).get("rater_id")
+            }
+            if len(raters) != 1:
+                # Unattributable: no identity, or more than one rater in the
+                # same group. Never fall back to guessing.
+                if raters:
+                    logger.warning(
+                        "Ambiguous inter-rating group; omitting from history"
+                    )
+                continue
+            if next(iter(raters)) != user_id:
+                continue
+            return self._build_rating(group_key, items)
+
+        return None
+
+    @staticmethod
+    def _build_rating(group_key: str, items: List[tuple]) -> Dict[str, Any]:
+        """Assemble one reviewer's scores, rationales and faults for a span."""
+        rating: Dict[str, Any] = {
+            "inter_rater_number": None if group_key == "unnumbered" else int(group_key),
+            "scores": {},
+            "rationales": {},
+            "faults": [],
+            "faults_rationale": None,
+            "additional_comments": None,
+            "timestamp": None,
+        }
+
+        for base_name, ann in items:
+            result = ann.get("result", {}) or {}
+            metadata = ann.get("metadata", {}) or {}
+
+            if rating["timestamp"] is None and metadata.get("inter_rater_timestamp"):
+                rating["timestamp"] = metadata["inter_rater_timestamp"]
+
+            if base_name in _RUBRIC_SCORES:
+                rating["scores"][_RUBRIC_SCORES[base_name]] = result.get("score")
+            elif base_name in _RUBRIC_RATIONALES:
+                rating["rationales"][_RUBRIC_RATIONALES[base_name]] = result.get(
+                    "explanation"
+                )
+            elif base_name.startswith(_FAULT_PREFIX):
+                rating["faults"].append(base_name[len(_FAULT_PREFIX):])
+            elif base_name == "Fault Rationale":
+                rating["faults_rationale"] = result.get("explanation")
+            elif base_name == "Additional Comments":
+                rating["additional_comments"] = result.get("explanation")
+
+        return rating
 
     async def refresh_span(self, span_id: str) -> bool:
         """

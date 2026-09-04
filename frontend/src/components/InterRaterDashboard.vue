@@ -1,5 +1,7 @@
 <template>
   <div class="inter-rater-dashboard">
+    <!-- #73: only shown when there is genuinely nothing to render. A return
+         from FAQ or About keeps the validated allocation and skips this. -->
     <div v-if="loading" class="loading-state">
       <div class="has-text-centered">
         <div class="loading-spinner"></div>
@@ -49,6 +51,17 @@
               </div>
             </div>
           </div>
+          <div class="level-right">
+            <div class="level-item">
+              <button
+                class="button is-small history-button"
+                :disabled="completedSessions === 0"
+                @click="showHistory = true"
+              >
+                Review my ratings ({{ completedSessions }})
+              </button>
+            </div>
+          </div>
         </div>
         
         <div class="stats-bar">
@@ -92,6 +105,11 @@
       />
     </div>
 
+    <!-- Read-only, own ratings only, current run only. Opening it consumes
+         nothing: the dashboard stays mounted behind the overlay, so the
+         reviewer returns to the item and any in-progress scores. -->
+    <InterRaterHistory v-if="showHistory" @close="showHistory = false" />
+
     <!-- Success notification - small popup like NewSessionButton -->
     <div v-if="showSuccessMessage" class="inter-rater-success-message">
       <div class="success-content">
@@ -103,56 +121,73 @@
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted, onActivated, ref } from 'vue'
 import InterRaterPlayback from './InterRaterPlayback.vue'
+import InterRaterHistory from './InterRaterHistory.vue'
+import { useInterRaterStore } from '../stores/interRater'
+import { useAuthStore } from '../stores/auth'
 import { get, post } from '../utils/api'
 
 export default {
   name: 'InterRaterDashboard',
   components: {
-    InterRaterPlayback
+    InterRaterPlayback,
+    InterRaterHistory
   },
   setup() {
-    
-    const sessions = ref([])
-    const currentSessionIndex = ref(0)
-    const loading = ref(true)
+    const store = useInterRaterStore()
+
+    const loading = ref(false)
     const error = ref(null)
     const showSuccessMessage = ref(false)
     const successMessage = ref('')
-    const completedSessions = ref(0)  // Server-backed total for this reviewer
-    const hasCompletedAllSessions = ref(false)  // Track if user has no remaining sessions
-    const targetSessions = ref(0)
-    const handledSpanIds = new Set()
+    const hasCompletedAllSessions = ref(false)
+    const showHistory = ref(false)
 
-    const currentSession = computed(() => {
-      return sessions.value[currentSessionIndex.value] || null
+    try {
+      const auth = useAuthStore()
+      store.setReviewer(auth.username)
+    } catch (e) {
+      // Auth store is absent in ad-hoc/no-auth modes; state stays per-browser.
+    }
+
+    const sessions = computed(() => store.allocation)
+    const currentSessionIndex = computed({
+      get: () => store.currentIndex,
+      set: (v) => { store.currentIndex = v }
     })
+    const completedSessions = computed(() => store.completedCount)
+    const currentSession = computed(() => sessions.value[currentSessionIndex.value] || null)
+
+    const flash = (message) => {
+      successMessage.value = message
+      showSuccessMessage.value = true
+      setTimeout(() => { showSuccessMessage.value = false }, 2000)
+    }
 
     const loadSessions = async () => {
-      loading.value = true
+      // #73: only blank the view when there is nothing to show. A return from
+      // FAQ or About already has a validated allocation.
+      loading.value = !store.validated
       error.value = null
 
       try {
         const data = await get('/inter-rater/sessions')
-        sessions.value = (data.sessions || []).filter(session => !handledSpanIds.has(session.span_id))
-        targetSessions.value = data.max_sessions_per_user || sessions.value.length
-        completedSessions.value = data.completed_sessions || 0
+        store.applyAllocation({
+          sessions: data.sessions || [],
+          snapshot: data.allocation_snapshot_id,
+          completed: data.completed_sessions,
+          target: data.max_sessions_per_user || (data.sessions || []).length
+        })
 
-        // Reset session index if we have sessions
-        if (sessions.value.length > 0) {
-          currentSessionIndex.value = 0
-          hasCompletedAllSessions.value = false
-        } else if (targetSessions.value > 0 && completedSessions.value >= targetSessions.value) {
-          hasCompletedAllSessions.value = true
-        }
+        hasCompletedAllSessions.value =
+          sessions.value.length === 0 &&
+          store.targetSessions > 0 &&
+          store.completedCount >= store.targetSessions
 
       } catch (err) {
         console.error('Error loading inter-rater sessions:', err)
-        // Provide more detailed error messages
         if (err.message && err.message.includes('No sessions with feedback found')) {
-          // This shouldn't happen anymore with the backend fix, but just in case
-          sessions.value = []
           error.value = null
         } else if (err.message && err.message.includes('Phoenix')) {
           error.value = `Phoenix Connection Issue: ${err.message}`
@@ -168,81 +203,63 @@ export default {
       }
     }
 
-    const refillSessions = async () => {
-      const remainingNeeded = Math.max(targetSessions.value - completedSessions.value, 0)
-      if (remainingNeeded === 0) {
+    const announceProgress = () => {
+      // #67: the header count refreshes on every submission, not only on quota
+      // completion, and without waiting for the 5-minute poll.
+      window.dispatchEvent(new CustomEvent('inter-rater-completed'))
+    }
+
+    const showCompletionMessage = () => {
+      hasCompletedAllSessions.value = true
+      successMessage.value = `All sessions completed! You've successfully rated ${store.completedCount} sessions.`
+      showSuccessMessage.value = true
+      store.resetRun()
+      store.validated = true
+
+      setTimeout(() => {
+        showSuccessMessage.value = false
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+      }, 3000)
+    }
+
+    const afterQueueChange = async () => {
+      if (sessions.value.length > 0) {
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+        return
+      }
+      if (store.completedCount >= store.targetSessions) {
         showCompletionMessage()
         return
       }
-
-      loading.value = true
-      error.value = null
-      try {
-        const data = await get('/inter-rater/sessions')
-        completedSessions.value = data.completed_sessions ?? completedSessions.value
-        sessions.value = (data.sessions || [])
-          .filter(session => !handledSpanIds.has(session.span_id))
-          .slice(0, remainingNeeded)
-        currentSessionIndex.value = 0
-
-        if (sessions.value.length === 0) {
-          error.value = 'No replacement sessions are currently available. Please try again in a moment.'
-        }
-      } catch (err) {
-        error.value = err.message || 'Failed to load replacement sessions. Please try again.'
-      } finally {
-        loading.value = false
-      }
+      await loadSessions()
+      if (sessions.value.length === 0) showCompletionMessage()
     }
 
     const handleFeedbackSubmission = async (feedbackData) => {
       try {
-        console.log('Submitting inter-rater feedback:', feedbackData)
-
         const result = await post('/feedback', feedbackData)
-        console.log('API Response:', result)
+        const spanId = feedbackData.original_span_id
 
         if (result.status === 'success') {
-          handledSpanIds.add(feedbackData.original_span_id)
-          // Remove submitted session locally — re-fetching risks returning it again
-          // before Phoenix propagates the new annotation to the cache
-          sessions.value.splice(currentSessionIndex.value, 1)
-          completedSessions.value++
+          store.markRated(spanId)
+          announceProgress()
+          flash('Inter-rating submitted! Loading next session...')
+          await afterQueueChange()
 
-          if (sessions.value.length === 0) {
-            if (completedSessions.value >= targetSessions.value) {
-              successMessage.value = 'All inter-ratings complete!'
-              showSuccessMessage.value = true
-              setTimeout(() => {
-                showSuccessMessage.value = false
-                showCompletionMessage()
-              }, 2000)
-            } else {
-              await refillSessions()
-            }
-          } else {
-            currentSessionIndex.value = 0
-            successMessage.value = 'Inter-rating submitted! Loading next session...'
-            showSuccessMessage.value = true
-            setTimeout(() => {
-              showSuccessMessage.value = false
-              window.scrollTo({ top: 0, behavior: 'smooth' })
-            }, 2000)
-          }
+        } else if (result.status === 'already_rated') {
+          // Confirms this reviewer rated it — reviewer-scoped, survives a
+          // snapshot change. Not a concurrency loss, and said so.
+          store.markRated(spanId)
+          announceProgress()
+          flash('You have already rated this prompt.')
+          await afterQueueChange()
 
-        } else if (result.status === 'session_unavailable') {
-          // A concurrent reviewer filled this span. Drop it and fetch a
-          // replacement once the current allocation is exhausted.
-          handledSpanIds.add(feedbackData.original_span_id)
-          sessions.value.splice(currentSessionIndex.value, 1)
-          if (sessions.value.length > 0) {
-            currentSessionIndex.value = 0
-            successMessage.value = 'Session no longer available, loading next...'
-            showSuccessMessage.value = true
-            setTimeout(() => { showSuccessMessage.value = false }, 2000)
-          } else {
-            await refillSessions()
-          }
+        } else if (result.status === 'session_unavailable' || result.status === 'out_of_pool') {
+          // Someone else filled it, or it left the pool. Not a rating by this
+          // reviewer, so it must not enter the recently-rated set.
+          store.markUnavailable(spanId)
+          flash(result.message || 'That prompt is no longer available.')
+          await afterQueueChange()
 
         } else {
           throw new Error(result.message || 'Failed to submit inter-rating')
@@ -250,7 +267,6 @@ export default {
 
       } catch (err) {
         console.error('Error submitting inter-rater feedback:', err)
-
         let errorMsg = 'Failed to submit inter-rating'
         if (err.message.includes('HTTP 500')) {
           errorMsg = 'Server error occurred. Please try again in a moment.'
@@ -259,47 +275,22 @@ export default {
         } else {
           errorMsg = `${errorMsg}: ${err.message}`
         }
-
         error.value = errorMsg
-
-        // Clear error after 10 seconds
-        setTimeout(() => {
-          error.value = null
-        }, 10000)
+        setTimeout(() => { error.value = null }, 10000)
       }
     }
 
-
-    const showCompletionMessage = () => {
-      // Show completion notification and set completion flag
-      hasCompletedAllSessions.value = true
-      successMessage.value = `All sessions completed! You've successfully rated ${completedSessions.value} sessions.`
-      showSuccessMessage.value = true
-
-      // Clear sessions to prevent showing old content
-      sessions.value = []
-      currentSessionIndex.value = 0
-
-      setTimeout(() => {
-        showSuccessMessage.value = false
-
-        // Scroll to top to show the thank you message properly
-        window.scrollTo({
-          top: 0,
-          behavior: 'smooth'
-        })
-
-        // Emit event to update button counter
-        window.dispatchEvent(new CustomEvent('inter-rater-completed'))
-      }, 3000)
-    }
-
-
     onMounted(() => {
-      loadSessions()
+      if (!store.validated) loadSessions()
+    })
+
+    // #73: a KeepAlive return reuses live state and issues no request.
+    onActivated(() => {
+      if (!store.validated) loadSessions()
     })
 
     return {
+      store,
       sessions,
       currentSession,
       currentSessionIndex,
@@ -309,8 +300,8 @@ export default {
       successMessage,
       completedSessions,
       hasCompletedAllSessions,
+      showHistory,
       loadSessions,
-      refillSessions,
       handleFeedbackSubmission
     }
   }

@@ -13,7 +13,7 @@
         <div class="feedback-section">
           <label class="section-label">
             Corpus Fidelity
-            <span class="tooltip" title="i.e. are all claims about what the Hansard records contain supported by a Hansard citation?">ⓘ</span>
+            <InfoTooltip text="i.e. are all claims about what the Hansard records contain supported by a Hansard citation?" />
           </label>
           <div class="likert-scale">
             <span class="likert-endpoint">1 (very poor)</span>
@@ -56,7 +56,7 @@
         <div class="feedback-section">
           <label class="section-label">
             Citation Quality
-            <span class="tooltip" title="i.e. does each citation support the specific claim it is attached to?">ⓘ</span>
+            <InfoTooltip text="i.e. does each citation support the specific claim it is attached to?" />
           </label>
           <div class="likert-scale">
             <span class="likert-endpoint">1 (very poor)</span>
@@ -99,7 +99,7 @@
         <div class="feedback-section">
           <label class="section-label">
             Relevance
-            <span class="tooltip" title="i.e. does the LLM answer actually address the question asked, without padding or drift?">ⓘ</span>
+            <InfoTooltip text="i.e. does the LLM answer actually address the question asked, without padding or drift?" />
           </label>
           <div class="likert-scale">
             <span class="likert-endpoint">1 (very poor)</span>
@@ -142,7 +142,7 @@
         <div class="feedback-section">
           <label class="section-label">
             Coherence
-            <span class="tooltip" title="i.e. to what extent is the LLM answer well-reasoned and argued?">ⓘ</span>
+            <InfoTooltip text="i.e. to what extent is the LLM answer well-reasoned and argued?" />
           </label>
           <div class="likert-scale">
             <span class="likert-endpoint">1 (very poor)</span>
@@ -185,7 +185,7 @@
         <div class="feedback-section">
           <label class="section-label">
             Uncertainty
-            <span class="tooltip" title="i.e. to what extent does the LLM answer flag contested interpretations, gaps, or ambiguity?">ⓘ</span>
+            <InfoTooltip text="i.e. to what extent does the LLM answer flag contested interpretations, gaps, or ambiguity?" />
           </label>
           <div class="likert-scale">
             <span class="likert-endpoint">1 (very poor)</span>
@@ -228,7 +228,7 @@
         <div class="feedback-section">
           <label class="section-label">
             Historical Contextualisation
-            <span class="tooltip" title="i.e. to what extent does the LLM answer contextualise the primary material with additional knowledge?">ⓘ</span>
+            <InfoTooltip text="i.e. to what extent does the LLM answer contextualise the primary material with additional knowledge?" />
           </label>
           <div class="likert-scale">
             <span class="likert-endpoint">1 (very poor)</span>
@@ -281,7 +281,7 @@
             />
             <label for="fault-hallucination">
               Hallucination
-              <span class="tooltip" title="e.g. invented facts in the answer or false attributions of content to a source">ⓘ</span>
+              <InfoTooltip text="e.g. invented facts in the answer or false attributions of content to a source" />
             </label>
           </div>
           <div class="fault-option">
@@ -293,7 +293,7 @@
             />
             <label for="fault-harmful-handling">
               Harmful handling
-              <span class="tooltip" title="i.e. the LLM adopts or endorses prejudices contained in the Hansard records in its own analytical voice, or introduces stereotyping/derogatory framing not present in the cited material">ⓘ</span>
+              <InfoTooltip text="i.e. the LLM adopts or endorses prejudices contained in the Hansard records in its own analytical voice, or introduces stereotyping/derogatory framing not present in the cited material" />
             </label>
           </div>
         </div>
@@ -336,12 +336,14 @@
 </template>
 
 <script>
+import InfoTooltip from './InfoTooltip.vue'
 import { useSessionStore } from '@/stores/session'
 import { useTelemetryStore } from '@/stores/telemetry'
 import { post } from '../utils/api'
 
 export default {
   name: 'ExtendedFeedback',
+  components: { InfoTooltip },
   props: {
     qaId: {
       type: String,
@@ -590,12 +592,6 @@ export default {
   color: #495057;
   margin-bottom: 0.75rem;
   font-size: 14px;
-}
-
-.tooltip {
-  color: #6c757d;
-  cursor: help;
-  font-size: 12px;
 }
 
 .likert-scale {

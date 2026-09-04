@@ -180,11 +180,36 @@ class InterRaterService:
         assigned = self._study_assignment(list(by_span_id))[reviewer_slot]
         return [by_span_id[span_id] for span_id in assigned]
 
+    @staticmethod
+    def _allocation_snapshot_id(sessions: List[Dict[str, Any]]) -> str:
+        """
+        Identify the exact shared pool snapshot a client allocation came from.
+
+        Distinct from the cohort fingerprint, which is derived from manifest
+        qa_ids, is None in ad-hoc mode, and is deliberately stable when the
+        Phoenix span set changes (inter_rater_pool.fingerprint). Those are the
+        right properties for keeping reviewer slots stable and the wrong ones
+        for deciding whether saved client state is still real.
+
+        Hashed from the authoritative (span_id, qa_id) pairs before any
+        per-reviewer author, rating or capacity filtering, so it exists in every
+        mode, is identical for every reviewer, and does not move merely because
+        ratings were submitted or a span reached its cap.
+        """
+        payload = "\n".join(
+            sorted(
+                f"{session.get('span_id', '')}:{session.get('qa_id', '')}"
+                for session in sessions
+            )
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
     async def _get_pool(
         self, include_citations: bool
-    ) -> tuple[List[Dict[str, Any]], Optional[str]]:
+    ) -> tuple[List[Dict[str, Any]], Optional[str], str]:
         """
-        Return (study pool, pool fingerprint), cached briefly and shared across users.
+        Return (study pool, cohort fingerprint, allocation snapshot id), cached
+        briefly and shared across users.
 
         The Phoenix span query is the expensive part of an allocation and its
         result is the same for every reviewer, so it is cached rather than
@@ -202,7 +227,7 @@ class InterRaterService:
         cache_key = f"pool_{self.project_name}_{include_citations}"
         cached = self._pool_cache.get(cache_key)
         if cached and (datetime.now().timestamp() - cached['timestamp']) < self._pool_cache_timeout:
-            return cached['sessions'], cached['fingerprint']
+            return cached['sessions'], cached['fingerprint'], cached['snapshot_id']
 
         # Fetched without exclude_user_id so one pool serves every reviewer;
         # per-user exclusion is applied by the caller.
@@ -219,12 +244,14 @@ class InterRaterService:
         sessions, fingerprint = inter_rater_pool.restrict_with_fingerprint(sessions)
         self._validate_study_capacity(sessions, fingerprint)
 
+        snapshot_id = self._allocation_snapshot_id(sessions)
         self._pool_cache[cache_key] = {
             'sessions': sessions,
             'fingerprint': fingerprint,
+            'snapshot_id': snapshot_id,
             'timestamp': datetime.now().timestamp(),
         }
-        return sessions, fingerprint
+        return sessions, fingerprint, snapshot_id
 
     def _validate_study_capacity(self, sessions: List[Dict[str, Any]], fingerprint: Optional[str]) -> None:
         """
@@ -278,6 +305,29 @@ class InterRaterService:
             f"(pool must be demand / max_ratings = {demand / self.max_ratings:g} prompts)."
         )
 
+    async def get_allocation_snapshot_id(self, include_citations: bool = True) -> str:
+        """
+        Snapshot id for the current shared pool. Served from the pool cache, so
+        calling this after get_sessions_for_inter_rating costs no extra query.
+        """
+        _, _, snapshot_id = await self._get_pool(include_citations)
+        return snapshot_id
+
+    async def span_ids_in_current_pool(self, include_citations: bool = False) -> set:
+        """
+        Authoritative span ids for the current pool.
+
+        Raises rather than returning an empty set when the pool cannot be
+        established, so callers can fail closed instead of treating an
+        unverifiable pool as "not a member".
+        """
+        pool_sessions, _, _ = await self._get_pool(include_citations)
+        return {
+            session["span_id"]
+            for session in pool_sessions
+            if session.get("span_id")
+        }
+
     async def get_sessions_for_inter_rating(self, user_id: str, include_citations: bool = True) -> List[Dict[str, Any]]:
         """
         Get sessions available for inter-rating by a specific user.
@@ -296,7 +346,7 @@ class InterRaterService:
             sanitized_user_id = user_id[:8] + "..." if len(user_id) > 8 else user_id
             logger.info(f"Building inter-rater allocation for user {sanitized_user_id}")
 
-            pool_sessions, pool_fingerprint = await self._get_pool(include_citations)
+            pool_sessions, pool_fingerprint, snapshot_id = await self._get_pool(include_citations)
 
             # Exclude sessions this user authored. Applied locally so the pool
             # stays identical for every reviewer and can be shared from cache;
@@ -448,7 +498,7 @@ class InterRaterService:
         self, user_id: str, include_citations: bool = True
     ) -> int:
         """Count completed work against the active pool used by allocation."""
-        pool_sessions, pool_fingerprint = await self._get_pool(include_citations)
+        pool_sessions, pool_fingerprint, _ = await self._get_pool(include_citations)
         if pool_fingerprint is None:
             return self.get_completed_sessions(user_id)
 

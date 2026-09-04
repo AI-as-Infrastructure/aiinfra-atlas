@@ -3,10 +3,10 @@
 	  <h5 class="title is-6">Citations</h5>
 	  <ul>
 		<li v-for="(c, idx) in displayedCitations" :key="idx" style="margin-bottom: 0.5em;">
-		  <span
-			class="has-tooltip-arrow"
-			:title="c.tooltip || c.quote"
-		  >
+		  <!-- `has-tooltip-arrow` was a Bulma-extension class the project never
+		       loaded, so it styled nothing (#70). The title carries citation
+		       metadata that is not always rendered inline, so it is kept. -->
+		  <span :title="c.tooltip || c.quote">
 			<a v-if="c.url" :href="c.url" target="_blank">[{{ idx + 1 }}]</a>
 			<span v-else>[{{ idx + 1 }}]</span>
 		  </span>

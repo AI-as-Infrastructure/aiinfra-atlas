@@ -24,7 +24,7 @@
 									v-for="(citation, cIndex) in message.citations" 
 									:key="cIndex" 
 									class="citation-item"
-									@mouseover="hoveredCitation = citation"
+									@mouseover="showCitationCard(citation, $event)"
 								>
 									<a 
 										href="#" 
@@ -33,7 +33,7 @@
 									>
 										{{ getCitationLabel(citation) }}
 									</a>
-									<div v-if="hoveredCitation === citation" class="citation-tooltip" @mouseleave="hoveredCitation = null">
+									<div v-if="hoveredCitation === citation" class="citation-tooltip" :class="{ 'is-ready': citationCardReady }" :style="citationCardStyle" @mouseleave="hideCitationCard">
 										<div class="citation-tooltip-content">
 											<p class="citation-quote">{{ getCitationText(citation) }}</p>
 											<div class="citation-meta">
@@ -246,7 +246,7 @@
 <script setup>
 import { storeToRefs } from 'pinia'
 import { useSessionStore } from '@/stores/session'
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, nextTick } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import InlineFeedback from './InlineFeedback.vue'
@@ -261,6 +261,38 @@ const sessionId = computed(() => sessionStore.sessionId)
 
 // Citation hover and modal state
 const hoveredCitation = ref(null)
+const citationCardStyle = ref({})
+const citationCardReady = ref(false)
+
+// #71: same collision-aware placement as the inter-rater playback view, which
+// shares this citation pattern. Fixed positioning also keeps the card clear of
+// any overflow:hidden ancestor.
+const showCitationCard = async (citation, event) => {
+	hoveredCitation.value = citation
+	citationCardReady.value = false
+	const anchor = event.currentTarget
+	await nextTick()
+	const card = anchor?.querySelector('.citation-tooltip')
+	if (!card) return
+
+	const margin = 8
+	const a = anchor.getBoundingClientRect()
+	const c = card.getBoundingClientRect()
+
+	let left = a.left + a.width / 2 - c.width / 2
+	left = Math.max(margin, Math.min(left, window.innerWidth - c.width - margin))
+
+	const above = a.top - c.height - margin
+	const top = above < margin ? a.bottom + margin : above
+
+	citationCardStyle.value = { left: `${Math.round(left)}px`, top: `${Math.round(top)}px` }
+	citationCardReady.value = true
+}
+
+const hideCitationCard = () => {
+	hoveredCitation.value = null
+	citationCardReady.value = false
+}
 const selectedCitation = ref(null)
 const showAllCitations = ref(false)
 const allCitations = ref([])
@@ -605,16 +637,20 @@ function onFeedbackWorkflowComplete(messageId) {
 }
 
 .citation-tooltip {
-	position: absolute;
-	bottom: 100%;
-	left: 0;
-	width: 320px;
+	position: fixed;
+	width: min(320px, calc(100vw - 16px));
+	opacity: 0;
 	background-color: white;
 	box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
 	border-radius: 4px;
 	z-index: 10;
 	padding: 1rem;
 	margin-bottom: 0.5rem;
+	pointer-events: none;
+}
+
+.citation-tooltip.is-ready {
+	opacity: 1;
 	pointer-events: auto; /* Ensures the tooltip can receive mouse events */
 }
 

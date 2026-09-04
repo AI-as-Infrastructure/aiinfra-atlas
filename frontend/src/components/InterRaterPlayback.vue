@@ -42,7 +42,7 @@
                     v-for="(citation, cIndex) in session.citations" 
                     :key="cIndex" 
                     class="citation-item"
-                    @mouseover="hoveredCitation = citation"
+                    @mouseover="showCitationCard(citation, $event)"
                   >
                     <a 
                       href="#" 
@@ -51,7 +51,7 @@
                     >
                       {{ getCitationLabel(citation) }}
                     </a>
-                    <div v-if="hoveredCitation === citation" class="citation-tooltip" @mouseleave="hoveredCitation = null">
+                    <div v-if="hoveredCitation === citation" class="citation-tooltip" :class="{ 'is-ready': citationCardReady }" :style="citationCardStyle" @mouseleave="hideCitationCard">
                       <div class="citation-tooltip-content">
                         <p class="citation-quote">{{ getCitationText(citation) }}</p>
                         <div class="citation-meta">
@@ -101,7 +101,7 @@
             <div class="feedback-section">
               <label class="section-label">
                 Corpus Fidelity
-                <span class="tooltip" title="i.e. are all claims about what the Hansard records contain supported by a Hansard citation?">ⓘ</span>
+                <InfoTooltip text="i.e. are all claims about what the Hansard records contain supported by a Hansard citation?" />
               </label>
               <div class="likert-scale">
                 <span class="likert-endpoint">1 (very poor)</span>
@@ -141,7 +141,7 @@
             <div class="feedback-section">
               <label class="section-label">
                 Citation Quality
-                <span class="tooltip" title="i.e. does each citation support the specific claim it is attached to?">ⓘ</span>
+                <InfoTooltip text="i.e. does each citation support the specific claim it is attached to?" />
               </label>
               <div class="likert-scale">
                 <span class="likert-endpoint">1 (very poor)</span>
@@ -181,7 +181,7 @@
             <div class="feedback-section">
               <label class="section-label">
                 Relevance
-                <span class="tooltip" title="i.e. does the LLM answer actually address the question asked, without padding or drift?">ⓘ</span>
+                <InfoTooltip text="i.e. does the LLM answer actually address the question asked, without padding or drift?" />
               </label>
               <div class="likert-scale">
                 <span class="likert-endpoint">1 (very poor)</span>
@@ -221,7 +221,7 @@
             <div class="feedback-section">
               <label class="section-label">
                 Coherence
-                <span class="tooltip" title="i.e. to what extent is the LLM answer well-reasoned and argued?">ⓘ</span>
+                <InfoTooltip text="i.e. to what extent is the LLM answer well-reasoned and argued?" />
               </label>
               <div class="likert-scale">
                 <span class="likert-endpoint">1 (very poor)</span>
@@ -261,7 +261,7 @@
             <div class="feedback-section">
               <label class="section-label">
                 Uncertainty
-                <span class="tooltip" title="i.e. to what extent does the LLM answer flag contested interpretations, gaps, or ambiguity?">ⓘ</span>
+                <InfoTooltip text="i.e. to what extent does the LLM answer flag contested interpretations, gaps, or ambiguity?" />
               </label>
               <div class="likert-scale">
                 <span class="likert-endpoint">1 (very poor)</span>
@@ -301,7 +301,7 @@
             <div class="feedback-section">
               <label class="section-label">
                 Historical Contextualisation
-                <span class="tooltip" title="i.e. to what extent does the LLM answer contextualise the primary material with additional knowledge?">ⓘ</span>
+                <InfoTooltip text="i.e. to what extent does the LLM answer contextualise the primary material with additional knowledge?" />
               </label>
               <div class="likert-scale">
                 <span class="likert-endpoint">1 (very poor)</span>
@@ -352,7 +352,7 @@
                 />
                 <label for="fault-hallucination">
                   Hallucination
-                  <span class="tooltip" title="e.g. invented facts in the answer or false attributions of content to a source">ⓘ</span>
+                  <InfoTooltip text="e.g. invented facts in the answer or false attributions of content to a source" />
                 </label>
               </div>
               <div class="fault-option">
@@ -363,7 +363,7 @@
                 />
                 <label for="fault-harmful-handling">
                   Harmful handling
-                  <span class="tooltip" title="i.e. the LLM adopts or endorses prejudices contained in the Hansard records in its own analytical voice, or introduces stereotyping/derogatory framing not present in the cited material">ⓘ</span>
+                  <InfoTooltip text="i.e. the LLM adopts or endorses prejudices contained in the Hansard records in its own analytical voice, or introduces stereotyping/derogatory framing not present in the cited material" />
                 </label>
               </div>
             </div>
@@ -506,7 +506,8 @@
 </template>
 
 <script>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
+import InfoTooltip from './InfoTooltip.vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 
@@ -565,6 +566,7 @@ function getCitationText(citation) {
 
 export default {
   name: 'InterRaterPlayback',
+  components: { InfoTooltip },
   props: {
     session: {
       type: Object,
@@ -610,6 +612,40 @@ export default {
     const selectedCitation = ref(null)
     const showAllCitations = ref(false)
     const hoveredCitation = ref(null)
+    const citationCardStyle = ref({})
+    const citationCardReady = ref(false)
+
+    // #71: the card used to be centred on its trigger inside a container with
+    // overflow:hidden, so the leftmost citation's card was clipped. Fixed
+    // positioning escapes the container; the clamp keeps it on screen.
+    const showCitationCard = async (citation, event) => {
+      hoveredCitation.value = citation
+      citationCardReady.value = false
+      const anchor = event.currentTarget
+      await nextTick()
+      const card = anchor?.querySelector('.citation-tooltip')
+      if (!card) return
+
+      const margin = 8
+      const a = anchor.getBoundingClientRect()
+      const c = card.getBoundingClientRect()
+
+      let left = a.left + a.width / 2 - c.width / 2
+      left = Math.max(margin, Math.min(left, window.innerWidth - c.width - margin))
+
+      // Prefer above, as before; drop below when there is no room, so the card
+      // never covers the answer text the reviewer is rating.
+      const above = a.top - c.height - margin
+      const top = above < margin ? a.bottom + margin : above
+
+      citationCardStyle.value = { left: `${Math.round(left)}px`, top: `${Math.round(top)}px` }
+      citationCardReady.value = true
+    }
+
+    const hideCitationCard = () => {
+      hoveredCitation.value = null
+      citationCardReady.value = false
+    }
 
     const isCommentRequired = (scale) => {
       const rating = feedback.value[scale]
@@ -757,6 +793,10 @@ export default {
       selectedCitation,
       showAllCitations,
       hoveredCitation,
+      citationCardStyle,
+      citationCardReady,
+      showCitationCard,
+      hideCitationCard,
       showCitationModal,
       showAllCitationsModal
     }
@@ -970,14 +1010,18 @@ export default {
 
 /* Citation Tooltip */
 .citation-tooltip {
-  position: absolute;
-  bottom: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  margin-bottom: 0.5rem;
+  position: fixed;
   z-index: 1000;
   min-width: 300px;
-  max-width: 400px;
+  max-width: min(400px, calc(100vw - 16px));
+  /* Hidden until measured so it never paints at the wrong place first. */
+  opacity: 0;
+  pointer-events: none;
+}
+
+.citation-tooltip.is-ready {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .citation-tooltip-content {
@@ -1197,13 +1241,6 @@ export default {
   color: #495057;
   margin-bottom: 0.75rem;
   font-size: 14px;
-}
-
-.tooltip {
-  color: #6c757d;
-  cursor: help;
-  font-size: 12px;
-  margin-left: 0.25rem;
 }
 
 .likert-scale {
