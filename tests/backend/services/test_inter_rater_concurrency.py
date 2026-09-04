@@ -25,7 +25,7 @@ import contextvars
 import os
 import socket
 import uuid
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 
@@ -58,6 +58,17 @@ def _redis_reachable() -> bool:
             return True
     except OSError:
         return False
+
+
+def _redacted_redis_target(url: str) -> str:
+    parsed = urlparse(url)
+    host = parsed.hostname or "<unknown>"
+    if ":" in host:
+        host = f"[{host}]"
+    port = parsed.port or 6379
+    query_db = parse_qs(parsed.query).get("db", [None])[0]
+    database = query_db if query_db is not None else parsed.path.lstrip("/") or "0"
+    return f"{parsed.scheme or 'redis'}://{host}:{port}/{database}"
 
 
 _worker = contextvars.ContextVar("inter_rater_test_worker", default=0)
@@ -114,7 +125,7 @@ async def study(monkeypatch):
         if deliberate:
             pytest.fail(
                 f"RATER_LOAD=1 but Redis is unreachable at "
-                f"{os.getenv('REDIS_URL', '<unset>')}"
+                f"{_redacted_redis_target(os.getenv('REDIS_URL', ''))}"
             )
         pytest.skip("Redis unreachable — run `make rater-load`")
 
@@ -184,6 +195,16 @@ async def _submit(gates, worker_index, span_id, user_id):
         )
     finally:
         _worker.reset(token)
+
+
+def test_redis_failure_target_redacts_credentials():
+    target = _redacted_redis_target(
+        "rediss://user:secret@redis.example:6380/1?db=15&token=hidden"
+    )
+
+    assert target == "rediss://redis.example:6380/15"
+    assert "secret" not in target
+    assert "hidden" not in target
 
 
 @pytest.mark.asyncio
