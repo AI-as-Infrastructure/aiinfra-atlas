@@ -110,11 +110,16 @@ async function load() {
     const data = await get('/inter-rater/history')
     ratings.value = data.ratings || []
     const returned = new Set(ratings.value.map((r) => r.span_id))
+    const currentPool = Array.isArray(data.pool_span_ids)
+      ? new Set(data.pool_span_ids)
+      : null
 
     // A 200 is not proof of completeness. Phoenix propagation lags submission,
     // and the store still holds the spans the server has not exposed yet, so
     // say the list is incomplete rather than letting it read as authoritative.
-    syncing.value = [...store.recentlyRated].some((id) => !returned.has(id))
+    syncing.value = [...store.recentlyRated].some(
+      (id) => (!currentPool || currentPool.has(id)) && !returned.has(id)
+    )
 
     // Only ratings the server actually returned may prune the local mask.
     store.pruneConfirmed([...returned])

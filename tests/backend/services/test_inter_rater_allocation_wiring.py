@@ -13,6 +13,7 @@ import json
 import os
 import sys
 import types
+from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock
 
 import pytest
@@ -42,6 +43,24 @@ def _stub(monkeypatch, name, **attrs):
         setattr(module, key, value)
     monkeypatch.setitem(sys.modules, name, module)
     return module
+
+
+class _PoolSnapshotRegistry:
+    def __init__(self):
+        self.snapshot = None
+
+    async def get(self, _project_name):
+        return self.snapshot
+
+    async def publish(self, _project_name, snapshot_id, span_ids):
+        self.snapshot = {
+            "snapshot_id": snapshot_id,
+            "span_ids": list(span_ids),
+        }
+
+    @asynccontextmanager
+    async def refresh_lock(self, _project_name):
+        yield
 
 
 @pytest.fixture
@@ -86,6 +105,11 @@ def wired(monkeypatch, tmp_path):
             )
         ),
     )
+    _stub(
+        monkeypatch,
+        "backend.services.inter_rater_pool_snapshot",
+        inter_rater_pool_snapshot_registry=_PoolSnapshotRegistry(),
+    )
 
     from backend.services import inter_rater_pool as pool_module
     from backend.services.inter_rater_service import InterRaterService
@@ -103,6 +127,35 @@ async def test_pool_is_fetched_once_and_shared(wired):
         await service.get_sessions_for_inter_rating(f"anon_{slot}")
 
     assert query.await_count == 1
+
+
+async def test_submission_membership_uses_cross_worker_shared_snapshot(wired):
+    service, query = wired
+    from backend.services.inter_rater_service import InterRaterService
+
+    await service.get_sessions_for_inter_rating("anon_1")
+    query.reset_mock()
+
+    other_worker = InterRaterService()
+    span_ids = await other_worker.span_ids_in_current_pool()
+
+    assert span_ids == {session["span_id"] for session in _pool(author="anon_0")}
+    query.assert_not_awaited()
+
+
+async def test_missing_shared_snapshot_refreshes_without_citations(wired):
+    service, query = wired
+    registry = sys.modules[
+        "backend.services.inter_rater_pool_snapshot"
+    ].inter_rater_pool_snapshot_registry
+    registry.snapshot = None
+    query.reset_mock()
+
+    span_ids = await service.span_ids_in_current_pool()
+
+    assert span_ids == {session["span_id"] for session in _pool(author="anon_0")}
+    assert query.await_args.kwargs["include_citations"] is False
+    assert registry.snapshot["span_ids"] == sorted(span_ids)
 
 
 async def test_author_id_never_reaches_the_caller(wired):

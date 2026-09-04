@@ -89,7 +89,11 @@ async def get_inter_rater_history(request: Request):
             user_id = _get_user_id_from_request(request)
 
         if not user_id:
-            return {"ratings": [], "allocation_snapshot_id": None}
+            return {
+                "ratings": [],
+                "allocation_snapshot_id": None,
+                "pool_span_ids": [],
+            }
 
         pool_sessions, _, snapshot_id = await inter_rater_service._get_pool(
             include_citations=True
@@ -119,7 +123,11 @@ async def get_inter_rater_history(request: Request):
             })
 
         ratings.sort(key=lambda r: (r.get("timestamp") or ""))
-        return {"ratings": ratings, "allocation_snapshot_id": snapshot_id}
+        return {
+            "ratings": ratings,
+            "allocation_snapshot_id": snapshot_id,
+            "pool_span_ids": span_ids,
+        }
 
     except HTTPException:
         raise

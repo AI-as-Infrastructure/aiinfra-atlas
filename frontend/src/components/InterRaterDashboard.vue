@@ -158,6 +158,8 @@ export default {
     })
     const completedSessions = computed(() => store.completedCount)
     const currentSession = computed(() => sessions.value[currentSessionIndex.value] || null)
+    let loadVersion = 0
+    let loadPromise = null
 
     const flash = (message) => {
       successMessage.value = message
@@ -165,43 +167,56 @@ export default {
       setTimeout(() => { showSuccessMessage.value = false }, 2000)
     }
 
-    const loadSessions = async () => {
-      // #73: only blank the view when there is nothing to show. A return from
-      // FAQ or About already has a validated allocation.
-      loading.value = !store.validated
-      error.value = null
+    const requestSessions = (supersede = false) => {
+      if (loadPromise && !supersede) return loadPromise
 
-      try {
-        const data = await get('/inter-rater/sessions')
-        store.applyAllocation({
-          sessions: data.sessions || [],
-          snapshot: data.allocation_snapshot_id,
-          completed: data.completed_sessions,
-          target: data.max_sessions_per_user || (data.sessions || []).length
-        })
+      const version = supersede ? ++loadVersion : loadVersion
+      const request = (async () => {
+        loading.value = !store.validated
+        error.value = null
 
-        hasCompletedAllSessions.value =
-          sessions.value.length === 0 &&
-          store.targetSessions > 0 &&
-          store.completedCount >= store.targetSessions
+        try {
+          const data = await get('/inter-rater/sessions')
+          if (version !== loadVersion) return
 
-      } catch (err) {
-        console.error('Error loading inter-rater sessions:', err)
-        if (err.message && err.message.includes('No sessions with feedback found')) {
-          error.value = null
-        } else if (err.message && err.message.includes('Phoenix')) {
-          error.value = `Phoenix Connection Issue: ${err.message}`
-        } else if (err.message && err.message.includes('project')) {
-          error.value = `Project Configuration Issue: ${err.message}`
-        } else if (err.message && err.message.includes('500')) {
-          error.value = 'No sessions are currently available for inter-rating. Please check back later or contact your administrator.'
-        } else {
-          error.value = err.message || 'Failed to load sessions. Please check the server logs for details.'
+          store.applyAllocation({
+            sessions: data.sessions || [],
+            snapshot: data.allocation_snapshot_id,
+            completed: data.completed_sessions,
+            target: data.max_sessions_per_user || (data.sessions || []).length
+          })
+
+          hasCompletedAllSessions.value =
+            sessions.value.length === 0 &&
+            store.targetSessions > 0 &&
+            store.completedCount >= store.targetSessions
+        } catch (err) {
+          if (version !== loadVersion) return
+          console.error('Error loading inter-rater sessions:', err)
+          if (err.message && err.message.includes('No sessions with feedback found')) {
+            error.value = null
+          } else if (err.message && err.message.includes('Phoenix')) {
+            error.value = `Phoenix Connection Issue: ${err.message}`
+          } else if (err.message && err.message.includes('project')) {
+            error.value = `Project Configuration Issue: ${err.message}`
+          } else if (err.message && err.message.includes('500')) {
+            error.value = 'No sessions are currently available for inter-rating. Please check back later or contact your administrator.'
+          } else {
+            error.value = err.message || 'Failed to load sessions. Please check the server logs for details.'
+          }
+        } finally {
+          if (version === loadVersion) loading.value = false
         }
-      } finally {
-        loading.value = false
-      }
+      })()
+
+      loadPromise = request
+      request.finally(() => {
+        if (loadPromise === request) loadPromise = null
+      })
+      return request
     }
+
+    const loadSessions = () => requestSessions(false)
 
     const announceProgress = () => {
       // #67: the header count refreshes on every submission, not only on quota
@@ -302,13 +317,16 @@ export default {
       watch(
         () => auth.username,
         (name) => {
-          const wasResolved = store.reviewerResolved()
-          store.setReviewer(name)
-          if (!wasResolved && store.reviewerResolved()) {
-            // Identity arrived after mount: re-validate against this
-            // reviewer's own persisted state rather than the anon key's.
-            store.resetRun()
-            loadSessions()
+          if (!store.setReviewer(name)) return
+
+          store.resetRun(store.reviewerResolved())
+          hasCompletedAllSessions.value = false
+          if (store.reviewerResolved()) {
+            requestSessions(true)
+          } else {
+            loadVersion += 1
+            loadPromise = null
+            loading.value = false
           }
         },
         { immediate: true }

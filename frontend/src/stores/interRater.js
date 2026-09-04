@@ -66,7 +66,9 @@ export const useInterRaterStore = defineStore('interRater', () => {
     if (next !== _key) {
       _key = next
       restore()
+      return true
     }
+    return false
   }
 
   function reviewerResolved() {
@@ -177,9 +179,11 @@ export const useInterRaterStore = defineStore('interRater', () => {
     persist()
   }
 
-  function resetRun() {
+  function resetRun(preservePosition = false) {
     allocation.value = []
-    currentIndex.value = 0
+    if (!preservePosition) currentIndex.value = 0
+    completedCount.value = 0
+    targetSessions.value = 0
     validated.value = false
   }
 

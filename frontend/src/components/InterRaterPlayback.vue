@@ -633,17 +633,29 @@ export default {
       let left = a.left + a.width / 2 - c.width / 2
       left = Math.max(margin, Math.min(left, window.innerWidth - c.width - margin))
 
-      // Prefer above, as before; drop below when there is no room, so the card
-      // never covers the answer text the reviewer is rating.
-      // Prefer above, drop below when there is no room — then clamp, because
-      // "below" can still run off the bottom with a long citation or a short
-      // viewport. The card carries its own max-height so it scrolls internally
-      // rather than being cut off.
-      const above = a.top - c.height - margin
-      let top = above >= margin ? above : a.bottom + margin
-      top = Math.max(margin, Math.min(top, window.innerHeight - c.height - margin))
+      const belowTop = a.bottom + margin
+      const belowHeight = Math.max(0, window.innerHeight - belowTop - margin)
+      const answer = anchor.closest('.answer-section')?.querySelector('.content')
+      const answerTop = answer?.getBoundingClientRect().top
+      const aboveAnswerHeight = answerTop == null
+        ? 0
+        : Math.max(0, answerTop - (margin * 2))
 
-      citationCardStyle.value = { left: `${Math.round(left)}px`, top: `${Math.round(top)}px` }
+      let top = belowTop
+      let maxHeight = belowHeight
+      if (aboveAnswerHeight > belowHeight) {
+        maxHeight = aboveAnswerHeight
+        top = Math.max(
+          margin,
+          answerTop - margin - Math.min(c.height, aboveAnswerHeight)
+        )
+      }
+
+      citationCardStyle.value = {
+        left: `${Math.round(left)}px`,
+        top: `${Math.round(top)}px`,
+        maxHeight: `${Math.floor(maxHeight)}px`
+      }
       citationCardReady.value = true
     }
 

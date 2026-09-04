@@ -282,15 +282,20 @@ const showCitationCard = async (citation, event) => {
 	let left = a.left + a.width / 2 - c.width / 2
 	left = Math.max(margin, Math.min(left, window.innerWidth - c.width - margin))
 
-	// Prefer above, drop below when there is no room — then clamp, because
-	// "below" can still run off the bottom with a long citation or a short
-	// viewport. The card carries its own max-height so it scrolls internally
-	// rather than being cut off.
-	const above = a.top - c.height - margin
-	let top = above >= margin ? above : a.bottom + margin
-	top = Math.max(margin, Math.min(top, window.innerHeight - c.height - margin))
+	const belowTop = a.bottom + margin
+	const belowHeight = Math.max(0, window.innerHeight - belowTop - margin)
+	const aboveHeight = Math.max(0, a.top - (margin * 2))
+	const useBelow = belowHeight >= aboveHeight
+	const maxHeight = useBelow ? belowHeight : aboveHeight
+	const top = useBelow
+		? belowTop
+		: Math.max(margin, a.top - margin - Math.min(c.height, aboveHeight))
 
-	citationCardStyle.value = { left: `${Math.round(left)}px`, top: `${Math.round(top)}px` }
+	citationCardStyle.value = {
+		left: `${Math.round(left)}px`,
+		top: `${Math.round(top)}px`,
+		maxHeight: `${Math.floor(maxHeight)}px`
+	}
 	citationCardReady.value = true
 }
 

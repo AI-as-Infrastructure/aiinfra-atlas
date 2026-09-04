@@ -205,7 +205,7 @@ class InterRaterService:
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     async def _get_pool(
-        self, include_citations: bool
+        self, include_citations: bool, force_refresh: bool = False
     ) -> tuple[List[Dict[str, Any]], Optional[str], str]:
         """
         Return (study pool, cohort fingerprint, allocation snapshot id), cached
@@ -226,7 +226,11 @@ class InterRaterService:
 
         cache_key = f"pool_{self.project_name}_{include_citations}"
         cached = self._pool_cache.get(cache_key)
-        if cached and (datetime.now().timestamp() - cached['timestamp']) < self._pool_cache_timeout:
+        if (
+            not force_refresh
+            and cached
+            and (datetime.now().timestamp() - cached['timestamp']) < self._pool_cache_timeout
+        ):
             return cached['sessions'], cached['fingerprint'], cached['snapshot_id']
 
         # Fetched without exclude_user_id so one pool serves every reviewer;
@@ -251,6 +255,19 @@ class InterRaterService:
             'snapshot_id': snapshot_id,
             'timestamp': datetime.now().timestamp(),
         }
+        try:
+            from .inter_rater_pool_snapshot import inter_rater_pool_snapshot_registry
+
+            await inter_rater_pool_snapshot_registry.publish(
+                self.project_name,
+                snapshot_id,
+                [session["span_id"] for session in sessions if session.get("span_id")],
+            )
+        except Exception as error:
+            logger.warning(
+                "Could not publish shared inter-rater pool snapshot: "
+                f"{type(error).__name__}"
+            )
         return sessions, fingerprint, snapshot_id
 
     def _validate_study_capacity(self, sessions: List[Dict[str, Any]], fingerprint: Optional[str]) -> None:
@@ -313,26 +330,38 @@ class InterRaterService:
         _, _, snapshot_id = await self._get_pool(include_citations)
         return snapshot_id
 
-    async def span_ids_in_current_pool(self, include_citations: bool = True) -> set:
+    async def span_ids_in_current_pool(self) -> set:
         """
-        Authoritative span ids for the current pool.
-
-        Defaults to the same `include_citations` variant that serves reviewer
-        allocations. _get_pool keys its cache by that flag, so the two variants
-        are independent 60s caches that can hold different pool snapshots after
-        a reseed. Checking membership against the other one would reject a span
-        the reviewer was legitimately just served.
+        Authoritative span ids from the pool snapshot shared by every worker.
 
         Raises rather than returning an empty set when the pool cannot be
         established, so callers can fail closed instead of treating an
         unverifiable pool as "not a member".
         """
-        pool_sessions, _, _ = await self._get_pool(include_citations)
-        return {
-            session["span_id"]
-            for session in pool_sessions
-            if session.get("span_id")
-        }
+        from .inter_rater_pool_snapshot import inter_rater_pool_snapshot_registry
+
+        shared = await inter_rater_pool_snapshot_registry.get(self.project_name)
+        if shared is not None:
+            return set(shared["span_ids"])
+
+        async with inter_rater_pool_snapshot_registry.refresh_lock(self.project_name):
+            shared = await inter_rater_pool_snapshot_registry.get(self.project_name)
+            if shared is not None:
+                return set(shared["span_ids"])
+
+            pool_sessions, _, snapshot_id = await self._get_pool(
+                include_citations=False,
+                force_refresh=True,
+            )
+            span_ids = [
+                session["span_id"]
+                for session in pool_sessions
+                if session.get("span_id")
+            ]
+            await inter_rater_pool_snapshot_registry.publish(
+                self.project_name, snapshot_id, span_ids
+            )
+            return set(span_ids)
 
     async def get_sessions_for_inter_rating(self, user_id: str, include_citations: bool = True) -> List[Dict[str, Any]]:
         """
