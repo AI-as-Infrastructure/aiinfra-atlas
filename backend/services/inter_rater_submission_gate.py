@@ -31,19 +31,58 @@ class InterRaterSubmissionGate:
     """
     Serialize count-and-write operations for each span across all workers.
 
-    Phoenix does not expose an atomic conditional annotation write. Redis is
-    therefore used only as a distributed mutex; Phoenix remains the source of
-    truth and is refreshed while the mutex is held. Production and staging
-    deployments already require Redis.
+    Phoenix does not expose an atomic conditional annotation write. Redis
+    supplies the distributed mutex and a short-lived shared rater ledger so a
+    second worker cannot overfill a span while Phoenix is still propagating the
+    first worker's successful annotation. Phoenix remains the durable source of
+    truth and is refreshed while the mutex is held.
     """
 
     LOCK_TIMEOUT_SECONDS = 120
     LOCK_WAIT_SECONDS = 15
+    SHARED_RATINGS_TTL_SECONDS = 7 * 24 * 60 * 60
 
     def _lock_key(self, project_name: str, span_id: str) -> str:
         value = f"{project_name}:{span_id}".encode("utf-8")
         digest = hashlib.sha256(value).hexdigest()
         return f"atlas:inter-rater:submission:{digest}"
+
+    def _raters_key(self, project_name: str, span_id: str) -> str:
+        value = f"{project_name}:{span_id}".encode("utf-8")
+        digest = hashlib.sha256(value).hexdigest()
+        return f"atlas:inter-rater:submission:{digest}:raters"
+
+    async def _get_shared_raters(self, project_name: str, span_id: str) -> set[str]:
+        redis_url = os.getenv("REDIS_URL")
+        if not redis_url:
+            raise RuntimeError("REDIS_URL is required for atomic inter-rater submissions")
+
+        import redis.asyncio as redis
+
+        client = redis.from_url(redis_url, decode_responses=True)
+        try:
+            return set(await client.smembers(self._raters_key(project_name, span_id)))
+        finally:
+            await client.aclose()
+
+    async def _record_shared_rating(
+        self, project_name: str, span_id: str, user_id: str
+    ) -> None:
+        redis_url = os.getenv("REDIS_URL")
+        if not redis_url:
+            raise RuntimeError("REDIS_URL is required for atomic inter-rater submissions")
+
+        import redis.asyncio as redis
+
+        client = redis.from_url(redis_url, decode_responses=True)
+        key = self._raters_key(project_name, span_id)
+        try:
+            async with client.pipeline(transaction=True) as pipeline:
+                pipeline.sadd(key, user_id)
+                pipeline.expire(key, self.SHARED_RATINGS_TTL_SECONDS)
+                await pipeline.execute()
+        finally:
+            await client.aclose()
 
     @asynccontextmanager
     async def _span_lock(self, project_name: str, span_id: str) -> AsyncIterator[None]:
@@ -118,11 +157,17 @@ class InterRaterSubmissionGate:
                     logger.error("Cannot verify inter-rater capacity; submission not attempted")
                     return SubmissionStatus.ERROR
 
-                if annotations_cache.check_user_already_rated(span_id, user_id):
+                phoenix_raters = annotations_cache.get_inter_rater_raters(span_id)
+                shared_raters = await self._get_shared_raters(
+                    annotations_cache.project_name, span_id
+                )
+                raters = phoenix_raters | shared_raters
+
+                if user_id in raters:
                     logger.info("Inter-rater submission rejected: user already rated span")
                     return SubmissionStatus.ALREADY_RATED
 
-                existing = annotations_cache.get_inter_rater_count(span_id)
+                existing = len(raters)
                 if existing >= max_ratings:
                     logger.info(
                         "Inter-rater submission rejected: span at max_ratings "
@@ -134,6 +179,16 @@ class InterRaterSubmissionGate:
                 if not success:
                     return SubmissionStatus.ERROR
 
+                try:
+                    await self._record_shared_rating(
+                        annotations_cache.project_name, span_id, user_id
+                    )
+                except Exception as error:
+                    logger.critical(
+                        "Recorded inter-rating in Phoenix but could not update the "
+                        "shared rater ledger: "
+                        f"{type(error).__name__}"
+                    )
                 annotations_cache.record_user_rating(span_id, user_id)
                 return SubmissionStatus.SUCCESS
         except Exception as error:

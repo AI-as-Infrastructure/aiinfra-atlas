@@ -12,7 +12,17 @@ application is already using that index.
 
 import os
 import sys
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
+
+def _database_number(value: str, label: str) -> int:
+    try:
+        number = int(value)
+    except ValueError as error:
+        raise ValueError(f"{label} must be a non-negative integer") from error
+    if number < 0:
+        raise ValueError(f"{label} must be a non-negative integer")
+    return number
 
 
 def main() -> int:
@@ -26,8 +36,19 @@ def main() -> int:
         print(f"REDIS_URL has no host: {url!r}", file=sys.stderr)
         return 1
 
-    scratch_db = os.getenv("RATER_TEST_REDIS_DB", "15")
-    app_db = parsed.path.lstrip("/") or "0"
+    query_items = parse_qsl(parsed.query, keep_blank_values=True)
+    query_db = next((value for key, value in query_items if key == "db"), None)
+    app_db_value = query_db if query_db is not None else parsed.path.lstrip("/") or "0"
+    try:
+        app_db = _database_number(app_db_value, "REDIS_URL database")
+        scratch_db = _database_number(
+            os.getenv("RATER_TEST_REDIS_DB", "15"),
+            "RATER_TEST_REDIS_DB",
+        )
+    except ValueError as error:
+        print(str(error), file=sys.stderr)
+        return 1
+
     if app_db == scratch_db:
         print(
             f"The application is already using Redis DB {app_db}. "
@@ -36,7 +57,14 @@ def main() -> int:
         )
         return 1
 
-    print(urlunparse(parsed._replace(path=f"/{scratch_db}")))
+    scratch_query = urlencode(
+        [(key, value) for key, value in query_items if key != "db"]
+    )
+    print(
+        urlunparse(
+            parsed._replace(path=f"/{scratch_db}", query=scratch_query)
+        )
+    )
     return 0
 
 

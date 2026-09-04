@@ -134,6 +134,21 @@ async def test_pool_is_fetched_once_and_shared(wired):
     assert query.await_count == 1
 
 
+async def test_read_only_allocation_does_not_publish_shared_snapshot(wired):
+    service, _ = wired
+    registry = sys.modules[
+        "backend.services.inter_rater_pool_snapshot"
+    ].inter_rater_pool_snapshot_registry
+    registry.publish_count = 0
+
+    await service.get_sessions_for_inter_rating(
+        "anon_1",
+        publish_shared=False,
+    )
+
+    assert registry.publish_count == 0
+
+
 async def test_submission_membership_uses_cross_worker_shared_snapshot(wired):
     service, query = wired
     from backend.services.inter_rater_service import InterRaterService
@@ -181,6 +196,37 @@ async def test_citation_variants_share_one_membership_snapshot(wired):
     assert {session["span_id"] for session in with_citations} == {
         session["span_id"] for session in without_citations
     }
+
+
+async def test_current_pool_refreshes_a_stale_local_variant(wired):
+    service, query = wired
+    registry = sys.modules[
+        "backend.services.inter_rater_pool_snapshot"
+    ].inter_rater_pool_snapshot_registry
+    current_sessions = _pool(author="anon_0")
+    stale_sessions = [
+        {**session, "span_id": f"old-{session['span_id']}"}
+        for session in current_sessions
+    ]
+    service._pool_cache["pool_test-project_False"] = {
+        "sessions": stale_sessions,
+        "fingerprint": "stale",
+        "snapshot_id": service._allocation_snapshot_id(stale_sessions),
+        "timestamp": 10**12,
+    }
+    registry.snapshot = {
+        "snapshot_id": service._allocation_snapshot_id(current_sessions),
+        "span_ids": [session["span_id"] for session in current_sessions],
+    }
+    query.reset_mock()
+
+    sessions, _, snapshot_id = await service.get_current_pool(False)
+
+    assert {session["span_id"] for session in sessions} == {
+        session["span_id"] for session in current_sessions
+    }
+    assert snapshot_id == registry.snapshot["snapshot_id"]
+    assert query.await_count == 1
 
 
 async def test_author_id_never_reaches_the_caller(wired):

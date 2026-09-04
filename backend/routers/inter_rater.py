@@ -100,7 +100,7 @@ async def get_inter_rater_history(request: Request):
         # (phoenix_client._fetch_citations_by_qa_id). Skipping them also shares
         # the pool cache with the stats endpoint and the membership refresh,
         # so this call is far more often warm.
-        pool_sessions, _, snapshot_id = await inter_rater_service._get_pool(
+        pool_sessions, _, snapshot_id = await inter_rater_service.get_current_pool(
             include_citations=False
         )
         span_ids = [s["span_id"] for s in pool_sessions if s.get("span_id")]

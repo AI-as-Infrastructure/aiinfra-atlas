@@ -59,6 +59,24 @@ def recognised(base_name: str) -> bool:
     return base_name in KNOWN_EXACT or base_name.startswith(_FAULT_PREFIX)
 
 
+def iter_annotations(http, url: str, headers: dict, span_ids: list[str]):
+    for start in range(0, len(span_ids), BATCH):
+        batch = span_ids[start:start + BATCH]
+        cursor = None
+        while True:
+            params = [("span_ids", span_id) for span_id in batch]
+            params.append(("limit", "1000"))
+            if cursor:
+                params.append(("cursor", cursor))
+            response = http.get(url, params=params, headers=headers)
+            response.raise_for_status()
+            body = response.json()
+            yield from body.get("data", [])
+            cursor = body.get("next_cursor")
+            if not cursor:
+                break
+
+
 def main() -> int:
     project = os.getenv("INTER_RATER_PROJECT") or os.getenv("PHOENIX_PROJECT_NAME")
     endpoint = (os.getenv("PHOENIX_COLLECTOR_ENDPOINT") or "").rstrip("/")
@@ -93,36 +111,30 @@ def main() -> int:
     headers = {"Authorization": f"Bearer {api_key}"}
     url = f"{endpoint}/v1/projects/{project}/span_annotations"
     with httpx.Client(timeout=60.0) as http:
-        for start in range(0, len(span_ids), BATCH):
-            params = [("span_ids", s) for s in span_ids[start:start + BATCH]]
-            params.append(("limit", "1000"))
-            response = http.get(url, params=params, headers=headers)
-            response.raise_for_status()
+        for ann in iter_annotations(http, url, headers, span_ids):
+            name = ann.get("name", "") or ""
+            parsed = _parse_inter_rater_name(name)
+            if parsed is None:
+                shapes["not inter-rater prefixed"] += 1
+                continue
 
-            for ann in response.json().get("data", []):
-                name = ann.get("name", "") or ""
-                parsed = _parse_inter_rater_name(name)
-                if parsed is None:
-                    shapes["not inter-rater prefixed"] += 1
-                    continue
+            group_key, base_name = parsed
+            shapes["unnumbered [Inter-rater] prefix" if group_key == "unnumbered"
+                   else "[inter-rating-N] prefix"] += 1
+            bases[base_name] += 1
+            if not recognised(base_name):
+                unknown[base_name] += 1
 
-                group_key, base_name = parsed
-                shapes["unnumbered [Inter-rater] prefix" if group_key == "unnumbered"
-                       else "[inter-rating-N] prefix"] += 1
-                bases[base_name] += 1
-                if not recognised(base_name):
-                    unknown[base_name] += 1
+            metadata = ann.get("metadata") or {}
+            span_id = ann.get("span_id")
+            rater_id = metadata.get("rater_id")
+            bucket = groups[span_id][group_key]
+            if rater_id:
+                bucket.add(rater_id)
 
-                metadata = ann.get("metadata") or {}
-                span_id = ann.get("span_id")
-                rater_id = metadata.get("rater_id")
-                bucket = groups[span_id][group_key]
-                if rater_id:
-                    bucket.add(rater_id)
-
-                stamp = metadata.get("inter_rater_timestamp")
-                if stamp and stamp > latest.get(span_id, ""):
-                    latest[span_id] = stamp
+            stamp = metadata.get("inter_rater_timestamp")
+            if stamp and stamp > latest.get(span_id, ""):
+                latest[span_id] = stamp
 
     print("\nname shapes")
     for shape, count in shapes.most_common():

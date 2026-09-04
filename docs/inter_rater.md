@@ -247,10 +247,12 @@ make rater-load
 ```
 
 Runs the concurrency test: 20 reviewers, 100 prompts, 4 ratings each, 400
-submissions racing. It asserts the cap holds under contention, the pool
-saturates exactly, every reviewer finishes their quota, `AT_CAPACITY` and
-`ALREADY_RATED` stay distinct, concurrent duplicates consume one slot, and an
-out-of-pool span is refused under load.
+submissions racing across eight simulated workers. Each worker has its own
+annotation cache, and Phoenix reads deliberately remain stale, so the test
+depends on Redis for both the shared pool snapshot and immediate cross-worker
+rater visibility. It asserts the cap holds, the pool saturates exactly, every
+reviewer finishes their quota, `AT_CAPACITY` and `ALREADY_RATED` stay distinct,
+concurrent duplicates consume one slot, and an out-of-pool span is refused.
 
 It takes **real Redis locks**, so it runs against a scratch database on the same
 server — DB 15 by default, overridable with `RATER_TEST_REDIS_DB`, and it
@@ -615,7 +617,10 @@ Plus:
   stale within the TTL can only mean a reviewer is shown a prompt that has since
   filled — the gate rejects it and the dashboard fetches replacement work.
 - Per-user navigation statistics have a five-minute cache and are invalidated after submission.
-- Submission count/write operations are serialized by a Redis lock scoped to project and span.
+- Submission count/write operations are serialized by a Redis lock scoped to
+  project and span. Successful rater identities are also retained briefly in a
+  Redis set, bridging the interval before another worker can read the new
+  annotation from Phoenix and preventing that worker from overfilling the span.
 - **Pool membership is checked before that lock is taken.** Membership does not
   race with other submissions, and the check can be a cold Phoenix query — the
   pool cache expires in 60s while reviewers take minutes to rate. Holding the

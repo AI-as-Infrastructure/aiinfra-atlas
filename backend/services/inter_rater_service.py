@@ -338,6 +338,24 @@ class InterRaterService:
         _, _, snapshot_id = await self._get_pool(include_citations)
         return snapshot_id
 
+    async def get_current_pool(
+        self, include_citations: bool = False
+    ) -> tuple[List[Dict[str, Any]], Optional[str], str]:
+        """Return a local pool only when it matches the shared current snapshot."""
+        from .inter_rater_pool_snapshot import inter_rater_pool_snapshot_registry
+
+        pool_sessions, fingerprint, snapshot_id = await self._get_pool(
+            include_citations
+        )
+        shared = await inter_rater_pool_snapshot_registry.get(self.project_name)
+        if shared is not None and shared["snapshot_id"] == snapshot_id:
+            return pool_sessions, fingerprint, snapshot_id
+
+        return await self._get_pool(
+            include_citations,
+            force_refresh=True,
+        )
+
     async def span_ids_in_current_pool(self) -> set:
         """
         Authoritative span ids from the pool snapshot shared by every worker.
@@ -372,7 +390,12 @@ class InterRaterService:
             )
             return set(span_ids)
 
-    async def get_sessions_for_inter_rating(self, user_id: str, include_citations: bool = True) -> List[Dict[str, Any]]:
+    async def get_sessions_for_inter_rating(
+        self,
+        user_id: str,
+        include_citations: bool = True,
+        publish_shared: bool = True,
+    ) -> List[Dict[str, Any]]:
         """
         Get sessions available for inter-rating by a specific user.
 
@@ -390,7 +413,10 @@ class InterRaterService:
             sanitized_user_id = user_id[:8] + "..." if len(user_id) > 8 else user_id
             logger.info(f"Building inter-rater allocation for user {sanitized_user_id}")
 
-            pool_sessions, pool_fingerprint, snapshot_id = await self._get_pool(include_citations)
+            pool_sessions, pool_fingerprint, snapshot_id = await self._get_pool(
+                include_citations,
+                publish_shared=publish_shared,
+            )
 
             # Exclude sessions this user authored. Applied locally so the pool
             # stays identical for every reviewer and can be shared from cache;

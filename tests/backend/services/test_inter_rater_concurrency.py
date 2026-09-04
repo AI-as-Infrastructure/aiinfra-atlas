@@ -21,8 +21,10 @@ Skipped unless REDIS_URL points at a reachable Redis.
 """
 
 import asyncio
+import contextvars
 import os
 import socket
+import uuid
 from urllib.parse import urlparse
 
 import pytest
@@ -38,6 +40,7 @@ POOL_SIZE = 100
 N_RATERS = 20
 RATINGS_PER_RATER = 20
 MAX_RATINGS = 4
+WORKER_COUNT = 8
 
 assert N_RATERS * RATINGS_PER_RATER == POOL_SIZE * MAX_RATINGS
 
@@ -57,68 +60,122 @@ def _redis_reachable() -> bool:
         return False
 
 
-class _FakeAnnotationsCache:
-    """
-    Stands in for Phoenix. Records ratings in memory with the same semantics
-    the gate relies on, so the test exercises coordination rather than storage.
-    """
+_worker = contextvars.ContextVar("inter_rater_test_worker", default=0)
 
-    project_name = "concurrency-test"
 
+class _FakePhoenix:
     def __init__(self):
-        self._ratings: dict[str, set[str]] = {}
-        self._lock = asyncio.Lock()
+        self.recorded: dict[str, set[str]] = {}
 
-    async def refresh_span(self, _span_id: str) -> bool:
+    async def write(self, span_id: str, user_id: str) -> bool:
+        self.recorded.setdefault(span_id, set()).add(user_id)
         return True
 
-    def check_user_already_rated(self, span_id: str, user_id: str) -> bool:
-        return user_id in self._ratings.get(span_id, set())
+    def visible_raters(self, _span_id: str) -> set[str]:
+        return set()
 
-    def get_inter_rater_count(self, span_id: str) -> int:
-        return len(self._ratings.get(span_id, set()))
+    def count(self, span_id: str) -> int:
+        return len(self.recorded.get(span_id, set()))
+
+
+class _WorkerAnnotationsCache:
+    """Route cache reads to separate worker-local views of delayed Phoenix."""
+
+    def __init__(self, project_name: str, phoenix: _FakePhoenix):
+        self.project_name = project_name
+        self._phoenix = phoenix
+        self._local: list[dict[str, set[str]]] = [
+            {} for _ in range(WORKER_COUNT)
+        ]
+
+    def _ratings(self) -> dict[str, set[str]]:
+        return self._local[_worker.get()]
+
+    async def refresh_span(self, span_id: str) -> bool:
+        self._ratings()[span_id] = self._phoenix.visible_raters(span_id)
+        return True
+
+    def get_inter_rater_raters(self, span_id: str) -> set[str]:
+        return set(self._ratings().get(span_id, set()))
 
     def record_user_rating(self, span_id: str, user_id: str) -> None:
-        self._ratings.setdefault(span_id, set()).add(user_id)
+        self._ratings().setdefault(span_id, set()).add(user_id)
 
 
 @pytest.fixture
-def study(monkeypatch):
-    """A gate wired to real Redis, a fake Phoenix, and a fixed 100-span pool."""
+async def study(monkeypatch):
+    """Eight worker caches coordinated by real Redis over delayed Phoenix."""
+    if not os.getenv("REDIS_URL"):
+        pytest.skip("REDIS_URL is not set")
     if not _redis_reachable():
-        pytest.skip("REDIS_URL is not set or Redis is unreachable")
+        pytest.fail("REDIS_URL is set but Redis is unreachable")
 
+    project_name = f"concurrency-test-{uuid.uuid4().hex}"
     span_ids = [f"span-{index:03d}" for index in range(POOL_SIZE)]
-    cache = _FakeAnnotationsCache()
+    phoenix = _FakePhoenix()
+    cache = _WorkerAnnotationsCache(project_name, phoenix)
 
     import backend.services.annotations_cache as cache_module
 
     monkeypatch.setattr(cache_module, "annotations_cache", cache)
 
     from backend.services import inter_rater_service as service_module
-
-    async def _pool(*_args, **_kwargs):
-        return set(span_ids)
-
-    monkeypatch.setattr(
-        service_module.inter_rater_service, "span_ids_in_current_pool", _pool
+    from backend.services.inter_rater_pool_snapshot import (
+        inter_rater_pool_snapshot_registry,
     )
 
-    gate = InterRaterSubmissionGate()
+    monkeypatch.setattr(
+        service_module.inter_rater_service, "project_name", project_name
+    )
+    await inter_rater_pool_snapshot_registry.publish(
+        project_name, "concurrency-snapshot", span_ids
+    )
 
-    # The Phoenix write is stubbed: this test is about the coordination that
-    # decides *whether* to write, not about storage. The gate still records the
-    # rating in the fake cache afterwards, exactly as it does in production.
-    async def _write(*_args, **_kwargs):
-        return True
+    gates = [InterRaterSubmissionGate() for _ in range(WORKER_COUNT)]
 
-    monkeypatch.setattr(gate, "_submit_annotation", _write)
+    async def _write(span_id, feedback_data, _qa_id):
+        return await phoenix.write(span_id, feedback_data["rater_id"])
 
-    return gate, cache, span_ids
+    for gate in gates:
+        monkeypatch.setattr(gate, "_submit_annotation", _write)
+
+    yield gates, phoenix, span_ids
+
+    import redis.asyncio as redis
+
+    client = redis.from_url(os.environ["REDIS_URL"], decode_responses=True)
+    try:
+        keys = [
+            inter_rater_pool_snapshot_registry._key(project_name),
+            inter_rater_pool_snapshot_registry._lock_key(project_name),
+        ]
+        for gate in gates:
+            keys.extend(
+                gate._raters_key(project_name, span_id)
+                for span_id in span_ids
+            )
+            keys.extend(
+                gate._lock_key(project_name, span_id)
+                for span_id in span_ids
+            )
+            break
+        await client.delete(*keys)
+    finally:
+        await client.aclose()
 
 
-async def _submit(gate, span_id, user_id):
-    return await gate.submit(span_id, user_id, {}, f"qa-{span_id}", MAX_RATINGS)
+async def _submit(gates, worker_index, span_id, user_id):
+    token = _worker.set(worker_index % WORKER_COUNT)
+    try:
+        return await gates[worker_index % WORKER_COUNT].submit(
+            span_id,
+            user_id,
+            {"rater_id": user_id},
+            f"qa-{span_id}",
+            MAX_RATINGS,
+        )
+    finally:
+        _worker.reset(token)
 
 
 @pytest.mark.asyncio
@@ -128,7 +185,7 @@ async def test_study_scale_submissions_never_exceed_the_cap(study):
     all of them, and the pool must saturate exactly — no prompt over-rated,
     none left short.
     """
-    gate, cache, span_ids = study
+    gates, phoenix, span_ids = study
 
     # Each reviewer gets a rotated view of the pool, so all 20 contend for the
     # same spans in different orders — the worst realistic case for the lock.
@@ -137,7 +194,9 @@ async def test_study_scale_submissions_never_exceed_the_cap(study):
         queue = span_ids[offset:] + span_ids[:offset]
         results = []
         for span_id in queue:
-            status = await _submit(gate, span_id, f"reviewer-{index:02d}")
+            status = await _submit(
+                gates, index, span_id, f"reviewer-{index:02d}"
+            )
             results.append(status)
             if sum(1 for s in results if s is SubmissionStatus.SUCCESS) >= RATINGS_PER_RATER:
                 break
@@ -150,7 +209,7 @@ async def test_study_scale_submissions_never_exceed_the_cap(study):
     assert successes == POOL_SIZE * MAX_RATINGS == 400
     assert SubmissionStatus.ERROR not in flat
 
-    counts = [cache.get_inter_rater_count(span_id) for span_id in span_ids]
+    counts = [phoenix.count(span_id) for span_id in span_ids]
     assert max(counts) == MAX_RATINGS, "a prompt exceeded its rating cap"
     assert min(counts) == MAX_RATINGS, "a prompt was left under-rated"
 
@@ -167,45 +226,57 @@ async def test_full_prompt_reports_capacity_not_duplication(study):
     distinguishable — collapsing them is what reported a reviewer's own
     re-rating as a concurrency loss (#72).
     """
-    gate, _, span_ids = study
+    gates, _, span_ids = study
     span_id = span_ids[0]
 
     for index in range(MAX_RATINGS):
-        assert await _submit(gate, span_id, f"filler-{index}") is SubmissionStatus.SUCCESS
+        assert await _submit(
+            gates, index, span_id, f"filler-{index}"
+        ) is SubmissionStatus.SUCCESS
 
     # A fresh reviewer meets a full prompt.
-    assert await _submit(gate, span_id, "latecomer") is SubmissionStatus.AT_CAPACITY
+    assert await _submit(
+        gates, 4, span_id, "latecomer"
+    ) is SubmissionStatus.AT_CAPACITY
 
     # One of the original raters tries again: their own duplicate, not capacity.
-    assert await _submit(gate, span_id, "filler-0") is SubmissionStatus.ALREADY_RATED
+    assert await _submit(
+        gates, 5, span_id, "filler-0"
+    ) is SubmissionStatus.ALREADY_RATED
 
 
 @pytest.mark.asyncio
 async def test_concurrent_duplicates_from_one_reviewer_record_once(study):
     """A double-submit (fast clicks, a retry) must not consume two slots."""
-    gate, cache, span_ids = study
+    gates, phoenix, span_ids = study
     span_id = span_ids[1]
 
     results = await asyncio.gather(
-        *[_submit(gate, span_id, "eager-reviewer") for _ in range(6)]
+        *[
+            _submit(gates, index, span_id, "eager-reviewer")
+            for index in range(6)
+        ]
     )
 
     assert sum(1 for s in results if s is SubmissionStatus.SUCCESS) == 1
     assert all(
         s in (SubmissionStatus.SUCCESS, SubmissionStatus.ALREADY_RATED) for s in results
     )
-    assert cache.get_inter_rater_count(span_id) == 1
+    assert phoenix.count(span_id) == 1
 
 
 @pytest.mark.asyncio
 async def test_span_outside_the_pool_is_refused_under_load(study):
     """Stale client state must not slip a foreign span through while busy."""
-    gate, cache, span_ids = study
+    gates, phoenix, span_ids = study
 
     results = await asyncio.gather(
-        _submit(gate, "not-in-pool", "reviewer-00"),
-        *[_submit(gate, span_ids[2], f"reviewer-{i:02d}") for i in range(4)],
+        _submit(gates, 0, "not-in-pool", "reviewer-00"),
+        *[
+            _submit(gates, index, span_ids[2], f"reviewer-{index:02d}")
+            for index in range(4)
+        ],
     )
 
     assert results[0] is SubmissionStatus.OUT_OF_POOL
-    assert cache.get_inter_rater_count("not-in-pool") == 0
+    assert phoenix.count("not-in-pool") == 0

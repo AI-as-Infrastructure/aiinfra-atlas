@@ -184,7 +184,7 @@ rater-check: ## Read-only pre-flight for inter-rating: pool saturation, cohort s
 	@if [ ! -d ".venv" ]; then echo "ERROR: .venv not found — run setup first"; exit 1; fi
 	@$(resolve_seed_env); \
 		echo "" && echo "=== pool and cohort pre-flight ===" && \
-		.venv/bin/python utils/scripts/inter_rater_preflight.py; \
+		.venv/bin/python utils/scripts/inter_rater_preflight.py && \
 		echo "" && echo "=== annotation shapes and recent ratings ===" && \
 		.venv/bin/python utils/scripts/inter_rater_annotation_check.py
 
@@ -199,4 +199,3 @@ rater-load: ## Run the inter-rater concurrency test on a scratch Redis DB (defau
 		echo "Scratch Redis: $${SCRATCH%%//*}//…/$${SCRATCH##*/}  (app keyspace untouched)"; \
 		REDIS_URL="$$SCRATCH" .venv/bin/python -m pytest \
 			tests/backend/services/test_inter_rater_concurrency.py -v
-

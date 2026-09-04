@@ -65,7 +65,10 @@ async def main() -> int:
         print("                   *** NOT BALANCED — falls back to unbalanced ranking ***")
 
     # 2. How much of the pool actually has spans in Phoenix?
-    sessions, pool_fp = await inter_rater_service._get_pool(include_citations=False)
+    sessions, pool_fp, _ = await inter_rater_service._get_pool(
+        include_citations=False,
+        publish_shared=False,
+    )
     print(f"\nSpans in Phoenix:  {len(sessions)} of {len(qa_ids)} seeded prompts")
     if len(sessions) != len(qa_ids):
         print("                   *** pool incomplete — capacity is lower than it looks ***")
@@ -90,7 +93,10 @@ async def main() -> int:
     # 4. What would each already-allocated reviewer actually be served?
     queues = {}
     for user_id in assigned:
-        queues[user_id] = await inter_rater_service.get_sessions_for_inter_rating(user_id)
+        queues[user_id] = await inter_rater_service.get_sessions_for_inter_rating(
+            user_id,
+            publish_shared=False,
+        )
 
     for user_id, queue in queues.items():
         first = ", ".join(s["span_id"][:8] for s in queue[:3])
