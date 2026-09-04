@@ -105,11 +105,19 @@ Pick one approach. The first needs no settings churn and is preferred.
       single tester cannot, because the allocator will not re-offer a rated
       prompt. Then `make rater-check` and confirm attribution stays clean:
       every group resolving to exactly one rater, zero collisions
-- [ ] **Task 3.6b**: Reviewer-facing checks from `update-inter-rater-reviewer-ux`
-      §6 — tooltips visible on hover in Chrome, Firefox and Safari; citation
-      cards not clipped; Back, reload and an FAQ detour do not re-present a
-      rated prompt; rating history opens mid-run and shows only own ratings;
-      header count agrees with the task view after a submission
+- [ ] **Task 3.6b**: Send the tester Part 2 of `docs/inter_rater_manual_testing.md`.
+      It is self-contained and now covers the reviewer-facing checks from
+      `update-inter-rater-reviewer-ux` §6: ⓘ tooltips on hover, citation cards
+      at both ends of the row, Back / reload / FAQ detour, rating history
+      mid-run and after completion, the header count, and the wording of a
+      duplicate refusal.
+      Ask for the **whole list of 20** — the completion state, and the history
+      button within it, are unreachable at 19. Allow about an hour. Tell them
+      the ratings are test data and will be deleted by `make seed-reset`, so
+      they need not hold back
+- [ ] **Task 3.6c**: Nominate one prompt the first reviewer already rated and
+      ask the second tester to rate that specific one, so §4 of the walkthrough
+      exercises the multi-rater path
 - [x] **Task 3.7**: `make backup-prod` and confirm `Hansard-Interrating` appears
       in the backup output
 - [x] **Task 3.8**: Export or note the pilot annotations, then confirm the

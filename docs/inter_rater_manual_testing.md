@@ -148,8 +148,14 @@ Environment: ______________  Version: ______________  Date: ______________
 
 *Self-contained — can be sent to a tester on its own.*
 
-You are checking that the tool works, not judging the historical answers. About
-20–30 minutes.
+You are checking that the tool works, not judging the historical answers.
+
+**Please work through your whole list of 20.** Some things only happen at the
+very end, and those are the parts we most need checked. Allow about an hour,
+and feel free to break it into two sittings — that is worth testing too.
+
+Your ratings here are **test data and will be deleted** before the real study,
+so nothing you record commits you to anything. Rate honestly but don't agonise.
 
 Two notes before you start: an error message may be the correct result, so write
 down its exact wording and continue rather than trying to fix anything; and please
@@ -182,6 +188,14 @@ Open the first item — question, answer, and sources.
 
 - Are there six rating scales? ______
 - Is it clear what each is asking? Note any wording you hesitated over: ______
+- Each scale has a small ⓘ next to it. Hover your mouse over one. Does a
+  definition appear? ______ (This is the check we most need — please try it on
+  two or three different scales.)
+- Hover over one of the numbered sources under the answer. Does a box appear,
+  and can you read all of it, or is any part cut off at the edge of the
+  screen? ______
+- Try that on the **first** source in the row and the **last** one. Any
+  difference? ______
 - Give one scale a very high or very low score. Are you asked to explain it? ______
 - Try to submit without that explanation. Does it stop you, with a clear message?
   ______
@@ -193,25 +207,65 @@ Open the first item — question, answer, and sources.
 
 - Did the item leave your list? ______
 - Did the remaining count drop by one? ______
-- Try to rate the same item again. What happens? ______ (Refusal is correct.)
+- Does the count at the **top right** match the count on the page? ______
+- Try to rate the same item again. What happens? ______ Exact wording: ______
+  (Refusal is correct. We need to know whether it says you *already rated it*,
+  or that it is *no longer available* — those mean different things.)
 
-## 5. Rate a second item
+If the organiser has asked you to rate a specific item someone else has already
+rated, do that one now and note anything unusual: ______
 
-- Anything different or unexpected? ______
-- Anything slow, confusing, or easy to get wrong by accident? ______
+## 5. Moving around mid-task
 
-## 6. Overall
+Do these after two or three items, then carry on rating.
+
+- Press your browser's **Back** button. What happens? ______ Are you offered an
+  item you have already rated? ______ (You should not be.)
+- **Reload** the page. Are you back where you left off, with the right number
+  remaining? ______
+- Click **FAQ** in the menu, then click the **ATLAS Hansard** title to return.
+  How long before your task reappears? ______ Did it lose your place? ______
+
+## 6. Review my ratings
+
+There is a **Review my ratings** button on the task.
+
+- Open it part-way through. Do you see the items you have rated, with the
+  scores you gave? ______
+- Roughly how long did it take to appear? ______
+- Are the answers you rated clearly distinguishable from your own scores, or do
+  they run together? ______
+- Do you see **only your own** ratings, or anyone else's? ______ (You should
+  only ever see your own.)
+- Close it. Are you returned to the item you were working on, with anything you
+  had already filled in still there? ______
+
+## 7. Finish your list
+
+Keep going until you have rated all 20.
+
+- Did any item behave differently from the rest? ______
+- Did the tool ever offer you an item you had already rated? ______
+- Did you ever see a message saying an item was no longer available? ______
+  Exact wording: ______
+- When you finished the last one, what did you see? ______
+- Is **Review my ratings** still reachable after finishing? ______ Does it show
+  all 20? ______
+
+## 8. Overall
 
 - Anything visually wrong — misaligned, off-centre, odd colours, text cut off, hard
   to read? ______
 - Anything you expected to do and couldn't? ______
-- Rating 20 in a sitting, what would irritate you most? ______
+- Having now rated 20, what irritated you most? ______
+- Did your sense of what the scales mean shift as you went? ______
 - Anything else? ______
 
 ## Send back
 
 - Your answers above
-- Browser and device: ______
+- Browser and device: ______ (please be specific — Chrome, Firefox, Safari,
+  Edge — as some problems only appear in one)
 - Date and approximate time: ______
 - Exact wording of any error messages
 - For anything that went wrong, what you were doing immediately beforehand
