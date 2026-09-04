@@ -87,6 +87,8 @@ def main() -> int:
     unknown: collections.Counter = collections.Counter()
     # span -> group -> set of rater ids (held only to count them)
     groups: dict = collections.defaultdict(lambda: collections.defaultdict(set))
+    # span -> most recent rating timestamp, for "show me the latest ratings"
+    latest: dict = {}
 
     headers = {"Authorization": f"Bearer {api_key}"}
     url = f"{endpoint}/v1/projects/{project}/span_annotations"
@@ -111,10 +113,16 @@ def main() -> int:
                 if not recognised(base_name):
                     unknown[base_name] += 1
 
-                rater_id = (ann.get("metadata") or {}).get("rater_id")
-                bucket = groups[ann.get("span_id")][group_key]
+                metadata = ann.get("metadata") or {}
+                span_id = ann.get("span_id")
+                rater_id = metadata.get("rater_id")
+                bucket = groups[span_id][group_key]
                 if rater_id:
                     bucket.add(rater_id)
+
+                stamp = metadata.get("inter_rater_timestamp")
+                if stamp and stamp > latest.get(span_id, ""):
+                    latest[span_id] = stamp
 
     print("\nname shapes")
     for shape, count in shapes.most_common():
@@ -144,6 +152,16 @@ def main() -> int:
     print(f"  attributable (exactly 1 rater): {attributable}")
     print(f"  no rater identity             : {unidentified}   -> omitted from history")
     print(f"  colliding rater identities    : {colliding}   -> omitted from history")
+
+    if groups:
+        print("\nrated spans, most recently rated first")
+        print("  (paste a span id into the Phoenix span search to open it)")
+        ordered = sorted(
+            groups, key=lambda s: latest.get(s, ""), reverse=True
+        )
+        for span_id in ordered:
+            when = latest.get(span_id) or "unknown"
+            print(f"  {when:32s}  {span_id}  ({len(groups[span_id])} rating(s))")
 
     problems = []
     if unknown:
