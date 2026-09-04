@@ -183,10 +183,14 @@ seed-reset: ## Delete INTER_RATER_PROJECT from Phoenix to reset to baseline (the
 rater-check: ## Read-only pre-flight for inter-rating: pool saturation, cohort slots, annotation shapes, latest ratings
 	@if [ ! -d ".venv" ]; then echo "ERROR: .venv not found — run setup first"; exit 1; fi
 	@$(resolve_seed_env); \
-		echo "" && echo "=== pool and cohort pre-flight ===" && \
-		.venv/bin/python utils/scripts/inter_rater_preflight.py && \
-		echo "" && echo "=== annotation shapes and recent ratings ===" && \
-		.venv/bin/python utils/scripts/inter_rater_annotation_check.py
+		rc=0; \
+		echo ""; echo "=== pool and cohort pre-flight ==="; \
+		.venv/bin/python utils/scripts/inter_rater_preflight.py || rc=1; \
+		echo ""; echo "=== annotation shapes and recent ratings ==="; \
+		.venv/bin/python utils/scripts/inter_rater_annotation_check.py || rc=1; \
+		echo ""; \
+		if [ $$rc -ne 0 ]; then echo "One or more checks FAILED (see above)."; fi; \
+		exit $$rc
 
 rater-load: ## Run the inter-rater load test (production env and isolated pytest deps by default)
 	@if [ ! -d ".venv" ]; then echo "ERROR: .venv not found — run setup first"; exit 1; fi
