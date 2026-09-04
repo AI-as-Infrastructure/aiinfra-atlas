@@ -87,26 +87,32 @@ class InterRaterSubmissionGate:
         """Check current Phoenix state and write one annotation atomically per span."""
         from backend.services.annotations_cache import annotations_cache
 
+        # Pool membership is checked *before* taking the lock. It does not race
+        # with other submissions — the lock serialises the count-and-write for
+        # one span — and the pool cache expires after 60s while reviewers take
+        # minutes to rate, so this call is usually a cold Phoenix span query.
+        # Holding a distributed lock across it would starve the other reviewers
+        # of the same span, who give up after LOCK_WAIT_SECONDS.
+        try:
+            from backend.services.inter_rater_service import inter_rater_service
+
+            pool_span_ids = await inter_rater_service.span_ids_in_current_pool()
+        except Exception as error:
+            logger.error(
+                "Cannot establish current pool; submission not attempted: "
+                f"{type(error).__name__}"
+            )
+            return SubmissionStatus.ERROR
+
+        # A span rehydrated from stale client state must not be rated just
+        # because it still has capacity. Never trust a client-supplied qa_id or
+        # snapshot id for this.
+        if span_id not in pool_span_ids:
+            logger.info("Inter-rater submission rejected: span not in current pool")
+            return SubmissionStatus.OUT_OF_POOL
+
         try:
             async with self._span_lock(annotations_cache.project_name, span_id):
-                # Pool membership first: a span rehydrated from stale client
-                # state must not be rated just because it still has capacity.
-                # Never trust a client-supplied qa_id or snapshot id for this.
-                try:
-                    from backend.services.inter_rater_service import inter_rater_service
-
-                    pool_span_ids = await inter_rater_service.span_ids_in_current_pool()
-                except Exception as error:
-                    logger.error(
-                        "Cannot establish current pool; submission not attempted: "
-                        f"{type(error).__name__}"
-                    )
-                    return SubmissionStatus.ERROR
-
-                if span_id not in pool_span_ids:
-                    logger.info("Inter-rater submission rejected: span not in current pool")
-                    return SubmissionStatus.OUT_OF_POOL
-
                 refreshed = await annotations_cache.refresh_span(span_id)
                 if not refreshed:
                     logger.error("Cannot verify inter-rater capacity; submission not attempted")
