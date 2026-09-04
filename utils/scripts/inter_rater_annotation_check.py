@@ -94,6 +94,16 @@ def main() -> int:
         project_name=project, limit=SPAN_LIMIT, timeout=TIMEOUT
     )
     span_ids = [s for s in frame.get("context.span_id", []) if s]
+
+    # A span id means nothing to a tester. Carry the question so a rated prompt
+    # can be quoted to someone, which is what arranging multi-rater cover needs.
+    question_columns = [c for c in frame.columns if c.endswith("input.value")]
+    questions: dict = {}
+    if question_columns:
+        for _, row in frame.iterrows():
+            span_id = row.get("context.span_id")
+            if span_id:
+                questions[span_id] = " ".join(str(row.get(question_columns[0]) or "").split())
     print(f"project: {project}")
     print(f"spans scanned: {len(span_ids)}")
     if not span_ids:
@@ -172,8 +182,13 @@ def main() -> int:
             groups, key=lambda s: latest.get(s, ""), reverse=True
         )
         for span_id in ordered:
-            when = latest.get(span_id) or "unknown"
-            print(f"  {when:32s}  {span_id}  ({len(groups[span_id])} rating(s))")
+            when = (latest.get(span_id) or "unknown")[:19]
+            print(f"  {when}  {span_id}  ({len(groups[span_id])} rating(s))")
+            question = questions.get(span_id, "")
+            if question:
+                if len(question) > 88:
+                    question = question[:85] + "..."
+                print(f"      {question}")
 
     problems = []
     if unknown:
