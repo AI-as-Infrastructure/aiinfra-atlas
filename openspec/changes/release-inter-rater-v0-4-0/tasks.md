@@ -77,6 +77,22 @@ Post-deployment sequence for section 5 now lives in
 
 Pick one approach. The first needs no settings churn and is preferred.
 
+**Scope note.** This is a one-developer project with one part-time research
+assistant, who also runs the focus groups. Human testing time is the scarcest
+resource here, so spend it only on what automation cannot reach:
+
+- **Browser rendering** — the ⓘ tooltips and citation cards. #70 was a
+  browser-behaviour defect that passed code review, and no test catches it.
+- **The completion state** — `completeRun`, the "Thank You!" screen and the
+  history button inside it are unreachable below 20/20.
+- **General feel** — anything slow, confusing, or easy to get wrong.
+
+Everything else already has cover: `make rater-load` races 400 submissions on
+real Redis across independent worker views, `make rater-check` validates the
+annotation format and attribution against the live project, and the allocation
+design is simulated end to end in `test_inter_rater_allocation_coverage.py`.
+Tasks marked *optional* below are ones that coverage already reaches.
+
 - [x] **Task 3.1a**: *Full-pool pilot.* `make seed` (all 100 questions). Confirm
       `data/seed_pool.json` is written with `count: 100` and
       `project: Hansard-Interrating`
@@ -115,25 +131,16 @@ Pick one approach. The first needs no settings churn and is preferred.
       button within it, are unreachable at 19. Allow about an hour. Tell them
       the ratings are test data and will be deleted by `make seed-reset`, so
       they need not hold back
-- [ ] **Task 3.6c**: Exercise the multi-rater path. It cannot be left to luck:
-      a reviewer pair shares only ~3 prompts of 20 on this design, the first two
-      slots share as few as 1, and about 4% of pairs share none at all.
-      Sequence:
-      1. Have **both** testers sign in before either starts rating. Signing in
-         claims a cohort slot; queues are fixed from that point.
-      2. `make rater-check`. The pre-flight now lists, for each pair of
-         allocated reviewers, the prompts they both hold — span id and the
-         opening of the question.
-      3. If it reports no shared prompts for the pair, say so and stop: this
-         pair cannot exercise attribution, and a third tester is needed.
-      4. Otherwise quote one shared question to the second tester and ask them
-         to rate that one, as §4 of the walkthrough prompts.
-      5. Afterwards `make rater-check` again: that span should show 2 rating
-         groups, both attributable, zero collisions
-- [x] **Task 3.7**: `make backup-prod` and confirm `Hansard-Interrating` appears
-      in the backup output
-- [x] **Task 3.8**: Export or note the pilot annotations, then confirm the
-      rubric fields survive export in a form usable for IRR analysis
+- [ ] **Task 3.6c** *(optional — already covered)*: Deliberately arranging
+      multi-rater cover. Two spans in `Hansard-Interrating` already carry two
+      ratings from different raters, and `make rater-check` reports every group
+      attributable with zero collisions, so the `[inter-rating-N]` join is
+      validated against real data. Arranging a third example is not worth a
+      solo dev's time.
+      If you do want it: both testers sign in *before* either rates (signing in
+      fixes the queue), then `make rater-check` names the prompts the pair
+      shares — quote one to the second tester. The pre-flight says plainly when
+      a pair shares nothing, which on this design happens for about 4% of pairs.
 
 ## 4. Seed the study pool
 
