@@ -397,18 +397,36 @@ Do not assume coverage from the dashboard alone -- a tunnel route and an Access 
 configured in different places (**Networks > Tunnels > Public Hostname** vs **Access >
 Applications**), and a route works with or without an application.
 
-```bash
-# Protected: 302 to https://<team>.cloudflareaccess.com/cdn-cgi/access/login/...
-# Unprotected: no redirect (an ssh:// route answers an HTTP request with an empty 200)
-curl -sS -o /dev/null -D - https://ssh.yourdomain.org
+**The redirect test does not work on an SSH route.** A protected `ssh://` route answers an
+ordinary HTTP request with **403 and no redirect** -- not the 302 an HTTP application gives. Under
+a redirect-only check a correctly protected SSH hostname is indistinguishable from an
+unprotected one, so that check reports a false negative on exactly the route type this section is
+about. Measured against two live protected SSH routes, 2026-09-17.
 
-# Protected: 200. Unprotected: 404
+Prefer either of these, both of which behave the same for HTTP and SSH routes:
+
+```bash
+# Protected: 200. Unprotected: 404.  <-- most reliable, works for both route types
 curl -sS -o /dev/null -w '%{http_code}\n' \
   https://ssh.yourdomain.org/.well-known/cloudflare-access-protected-resource/
 
-# Unprotected: "failed to find Access application"
+# Protected: opens a browser login flow. Unprotected: "failed to find Access application".
+# Takes a positional URL; the older `--hostname <host>` form is gone as of cloudflared 2026.9.0.
 cloudflared access login https://ssh.yourdomain.org
 ```
+
+For reference, the redirect test and what it actually returns:
+
+```bash
+# HTTP application, protected:   302 to https://<team>.cloudflareaccess.com/cdn-cgi/access/login/...
+# SSH/TCP route, protected:      403, no redirect
+# Either, unprotected:           no redirect (an ssh:// route answers with an empty 200)
+curl -sS -o /dev/null -D - https://ssh.yourdomain.org
+```
+
+A third option that needs no dashboard access at all: start the forward with no service token and
+read cloudflared's output. `websocket: bad handshake` means Access refused it, which only happens
+when an application covers the hostname.
 
 ### Configuring JWT validation (defence-in-depth)
 

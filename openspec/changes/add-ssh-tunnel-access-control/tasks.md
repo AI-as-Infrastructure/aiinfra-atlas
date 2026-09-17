@@ -34,38 +34,126 @@ Repeat this section independently for each SSH route. Complete it fully for one
 route before starting the next, and do not reuse any application, policy or token
 between routes.
 
-- [ ] **Task 2.1**: Confirm the route's current state: whether an Access
+**Rollout status — 2026-09-17.** Two SSH routes are live behind Service Auth and verified
+working from an operator workstation, over both a terminal `ProxyCommand` and an unattended
+local forward. Host-specific configuration is recorded in the operator's own infrastructure
+documentation, outside this repository.
+
+The rollout did **not** follow this section's order: the Access applications and policies were
+created *before* the tokens were wired into the forwards, which is the ordering `proposal.md`
+warns against. The visible cost was that both unattended forwards were silently broken in the
+interval — the local listener came up and the unit reported healthy, while every connection
+failed with `websocket: bad handshake`. Consequently Task 2.4 can no longer be performed for
+either route, and the dashboard-side steps are recorded below as verified-by-behaviour rather
+than verified-by-inspection.
+
+- [x] **Task 2.1**: Confirm the route's current state: whether an Access
       application covers the hostname, and which authentication methods the host's
       sshd offers
-- [ ] **Task 2.2**: Create a service token dedicated to this route. Record its
+      — *both routes: each hostname returns 403 to an unauthenticated GET and each
+      tokenless forward was refused with `bad handshake`, so an application covers
+      both; both hosts are key-only with password authentication disabled, sshd on
+      a non-default port.*
+- [x] **Task 2.2**: Create a service token dedicated to this route. Record its
       client ID and secret in the operator's own credential store, not in the
       repository
-- [ ] **Task 2.3**: Wire the token into this route's forward via
+      — *two distinct tokens, confirmed to differ in both client ID and secret.
+      Operator-supplied; nothing token-bearing is in this repository.*
+- [x] **Task 2.3**: Wire the token into this route's forward via
       `TUNNEL_SERVICE_TOKEN_ID` / `TUNNEL_SERVICE_TOKEN_SECRET`, keeping the secret
       out of the process command line
+      — *one `0600` environment file per application, read both by the wrapper the
+      `ProxyCommand` invokes (via `source`) and by the forward's service unit (via
+      `EnvironmentFile=`, not `Environment=`, since unit files are world-readable).
+      The token reaches cloudflared through the environment only; each secret was
+      confirmed present in exactly one file on disk, and absent from both wrapper
+      scripts.*
 - [ ] **Task 2.4**: Confirm the forward still works with the token supplied and the
       route still unprotected. This isolates a token-plumbing failure from an
       Access-policy failure
-- [ ] **Task 2.5**: Create the Access application for this hostname only. Leave
+      — **not performable.** Both routes were already protected before the tokens
+      were wired in, so no unprotected state remained in which to isolate token
+      plumbing. Keep this task for any future route; it cannot be satisfied
+      retrospectively for these two.
+- [x] **Task 2.5**: Create the Access application for this hostname only. Leave
       browser rendering off unless browser-based SSH is wanted
-- [ ] **Task 2.6**: Add a Service Auth policy accepting this route's service token
+      — *an application exists for each hostname (evidenced by 2.1), one hostname
+      per application, and `cloudflared access login` resolves each. **Browser
+      rendering is off on both** — operator-confirmed, being dashboard state that
+      cannot be checked from a client. Consistent with the 403 (rather than a login
+      page) each hostname returns to an unauthenticated GET.*
+- [x] **Task 2.6**: Add a Service Auth policy accepting this route's service token
       only. Do not add the other routes' tokens
-- [ ] **Task 2.7**: Verify an unauthenticated request to the hostname is now
+      — *verified by cross-token negative test: each route's token presented against
+      the **other** route's hostname is refused with `bad handshake`, in both
+      directions, while each token connects on its own route. Neither policy accepts
+      the other's token.*
+- [x] **Task 2.7**: Verify an unauthenticated request to the hostname is now
       challenged, and that the token-bearing forward still connects
-- [ ] **Task 2.8**: Verify a forward started without the token fails, and that the
+      — *both routes: 403 to an unauthenticated GET, and both token-bearing forwards
+      connect. **Note:** a protected SSH route returns 403 with no redirect, not the
+      302 an HTTP application gives — see the correction to `docs/cloudflare.md`
+      under Task 1.5, and Task 5.1 below.*
+- [x] **Task 2.8**: Verify a forward started without the token fails, and that the
       failure is visible in the forward's logs
-- [ ] **Task 2.9**: Confirm the other SSH routes are unaffected by this route's
+      — *both routes: observed in the forward's journal as
+      `ERR failed to connect to origin error="websocket: bad handshake"`. Note that
+      the service manager still reports the unit active: cloudflared opens the local
+      listener regardless and fails per-connection, so unit state is not a health
+      signal — the log is.*
+- [x] **Task 2.9**: Confirm the other SSH routes are unaffected by this route's
       application and token
+      — *a four-way regression after each change: both terminal `ProxyCommand` paths
+      and both local forwards, each returning its expected host.*
 
 ## 3. Verify independence
 
-- [ ] **Task 3.1**: Confirm each route has a distinct Access application, policy
+- [x] **Task 3.1**: Confirm each route has a distinct Access application, policy
       and service token, with nothing shared
+      — *distinct applications (one hostname each), distinct tokens (differing in ID
+      and secret), and distinct policies demonstrated by the mutual rejection in
+      2.6. Each wrapper and each service unit reads only its own route's environment
+      file, checked by inspecting every consumer's configured path.*
 - [ ] **Task 3.2**: Rotate one route's service token and confirm the other routes
       keep working
-- [ ] **Task 3.3**: Record where each token is stored and how it is rotated
+      — *not exercised. Needs a new token issued in the dashboard; the mutual
+      rejection in 2.6 is evidence of isolation but not of rotation. **Both tokens
+      are non-expiring** (operator-confirmed), so nothing forces a rotation and this
+      will not be exercised incidentally — but it also means a leaked token stays
+      valid until explicitly revoked. The operator has accepted non-expiry as a
+      deliberate trade-off (single operator and single user on a hardened system,
+      with revocation rather than expiry as the control). That makes revocation the
+      incident response, which is the argument for proving this task's path before it
+      is needed rather than during an incident.*
+- [x] **Task 3.3**: Record where each token is stored and how it is rotated
+      — *recorded in the operator's own infrastructure documentation, outside this
+      repository, per Task 2.2: one `0600` environment file per application, the
+      consumers of each, and the rotation procedure (edit the environment file, then
+      restart the forward's service unit; a terminal `ProxyCommand` picks up the new
+      value on the next connection without a restart).*
 
 ## 4. Archive
 
 - [ ] **Task 4.1**: Archive this change
       (`openspec archive add-ssh-tunnel-access-control`)
+      — *blocked on 3.2 (rotation untested) and on resolving Task 2.4, which is
+      permanently unsatisfiable for these two routes and should be closed as a
+      deliberate waiver rather than left open. Tasks 5.1 and 5.2 amend the spec and
+      should land first.*
+
+## 5. Follow-up raised by the rollout
+
+- [ ] **Task 5.1**: The spec delta's scenario "Operator verifies Access coverage"
+      states that a protected hostname is distinguishable because it "redirects to
+      the Access login endpoint". Measured against two live protected SSH routes, a
+      protected **SSH/TCP** route returns **403 with no redirect**; only HTTP
+      applications 302-redirect. As written the scenario would fail a correctly
+      protected SSH route — the exact route type this change governs.
+      `docs/cloudflare.md` has been corrected; the requirement itself still needs
+      amending.
+- [ ] **Task 5.2**: The same scenario asserts `cloudflared access login` "SHALL
+      report that no Access application was found for an unprotected hostname". That
+      holds — but it is easy to over-generalise a single observation of it into a
+      belief that `access login` never resolves a TCP route. It does resolve them
+      once an application exists. Worth stating explicitly in the requirement so the
+      check is not discarded as inapplicable to SSH.
