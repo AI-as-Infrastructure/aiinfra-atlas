@@ -138,22 +138,32 @@ than verified-by-inspection.
       (`openspec archive add-ssh-tunnel-access-control`)
       — *blocked on 3.2 (rotation untested) and on resolving Task 2.4, which is
       permanently unsatisfiable for these two routes and should be closed as a
-      deliberate waiver rather than left open. Tasks 5.1 and 5.2 amend the spec and
-      should land first.*
+      deliberate waiver rather than left open. Section 5 is done: the spec delta has
+      been amended so it no longer fails a correctly protected SSH route.*
 
 ## 5. Follow-up raised by the rollout
 
-- [ ] **Task 5.1**: The spec delta's scenario "Operator verifies Access coverage"
-      states that a protected hostname is distinguishable because it "redirects to
+- [x] **Task 5.1**: The spec delta's scenario "Operator verifies Access coverage"
+      stated that a protected hostname is distinguishable because it "redirects to
       the Access login endpoint". Measured against two live protected SSH routes, a
       protected **SSH/TCP** route returns **403 with no redirect**; only HTTP
-      applications 302-redirect. As written the scenario would fail a correctly
-      protected SSH route — the exact route type this change governs.
-      `docs/cloudflare.md` has been corrected; the requirement itself still needs
-      amending.
-- [ ] **Task 5.2**: The same scenario asserts `cloudflared access login` "SHALL
+      applications 302-redirect. As written the scenario would have failed a
+      correctly protected SSH route — the exact route type this change governs.
+      **Amended:** the scenario now specifies the
+      `.well-known/cloudflare-access-protected-resource/` probe (200 protected, 404
+      not) as the type-independent check, and explicitly forbids relying on a
+      redirect-only test. A new scenario, "Redirect-based verification applied to an
+      SSH route", records the 403-vs-302 difference so the false negative is stated
+      rather than implied.
+- [x] **Task 5.2**: The same scenario asserted `cloudflared access login` "SHALL
       report that no Access application was found for an unprotected hostname". That
-      holds — but it is easy to over-generalise a single observation of it into a
-      belief that `access login` never resolves a TCP route. It does resolve them
-      once an application exists. Worth stating explicitly in the requirement so the
-      check is not discarded as inapplicable to SSH.
+      holds, but a single observation of it is easily over-generalised into a belief
+      that `access login` never resolves a TCP route. It does, once an application
+      exists. **Amended:** the bullet now says `access login` SHALL resolve the
+      application for a protected hostname *including a TCP/SSH route*, so the check
+      is not discarded as inapplicable to SSH.
+- [x] **Task 5.3**: Added a "Documentation describes how to verify coverage"
+      scenario under *Accurate Edge Security Documentation*, requiring that a
+      documented verification procedure work for a TCP/SSH route and not present a
+      redirect-only check as sufficient. This is what `docs/cloudflare.md` got wrong
+      while every documentation task in section 1 was marked complete.

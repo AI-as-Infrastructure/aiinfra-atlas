@@ -19,11 +19,26 @@ policy restricts who may traverse it.
 
 #### Scenario: Operator verifies Access coverage
 - **WHEN** an operator checks whether an SSH hostname is protected
-- **THEN** an unprotected hostname SHALL be distinguishable from a protected one
-  by an unauthenticated request: a protected hostname redirects to the Access
-  login endpoint, an unprotected one does not
-- **AND** `cloudflared access login <url>` SHALL report that no Access application
-  was found for an unprotected hostname
+- **THEN** a protected hostname SHALL be distinguishable from an unprotected one by
+  a check whose result does not depend on the application's type: a request to
+  `https://<hostname>/.well-known/cloudflare-access-protected-resource/` returns
+  `200` when an Access application covers the hostname and `404` when none does
+- **AND** `cloudflared access login <url>` SHALL resolve the Access application for
+  a protected hostname — including a TCP/SSH route — and SHALL report that no
+  Access application was found for an unprotected one
+- **AND** a check resting solely on whether an unauthenticated request is
+  redirected to the Access login endpoint SHALL NOT be treated as sufficient,
+  because that behaviour varies by application type
+
+#### Scenario: Redirect-based verification applied to an SSH route
+- **GIVEN** an SSH route covered by an Access application, with browser rendering
+  disabled
+- **WHEN** an unauthenticated HTTP request is made to that hostname
+- **THEN** the response SHALL be `403` with no redirect, rather than the `302` to
+  the Access login endpoint that an HTTP-type application returns
+- **AND** a verification procedure treating "no redirect" as "not protected" SHALL
+  therefore report a false negative on a correctly protected SSH route
+- **AND** such a procedure SHALL NOT be relied on as the sole evidence of coverage
 
 ### Requirement: Independent Access Control Per SSH Route
 Each SSH route MUST be an independent unit of access control: its own Access
@@ -79,3 +94,10 @@ enabled when it is a separate setting.
 - **THEN** the notes SHALL state that Zero Trust policies apply only to hostnames
   covered by an Access application
 - **AND** SHALL NOT imply that the absence of inbound ports authenticates SSH
+
+#### Scenario: Documentation describes how to verify coverage
+- **WHEN** deployment documentation gives a procedure for verifying that an SSH
+  hostname is protected
+- **THEN** the procedure SHALL work for a TCP/SSH route and not only for an
+  HTTP-type application
+- **AND** it SHALL NOT present a redirect-only check as sufficient for an SSH route
