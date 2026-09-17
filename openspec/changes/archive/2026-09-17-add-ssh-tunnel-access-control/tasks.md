@@ -118,9 +118,16 @@ than verified-by-inspection.
       and secret), and distinct policies demonstrated by the mutual rejection in
       2.6. Each wrapper and each service unit reads only its own route's environment
       file, checked by inspecting every consumer's configured path.*
-- [ ] **Task 3.2**: Rotate one route's service token and confirm the other routes
+- [x] **Task 3.2**: Rotate one route's service token and confirm the other routes
       keep working
-      — *not exercised. Needs a new token issued in the dashboard; the mutual
+      — **closed as waived, not verified, 2026-09-17.** The operator judged the
+      residual risk acceptable on the grounds that both tokens were issued that
+      same day, so neither has had meaningful exposure. Recorded honestly: this
+      closes the task on risk, not on evidence. The rotation path is still
+      unexercised, and the first time it runs will be during an incident or at
+      whatever point a token needs replacing. The original reasoning follows.
+
+      *Not exercised. Needs a new token issued in the dashboard; the mutual
       rejection in 2.6 is evidence of isolation but not of rotation. **Both tokens
       are non-expiring** (operator-confirmed), so nothing forces a rotation and this
       will not be exercised incidentally — but it also means a leaked token stays
@@ -148,10 +155,13 @@ than verified-by-inspection.
       Worth running `openspec validate --strict` when the CLI is next available —
       structure was checked by hand only.*
 
-      **Archived with Task 3.2 open.** Rotation was never exercised and is not
-      waived; it is carried forward as outstanding work rather than resolved. See
-      3.2. Anyone treating this archived change as "everything verified" would be
-      wrong on that one point.
+      **Archived with Task 3.2 waived rather than verified** (closed 2026-09-17,
+      after archiving). Rotation was never exercised. The tokens were fresh at the
+      time, which is why the risk was accepted, but the procedure in Task 3.3 is
+      written from the design rather than from a run. Anyone reading this archived
+      change as "everything verified" would be wrong on that one point, and anyone
+      rotating a token for the first time should expect to be exercising an
+      untested path.
 
 ## 5. Follow-up raised by the rollout
 
