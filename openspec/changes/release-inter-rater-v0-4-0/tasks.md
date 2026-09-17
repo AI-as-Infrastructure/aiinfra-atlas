@@ -53,6 +53,49 @@ Post-deployment sequence for section 5 now lives in
   Part 2 of `docs/inter_rater_manual_testing.md` (3.6b). Confirmed by the
   developer; the pilot is complete and section 4's re-seed is now the next step.
 
+## Schedule revised 2026-09-17
+
+The session was to run in the second half of September. It is now **probably late
+October 2026**, not yet booked. The repo is prepared after a period of leave, with
+a further week of manual testing before release.
+
+Revised ordering, which matters because section 4 is a one-way door:
+
+1. Leave, then a week of manual testing **against the existing pilot pool** — do
+   not seed early to test on fresh data.
+2. Section 4 re-seed immediately before the session, not before the testing week.
+3. Section 5 tag after that. The Task 5.4 candidate moves if anything further is
+   deployed during testing; re-check on the server rather than reusing the SHA
+   recorded below.
+4. `CITATION.cff` still reads `date-released: "2026-08-27"`. It must carry the
+   real publication date (Task 5.3).
+5. The dependency freeze extends to the new date, so #78 and the Dependabot
+   backlog stay deferred accordingly.
+
+### Vector-store date defect retained deliberately
+
+Issue #79: 481 of 94,800 chunks carry dates scraped from quoted text rather than
+the sitting date — 277 from a 1 August 1901 sitting labelled
+`Wellington, 14th October, 1895`, and 204 labelled `1501`, both from OCR damage in
+the source filenames defeating `extract_date_from_filename`.
+
+The extra weeks would have allowed a fix. **The operator has decided not to fix
+it**, and to retain it as a *known-defect control* for the study: a reviewer who
+reports a citation dated 1895 in an 1901 corpus demonstrates that the feedback
+instrument surfaces real data-quality faults. Decided 2026-09-17, before the
+session and before any reviewer has seen the data, which is what makes it a
+control rather than a retrospective reading of an accident.
+
+Consequences to honour:
+
+- **Do not fix #79 before the session.** A well-meaning cleanup would silently
+  remove the control.
+- The defect is a genuine data-quality fault in a dataset that will be cited. It
+  should be disclosed in the paper whether or not a reviewer catches it — the
+  control is about the instrument, not about the dates being acceptable.
+- Record it in section 6 (Task 6.7) so the study record carries it.
+- Whether it was caught is itself a finding worth reporting, in either direction.
+
 ## 1. Production configuration
 
 - [x] **Task 1.1**: Confirm `config/.env.production` **on the prod server** has
@@ -224,6 +267,11 @@ reviewers begin, because some of it changes afterwards.
       per prompt
 - [ ] **Task 6.6**: Record the rubric version — the six scales as shipped, noting
       that superseded fields remain on the model for older data
+- [ ] **Task 6.7**: Record the retained known-defect control: issue #79, the 481
+      chunks with dates taken from quoted text, the two source files responsible,
+      and the date the decision was taken (2026-09-17, before seeding and before
+      any reviewer saw the data). Note whether any reviewer reported it, since a
+      null result is also a finding about the feedback instrument
 
 ## 7. After the session
 
