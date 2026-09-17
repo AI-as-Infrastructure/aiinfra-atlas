@@ -68,13 +68,17 @@ than verified-by-inspection.
       The token reaches cloudflared through the environment only; each secret was
       confirmed present in exactly one file on disk, and absent from both wrapper
       scripts.*
-- [ ] **Task 2.4**: Confirm the forward still works with the token supplied and the
+- [x] **Task 2.4**: Confirm the forward still works with the token supplied and the
       route still unprotected. This isolates a token-plumbing failure from an
       Access-policy failure
-      — **not performable.** Both routes were already protected before the tokens
-      were wired in, so no unprotected state remained in which to isolate token
-      plumbing. Keep this task for any future route; it cannot be satisfied
-      retrospectively for these two.
+      — **WAIVED 2026-09-17.** Not performable for these two routes: both were
+      already protected before the tokens were wired in, so no unprotected state
+      remained in which to isolate token plumbing from an Access-policy failure.
+      The isolation it buys was obtained after the fact instead, by the cross-token
+      negative test in 2.6 and the tokenless-forward test in 2.8 — together these
+      distinguish a token fault from a policy fault, which is what 2.4 exists to do.
+      The task remains correct and should be performed in order for any future SSH
+      route; the waiver covers only the two routes rolled out on this date.
 - [x] **Task 2.5**: Create the Access application for this hostname only. Leave
       browser rendering off unless browser-based SSH is wanted
       — *an application exists for each hostname (evidenced by 2.1), one hostname
@@ -134,12 +138,20 @@ than verified-by-inspection.
 
 ## 4. Archive
 
-- [ ] **Task 4.1**: Archive this change
+- [x] **Task 4.1**: Archive this change
       (`openspec archive add-ssh-tunnel-access-control`)
-      — *blocked on 3.2 (rotation untested) and on resolving Task 2.4, which is
-      permanently unsatisfiable for these two routes and should be closed as a
-      deliberate waiver rather than left open. Section 5 is done: the spec delta has
-      been amended so it no longer fails a correctly protected SSH route.*
+      — *archived 2026-09-17. The `openspec` CLI is not installed on the machine that
+      did this, so the archive was performed by hand to match the documented Stage 3
+      steps: the four ADDED requirements were merged into
+      `openspec/specs/cloudflare-deployment/spec.md`, and this change folder was
+      moved to `openspec/changes/archive/2026-09-17-add-ssh-tunnel-access-control/`.
+      Worth running `openspec validate --strict` when the CLI is next available —
+      structure was checked by hand only.*
+
+      **Archived with Task 3.2 open.** Rotation was never exercised and is not
+      waived; it is carried forward as outstanding work rather than resolved. See
+      3.2. Anyone treating this archived change as "everything verified" would be
+      wrong on that one point.
 
 ## 5. Follow-up raised by the rollout
 
