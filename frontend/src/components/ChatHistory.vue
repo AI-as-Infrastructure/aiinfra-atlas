@@ -24,7 +24,8 @@
 									v-for="(citation, cIndex) in message.citations" 
 									:key="cIndex" 
 									class="citation-item"
-									@mouseover="showCitationCard(citation, $event)"
+									@mouseenter="showCitationCard(citation, $event)"
+									@mouseleave="scheduleHideCitationCard"
 								>
 									<a 
 										href="#" 
@@ -33,7 +34,7 @@
 									>
 										{{ getCitationLabel(citation) }}
 									</a>
-									<div v-if="hoveredCitation === citation" class="citation-tooltip" :class="{ 'is-ready': citationCardReady }" :style="citationCardStyle" @mouseleave="hideCitationCard">
+									<div v-if="hoveredCitation === citation" class="citation-tooltip" :class="{ 'is-ready': citationCardReady }" :style="citationCardStyle">
 										<div class="citation-tooltip-content">
 											<p class="citation-quote">{{ getCitationText(citation) }}</p>
 											<div class="citation-meta">
@@ -246,7 +247,7 @@
 <script setup>
 import { storeToRefs } from 'pinia'
 import { useSessionStore } from '@/stores/session'
-import { ref, onMounted, computed, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import InlineFeedback from './InlineFeedback.vue'
@@ -263,13 +264,23 @@ const sessionId = computed(() => sessionStore.sessionId)
 const hoveredCitation = ref(null)
 const citationCardStyle = ref({})
 const citationCardReady = ref(false)
+let hideCitationTimer = null
 
 // #71: same collision-aware placement as the inter-rater playback view, which
 // shares this citation pattern. Fixed positioning also keeps the card clear of
 // any overflow:hidden ancestor.
 const showCitationCard = async (citation, event) => {
+	clearTimeout(hideCitationTimer)
+	// Re-entering a card already on screen (crossing the gap into it, or moving
+	// between its children) must not re-measure: blanking it mid-hover made it
+	// flicker out from under the pointer.
+	if (hoveredCitation.value === citation && citationCardReady.value) return
+
 	hoveredCitation.value = citation
 	citationCardReady.value = false
+	// Measure at natural size. The style ref is shared by every card, so leaving
+	// the previous one's box on gave a bogus height to the placement maths.
+	citationCardStyle.value = {}
 	const anchor = event.currentTarget
 	await nextTick()
 	const card = anchor?.querySelector('.citation-tooltip')
@@ -285,24 +296,39 @@ const showCitationCard = async (citation, event) => {
 	const belowTop = a.bottom + margin
 	const belowHeight = Math.max(0, window.innerHeight - belowTop - margin)
 	const aboveHeight = Math.max(0, a.top - (margin * 2))
-	const useBelow = belowHeight >= aboveHeight
+	// Stay below whenever the card fits there; flip up only for the roomier side.
+	const useBelow = c.height <= belowHeight || belowHeight >= aboveHeight
 	const maxHeight = useBelow ? belowHeight : aboveHeight
-	const top = useBelow
-		? belowTop
-		: Math.max(margin, a.top - margin - Math.min(c.height, aboveHeight))
+	// Above-placement anchors the bottom edge rather than deriving a top from the
+	// measured height: a card that rendered shorter than measured used to end up
+	// pinned near the top of the window, detached from its citation.
+	const edge = useBelow
+		? { top: `${Math.round(belowTop)}px` }
+		: { bottom: `${Math.round(window.innerHeight - a.top + margin)}px` }
 
 	citationCardStyle.value = {
 		left: `${Math.round(left)}px`,
-		top: `${Math.round(top)}px`,
+		...edge,
 		maxHeight: `${Math.floor(maxHeight)}px`
 	}
 	citationCardReady.value = true
 }
 
+// The card is a DOM child of the citation item, so leaving the item covers
+// leaving the card too. The delay lets the pointer cross the gap between them.
+const scheduleHideCitationCard = () => {
+	clearTimeout(hideCitationTimer)
+	hideCitationTimer = setTimeout(hideCitationCard, 120)
+}
+
 const hideCitationCard = () => {
+	clearTimeout(hideCitationTimer)
 	hoveredCitation.value = null
 	citationCardReady.value = false
 }
+
+onUnmounted(() => clearTimeout(hideCitationTimer))
+
 const selectedCitation = ref(null)
 const showAllCitations = ref(false)
 const allCitations = ref([])
@@ -664,16 +690,6 @@ function onFeedbackWorkflowComplete(messageId) {
 .citation-tooltip.is-ready {
 	opacity: 1;
 	pointer-events: auto; /* Ensures the tooltip can receive mouse events */
-}
-
-.citation-tooltip::after {
-	content: '';
-	position: absolute;
-	top: 100%;
-	left: 15px;
-	border-width: 8px;
-	border-style: solid;
-	border-color: white transparent transparent transparent;
 }
 
 .citation-quote {

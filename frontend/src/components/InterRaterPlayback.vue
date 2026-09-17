@@ -42,7 +42,8 @@
                     v-for="(citation, cIndex) in session.citations" 
                     :key="cIndex" 
                     class="citation-item"
-                    @mouseover="showCitationCard(citation, $event)"
+                    @mouseenter="showCitationCard(citation, $event)"
+                    @mouseleave="scheduleHideCitationCard"
                   >
                     <a 
                       href="#" 
@@ -51,7 +52,7 @@
                     >
                       {{ getCitationLabel(citation) }}
                     </a>
-                    <div v-if="hoveredCitation === citation" class="citation-tooltip" :class="{ 'is-ready': citationCardReady }" :style="citationCardStyle" @mouseleave="hideCitationCard">
+                    <div v-if="hoveredCitation === citation" class="citation-tooltip" :class="{ 'is-ready': citationCardReady }" :style="citationCardStyle">
                       <div class="citation-tooltip-content">
                         <p class="citation-quote">{{ getCitationText(citation) }}</p>
                         <div class="citation-meta">
@@ -506,7 +507,7 @@
 </template>
 
 <script>
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
 import InfoTooltip from './InfoTooltip.vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
@@ -614,13 +615,23 @@ export default {
     const hoveredCitation = ref(null)
     const citationCardStyle = ref({})
     const citationCardReady = ref(false)
+    let hideCitationTimer = null
 
     // #71: the card used to be centred on its trigger inside a container with
     // overflow:hidden, so the leftmost citation's card was clipped. Fixed
     // positioning escapes the container; the clamp keeps it on screen.
     const showCitationCard = async (citation, event) => {
+      clearTimeout(hideCitationTimer)
+      // Re-entering a card already on screen (crossing the gap into it, or
+      // moving between its children) must not re-measure: blanking it mid-hover
+      // made it flicker out from under the pointer.
+      if (hoveredCitation.value === citation && citationCardReady.value) return
+
       hoveredCitation.value = citation
       citationCardReady.value = false
+      // Measure at natural size. The style ref is shared by every card, so
+      // leaving the previous one's box on gave a bogus height to the maths.
+      citationCardStyle.value = {}
       const anchor = event.currentTarget
       await nextTick()
       const card = anchor?.querySelector('.citation-tooltip')
@@ -641,28 +652,40 @@ export default {
         ? 0
         : Math.max(0, answerTop - (margin * 2))
 
-      let top = belowTop
+      // Stay below whenever the card fits there; clear the answer text only for
+      // the roomier side. Above-placement anchors the bottom edge rather than
+      // deriving a top from the measured height: a card that rendered shorter
+      // than measured used to end up pinned near the top of the window.
+      let edge = { top: `${Math.round(belowTop)}px` }
       let maxHeight = belowHeight
-      if (aboveAnswerHeight > belowHeight) {
+      if (c.height > belowHeight && aboveAnswerHeight > belowHeight) {
         maxHeight = aboveAnswerHeight
-        top = Math.max(
-          margin,
-          answerTop - margin - Math.min(c.height, aboveAnswerHeight)
-        )
+        edge = { bottom: `${Math.round(window.innerHeight - answerTop + margin)}px` }
       }
 
       citationCardStyle.value = {
         left: `${Math.round(left)}px`,
-        top: `${Math.round(top)}px`,
+        ...edge,
         maxHeight: `${Math.floor(maxHeight)}px`
       }
       citationCardReady.value = true
     }
 
+    // The card is a DOM child of the citation item, so leaving the item covers
+    // leaving the card too. The delay lets the pointer cross the gap between
+    // them.
+    const scheduleHideCitationCard = () => {
+      clearTimeout(hideCitationTimer)
+      hideCitationTimer = setTimeout(hideCitationCard, 120)
+    }
+
     const hideCitationCard = () => {
+      clearTimeout(hideCitationTimer)
       hoveredCitation.value = null
       citationCardReady.value = false
     }
+
+    onUnmounted(() => clearTimeout(hideCitationTimer))
 
     const isCommentRequired = (scale) => {
       const rating = feedback.value[scale]
@@ -813,6 +836,7 @@ export default {
       citationCardStyle,
       citationCardReady,
       showCitationCard,
+      scheduleHideCitationCard,
       hideCitationCard,
       showCitationModal,
       showAllCitationsModal
