@@ -24,9 +24,8 @@ Ticked above from direct evidence, not inspection:
 - `PHOENIX_PROJECT_BACKUPS` includes `Hansard-Interrating`; nightly export runs
   01:20, USB copy 02:30.
 
-Still open in sections 2-3, for the manual tester: **Task 2.4** (`make seed-dry`),
-**Task 3.5** (per-prompt cap under real use) and **Task 3.6** (double submission
-refused). **Task 2.1** stays open pending the full rebuild before the focus group.
+Still open in sections 2-3, for the manual tester: **Task 2.4** (`make seed-dry`).
+Tasks 3.5 and 3.6 were closed out on 2026-09-17.
 
 Two reviewer cohort slots are already spent by pilot logins. Section 4's re-seed
 clears them — new `qa_ids` give a new pool fingerprint and a fresh cohort of 20.
@@ -34,6 +33,25 @@ clears them — new `qa_ids` give a new pool fingerprint and a fresh cohort of 2
 Post-deployment sequence for section 5 now lives in
 `openspec/specs/post-deployment/spec.md` (`add-post-deployment-spec`, archived
 2026-08-28).
+
+## Verified 2026-09-17
+
+- **Task 2.1** done: `git pull` then `make cf` on the prod server, deploying
+  `f8ac90b`. The frontend was rebuilt, so reviewers get the current rubric UI.
+  This is the commit the `v0.4.0` tag should name unless something further is
+  deployed before the session.
+- Citation hover cards checked in the browser and behaving. `f8ac90b` fixed four
+  defects in the `#71` placement code, in both `ChatHistory.vue` and
+  `InterRaterPlayback.vue`: the card stuck open when the pointer left the
+  citation, flickered out from under the pointer when moved across it, was
+  measured wearing the previous card's box, and could float to the top of the
+  window detached from its citation. This is the browser evidence #71 needs
+  before §6.7 of `update-inter-rater-reviewer-ux` closes it.
+- Section 3 closed out: the per-prompt cap under real use (3.5), `make rater-load`
+  on the server (3.5a), duplicate submission refused (3.6), two-reviewer
+  attribution via `make rater-check` (3.6a), and the tester walkthrough of
+  Part 2 of `docs/inter_rater_manual_testing.md` (3.6b). Confirmed by the
+  developer; the pilot is complete and section 4's re-seed is now the next step.
 
 ## 1. Production configuration
 
@@ -59,7 +77,8 @@ Post-deployment sequence for section 5 now lives in
 
 ## 2. Deploy and verify startup
 
-- [ ] **Task 2.1**: `git pull` on the prod server, then run the full deploy
+- [x] **Task 2.1**: *(done 2026-09-17 at `f8ac90b`)* `git pull` on the prod
+      server, then run the full deploy
       (`make cf` — prod runs behind the Cloudflare tunnel, `AUTH_METHOD=cloudflare`).
       A frontend rebuild *is* required: `INTER_RATER_DEFAULT_UI` is served at
       runtime, but `InterRaterPlayback.vue`, `InterRaterDashboard.vue` and
@@ -106,22 +125,22 @@ Tasks marked *optional* below are ones that coverage already reaches.
 - [x] **Task 3.4**: In Phoenix, confirm annotations land on the original span
       under `Hansard-Interrating` with `[inter-rating-N]` prefixes, and that
       `atlas_version` on the spans reads `Hansard 0.4.0`
-- [ ] **Task 3.5**: Confirm no prompt exceeds `INTER_RATER_MAX_RATINGS` ratings.
+- [x] **Task 3.5**: Confirm no prompt exceeds `INTER_RATER_MAX_RATINGS` ratings.
       `make rater-load` now covers the coordination for this — 400 submissions
       racing on real Redis with 8 independent worker views — but it stubs
       Phoenix, so it proves the gate never *decides* to overfill, not that the
       write path agrees. This remains the end-to-end check
-- [ ] **Task 3.5a**: `make rater-load` on the server. Expect 5 passed. Re-run
+- [x] **Task 3.5a**: `make rater-load` on the server. Expect 5 passed. Re-run
       after any change to the submission gate or the pool snapshot
-- [ ] **Task 3.6**: Rate the same prompt twice from one account and confirm the
+- [x] **Task 3.6**: Rate the same prompt twice from one account and confirm the
       second attempt is refused as **already rated**, distinct from a prompt
       someone else filled, and is not written twice
-- [ ] **Task 3.6a**: With a second reviewer, rate a prompt the first reviewer
+- [x] **Task 3.6a**: With a second reviewer, rate a prompt the first reviewer
       already rated. This is the only way to reach the multi-rater paths — a
       single tester cannot, because the allocator will not re-offer a rated
       prompt. Then `make rater-check` and confirm attribution stays clean:
       every group resolving to exactly one rater, zero collisions
-- [ ] **Task 3.6b**: Send the tester Part 2 of `docs/inter_rater_manual_testing.md`.
+- [x] **Task 3.6b**: Send the tester Part 2 of `docs/inter_rater_manual_testing.md`.
       It is self-contained and now covers the reviewer-facing checks from
       `update-inter-rater-reviewer-ux` §6: ⓘ tooltips on hover, citation cards
       at both ends of the row, Back / reload / FAQ detour, rating history
@@ -168,12 +187,17 @@ Tasks marked *optional* below are ones that coverage already reaches.
 - [ ] **Task 5.3**: Add `version: 0.4.0` and `date-released:` to `CITATION.cff`,
       plus ORCIDs for both authors, and confirm the author list is complete
 - [ ] **Task 5.4**: Tag `v0.4.0` on the exact commit deployed to prod and verified
-      in the pilot. Candidate as of 2026-08-27: **`f12b322`** (tip of `main`,
-      pushed). Prod was last deployed at `93b582d`; `08ab229` and `f12b322` on top
-      of it are docs-only. Pull on prod before testing so the verified tree and the
-      tagged commit are the same, then tag the SHA that `git log --oneline -1`
-      reports on the server. If further commits land during testing, the candidate
-      moves — tag what was actually deployed and verified, not the branch tip:
+      in the pilot. Candidate as of 2026-09-17: **`f8ac90b`** — deployed to prod
+      that day via `make cf`, and the tip of `main` at the time. (The earlier
+      2026-08-27 candidate `f12b322` is superseded.) Ticking tasks in this file
+      moves the branch tip past the deployed commit, so tag the deployed SHA
+      explicitly rather than `main`, or redeploy first so tree and tag agree.
+      Confirm with `git log --oneline -1` on the server. If further commits land
+      during testing, the candidate moves — tag what was actually deployed and
+      verified, not the branch tip. As of `37f997f`, `main` is three docs-only
+      commits ahead of the deployed `f8ac90b` (Cloudflare verification fixes and
+      the SSH access-control archive); none of them touch application code, so
+      `f8ac90b` remains the correct target unless prod is redeployed:
 
       ```bash
       git tag -a v0.4.0 <verified-sha> -m "v0.4.0 - inter-rater study integrity"
