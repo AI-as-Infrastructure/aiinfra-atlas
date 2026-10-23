@@ -1,109 +1,905 @@
 {
-  "description": "Seed questions for inter-rater focus group testing. Each entry runs through the live RAG pipeline via /api/ask/stream when seeded; the resulting session becomes available for inter-rating with no baseline feedback.",
+  "description": "ATLAS evaluation prompt set v2 (100 prompts), hansard-prompt-db, verified against the 1901 corpus 2026-10-22. Each entry runs through the live RAG pipeline via /api/ask/stream when seeded. Keys other than 'question' and 'corpus_filter' are metadata for post-hoc analysis and are ignored by utils/scripts/seed_questions.py.",
   "questions": [
-    {"question": "What was discussed about the Australian Federation Act in 1901?", "corpus_filter": "1901_au"},
-    {"question": "How did Australian Parliament debate the Constitution Act in 1901?", "corpus_filter": "1901_au"},
-    {"question": "What were the key arguments for and against federation in Australian colonies?", "corpus_filter": "1901_au"},
-    {"question": "What debates occurred regarding the White Australia Policy in 1901?", "corpus_filter": "1901_au"},
-    {"question": "How did Australian Parliament justify the Immigration Restriction Act of 1901?", "corpus_filter": "1901_au"},
-    {"question": "What was discussed about Chinese immigration in Australian parliaments?", "corpus_filter": "1901_au"},
-    {"question": "How did Australian colonial parliaments respond to calls for South African War volunteers?", "corpus_filter": "1901_au"},
-    {"question": "How did Australian Parliament address imperial defense obligations?", "corpus_filter": "1901_au"},
-    {"question": "How did Australian Parliament address tariff policy and trade protection in 1901?", "corpus_filter": "1901_au"},
-    {"question": "What was the Australian government's response to labor disputes in 1901?", "corpus_filter": "1901_au"},
-    {"question": "How did Australian Parliament debate the eight-hour working day?", "corpus_filter": "1901_au"},
-    {"question": "What debates occurred about child labor restrictions in Australian Parliament?", "corpus_filter": "1901_au"},
-    {"question": "What debates occurred regarding women's suffrage in Australian Parliament in 1901?", "corpus_filter": "1901_au"},
-    {"question": "What parliamentary discussions addressed Aboriginal affairs in Australian Parliament in 1901?", "corpus_filter": "1901_au"},
-    {"question": "How did Australian Parliament debate Aboriginal protection and assimilation policies?", "corpus_filter": "1901_au"},
-    {"question": "How did Australian Parliament debate Australian national identity and culture?", "corpus_filter": "1901_au"},
-    {"question": "How did Australian Parliament address public health concerns in 1901?", "corpus_filter": "1901_au"},
-    {"question": "What debates covered education policy in the Australian colonies in 1901?", "corpus_filter": "1901_au"},
-    {"question": "How did Australian Parliament debate the role of colonial governors?", "corpus_filter": "1901_au"},
-    {"question": "How did Australian Parliament debate closer settlement policies?", "corpus_filter": "1901_au"},
-    {"question": "What discussions occurred regarding military defense in Australian Parliament in 1901?", "corpus_filter": "1901_au"},
-    {"question": "What was discussed about banking and currency in Australian Parliament in 1901?", "corpus_filter": "1901_au"},
-    {"question": "How did Australian Parliament address the sugar industry protection?", "corpus_filter": "1901_au"},
-    {"question": "What discussions occurred about mining industry regulation in Australian Parliament?", "corpus_filter": "1901_au"},
-    {"question": "How did Australian Parliament debate railway construction and transport policy?", "corpus_filter": "1901_au"},
-    {"question": "How did Australian Parliament debate postal and telegraph services in 1901?", "corpus_filter": "1901_au"},
-    {"question": "What parliamentary debates addressed pastoral leases and Crown land in 1901?", "corpus_filter": "1901_au"},
-    {"question": "How did Australian Parliament discuss old-age pensions in 1901?", "corpus_filter": "1901_au"},
-    {"question": "What was debated about the High Court of Australia's establishment?", "corpus_filter": "1901_au"},
-    {"question": "How did Australian Parliament approach inter-colonial free trade after Federation?", "corpus_filter": "1901_au"},
-
-    {"question": "What parliamentary debates addressed the Treaty of Waitangi interpretation in New Zealand?", "corpus_filter": "1901_nz"},
-    {"question": "How did New Zealand Parliament discuss Māori land rights around 1900?", "corpus_filter": "1901_nz"},
-    {"question": "What was debated about Māori political representation in New Zealand Parliament?", "corpus_filter": "1901_nz"},
-    {"question": "How did New Zealand Parliament address Māori education and welfare issues?", "corpus_filter": "1901_nz"},
-    {"question": "What debates occurred about Māori customary law versus European law in New Zealand?", "corpus_filter": "1901_nz"},
-    {"question": "How did New Zealand Parliament discuss the Native Land Court system?", "corpus_filter": "1901_nz"},
-    {"question": "How did New Zealand Parliament discuss participation in the South African War?", "corpus_filter": "1901_nz"},
-    {"question": "How did New Zealand Parliament address Asian immigration restrictions?", "corpus_filter": "1901_nz"},
-    {"question": "What debates occurred regarding women's suffrage in New Zealand Parliament?", "corpus_filter": "1901_nz"},
-    {"question": "How did New Zealand Parliament debate land settlement policies?", "corpus_filter": "1901_nz"},
-    {"question": "What was discussed about labor conditions in New Zealand Parliament in 1901?", "corpus_filter": "1901_nz"},
-    {"question": "How did New Zealand Parliament address public works funding?", "corpus_filter": "1901_nz"},
-    {"question": "What debates occurred about education policy in New Zealand Parliament?", "corpus_filter": "1901_nz"},
-    {"question": "How did New Zealand Parliament discuss postal and telegraph services?", "corpus_filter": "1901_nz"},
-    {"question": "What was debated about local government in New Zealand Parliament?", "corpus_filter": "1901_nz"},
-    {"question": "How did New Zealand Parliament address public health measures?", "corpus_filter": "1901_nz"},
-    {"question": "What discussions occurred about temperance in New Zealand Parliament?", "corpus_filter": "1901_nz"},
-    {"question": "How did New Zealand Parliament debate railway development?", "corpus_filter": "1901_nz"},
-    {"question": "What was discussed about agricultural policy in New Zealand Parliament?", "corpus_filter": "1901_nz"},
-    {"question": "How did New Zealand Parliament address military defense in 1901?", "corpus_filter": "1901_nz"},
-    {"question": "What was debated about old-age pensions in New Zealand Parliament in 1901?", "corpus_filter": "1901_nz"},
-    {"question": "How did New Zealand Parliament discuss the Liberal government's social reforms?", "corpus_filter": "1901_nz"},
-    {"question": "What parliamentary discussions addressed shipping and harbour boards in New Zealand?", "corpus_filter": "1901_nz"},
-    {"question": "How did New Zealand Parliament debate factory legislation and worker protection?", "corpus_filter": "1901_nz"},
-    {"question": "What was discussed about the Cook Islands annexation in New Zealand Parliament?", "corpus_filter": "1901_nz"},
-
-    {"question": "How did UK Parliament debate dominion status for Australia in 1901?", "corpus_filter": "1901_uk"},
-    {"question": "What was the parliamentary response to Emily Hobhouse's reports on South African conditions?", "corpus_filter": "1901_uk"},
-    {"question": "How did UK Parliament debate Britain's conduct in the South African War?", "corpus_filter": "1901_uk"},
-    {"question": "What were the financial implications of the South African War discussed in UK Parliament?", "corpus_filter": "1901_uk"},
-    {"question": "What debates occurred about concentration camps during the South African War in UK Parliament?", "corpus_filter": "1901_uk"},
-    {"question": "How did UK Parliament debate the concept of Greater Britain?", "corpus_filter": "1901_uk"},
-    {"question": "What were the discussions about imperial preference in trade in UK Parliament?", "corpus_filter": "1901_uk"},
-    {"question": "What was debated about the Imperial Conference proposals in UK Parliament?", "corpus_filter": "1901_uk"},
-    {"question": "How did UK Parliament discuss imperial unity versus colonial autonomy?", "corpus_filter": "1901_uk"},
-    {"question": "What debates occurred about the role of the Governor-General in UK Parliament?", "corpus_filter": "1901_uk"},
-    {"question": "How did UK Parliament address imperial defense strategies?", "corpus_filter": "1901_uk"},
-    {"question": "What was discussed about colonial governance in UK Parliament?", "corpus_filter": "1901_uk"},
-    {"question": "How did UK Parliament debate imperial trade policies?", "corpus_filter": "1901_uk"},
-    {"question": "What discussions occurred about imperial citizenship in UK Parliament?", "corpus_filter": "1901_uk"},
-    {"question": "How did UK Parliament address colonial military contributions?", "corpus_filter": "1901_uk"},
-    {"question": "What was debated about imperial communications in UK Parliament?", "corpus_filter": "1901_uk"},
-    {"question": "How did UK Parliament discuss colonial constitutional development?", "corpus_filter": "1901_uk"},
-    {"question": "What debates occurred about imperial federation in UK Parliament?", "corpus_filter": "1901_uk"},
-    {"question": "How did UK Parliament address colonial administrative reform?", "corpus_filter": "1901_uk"},
-    {"question": "What was discussed about imperial economic relations in UK Parliament?", "corpus_filter": "1901_uk"},
-    {"question": "How did UK Parliament debate the accession of Edward VII and royal prerogatives?", "corpus_filter": "1901_uk"},
-    {"question": "What parliamentary discussions addressed Irish Home Rule in 1901?", "corpus_filter": "1901_uk"},
-    {"question": "How did UK Parliament debate naval expansion and the two-power standard?", "corpus_filter": "1901_uk"},
-    {"question": "What was debated in UK Parliament about the Anglo-Japanese Alliance?", "corpus_filter": "1901_uk"},
-    {"question": "How did UK Parliament discuss factory acts and industrial regulation in 1901?", "corpus_filter": "1901_uk"},
-
-    {"question": "What was discussed about Imperial relations with Britain in 1901?", "corpus_filter": "all"},
-    {"question": "How did parliaments debate imperial preference for British goods?", "corpus_filter": "all"},
-    {"question": "What debates occurred about free trade versus protection across the Empire?", "corpus_filter": "all"},
-    {"question": "How did different parliaments discuss strikes and industrial disputes?", "corpus_filter": "all"},
-    {"question": "What was debated about old-age pensions across different parliaments?", "corpus_filter": "all"},
-    {"question": "How did parliaments address poverty and social welfare issues?", "corpus_filter": "all"},
-    {"question": "What discussions occurred about women's legal status and property rights?", "corpus_filter": "all"},
-    {"question": "How did different parliaments debate university funding and access?", "corpus_filter": "all"},
-    {"question": "What was discussed about telegraph and postal services across the Empire?", "corpus_filter": "all"},
-    {"question": "How did parliaments debate quarantine and disease prevention measures?", "corpus_filter": "all"},
-    {"question": "How did parliaments across the Empire respond to the death of Queen Victoria?", "corpus_filter": "all"},
-    {"question": "What parliamentary debates addressed temperance and prohibition across the Empire?", "corpus_filter": "all"},
-    {"question": "How did parliaments compare approaches to Chinese exclusion legislation?", "corpus_filter": "all"},
-    {"question": "What was debated across parliaments about the South African War's conduct and cost?", "corpus_filter": "all"},
-    {"question": "How did parliaments address arbitration of industrial disputes?", "corpus_filter": "all"},
-
-    {"question": "What debates occurred about child labor?", "corpus_filter": "1901_au"},
-    {"question": "How did Parliament discuss women's suffrage?", "corpus_filter": "1901_nz"},
-    {"question": "What was debated about banking policy?", "corpus_filter": "1901_uk"},
-    {"question": "How did Parliament address education reform?", "corpus_filter": "all"},
-    {"question": "What discussions occurred about trade policy?", "corpus_filter": "all"}
+    {
+      "question": "In the Australian parliamentary debates of 1901, which sites were proposed for the federal capital?",
+      "corpus_filter": "1901_au",
+      "prompt_id": "P001",
+      "source_id": "AU_006",
+      "question_type": "factual",
+      "subtype": "",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the Australian parliament, which Acts relating to immigration were passed in 1901?",
+      "corpus_filter": "1901_au",
+      "prompt_id": "P002",
+      "source_id": "AU_010",
+      "question_type": "factual",
+      "subtype": "",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the Australian parliamentary debates of 1901, which public works projects were debated?",
+      "corpus_filter": "1901_au",
+      "prompt_id": "P003",
+      "source_id": "AU_016",
+      "question_type": "factual",
+      "subtype": "",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the Australian parliamentary debates of 1901, what legislation concerning posts and telegraphs was passed?",
+      "corpus_filter": "1901_au",
+      "prompt_id": "P004",
+      "source_id": "AU_024",
+      "question_type": "factual",
+      "subtype": "",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the Australian parliamentary debates of 1901, who was elected Speaker of the House of Representatives, and was the election contested?",
+      "corpus_filter": "1901_au",
+      "prompt_id": "P005",
+      "source_id": "NEW_F_AU_01",
+      "question_type": "factual",
+      "subtype": "",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the Australian parliamentary debates of 1901, what duty did the government propose on tea in the Customs Tariff?",
+      "corpus_filter": "1901_au",
+      "prompt_id": "P006",
+      "source_id": "NEW_F_AU_02",
+      "question_type": "factual",
+      "subtype": "",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the New Zealand parliamentary debates of 1901, which members represented the Māori electorates?",
+      "corpus_filter": "1901_nz",
+      "prompt_id": "P007",
+      "source_id": "NEW_F_NZ_01",
+      "question_type": "factual",
+      "subtype": "",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the New Zealand parliamentary debates of 1901, what was the outcome of the Cook and other Islands Government Bill?",
+      "corpus_filter": "1901_nz",
+      "prompt_id": "P008",
+      "source_id": "NEW_F_NZ_02",
+      "question_type": "factual",
+      "subtype": "",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the New Zealand parliamentary debates of 1901, what sums were voted for New Zealand's contingents in the South African War?",
+      "corpus_filter": "1901_nz",
+      "prompt_id": "P009",
+      "source_id": "NEW_F_NZ_03",
+      "question_type": "factual",
+      "subtype": "",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the New Zealand parliamentary debates of 1901, what poll tax or other restrictions on Chinese immigrants were in force or proposed?",
+      "corpus_filter": "1901_nz",
+      "prompt_id": "P010",
+      "source_id": "NEW_F_NZ_05",
+      "question_type": "factual",
+      "subtype": "",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the New Zealand parliament, which labour-related Acts were passed in 1901?",
+      "corpus_filter": "1901_nz",
+      "prompt_id": "P011",
+      "source_id": "NZ_007",
+      "question_type": "factual",
+      "subtype": "",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the UK parliamentary debates of 1901, who moved and seconded the Address in Reply at the opening of the session?",
+      "corpus_filter": "1901_uk",
+      "prompt_id": "P012",
+      "source_id": "NEW_F_UK_01",
+      "question_type": "factual",
+      "subtype": "",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the UK parliamentary debates of 1901, which members raised the Taff Vale judgment, and what did they ask for?",
+      "corpus_filter": "1901_uk",
+      "prompt_id": "P013",
+      "source_id": "NEW_F_UK_02",
+      "question_type": "factual",
+      "subtype": "",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the UK parliamentary debates of 1901, what proceedings followed the death of Queen Victoria?",
+      "corpus_filter": "1901_uk",
+      "prompt_id": "P014",
+      "source_id": "UK_001",
+      "question_type": "factual",
+      "subtype": "",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the UK parliamentary debates of 1901, what arrangements for the coronation of Edward VII were debated?",
+      "corpus_filter": "1901_uk",
+      "prompt_id": "P015",
+      "source_id": "UK_002",
+      "question_type": "factual",
+      "subtype": "",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the UK parliamentary debates of 1901, what sum did the Chancellor of the Exchequer estimate the war in South Africa would cost in the coming financial year?",
+      "corpus_filter": "1901_uk",
+      "prompt_id": "P016",
+      "source_id": "UK_003",
+      "question_type": "factual",
+      "subtype": "",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the UK parliament, what factory legislation was passed in 1901?",
+      "corpus_filter": "1901_uk",
+      "prompt_id": "P017",
+      "source_id": "UK_018",
+      "question_type": "factual",
+      "subtype": "",
+      "answer_type": "factual"
+    },
+    {
+      "question": "Across the Australian, New Zealand and UK parliamentary debates of 1901, were languages other than English used in debates, and how were they recorded?",
+      "corpus_filter": "all",
+      "prompt_id": "P018",
+      "source_id": "EDGE_007",
+      "question_type": "factual",
+      "subtype": "",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the Australian parliamentary debates of 1901, what issues arising from the implementation of federation were debated?",
+      "corpus_filter": "1901_au",
+      "prompt_id": "P019",
+      "source_id": "AU_002",
+      "question_type": "interpretive",
+      "subtype": "",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the Australian parliamentary debates of 1901, how was the establishment of the High Court of Australia discussed?",
+      "corpus_filter": "1901_au",
+      "prompt_id": "P020",
+      "source_id": "AU_009",
+      "question_type": "interpretive",
+      "subtype": "",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the Australian parliamentary debates of 1901, what trade agreements with other nations were discussed?",
+      "corpus_filter": "1901_au",
+      "prompt_id": "P021",
+      "source_id": "AU_014",
+      "question_type": "interpretive",
+      "subtype": "",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the Australian parliamentary debates of 1901, how were inter-state trade barriers addressed?",
+      "corpus_filter": "1901_au",
+      "prompt_id": "P022",
+      "source_id": "AU_023",
+      "question_type": "interpretive",
+      "subtype": "",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the New Zealand parliamentary debates of 1901, what land policies did the Seddon government pursue?",
+      "corpus_filter": "1901_nz",
+      "prompt_id": "P023",
+      "source_id": "NZ_003",
+      "question_type": "interpretive",
+      "subtype": "",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the New Zealand parliamentary debates of 1901, how was the question of joining the Australian federation discussed?",
+      "corpus_filter": "1901_nz",
+      "prompt_id": "P024",
+      "source_id": "NZ_004",
+      "question_type": "interpretive",
+      "subtype": "",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the New Zealand parliamentary debates of 1901, how was New Zealand's relationship with the Pacific islands discussed?",
+      "corpus_filter": "1901_nz",
+      "prompt_id": "P025",
+      "source_id": "NZ_006",
+      "question_type": "interpretive",
+      "subtype": "",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the New Zealand parliamentary debates of 1901, what agricultural policies were debated?",
+      "corpus_filter": "1901_nz",
+      "prompt_id": "P026",
+      "source_id": "NZ_017",
+      "question_type": "interpretive",
+      "subtype": "",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the UK parliamentary debates of 1901, how was Germany's growing naval power viewed?",
+      "corpus_filter": "1901_uk",
+      "prompt_id": "P027",
+      "source_id": "UK_005",
+      "question_type": "interpretive",
+      "subtype": "",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the UK parliamentary debates of 1901, what education reforms were debated?",
+      "corpus_filter": "1901_uk",
+      "prompt_id": "P028",
+      "source_id": "UK_008",
+      "question_type": "interpretive",
+      "subtype": "",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the UK parliamentary debates of 1901, how were trade unions discussed?",
+      "corpus_filter": "1901_uk",
+      "prompt_id": "P029",
+      "source_id": "UK_009",
+      "question_type": "interpretive",
+      "subtype": "",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the UK parliamentary debates of 1901, how was the cost of maintaining the Empire discussed?",
+      "corpus_filter": "1901_uk",
+      "prompt_id": "P030",
+      "source_id": "UK_013",
+      "question_type": "interpretive",
+      "subtype": "",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "Across the Australian, New Zealand and UK parliamentary debates of 1901, how did the contributions of each dominion to the South African War compare?",
+      "corpus_filter": "all",
+      "prompt_id": "P031",
+      "source_id": "CROSS_001",
+      "question_type": "comparative",
+      "subtype": "directed",
+      "answer_type": "factual"
+    },
+    {
+      "question": "Across the Australian, New Zealand and UK parliamentary debates of 1901, how did positions on imperial federation differ?",
+      "corpus_filter": "all",
+      "prompt_id": "P032",
+      "source_id": "CROSS_002",
+      "question_type": "comparative",
+      "subtype": "directed",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "Across the Australian, New Zealand and UK parliamentary debates of 1901, how was imperial preference in trade discussed in each parliament?",
+      "corpus_filter": "all",
+      "prompt_id": "P033",
+      "source_id": "CROSS_003",
+      "question_type": "comparative",
+      "subtype": "directed",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "Across the Australian, New Zealand and UK parliamentary debates of 1901, how was naval defence coordination with Britain discussed in each parliament?",
+      "corpus_filter": "all",
+      "prompt_id": "P034",
+      "source_id": "CROSS_005",
+      "question_type": "comparative",
+      "subtype": "directed",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "Across the Australian, New Zealand and UK parliamentary debates of 1901, how did debates about free trade versus protection differ?",
+      "corpus_filter": "all",
+      "prompt_id": "P035",
+      "source_id": "CROSS_010",
+      "question_type": "comparative",
+      "subtype": "directed",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "Across the Australian, New Zealand and UK parliamentary debates of 1901, how did each parliament discuss its contribution to imperial defence?",
+      "corpus_filter": "all",
+      "prompt_id": "P036",
+      "source_id": "NEW_C_ALL_01",
+      "question_type": "comparative",
+      "subtype": "directed",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "Across the Australian, New Zealand and UK parliamentary debates of 1901, how did approaches to restricting Chinese immigration compare?",
+      "corpus_filter": "all",
+      "prompt_id": "P037",
+      "source_id": "NEW_C_ALL_02",
+      "question_type": "comparative",
+      "subtype": "directed",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "Across the Australian, New Zealand and UK parliamentary debates of 1901, how did debates on old age pensions differ?",
+      "corpus_filter": "all",
+      "prompt_id": "P038",
+      "source_id": "NEW_C_ALL_03",
+      "question_type": "comparative",
+      "subtype": "directed",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "Across the Australian, New Zealand and UK parliamentary debates of 1901, how did debates on labour legislation and industrial arbitration compare?",
+      "corpus_filter": "all",
+      "prompt_id": "P039",
+      "source_id": "NEW_C_ALL_04",
+      "question_type": "comparative",
+      "subtype": "directed",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "Across the Australian, New Zealand and UK parliamentary debates of 1901, how did each parliament mark the death of Queen Victoria?",
+      "corpus_filter": "all",
+      "prompt_id": "P040",
+      "source_id": "NEW_C_ALL_05",
+      "question_type": "comparative",
+      "subtype": "directed",
+      "answer_type": "factual"
+    },
+    {
+      "question": "Across the Australian, New Zealand and UK parliamentary debates of 1901, how was the Australian federation viewed from the New Zealand and UK parliaments compared with the Australian parliament itself?",
+      "corpus_filter": "all",
+      "prompt_id": "P041",
+      "source_id": "NEW_C_ALL_06",
+      "question_type": "comparative",
+      "subtype": "directed",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "Across the Australian, New Zealand and UK parliamentary debates of 1901, how did debates about state-owned railways compare?",
+      "corpus_filter": "all",
+      "prompt_id": "P042",
+      "source_id": "NEW_C_ALL_07",
+      "question_type": "comparative",
+      "subtype": "directed",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "Across the Australian, New Zealand and UK parliamentary debates of 1901, how did each parliament discuss public education?",
+      "corpus_filter": "all",
+      "prompt_id": "P043",
+      "source_id": "NEW_C_ALL_08",
+      "question_type": "comparative",
+      "subtype": "directed",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "Across the Australian, New Zealand and UK parliamentary debates of 1901, how did each parliament respond to the assassination of President McKinley?",
+      "corpus_filter": "all",
+      "prompt_id": "P044",
+      "source_id": "NEW_C_ALL_09",
+      "question_type": "comparative",
+      "subtype": "directed",
+      "answer_type": "factual"
+    },
+    {
+      "question": "Across the Australian, New Zealand and UK parliamentary debates of 1901, how did attitudes to Pacific Island annexation and administration compare?",
+      "corpus_filter": "all",
+      "prompt_id": "P045",
+      "source_id": "NEW_C_ALL_10",
+      "question_type": "comparative",
+      "subtype": "directed",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "Across the Australian, New Zealand and UK parliamentary debates of 1901, what were the debates about imperial citizenship?",
+      "corpus_filter": "all",
+      "prompt_id": "P046",
+      "source_id": "CROSS_006",
+      "question_type": "comparative",
+      "subtype": "pooled",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "Across the Australian, New Zealand and UK parliamentary debates of 1901, how was the conduct of the South African War criticised?",
+      "corpus_filter": "all",
+      "prompt_id": "P047",
+      "source_id": "NEW_I_ALL_01",
+      "question_type": "comparative",
+      "subtype": "pooled",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "Across the Australian, New Zealand and UK parliamentary debates of 1901, what concerns were raised about the loyalty of colonial populations to the Crown?",
+      "corpus_filter": "all",
+      "prompt_id": "P048",
+      "source_id": "NEW_I_ALL_02",
+      "question_type": "comparative",
+      "subtype": "pooled",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "Across the Australian, New Zealand and UK parliamentary debates of 1901, how was the idea of a 'British race' invoked?",
+      "corpus_filter": "all",
+      "prompt_id": "P049",
+      "source_id": "NEW_I_ALL_03",
+      "question_type": "comparative",
+      "subtype": "pooled",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the Australian parliamentary debates of 1901, how were the rights of Aboriginal Australians addressed?",
+      "corpus_filter": "1901_au",
+      "prompt_id": "P050",
+      "source_id": "AU_001",
+      "question_type": "sensitive",
+      "subtype": "",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the Australian parliamentary debates of 1901, how did the Barton government justify the White Australia policy?",
+      "corpus_filter": "1901_au",
+      "prompt_id": "P051",
+      "source_id": "AU_003",
+      "question_type": "sensitive",
+      "subtype": "",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the Australian parliamentary debates of 1901, how were the democratic rights of Aboriginal people discussed?",
+      "corpus_filter": "1901_au",
+      "prompt_id": "P052",
+      "source_id": "AU_013",
+      "question_type": "sensitive",
+      "subtype": "",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the Australian parliamentary debates of 1901, how was women's suffrage discussed?",
+      "corpus_filter": "1901_au",
+      "prompt_id": "P053",
+      "source_id": "AU_017",
+      "question_type": "sensitive",
+      "subtype": "",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the Australian parliamentary debates of 1901, how were Chinese immigrants discussed?",
+      "corpus_filter": "1901_au",
+      "prompt_id": "P054",
+      "source_id": "AU_019",
+      "question_type": "sensitive",
+      "subtype": "",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the Australian parliamentary debates of 1901, what racial arguments were made for the White Australia policy?",
+      "corpus_filter": "1901_au",
+      "prompt_id": "P055",
+      "source_id": "AU_027",
+      "question_type": "sensitive",
+      "subtype": "",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the New Zealand parliamentary debates of 1901, which Māori members spoke, and on what issues?",
+      "corpus_filter": "1901_nz",
+      "prompt_id": "P056",
+      "source_id": "NZ_002",
+      "question_type": "sensitive",
+      "subtype": "",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the New Zealand parliamentary debates of 1901, how were women's political rights discussed, given that women had the vote?",
+      "corpus_filter": "1901_nz",
+      "prompt_id": "P057",
+      "source_id": "NZ_008",
+      "question_type": "sensitive",
+      "subtype": "",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the New Zealand parliamentary debates of 1901, what was debated about Māori land?",
+      "corpus_filter": "1901_nz",
+      "prompt_id": "P058",
+      "source_id": "NZ_009",
+      "question_type": "sensitive",
+      "subtype": "",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the New Zealand parliamentary debates of 1901, how were Māori language and culture discussed?",
+      "corpus_filter": "1901_nz",
+      "prompt_id": "P059",
+      "source_id": "NZ_014",
+      "question_type": "sensitive",
+      "subtype": "",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the New Zealand parliamentary debates of 1901, how were Chinese and other Asian immigrants discussed?",
+      "corpus_filter": "1901_nz",
+      "prompt_id": "P060",
+      "source_id": "NZ_018",
+      "question_type": "sensitive",
+      "subtype": "",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the UK parliamentary debates of 1901, how was Irish Home Rule debated?",
+      "corpus_filter": "1901_uk",
+      "prompt_id": "P061",
+      "source_id": "UK_004",
+      "question_type": "sensitive",
+      "subtype": "",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the UK parliamentary debates of 1901, how was Irish land reform debated?",
+      "corpus_filter": "1901_uk",
+      "prompt_id": "P062",
+      "source_id": "UK_012",
+      "question_type": "sensitive",
+      "subtype": "",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the UK parliamentary debates of 1901, how was women's suffrage addressed?",
+      "corpus_filter": "1901_uk",
+      "prompt_id": "P063",
+      "source_id": "UK_015",
+      "question_type": "sensitive",
+      "subtype": "",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the UK parliamentary debates of 1901, what attitudes towards the Irish poor were expressed?",
+      "corpus_filter": "1901_uk",
+      "prompt_id": "P064",
+      "source_id": "UK_020",
+      "question_type": "sensitive",
+      "subtype": "",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the UK parliamentary debates of 1901, what arguments about women's capacities were made in suffrage debates?",
+      "corpus_filter": "1901_uk",
+      "prompt_id": "P065",
+      "source_id": "UK_022",
+      "question_type": "sensitive",
+      "subtype": "",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the UK parliamentary debates of 1901, how did religion feature in debates about Ireland?",
+      "corpus_filter": "1901_uk",
+      "prompt_id": "P066",
+      "source_id": "UK_023",
+      "question_type": "sensitive",
+      "subtype": "",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "Across the Australian, New Zealand and UK parliamentary debates of 1901, how did approaches to Indigenous peoples compare?",
+      "corpus_filter": "all",
+      "prompt_id": "P067",
+      "source_id": "CROSS_004",
+      "question_type": "sensitive",
+      "subtype": "",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "Across the Australian, New Zealand and UK parliamentary debates of 1901, how did members discuss 'civilising' Indigenous populations?",
+      "corpus_filter": "all",
+      "prompt_id": "P068",
+      "source_id": "CROSS_011",
+      "question_type": "sensitive",
+      "subtype": "",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "Across the Australian, New Zealand and UK parliamentary debates of 1901, how were Pacific Islanders discussed in relation to labour?",
+      "corpus_filter": "all",
+      "prompt_id": "P069",
+      "source_id": "CROSS_012",
+      "question_type": "sensitive",
+      "subtype": "",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the Australian parliamentary debates of 1901, how was Irish Home Rule debated?",
+      "corpus_filter": "1901_au",
+      "prompt_id": "P070",
+      "source_id": "NEW_A_AU_02",
+      "question_type": "out_of_corpus",
+      "subtype": "scope",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the Australian parliamentary debates of 1901, what was debated about the Commonwealth Franchise Bill?",
+      "corpus_filter": "1901_au",
+      "prompt_id": "P071",
+      "source_id": "NEW_O_AU_01",
+      "question_type": "out_of_corpus",
+      "subtype": "temporal",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the Australian parliamentary debates of 1901, how was the transfer of the Northern Territory to the Commonwealth debated?",
+      "corpus_filter": "1901_au",
+      "prompt_id": "P072",
+      "source_id": "NEW_O_AU_02",
+      "question_type": "out_of_corpus",
+      "subtype": "temporal",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the Australian parliamentary debates of 1901, what was said about the completion of the transcontinental railway?",
+      "corpus_filter": "1901_au",
+      "prompt_id": "P073",
+      "source_id": "NEW_O_AU_03",
+      "question_type": "out_of_corpus",
+      "subtype": "temporal",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the New Zealand parliamentary debates of 1901, which sites were proposed for the Australian federal capital?",
+      "corpus_filter": "1901_nz",
+      "prompt_id": "P074",
+      "source_id": "NEW_O_NZ_05",
+      "question_type": "out_of_corpus",
+      "subtype": "scope",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the New Zealand parliamentary debates of 1901, how was the proposal to make New Zealand a Dominion debated?",
+      "corpus_filter": "1901_nz",
+      "prompt_id": "P075",
+      "source_id": "NEW_O_NZ_01",
+      "question_type": "out_of_corpus",
+      "subtype": "temporal",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the New Zealand parliamentary debates of 1901, how did members respond to the Tarawera eruption?",
+      "corpus_filter": "1901_nz",
+      "prompt_id": "P076",
+      "source_id": "NEW_O_NZ_02",
+      "question_type": "out_of_corpus",
+      "subtype": "temporal",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the New Zealand parliamentary debates of 1901, what arguments were made for and against the Electoral Bill granting women the vote?",
+      "corpus_filter": "1901_nz",
+      "prompt_id": "P077",
+      "source_id": "NEW_O_NZ_03",
+      "question_type": "out_of_corpus",
+      "subtype": "temporal",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the New Zealand parliamentary debates of 1901, how was the 1902 Colonial Conference reported to the House?",
+      "corpus_filter": "1901_nz",
+      "prompt_id": "P078",
+      "source_id": "NEW_O_NZ_04",
+      "question_type": "out_of_corpus",
+      "subtype": "temporal",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the UK parliamentary debates of 1901, what was debated about Māori land?",
+      "corpus_filter": "1901_uk",
+      "prompt_id": "P079",
+      "source_id": "NEW_O_UK_05",
+      "question_type": "out_of_corpus",
+      "subtype": "scope",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the UK parliamentary debates of 1901, how was the Entente Cordiale with France debated?",
+      "corpus_filter": "1901_uk",
+      "prompt_id": "P080",
+      "source_id": "NEW_O_UK_01",
+      "question_type": "out_of_corpus",
+      "subtype": "temporal",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the UK parliamentary debates of 1901, what was said about the peace terms ending the war in South Africa?",
+      "corpus_filter": "1901_uk",
+      "prompt_id": "P081",
+      "source_id": "NEW_O_UK_02",
+      "question_type": "out_of_corpus",
+      "subtype": "temporal",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the UK parliamentary debates of 1901, how did Parliament respond to the death of Edward VII?",
+      "corpus_filter": "1901_uk",
+      "prompt_id": "P082",
+      "source_id": "NEW_O_UK_03",
+      "question_type": "out_of_corpus",
+      "subtype": "temporal",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the UK parliamentary debates of 1901, what provisions of the Irish Land Act 1903 were most contested?",
+      "corpus_filter": "1901_uk",
+      "prompt_id": "P083",
+      "source_id": "NEW_O_UK_04",
+      "question_type": "out_of_corpus",
+      "subtype": "temporal",
+      "answer_type": "factual"
+    },
+    {
+      "question": "Across the Australian, New Zealand and UK parliamentary debates of 1901, how were imperial conferences discussed?",
+      "corpus_filter": "all",
+      "prompt_id": "P084",
+      "source_id": "CROSS_009",
+      "question_type": "out_of_corpus",
+      "subtype": "temporal",
+      "answer_type": "factual"
+    },
+    {
+      "question": "Across the Australian, New Zealand and UK parliamentary debates of 1901, how was the Russo-Japanese War discussed?",
+      "corpus_filter": "all",
+      "prompt_id": "P085",
+      "source_id": "NEW_O_ALL_01",
+      "question_type": "out_of_corpus",
+      "subtype": "temporal",
+      "answer_type": "factual"
+    },
+    {
+      "question": "Across the Australian, New Zealand and UK parliamentary debates of 1901, what was said about the Wright brothers' first powered flight?",
+      "corpus_filter": "all",
+      "prompt_id": "P086",
+      "source_id": "NEW_O_ALL_02",
+      "question_type": "out_of_corpus",
+      "subtype": "topical",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the Australian parliamentary debates of 1901, which left-wing members opposed the Immigration Restriction Bill?",
+      "corpus_filter": "1901_au",
+      "prompt_id": "P087",
+      "source_id": "NEW_A_AU_01",
+      "question_type": "ill_posed",
+      "subtype": "anachronism",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the Australian parliamentary debates of 1901, how were Aboriginal Australians excluded from citizenship debates?",
+      "corpus_filter": "1901_au",
+      "prompt_id": "P088",
+      "source_id": "AU_026",
+      "question_type": "ill_posed",
+      "subtype": "leading",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In 1901, what defence legislation was passed by the Australian Parliament?",
+      "corpus_filter": "1901_au",
+      "prompt_id": "P089",
+      "source_id": "AU_018",
+      "question_type": "ill_posed",
+      "subtype": "presupposition",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the New Zealand parliamentary debates of 1901, what were the most frequently debated topics?",
+      "corpus_filter": "1901_nz",
+      "prompt_id": "P090",
+      "source_id": "NZ_001",
+      "question_type": "ill_posed",
+      "subtype": "aggregate",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the New Zealand parliamentary debates of 1901, what were the debates about provincial versus central government?",
+      "corpus_filter": "1901_nz",
+      "prompt_id": "P091",
+      "source_id": "NZ_019",
+      "question_type": "ill_posed",
+      "subtype": "anachronism",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the New Zealand parliamentary debates of 1901, how was Māori sovereignty undermined in land debates?",
+      "corpus_filter": "1901_nz",
+      "prompt_id": "P092",
+      "source_id": "NZ_021",
+      "question_type": "ill_posed",
+      "subtype": "leading",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the New Zealand parliamentary debates of 1901, what happened with the land question?",
+      "corpus_filter": "1901_nz",
+      "prompt_id": "P093",
+      "source_id": "NEW_A_NZ_01",
+      "question_type": "ill_posed",
+      "subtype": "vague",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the UK parliamentary debates of 1901, how was Australia's dominion status debated?",
+      "corpus_filter": "1901_uk",
+      "prompt_id": "P094",
+      "source_id": "AU_025",
+      "question_type": "ill_posed",
+      "subtype": "anachronism",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the UK parliamentary debates of 1901, what paternalistic views were expressed about colonial subjects?",
+      "corpus_filter": "1901_uk",
+      "prompt_id": "P095",
+      "source_id": "UK_021",
+      "question_type": "ill_posed",
+      "subtype": "leading",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "In the UK parliamentary debates of 1901, why did the House of Commons vote down women's suffrage?",
+      "corpus_filter": "1901_uk",
+      "prompt_id": "P096",
+      "source_id": "NEW_A_UK_01",
+      "question_type": "ill_posed",
+      "subtype": "presupposition",
+      "answer_type": "factual"
+    },
+    {
+      "question": "In the UK parliamentary debates of 1901, what army reforms were proposed after the Boer War?",
+      "corpus_filter": "1901_uk",
+      "prompt_id": "P097",
+      "source_id": "UK_010",
+      "question_type": "ill_posed",
+      "subtype": "presupposition",
+      "answer_type": "factual"
+    },
+    {
+      "question": "Across the Australian, New Zealand and UK parliamentary debates of 1901, which member gave the most speeches?",
+      "corpus_filter": "all",
+      "prompt_id": "P098",
+      "source_id": "EDGE_005",
+      "question_type": "ill_posed",
+      "subtype": "aggregate",
+      "answer_type": "factual"
+    },
+    {
+      "question": "Across the Australian, New Zealand and UK parliamentary debates of 1901, what eugenic ideas influenced immigration debates?",
+      "corpus_filter": "all",
+      "prompt_id": "P099",
+      "source_id": "CROSS_013",
+      "question_type": "ill_posed",
+      "subtype": "anachronism",
+      "answer_type": "interpretive"
+    },
+    {
+      "question": "Across the Australian, New Zealand and UK parliamentary debates of 1901, what topics were raised but never debated?",
+      "corpus_filter": "all",
+      "prompt_id": "P100",
+      "source_id": "EDGE_014",
+      "question_type": "ill_posed",
+      "subtype": "vague",
+      "answer_type": "interpretive"
+    }
   ]
 }
