@@ -272,7 +272,7 @@
       "answer_type": "interpretive"
     },
     {
-      "question": "Across the Australian, New Zealand and UK parliamentary debates of 1901, how did the contributions of each dominion to the South African War compare?",
+      "question": "Across the Australian, New Zealand and UK parliamentary debates of 1901, how did the contributions of Australia, New Zealand and Britain to the South African War compare?",
       "corpus_filter": "all",
       "prompt_id": "P031",
       "source_id": "CROSS_001",
