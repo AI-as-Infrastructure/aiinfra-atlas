@@ -6,6 +6,8 @@ ATLAS: Analysis and Testing of Language Models for Archival Systems is a test ha
 ## Major Releases
 All versions: https://doi.org/10.5281/zenodo.17204351. Cite the version DOI for the release you ran.
 
+v0.4.0: https://github.com/AI-as-Infrastructure/aiinfra-atlas/releases/tag/v0.4.0 | https://doi.org/10.5281/zenodo.23783223.
+
 v0.3.0: https://github.com/AI-as-Infrastructure/aiinfra-atlas/releases/tag/v0.3.0 | https://doi.org/10.5281/zenodo.20174214.
 
 v0.2.0: https://github.com/AI-as-Infrastructure/aiinfra-atlas/releases/tag/v0.2.0 | https://doi.org/10.5281/zenodo.17204370.

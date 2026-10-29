@@ -56,6 +56,26 @@ PHOENIX_EXPORT_CSV=true          # Export CSV in addition to Parquet (default: t
 
 **Note**: Configure `PHOENIX_SPACE_ID` and `PHOENIX_PROJECT_BACKUPS` to match your Phoenix space and project names.
 
+### Offsite Copy (Production)
+
+Production also copies the export folder to a USB drive after each nightly run. This job lives on the server only; the repo does not install it.
+
+```bash
+# jamessmithies crontab on the prod host (server clock is UTC)
+20 1 * * * cd /opt/atlas && /usr/bin/make backup-prod >> /home/jamessmithies/phoenix_backup.log 2>&1
+30 2 * * * /usr/bin/flock -n /tmp/atlas-backup.lock /usr/local/bin/atlas-usb-backup.sh >> /home/jamessmithies/atlas-backup.log 2>&1
+```
+
+`atlas-usb-backup.sh` exits with `FAIL` if `/mnt/usb` is not mounted, then runs `rsync -rtv` from `~/data_backup/phoenix/` to `/mnt/usb/atlas-phoenix-backup/`. There is no `--delete`, so earlier days survive local cleanup. Note that a relative `PHOENIX_BACKUP_DIR` resolves against `$HOME`, not the repo.
+
+Check a night's run:
+
+```bash
+ls -la /mnt/usb/atlas-phoenix-backup/$(date -u +%Y/%m/%d)/*/
+tail -30 ~/atlas-backup.log
+df -h /mnt/usb
+```
+
 ## Data Structure and Analysis Integration
 
 ### Backup Directory Structure
@@ -205,7 +225,7 @@ tail -f /path/to/analysis.log
 ### Storage Requirements
 
 **Typical backup sizes:**
-- **Hansard-Prod**: ~2-5MB per day (1000+ records)
+- Each run is a full export, not an increment. As of October 2026: Hansard-Prod ~39MB, Hansard-Interrating ~24MB (pilot data), CSV plus Parquet
 - **Analysis outputs**: ~20-50MB per run (including visualizations)
 
 **Retention recommendations:**

@@ -41,5 +41,8 @@ identifiers:
       Zenodo concept DOI, resolving to the latest release. Each release also has
       its own version DOI, listed in ReadMe.md under "Major Releases"; cite that
       one for the version you ran.
+  - type: doi
+    value: 10.5281/zenodo.23783223
+    description: Zenodo archive of the v0.4.0 release
 # Authorship reflects project contribution, not commit counts: the git history
 # has a single committer, so the author list cannot be derived from it.

@@ -206,30 +206,57 @@ Tasks marked *optional* below are ones that coverage already reaches.
 
 ## 4. Seed the study pool
 
-- [ ] **Task 4.1**: `make seed-reset` — deletes the Phoenix project and the study
-      pool manifest. Verify the project name it prints before confirming
-- [ ] **Task 4.2**: `make seed` (all 100 questions)
-- [ ] **Task 4.3**: Confirm `data/seed_pool.json` has `count: 100`, and back it
+Done 2026-10-30 (AEDT) on prod at `021f4d8`, after confirming
+`sha256sum data/seed_questions.json` = `611f29c4…d2d9b3` (v2 prompt set).
+
+- [x] **Task 4.1**: `make seed-reset` — deletes the Phoenix project and the study
+      pool manifest. Verify the project name it prints before confirming.
+      *On prod this cannot work as written.* `ENVIRONMENT=production` makes it
+      refuse without `SEED_ARGS="--force"`, and the prod API key is a user-level
+      key, so Phoenix Cloud answers the DELETE with 403 — whether or not the
+      project exists, since the role check comes first. Delete the project in
+      the Phoenix UI as a space admin, confirm it is gone with a GET on
+      `/v1/projects/<name>` (expect 404), then `rm -f data/seed_pool.json`,
+      which the script only removes after a successful delete
+- [x] **Task 4.2**: `make seed` (all 100 questions). Phoenix verification
+      100/100 LLM spans, 100/100 references spans
+- [x] **Task 4.3**: Confirm `data/seed_pool.json` has `count: 100`, and back it
       up alongside the Phoenix export. It defines the pool for reproducibility
-      and is gitignored
-- [ ] **Task 4.4**: Log in as one reviewer and confirm a 20-prompt queue is
-      offered with no errors
-- [ ] **Task 4.4a**: `make rater-check`. The pre-flight must report the design
+      and is gitignored. `count: 100`, `created: 2026-10-29T22:31:33Z`; copied
+      to `~/seed_pool_2026-10-29.json` on prod
+- [x] **Task 4.4**: Log in as one reviewer and confirm a 20-prompt queue is
+      offered with no errors. *Done on a test seed, then re-seeded.* Any
+      signed-in page load claims a permanent cohort slot (the header fetches
+      `/api/inter-rater/stats`, which allocates), and the design has no spare
+      slots, so a login against the final pool would lock out the 20th
+      participant. The developer seeded, logged in (20 prompts, no delay),
+      rated one prompt and found it in Phoenix, then deleted the project and
+      seeded the final pool. The final pool is verified by 4.4a, which reads
+      Redis without claiming a slot. Only participants sign in from here on
+- [x] **Task 4.4a**: `make rater-check`. The pre-flight must report the design
       saturated — the capacity equation is exact, and a pool that misses it now
       blocks submissions as well as allocation. The annotation check must report
-      every name recognised. Do this before reviewers arrive, not after
-- [ ] **Task 4.5**: Do not seed again after this point. Re-seeding changes the
+      every name recognised. Do this before reviewers arrive, not after.
+      BALANCED (100 × 4 = 400 = 20 × 20), 100 of 100 seeded spans in Phoenix,
+      cohort slots 0 of 20, no annotations, OK
+- [x] **Task 4.5**: Do not seed again after this point. Re-seeding changes the
       cohort fingerprint and reassigns every reviewer slot
 
 ## 5. Tag and release
 
 - [x] **Task 5.1**: Push `main` to origin — done, `origin/main` == `main` at `7c0bcb5`
-- [ ] **Task 5.2**: If a DOI is wanted, confirm the GitHub–Zenodo integration is
+- [x] **Task 5.2**: If a DOI is wanted, confirm the GitHub–Zenodo integration is
       active *before* publishing. Zenodo only archives releases created after its
-      webhook exists; v0.3.0 has no recorded DOI, so verify rather than assume
-- [ ] **Task 5.3**: Add `version: 0.4.0` and `date-released:` to `CITATION.cff`,
-      plus ORCIDs for both authors, and confirm the author list is complete
-- [ ] **Task 5.4**: Tag `v0.4.0` on the exact commit deployed to prod and verified
+      webhook exists; v0.3.0 has no recorded DOI, so verify rather than assume.
+      Webhook active (release events). v0.3.0 did get a DOI,
+      `10.5281/zenodo.20174214`, now recorded in `ReadMe.md`
+- [x] **Task 5.3**: Add `version: 0.4.0` and `date-released:` to `CITATION.cff`,
+      plus ORCIDs for both authors, and confirm the author list is complete.
+      `date-released: 2026-10-30`; identifier is the concept DOI
+      `10.5281/zenodo.17204351`. Zenodo records the publication date as
+      2026-10-29, because GitHub published at 22:40 UTC
+- [x] **Task 5.4**: *(done 2026-10-30: `v0.4.0` → `021f4d8`, the commit prod
+      ran when the pool was seeded)* Tag `v0.4.0` on the exact commit deployed to prod and verified
       in the pilot. Candidate as of 2026-09-17: **`f8ac90b`** — deployed to prod
       that day via `make cf`, and the tip of `main` at the time. (The earlier
       2026-08-27 candidate `f12b322` is superseded.) Ticking tasks in this file
@@ -254,32 +281,51 @@ Tasks marked *optional* below are ones that coverage already reaches.
       git tag -a v0.4.0 <verified-sha> -m "v0.4.0 - inter-rater study integrity"
       git push origin v0.4.0
       ```
-- [ ] **Task 5.5**: Publish the GitHub release using `docs/releases/v0.4.0.md`,
-      removing its DRAFT banner
-- [ ] **Task 5.6**: Add v0.4.0 to the "Major Releases" list in `ReadMe.md`, with
-      its DOI once Zenodo has minted one
+- [x] **Task 5.5**: Publish the GitHub release using `docs/releases/v0.4.0.md`,
+      removing its DRAFT banner. Published 2026-10-29T22:40Z, replacing the
+      August draft
+- [x] **Task 5.6**: Add v0.4.0 to the "Major Releases" list in `ReadMe.md`, with
+      its DOI once Zenodo has minted one: `10.5281/zenodo.23783223`
 
 ## 6. Record study provenance
 
 Needed for the paper's methods section and for replication. Record before
 reviewers begin, because some of it changes afterwards.
 
-- [ ] **Task 6.1**: Record the `v0.4.0` commit SHA
-- [ ] **Task 6.2**: Record the active test target: LLM provider, model name,
-      temperature (`TEST_TARGET` and `backend/targets/<target>.txt`)
-- [ ] **Task 6.3**: Record the vector store version and embedding model
-- [ ] **Task 6.4**: Record the Phoenix project name and the study pool manifest
-      (`count`, `created`, and the qa_id list)
-- [ ] **Task 6.5**: Record the study design actually configured: pool size,
+- [x] **Task 6.1**: Record the `v0.4.0` commit SHA.
+      `021f4d8f3e6497115053e0cf4421069a444671cd`; DOI `10.5281/zenodo.23783223`
+- [x] **Task 6.2**: Record the active test target: LLM provider, model name,
+      temperature (`TEST_TARGET` and `backend/targets/<target>.txt`).
+      `k20_openrouter_claude_sonnet`: OpenRouter, `anthropic/claude-sonnet-4.6`,
+      temperature 0.7 (`backend/modules/response.py`), `SEARCH_K=20`,
+      `CITATION_LIMIT=20`, `SEARCH_SCORE_THRESHOLD=0.0`
+- [x] **Task 6.3**: Record the vector store version and embedding model.
+      ChromaDB collection `blert_1000`, multi-corpus, LFS baseline from
+      `3aaf1c1` (2025-08-28); embeddings `Livingwithmachines/bert_1890_1900`
+- [x] **Task 6.4**: Record the Phoenix project name and the study pool manifest
+      (`count`, `created`, and the qa_id list). `Hansard-Interrating`;
+      `count: 100`, `created: 2026-10-29T22:31:33Z`. The qa_id list is in the
+      manifest backup (`~/seed_pool_2026-10-29.json` on prod), not repeated here
+- [x] **Task 6.5**: Record the study design actually configured: pool size,
       `MAX_RATINGS`, `REVIEWERS`, `SESSIONS_PER_USER`, and the resulting ratings
-      per prompt
-- [ ] **Task 6.6**: Record the rubric version — the six scales as shipped, noting
-      that superseded fields remain on the model for older data
+      per prompt. 100 prompts, `MAX_RATINGS=4`, `REVIEWERS=20`,
+      `SESSIONS_PER_USER=20`: exactly 4 ratings per prompt, 400 in total.
+      Prompts are the v2 set, P001–P100 (`data/seed_questions.json` at `v0.4.0`)
+- [x] **Task 6.6**: Record the rubric version — the six scales as shipped, noting
+      that superseded fields remain on the model for older data. Corpus
+      fidelity, citation quality, relevance, coherence, uncertainty, historical
+      contextualisation; rationales required for extreme scores, plus a global
+      fault rationale. Superseded fields remain on the model and Phoenix write
+      path for pre-v0.4.0 data
 - [ ] **Task 6.7**: Record the retained known-defect control: issue #79, the 481
       chunks with dates taken from quoted text, the two source files responsible,
       and the date the decision was taken (2026-09-17, before seeding and before
       any reviewer saw the data). Note whether any reviewer reported it, since a
-      null result is also a finding about the feedback instrument
+      null result is also a finding about the feedback instrument.
+      Recorded under "Vector-store date defect retained deliberately" above:
+      277 chunks from the 1 August 1901 sitting labelled
+      `Wellington, 14th October, 1895`, 204 labelled `1501`. Left open until
+      after the session for the "was it reported" outcome
 
 ## 7. After the session
 
