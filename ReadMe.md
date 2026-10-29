@@ -4,7 +4,9 @@
 ATLAS: Analysis and Testing of Language Models for Archival Systems is a test harness for the evaluation of Large Language Model (LLM) Retrieval Augmented Generation (RAG) for Humanities & Social Science (HASS) research. ATLAS is a deliverable of the [AI as Infrastructure (AIINFRA)](https://aiinfra.anu.edu.au) project. AIINFRA's primary goal is to develop an evaluation framework for LLM RAG systems designed for historical research. 
 
 ## Major Releases
-v0.3.0: https://github.com/AI-as-Infrastructure/aiinfra-atlas/releases/tag/v0.3.0
+All versions: https://doi.org/10.5281/zenodo.17204351. Cite the version DOI for the release you ran.
+
+v0.3.0: https://github.com/AI-as-Infrastructure/aiinfra-atlas/releases/tag/v0.3.0 | https://doi.org/10.5281/zenodo.20174214.
 
 v0.2.0: https://github.com/AI-as-Infrastructure/aiinfra-atlas/releases/tag/v0.2.0 | https://doi.org/10.5281/zenodo.17204370.
 

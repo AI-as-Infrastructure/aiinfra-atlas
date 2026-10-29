@@ -33,15 +33,13 @@ keywords:
   - evaluation framework
 license: MIT
 version: 0.4.0
-date-released: "2026-08-27"
+date-released: "2026-10-30"
 identifiers:
   - type: doi
-    value: 10.5281/zenodo.17204370
-    description: Zenodo archive of the v0.2.0 release
-# TODO before publishing a release intended for citation:
-#   - add the release's own Zenodo DOI to `identifiers` (see ReadMe.md,
-#     "Major Releases"; v0.3.0 does not currently record one)
-#   - confirm `date-released:` matches the date the tag is actually published
+    value: 10.5281/zenodo.17204351
+    description: >-
+      Zenodo concept DOI, resolving to the latest release. Each release also has
+      its own version DOI, listed in ReadMe.md under "Major Releases"; cite that
+      one for the version you ran.
 # Authorship reflects project contribution, not commit counts: the git history
-# has a single committer, so the author list cannot be derived from it. Confirm
-# it is complete before publishing a release intended for citation.
+# has a single committer, so the author list cannot be derived from it.
