@@ -237,10 +237,18 @@ Tasks marked *optional* below are ones that coverage already reaches.
       explicitly rather than `main`, or redeploy first so tree and tag agree.
       Confirm with `git log --oneline -1` on the server. If further commits land
       during testing, the candidate moves — tag what was actually deployed and
-      verified, not the branch tip. As of `37f997f`, `main` is three docs-only
-      commits ahead of the deployed `f8ac90b` (Cloudflare verification fixes and
-      the SSH access-control archive); none of them touch application code, so
-      `f8ac90b` remains the correct target unless prod is redeployed:
+      verified, not the branch tip.
+
+      **Superseded 2026-10-30: `f8ac90b` is no longer the target.** It carries
+      the May seed questions. The v2 prompt set (`6b2f27c`, with the P031
+      wording fix in `e91db56`) only exists from `e91db56` onward, so a tag on
+      `f8ac90b` would not contain the prompts actually seeded. Tag the commit
+      prod is on when section 4 runs — at least `e91db56`. Before seeding,
+      `git pull` on the server and confirm `sha256sum data/seed_questions.json`
+      reads `611f29c4968a9c9466c17af8572314bf956cd210bcecf45153a7ddff7dd2d9b3`
+      (Glen's set as reviewed, plus the P031 fix). `seed_questions.json` is
+      read by `make seed` from disk, so a `git pull` is enough; application
+      code is unchanged since `f8ac90b`, so no `make cf` is needed:
 
       ```bash
       git tag -a v0.4.0 <verified-sha> -m "v0.4.0 - inter-rater study integrity"
